@@ -447,159 +447,6 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
   .msg{font-size:13px;}
 }
 
-/* ── KindleOS landscape: wider launcher grid, compact header ── */
-#rotateRoot[data-rotated="1"] #view-home .launchHdr{
-  padding:8px 8px 6px;
-}
-#rotateRoot[data-rotated="1"] #launcherClock{
-  font-size:32px!important;letter-spacing:2px!important;
-}
-#rotateRoot[data-rotated="1"] #view-home #launchAppGrid{
-  grid-template-columns:repeat(7,1fr)!important;
-}
-#rotateRoot[data-rotated="1"] #view-home .kh-mode-row{
-  flex-direction:row;gap:8px;
-}
-/* ── Landscape: cap #app to the rotated container's PRE-rotation height
-   so chat / chat-style flex-column views stop overflowing past the
-   visible viewport. Without this, `#app { height: 100vh }` evaluates
-   to the BROWSER viewport height (taller axis) while rotateRoot's
-   pre-rotation height is the viewport WIDTH (narrow axis), so #app
-   was overflowing rotateRoot by `vh - vw` px — pushing the composer
-   completely off the visible bottom edge in the messages view. Using
-   100vw here matches the rotated container's pre-rotation height in
-   every aspect ratio. */
-#rotateRoot[data-rotated="1"] #app{ height:100vw!important; }
-/* Messages view in landscape: composer must always remain visible at
-   the bottom. Hard-cap the textarea height so wrapping text doesn't
-   stretch the composer past the visible area, and keep the log
-   flex-1 so it absorbs the rest of the rotated viewport. */
-#rotateRoot[data-rotated="1"] #view-messages{ height:100%!important; }
-#rotateRoot[data-rotated="1"] #view-messages textarea{
-  max-height:60px!important;
-}
-/* Launcher mode adds 80px padding-bottom to every view as breathing
-   room for its bottom dock; in landscape that pushes the composer
-   right off the rotated viewport. Strip it for the messages view
-   only (other views still get the dock spacing). */
-body.launcher-ui #rotateRoot[data-rotated="1"] #view-messages{ padding-bottom:0!important; }
-/* The floating Kindle keyboard in landscape needs to sit ABOVE the
-   chat view (z-index already high) AND below the composer's bottom
-   edge so its suggestion strip isn't hidden by the chat UI. Pinning
-   it explicitly to the bottom of the rotated viewport. */
-#rotateRoot[data-rotated="1"] #kh-float-kbd{
-  bottom:0!important;left:0!important;right:0!important;
-  z-index:600001!important;
-}
-/* When the keyboard is showing in landscape on the messages view,
-   shrink the message log so the composer + suggestion strip stay
-   visible. The keyboard's _addKbdPadding() helper pads the scroll
-   ancestor of the textarea, but the chat log itself doesn't get
-   touched because the textarea isn't inside it. */
-#rotateRoot[data-rotated="1"] #view-messages #msgChatLog{
-  max-height:calc(100% - 110px);
-}
-
-/* ── Comprehensive landscape adaptation ───────────────────────────────
-   Many builders set explicit height:100vh, height:100%, or use flex
-   layouts that were sized against the pre-rotation viewport. In
-   landscape, rotateRoot's `width` is the pre-rotation height and its
-   `height` is the pre-rotation width — so anything sized against
-   `100vh` overflows by `(vh - vw)` px. These rules clamp every major
-   view to the rotated container's actual visible box so nothing
-   spills past the bottom edge.
-
-   Strategy: every flex-column view (chat, calc, messages, journal,
-   kanban, drawing, etc.) gets `height:100%` against the rotated
-   container, not `100vh`. The header/nav stays fixed; main scrolls.
-   Cards inside views shrink their padding so two columns can fit
-   horizontally on the wider landscape canvas. */
-#rotateRoot[data-rotated="1"] main{
-  height:calc(100% - var(--header-h) - var(--nav-h));
-}
-#rotateRoot[data-rotated="1"] .view{
-  /* Default views (suggestions, bug reports, journal list, etc.)
-     should fill the rotated viewport so the user's scroll position
-     is preserved on rotation. */
-  min-height:100%;
-}
-/* Chat view in landscape — keep composer pinned, history scrollable,
-   and let the model picker bar wrap onto two lines if needed. */
-#rotateRoot[data-rotated="1"] #view-chat{
-  height:100%!important;
-}
-#rotateRoot[data-rotated="1"] #view-chat .chat-log{
-  flex:1;min-height:0;
-}
-#rotateRoot[data-rotated="1"] #view-chat #aiStatusBar{
-  flex-wrap:wrap;gap:4px;
-}
-/* Calculator in landscape — use the wider canvas for a roomier keypad. */
-#rotateRoot[data-rotated="1"] #view-calc{
-  height:100%!important;
-}
-#rotateRoot[data-rotated="1"] .calc-grid{
-  gap:6px!important;
-}
-/* Settings panel — two-column card layout in landscape so settings
-   fit on screen without scrolling forever. */
-#rotateRoot[data-rotated="1"] #view-settings{
-  padding:6px var(--gap) var(--gap);
-}
-#rotateRoot[data-rotated="1"] #view-settings > div:not(:first-child){
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-  gap:10px;align-items:start;
-}
-#rotateRoot[data-rotated="1"] #view-settings .card{
-  margin-bottom:0;
-}
-/* Feedback / Manual & Help — two columns for the manual cards so the
-   user can read more without scrolling. */
-#rotateRoot[data-rotated="1"] #view-feedback{
-  padding:6px var(--gap) var(--gap);
-}
-/* Games tab, reading tracker, notes — use a wider grid so more items
-   are visible at once. */
-#rotateRoot[data-rotated="1"] #view-games .game-grid,
-#rotateRoot[data-rotated="1"] #view-games .card-row{
-  display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))!important;gap:8px!important;
-}
-/* KindleOS launcher app body in landscape — let it take the full
-   rotated viewport minus the status bar / dock spacing. */
-#rotateRoot[data-rotated="1"] #kd-root{
-  width:100%!important;height:100%!important;
-}
-/* Tools and notes-style views with wide cards: shrink padding so they
-   don't waste horizontal space. */
-#rotateRoot[data-rotated="1"] #view-tools .card,
-#rotateRoot[data-rotated="1"] #view-reading .card,
-#rotateRoot[data-rotated="1"] #view-notes .card,
-#rotateRoot[data-rotated="1"] #view-kanban .card{
-  padding:10px;
-}
-/* Drawing, pixel art, slides — let the canvas size to the wider
-   landscape canvas instead of being stuck at portrait width. */
-#rotateRoot[data-rotated="1"] #view-draw,
-#rotateRoot[data-rotated="1"] #view-pixelart,
-#rotateRoot[data-rotated="1"] #view-slides{
-  height:100%!important;
-}
-/* Header controls in landscape — tighter spacing so all the icons
-   still fit on the shorter axis. */
-#rotateRoot[data-rotated="1"] header{
-  min-height:42px!important;padding:0 8px!important;
-}
-#rotateRoot[data-rotated="1"] nav{
-  min-height:38px!important;
-}
-#rotateRoot[data-rotated="1"] nav .tab{
-  min-height:38px;padding:0 8px;font-size:10px;
-}
-/* Feedback support-bot chat scrolls inside the card, not the page. */
-#rotateRoot[data-rotated="1"] #view-feedback .card{
-  margin-bottom:8px;
-}
-
 /* ── KindleHub Intelligence ── */
 .khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:26px!important;letter-spacing:0.2px;}
 .khi-spark{font-size:11px;opacity:0.8;margin-right:1px;}
@@ -1158,7 +1005,6 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="header-controls">
       <div class="clock" id="sysClock"></div>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
-      <button class="btn small" id="landscapeBtn" title="Toggle landscape rotation">Landscape</button>
       <button class="btn small" id="themeBtn" title="Cycle theme: Light / Dark / Sepia">Light</button>
       <button class="btn small" id="uiModeBtn" title="Cycle home layout: Classic / Launcher / Retro">Classic</button>
       <button class="btn small" id="desktopLaunchBtn" title="Launch KindleOS" onclick="launchKindleDesktop()">KindleOS</button>
@@ -1315,7 +1161,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <button id="footerKdosBack" type="button" style="display:none;flex-shrink:0;align-items:center;gap:5px;padding:8px 16px;background:var(--fg);color:var(--bg);border:none;border-radius:16px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent;">&#8249;&nbsp;KindleOS</button>
   </footer>
 </div>
-<!-- Guided Tour System — inside rotateRoot so it rotates with the app in landscape mode -->
+<!-- Guided Tour System -->
 <div id="tourBackdrop" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:8000;pointer-events:none;box-sizing:border-box;"></div>
 <div id="tourHighlight" style="display:none;position:fixed;z-index:8001;border:3px solid #fff;border-radius:8px;box-shadow:0 0 0 4000px rgba(0,0,0,0.75);pointer-events:none;transition:all 0.3s ease;"></div>
 <div id="tourCard" style="display:none;position:fixed;z-index:8002;background:var(--card);color:var(--fg);border-radius:14px;padding:16px 18px;max-width:300px;min-width:220px;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
@@ -1431,7 +1277,7 @@ function defaultState(){
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,tutorialSeen:false,feedbackUrl:'',
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
-    msgGroups:[],kindleKeyboard:true,landscapeMode:false,calEvents:[],
+    msgGroups:[],kindleKeyboard:true,calEvents:[],
     navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
@@ -3126,12 +2972,8 @@ function launchKindleDesktop(){
   kdPagesTrack.style.cssText='display:flex;width:100%;height:100%;will-change:transform;transition:transform 0.32s cubic-bezier(0.4,0,0.2,1);';
   kdPagesOuter.appendChild(kdPagesTrack);
   let _curPage=1;
-  /* In portrait we show 16 apps per page (4×4 in a 5-row grid).
-     In landscape the launcher is rotated and the visible viewport is
-     wider-than-tall, so a 4-across × 3-down grid (12 apps per page) fits
-     much more cleanly. ICONS_PER_PAGE is read live from the launcher
-     orientation so adding more apps automatically uses the right paging. */
-  function iconsPerPage(){return osState.landscape?12:16;}
+  /* 16 apps per page (4×4 in a 5-row grid). */
+  function iconsPerPage(){return 16;}
   function numIconPages(){return Math.max(1,Math.ceil(allApps().length/iconsPerPage()));}
   function numPages(){return 1+numIconPages();}
 
@@ -3392,8 +3234,7 @@ function launchKindleDesktop(){
     const apps=allApps();const iconPages=numIconPages();
     _curPage=Math.min(prev,numPages()-1);
     const PER=iconsPerPage();
-    /* Landscape: 4 columns × 3 rows = 12 apps. Portrait: 4 × 5 grid, 16 apps. */
-    const cols=4,rows=osState.landscape?3:5;
+    const cols=4,rows=5;
     const gridStyle='min-width:100%;height:100%;display:grid;grid-template-columns:repeat('+cols+',1fr);grid-template-rows:repeat('+rows+',1fr);align-content:start;padding:4px 6px 56px;box-sizing:border-box;';
     /* Build empty shells synchronously (cheap) and only populate icons for
        pages near the viewport. Pages further away get their icons lazily on
@@ -3688,56 +3529,6 @@ function launchKindleDesktop(){
     if(tile)ccGrid.appendChild(tile.el);
   });
 
-  /* Landscape rotation — rotate the whole shell 90° so a Kindle held sideways
-     gives proper widescreen layout. Persisted in osState.landscape.
-     When orientation flips we also rebuild the icon pages so the grid
-     reflows to the orientation-appropriate density (16 apps in portrait,
-     12 apps in landscape — 4 × 3). */
-  function applyLandscape(on){
-    const was=!!osState.landscape;
-    osState.landscape=!!on;
-    if(on){
-      const w=window.innerWidth,h=window.innerHeight;
-      kd.style.transform='rotate(90deg)';
-      kd.style.transformOrigin='center center';
-      kd.style.width=h+'px';
-      kd.style.height=w+'px';
-      kd.style.left=((w-h)/2)+'px';
-      kd.style.top=((h-w)/2)+'px';
-    }else{
-      kd.style.transform='';
-      kd.style.transformOrigin='';
-      kd.style.width='100%';
-      kd.style.height='100%';
-      kd.style.left='0';
-      kd.style.top='0';
-    }
-    /* Re-flow the icon grid for the new orientation (12 vs 16 apps/page). */
-    if(was!==osState.landscape&&typeof buildPages==='function'){
-      try{buildPages();}catch(e){}
-    }
-  }
-  /* Expose so app-level landscape toggle can propagate to KindleOS
-     while it's open. Cleared in the exit handler below. */
-  window._kdApplyLandscape=applyLandscape;
-  let _ccLand=!!osState.landscape;
-  const tLand=ccTile('Landscape','<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="6" cy="12" r="1" fill="currentColor"/></svg>',_ccLand,(t,lb,ic)=>{
-    _ccLand=!_ccLand;tLand.setActive(_ccLand);
-    applyLandscape(_ccLand);
-    persistOS();
-    toast(_ccLand?'Landscape on':'Portrait restored',1400);
-  });
-  ccGrid.appendChild(tLand.el);
-  /* Restore landscape on launch if previously enabled */
-  if(osState.landscape)setTimeout(()=>applyLandscape(true),120);
-  /* Rebind on viewport resize so geometry stays correct when device rotates.
-     CRITICAL: keep a named reference so the exit handler can remove it.
-     Previously this anonymous handler accumulated on every Exit→Re-launch
-     cycle — by the third launch a single resize fired three identical
-     applyLandscape calls, doubling memory pressure. */
-  const _kdResizeHandler=function(){if(osState.landscape)applyLandscape(true);};
-  window.addEventListener('resize',_kdResizeHandler);
-
   /* Tour tile — wired up below once startKindleOSTour is defined */
   const tTour=ccTile('Tour','<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',false,()=>{
     closeCC();
@@ -3809,12 +3600,8 @@ function launchKindleDesktop(){
     if(bgTimer)clearInterval(bgTimer);
     if(_clockTickInterval)clearInterval(_clockTickInterval);
     if(_clockTickAlign)clearTimeout(_clockTickAlign);
-    try{window.removeEventListener('resize',_kdResizeHandler);}catch(_){}
     /* The boot-poll timers from the tour also need to know we're gone */
     window._kdGone=true;
-    /* Drop the exposed landscape hook so app-level toggleLandscape
-       stops calling into torn-down DOM after exit. */
-    try{delete window._kdApplyLandscape;}catch(_){window._kdApplyLandscape=undefined;}
     /* Clean up the full-app-mode artefacts: the back FAB, the body
        class that hides #app header/nav, and any custom-HTML overlay. */
     try{document.body.classList.remove('kdos-fullapp');}catch(_){}
@@ -4385,7 +4172,7 @@ WEB SEARCH & LIVE DATA:
       {sel:'.kd-tour-sb',pos:'top',title:'The status bar',body:'Time, signal, search. Tap the time any time to open the Control Centre.',swipe:'down'},
       {sel:'.kd-tour-pages',pos:'center',title:'Your apps',body:'Tap any tile to launch a KindleHub page — Notes, Cookbook, Stars, anything.\\n\\nSwipe left or right to flip between pages of apps.'},
       {sel:'.kd-tour-dock',pos:'bottom',title:'The dock',body:'Your most-used apps live here. Hold-tap to rearrange.'},
-      {sel:'.kd-tour-sb',pos:'top',title:'Control Centre',body:'Swipe down on the status bar (or tap the clock) to open Control Centre — quick toggles for dark mode, wallpaper, font size, widgets, landscape rotation, and more.',swipe:'down'},
+      {sel:'.kd-tour-sb',pos:'top',title:'Control Centre',body:'Swipe down on the status bar (or tap the clock) to open Control Centre — quick toggles for dark mode, wallpaper, font size, widgets, and more.',swipe:'down'},
       {sel:null,title:'You\'re set',body:'Tap-and-hold an app to remove it, swipe up on the dock to add more, and the OS Settings button takes you to wallpapers and widgets.\\n\\nExit KindleOS any time from Control Centre.'},
     ];
     let idx=0;
@@ -5035,62 +4822,6 @@ $('uiModeBtn').onclick=()=>{
   }
   toast('UI mode: '+_uiModeLabel(next),1500);
 };
-
-// Landscape rotation — rotates #rotateRoot which contains both #app and #immersiveRoot
-$('landscapeBtn').onclick=()=>toggleLandscape();
-
-function toggleLandscape(forceTo){
-  const rr=$('rotateRoot');
-  const isRot=rr.getAttribute('data-rotated')==='1';
-  const goLandscape=(forceTo!==undefined)?forceTo:!isRot;
-  if(!goLandscape){
-    rr.removeAttribute('data-rotated');
-    rr.style.cssText='width:100%;height:100%;position:relative;';
-    document.body.style.overflow='';
-    $('landscapeBtn').textContent='Landscape';
-    $('landscapeBtn').classList.remove('primary');
-    const calcRotBtn=document.querySelector('.calc-angle-btn');
-    if(calcRotBtn){calcRotBtn.disabled=false;calcRotBtn.style.opacity='';}
-    S.landscapeMode=false;save();
-  } else {
-    const pw=window.innerWidth;
-    const ph=window.innerHeight;
-    rr.setAttribute('data-rotated','1');
-    rr.style.cssText=[
-      'position:fixed','top:0','left:0',
-      'width:'+ph+'px','height:'+pw+'px',
-      'transform-origin:top left',
-      'transform:rotate(90deg) translateX(0) translateY(-'+pw+'px)',
-      'overflow:hidden','background:var(--bg)'
-    ].join(';');
-    document.body.style.overflow='hidden';
-    $('landscapeBtn').textContent='Portrait';
-    $('landscapeBtn').classList.add('primary');
-    const calcRotBtn=document.querySelector('.calc-angle-btn');
-    if(calcRotBtn){calcRotBtn.disabled=true;calcRotBtn.style.opacity='0.35';}
-    S.landscapeMode=true;save();
-  }
-  /* Re-parent the floating keyboard so it tracks the rotation */
-  if(window._khKeyboard&&window._khKeyboard.relocate){
-    try{window._khKeyboard.relocate();}catch(e){}
-  }
-  /* Fire a synthetic resize event so any JS-driven layout (calculator
-     keypad, drawing canvas, KindleOS grid, chart widgets) re-measures
-     against the rotated viewport. Without this, canvases and grids
-     stay stuck at their pre-rotation dimensions until the user
-     interacts with them. */
-  try{window.dispatchEvent(new Event('resize'));}catch(_){}
-  /* If KindleOS is open, ask it to re-apply its own landscape state so
-     the launcher's grid switches between 4x4 and 4x3 immediately. */
-  try{
-    if(typeof window._kdApplyLandscape==='function'){
-      window._kdApplyLandscape(goLandscape);
-    }
-  }catch(_){}
-}
-
-/* Restore landscape on load */
-if(S.landscapeMode){setTimeout(()=>toggleLandscape(true),100);}
 
 function applyFontSize(size){
   const sz=(size||16);
@@ -7314,15 +7045,13 @@ function _parseItemIds(text){
     try{if(typeof currentView!=='undefined'&&currentView)view=currentView;}catch(_){}
     var ui='classic';
     try{if(typeof S!=='undefined'&&S.uiMode)ui=S.uiMode;}catch(_){}
-    var landscape=false;
-    try{var rr=document.getElementById('rotateRoot');if(rr)landscape=rr.getAttribute('data-rotated')==='1';}catch(_){}
     var ua=(navigator&&navigator.userAgent)?String(navigator.userAgent).slice(0,180):'?';
     var dims=(typeof innerWidth==='number')?(innerWidth+'x'+innerHeight):'?';
     var actions=_recentActions.join(' → ')||'(none)';
     var nav=_recentViews.join(' → ')||'(none)';
     var signedIn=false;
     try{if(typeof S!=='undefined'&&S.authToken)signedIn=true;}catch(_){}
-    return {view:view,ui:ui,landscape:landscape,ua:ua,dims:dims,actions:actions,nav:nav,
+    return {view:view,ui:ui,ua:ua,dims:dims,actions:actions,nav:nav,
             online:!!navigator.onLine,signedIn:signedIn,time:new Date().toISOString()};
   }
 
@@ -7348,7 +7077,7 @@ function _parseItemIds(text){
         +'\nFILE: '+where
         +'\nLINE:COL: '+lineno+(colno?':'+colno:'')
         +'\nSTACK:\n'+(stack||'(none)')
-        +'\nVIEW: '+ctx.view+' | UI mode: '+ctx.ui+' | Landscape: '+ctx.landscape
+        +'\nVIEW: '+ctx.view+' | UI mode: '+ctx.ui
         +'\nRECENT NAV: '+ctx.nav
         +'\nRECENT ACTIONS: '+ctx.actions
         +'\nVIEWPORT: '+ctx.dims+' | Online: '+ctx.online+' | Signed in: '+ctx.signedIn
@@ -7403,7 +7132,7 @@ function _parseItemIds(text){
     lines.push('File: '+where+'  |  Line: '+(lineno||'?')+(colno?':'+colno:''));
     if(stack)lines.push(stack);
     lines.push('───── CONTEXT ─────');
-    lines.push('View: '+ctx.view+'  |  UI mode: '+ctx.ui+'  |  Landscape: '+ctx.landscape);
+    lines.push('View: '+ctx.view+'  |  UI mode: '+ctx.ui);
     lines.push('Viewport: '+ctx.dims+'  |  Online: '+ctx.online+'  |  Signed in: '+ctx.signedIn);
     lines.push('Recent nav: '+ctx.nav);
     lines.push('Recent actions: '+ctx.actions);
@@ -21367,7 +21096,7 @@ function buildSYS(){
     "Practical skills (cooking, finance, fitness, travel, DIY, gardening). " +
     "Give detailed, accurate answers and cite reasoning. For medical/legal questions, give information but remind the user to consult a professional.\n\n" +
 
-    "APP SUPPORT: If the user asks how to do something inside this app (KindleHub) — change wallpaper, save chat history, add an API key, switch to landscape, export data, find a feature — answer using the manual below. Quote the exact button/tab names. If the answer isn't in the manual, say so plainly rather than guessing.\n\n" +
+    "APP SUPPORT: If the user asks how to do something inside this app (KindleHub) — change wallpaper, save chat history, add an API key, export data, find a feature — answer using the manual below. Quote the exact button/tab names. If the answer isn't in the manual, say so plainly rather than guessing.\n\n" +
     "==== KINDLEHUB MANUAL (for app-support questions) ====\n" +
     (typeof KINDLEHUB_MANUAL!=='undefined'?KINDLEHUB_MANUAL:'') +
     "\n==== END MANUAL ====";
@@ -24229,42 +23958,7 @@ function setMode(m){
 }
 tabCalc.onclick=()=>setMode('calc');
 tabStats.onclick=()=>setMode('stats');
-  // Landscape rotation button — in topbar, not overlapping keys
-  const rotBtn=txt('button','[>]',{className:'calc-angle-btn',title:'Rotate to landscape'});
-  (function(){
-    const rr=document.getElementById('rotateRoot');
-    if(rr&&rr.getAttribute('data-rotated')==='1'){
-      rotBtn.disabled=true;rotBtn.style.opacity='0.35';rotBtn.title='Disabled in landscape mode';
-    }
-  })();
-  rotBtn.onclick=()=>{
-    const rr=document.getElementById('rotateRoot');
-    if(rr&&rr.getAttribute('data-rotated')==='1')return;
-    // Use same rotateRoot approach
-    if(!rr)return;
-    const isRot=rr.getAttribute('data-rotated')==='1';
-    if(isRot){
-      rr.removeAttribute('data-rotated');
-      rr.style.cssText='width:100%;height:100%;position:relative;';
-      document.body.style.overflow='';
-      rotBtn.textContent='[>]';
-    } else {
-      const pw=window.innerWidth,ph=window.innerHeight;
-      if(pw>=ph)return;
-      rr.setAttribute('data-rotated','1');
-      rr.style.cssText=[
-        'position:fixed','top:0','left:0',
-        'width:'+ph+'px','height:'+pw+'px',
-        'transform-origin:top left',
-        'transform:rotate(90deg) translateX(0) translateY(-'+pw+'px)',
-        'overflow:hidden','background:var(--bg)'
-      ].join(';');
-      document.body.style.overflow='hidden';
-      rotBtn.textContent='[<]';
-    }
-  };
   root.style.position='relative';
-  topbar.appendChild(rotBtn);
 tab2d.onclick=()=>setMode('graph2d');
 tab3d.onclick=()=>setMode('graph3d');
 angleBtn.onclick=()=>{C.deg=!C.deg;angleBtn.textContent=C.deg?'DEG':'RAD';};
@@ -25331,9 +25025,9 @@ const KINDLEHUB_MANUAL=[
 "",
 "## KindleOS launcher",
 "",
-"KindleOS is the full-screen launcher layered on top of KindleHub. It has three swipeable pages: the widget page (page 0) shows the clock, weather, and stats; pages 1 and 2 hold app icons in a grid (16 per page in portrait, 12 in landscape). Long-press an app icon to remove it from the grid. Swipe up on the dock to add more apps. Swipe down on the status bar to open Control Centre.",
+"KindleOS is the full-screen launcher layered on top of KindleHub. It has three swipeable pages: the widget page (page 0) shows the clock, weather, and stats; pages 1 and 2 hold app icons in a 4×4 grid (16 per page). Long-press an app icon to remove it from the grid. Swipe up on the dock to add more apps. Swipe down on the status bar to open Control Centre.",
 "",
-"Control Centre includes quick toggles for dark mode, font size, wallpaper, widgets, landscape rotation, and a Tour button that walks you through every part of KindleOS. The Exit KindleOS button returns you to the regular App-mode tab bar.",
+"Control Centre includes quick toggles for dark mode, font size, wallpaper, widgets, and a Tour button that walks you through every part of KindleOS. The Exit KindleOS button returns you to the regular App-mode tab bar.",
 "",
 "Wallpapers: open Settings → KindleOS → Wallpaper. Modes are Plain White, Gradient, Dark, and Photo. In Photo mode you pick from a curated set of 19 thumbnails. Widgets (weather, next event, quote, stats) can be turned on or off individually in the same panel.",
 "",
@@ -25383,7 +25077,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "## Calculator, science, formulas",
 "",
-"The Calc tab is a full scientific calculator with history, graphing, and a unit-aware equation solver. Tap the rotate button inside the calculator to flip to landscape for easier input. The Science tab has unit converters, periodic table, formula reference (physics, chemistry, maths, engineering), and a constants browser.",
+"The Calc tab is a full scientific calculator with history, graphing, and a unit-aware equation solver. The Science tab has unit converters, periodic table, formula reference (physics, chemistry, maths, engineering), and a constants browser.",
 "",
 "## Weather, news, stocks, maps",
 "",
@@ -25405,10 +25099,6 @@ const KINDLEHUB_MANUAL=[
 "App Settings (default tab) covers: your name, theme, font, font size, dyslexic font toggle, language, default landing tab, AI provider and keys, hidden tabs (turn off tabs you do not use), keyboard mode (auto / always / landscape / off), and data export / import.",
 "",
 "KindleOS Settings covers wallpapers, widgets, dock pinning, and a Launch button that opens KindleOS immediately.",
-"",
-"## Landscape mode",
-"",
-"Tap the Landscape button in the header to rotate the whole app 90°. Everything reflows — chat composer stays at the bottom, the calculator flips to wide layout, KindleOS shows a 4×3 app grid instead of 4×4. Tap again to go back to portrait. Setting persists across launches.",
 "",
 "## Messages — chat groups and history caps",
 "",
@@ -36238,7 +35928,7 @@ Deno.serve(async (req)=>{
 
     /* Chat transcript area */
     const botLog=el('div',{style:{maxHeight:'320px',overflowY:'auto',border:'var(--thin)',borderRadius:'8px',padding:'10px',background:'var(--bg)',display:'flex',flexDirection:'column',gap:'8px',minHeight:'80px'}});
-    const placeholder=txt('div','Hi! I\'m the KindleHub support bot. Ask me anything — wallpapers, AI setup, games, landscape mode, data backup. I\'m grounded in the manual below.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}});
+    const placeholder=txt('div','Hi! I\'m the KindleHub support bot. Ask me anything — wallpapers, AI setup, games, data backup. I\'m grounded in the manual below.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}});
     botLog.appendChild(placeholder);
     botCard.appendChild(botLog);
     let botMsgs=[];/* {role,text} */
@@ -36273,9 +35963,9 @@ Deno.serve(async (req)=>{
       'How do I change the wallpaper?',
       'Where do I add my Gemini key?',
       'How do I save a chat session?',
-      'How do I switch to landscape mode?',
       'How do I export my data?',
-      'How do I use the calculator in landscape?',
+      'How do I hide tabs I never use?',
+      'How do I back up my notes?',
     ];
     SUGGESTED.forEach(q=>{
       const c=txt('button',q,{className:'btn small'});
@@ -51214,7 +50904,7 @@ BUILDERS.games=()=>{
 
     {view:'home',target:'header',pos:'below',label:'Header',
      title:'Header Bar',
-     body:'Top-left: the KindleHub Pro logo and version. Top-right: the clock, Landscape button (rotates the whole app 90 degrees), Theme toggle, and KindleOS launcher. Landscape preference is saved across sessions.'},
+     body:'Top-left: the KindleHub Pro logo and version. Top-right: the clock, Theme toggle, UI mode switch, and KindleOS launcher.'},
 
     {view:'home',target:'.header-controls',pos:'below',label:'Theme + AI',
      title:'Theme & AI Keys',
@@ -51286,7 +50976,7 @@ BUILDERS.games=()=>{
 
     {view:'calc',target:'.tab[data-view="calc"]',pos:'below',label:'Calc',
      title:'Calculator',
-     body:'A full scientific calculator with history, graphing mode and a unit-aware equation solver. Tap the rotate button inside the calculator to flip to landscape for easier input.'},
+     body:'A full scientific calculator with history, graphing mode and a unit-aware equation solver.'},
 
     {view:'weather',target:'.tab[data-view="weather"]',pos:'below',label:'Weather',
      title:'Weather',
@@ -51318,7 +51008,7 @@ BUILDERS.games=()=>{
 
     {view:'settings',target:'#view-settings .card',pos:'below',label:'Keyboard',
      title:'KindleHub Floating Keyboard',
-     body:'A custom on-screen keyboard with big round keys, word suggestions, and an AI completions button using Gemini Flash Lite. Works in portrait and landscape. Enable or disable it in Settings.'},
+     body:'A custom on-screen keyboard with big round keys, word suggestions, and an AI completions button using Gemini Flash Lite. Enable or disable it in Settings.'},
 
     {view:'feedback',target:'.tab[data-view="feedback"]',pos:'below',label:'Feedback',
      title:'Community Feedback Board',
@@ -51377,19 +51067,7 @@ BUILDERS.games=()=>{
   }
 
   function placeCard(sel,pos){
-    /* In landscape mode rotateRoot is rotated 90 ° CW and becomes the
-       containing block for position:fixed children.  Its local coordinate
-       space is (innerHeight) wide × (innerWidth) tall, and viewport coords
-       map to local as: local_x = vp_y,  local_y = innerWidth - vp_x.
-       We convert all element rects and use local dimensions throughout so
-       that the card and highlight are positioned correctly inside the
-       rotated context. */
-    const rr=document.getElementById('rotateRoot');
-    const isLS=rr&&rr.getAttribute('data-rotated')==='1';
-    const pw=window.innerWidth,ph=window.innerHeight;
-    /* lw/lh = usable width/height in the local coordinate space */
-    const lw=isLS?ph:pw;
-    const lh=isLS?pw:ph;
+    const lw=window.innerWidth,lh=window.innerHeight;
 
     const cw=Math.min(290,lw-32);
     card.style.width=cw+'px';
@@ -51404,17 +51082,7 @@ BUILDERS.games=()=>{
     if(!el){hl.style.display='none';arrow.style.display='none';return;}
 
     const rect=el.getBoundingClientRect();
-    /* Convert viewport bounding rect to local rotateRoot coordinates */
-    let r;
-    if(isLS){
-      const ll=rect.top;
-      const lt=pw-rect.right;
-      const lrw=rect.height;
-      const lrh=rect.width;
-      r={left:ll,top:lt,width:lrw,height:lrh,right:ll+lrw,bottom:lt+lrh};
-    }else{
-      r={left:rect.left,top:rect.top,width:rect.width,height:rect.height,right:rect.right,bottom:rect.bottom};
-    }
+    const r={left:rect.left,top:rect.top,width:rect.width,height:rect.height,right:rect.right,bottom:rect.bottom};
 
     const pad=5;
     hl.style.cssText='display:block;position:fixed;z-index:8001;border:2px solid #fff;border-radius:8px;box-shadow:0 0 0 4000px rgba(0,0,0,0.72),0 0 0 4px rgba(255,255,255,0.3);pointer-events:none;animation:tourPulse 1.5s ease-in-out infinite;';
@@ -52931,15 +52599,7 @@ function injectStyles(){
     'cursor:pointer;white-space:nowrap;flex-shrink:0;'+
     'box-shadow:0 1px 3px rgba(0,0,0,.09);-webkit-tap-highlight-color:transparent;}'+
     '.kh-sugg-chip:active{background:var(--highlight,#ddd);}'+
-    '.kh-sugg-empty{color:var(--muted,#888);font-size:11px;padding:4px 8px;}'+
-    /* When app is rotated to landscape, keyboard rotates with it via rotateRoot;
-       keep keys generous in both orientations for thumb-friendly tapping */
-    '#rotateRoot[data-rotated="1"] #kh-float-kbd{'+
-    'left:0;right:0;bottom:0;}'+
-    '#rotateRoot[data-rotated="1"] .kh-key{height:58px;width:58px;font-size:21px;border-radius:16px;}'+
-    '#rotateRoot[data-rotated="1"] .kh-key-wide{min-width:64px;height:58px;font-size:15px;}'+
-    '#rotateRoot[data-rotated="1"] .kh-row{gap:7px;}'+
-    '#rotateRoot[data-rotated="1"] #kh-float-kbd{gap:7px;padding:8px 8px 12px;}';
+    '.kh-sugg-empty{color:var(--muted,#888);font-size:11px;padding:4px 8px;}';
   document.head.appendChild(s);
 }
 
@@ -53521,8 +53181,6 @@ function init(){
 
 /* Module-level so window._khKeyboard.refresh can reach it */
 function isLandscape(){
-  var rr=document.getElementById('rotateRoot');
-  if(rr&&rr.getAttribute('data-rotated')==='1')return true;
   /* Prefer screen.orientation / window.orientation — those report *device*
      orientation and are immune to a soft keyboard shrinking the viewport.
      Comparing innerWidth/innerHeight was wrong: when the OS keyboard pops
@@ -53555,7 +53213,7 @@ function refreshKbd(){
   if(want&&!_enabled)enable();
   else if(!want&&_enabled)disable();
 }
-/* Re-evaluate on orientation/landscape toggle (handles 'landscape' mode) */
+/* Re-evaluate on orientation change (handles 'landscape' keyboard mode) */
 window.addEventListener('resize',refreshKbd);
 window.addEventListener('orientationchange',refreshKbd);
 /* Safety net: every 800 ms, if an input is focused but the keyboard isn't
@@ -53570,12 +53228,6 @@ setInterval(function(){
     _attachToTarget(af);
   }
 },800);
-document.addEventListener('DOMContentLoaded',function(){
-  if(typeof MutationObserver!=='undefined'){
-    var rr=document.getElementById('rotateRoot');
-    if(rr)new MutationObserver(refreshKbd).observe(rr,{attributes:true,attributeFilter:['data-rotated']});
-  }
-});
 
 window._khKeyboard={enable:enable,disable:disable,relocate:relocateKbd,isKindleBrowser:isKindleBrowser,refresh:function(){if(typeof refreshKbd==='function')refreshKbd();},hide:function(){if(typeof hideKbd==='function')hideKbd();}};
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}
@@ -53583,5 +53235,5 @@ else{setTimeout(init,0);}
 
 })(); /* ── end Keyboard IIFE ── */
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a09ac71b18fdd1fe',t:'MTc4MTExOTY5Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
