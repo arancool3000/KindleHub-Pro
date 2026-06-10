@@ -2725,6 +2725,10 @@ function launchKindleDesktop(){
      point of switching to this "full-screen app + hidden launcher"
      approach: in the old design kd-root sat at z-index 500000 and
      covered every modal in the codebase. */
+  /* Dedup: if a previous KindleOS session crashed before its exit handler
+     ran, an orphaned back button would still be on document.body and a
+     second one would stack on top of it. */
+  try{const _oldFab=document.getElementById('kd-back-fab');if(_oldFab)_oldFab.remove();}catch(_){}
   const kdBackFab=document.createElement('button');
   kdBackFab.id='kd-back-fab';
   kdBackFab.style.cssText='position:fixed;top:8px;left:8px;z-index:500060;display:none;align-items:center;gap:4px;padding:8px 14px 8px 10px;background:var(--card,#fff);color:var(--fg,#111);border:1px solid rgba(0,0,0,0.15);border-radius:20px;box-shadow:0 2px 10px rgba(0,0,0,0.25);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;';
@@ -3013,7 +3017,7 @@ function launchKindleDesktop(){
   const kdWidgetStrip=kdWidgetPage;
 
   /* Weather fetch using user's saved coords */
-  let _weatherData=null;
+  let _weatherData=null,_weatherFailed=false;
   async function fetchWeatherMini(){
     try{
       const lat=S.smLat||51.5;const lon=S.smLon||-0.1;
@@ -3021,9 +3025,15 @@ function launchKindleDesktop(){
       const d=await r.json();
       if(d.current){
         _weatherData={temp:Math.round(d.current.temperature_2m),code:d.current.weathercode,wind:Math.round(d.current.windspeed_10m||0),hum:Math.round(d.current.relativehumidity_2m||0)};
+        _weatherFailed=false;
         renderWidgets();
       }
-    }catch(e){}
+    }catch(e){
+      /* Surface the failure — the card used to read "Loading weather..."
+         forever after a silent fetch error, with no hint to retry. */
+      _weatherFailed=true;
+      try{renderWidgets();}catch(_){}
+    }
   }
   /* Defer weather fetch — don't block initial KindleOS paint */
   setTimeout(function(){fetchWeatherMini();},800);
@@ -3068,7 +3078,7 @@ function launchKindleDesktop(){
             '</div>'+
           '</div>';
       } else {
-        w.innerHTML+='<div style="color:rgba(255,255,255,0.6);font-size:13px;position:relative;">Loading weather...</div>';
+        w.innerHTML+='<div style="color:rgba(255,255,255,0.6);font-size:13px;position:relative;">'+(_weatherFailed?'Weather unavailable — tap to retry':'Loading weather...')+'</div>';
         w.addEventListener('click',fetchWeatherMini);
       }
       w.addEventListener('click',()=>{
@@ -18163,6 +18173,12 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
   };
   const FIELD=5;                 /* number of rival cars you race */
   let G=null, timer=null, submitted=false, lastT=0;
+  /* Held state of the on-screen steer buttons, sampled by tick() every
+     frame. The old design re-armed a 160 ms watchdog from a 90 ms
+     setInterval; on a busy Kindle those callbacks arrive late, the
+     watchdog expired mid-hold and steering kept cutting out — the
+     "turning doesn't work" bug. A plain flag has no timer to miss. */
+  let steerHeld=0;
 
   /* Track = array of segments, each with a curve amount and a hill height.
      curve bends the road left/right; hillY raises/lowers it. */
@@ -18187,7 +18203,7 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
 
   function start(){
     if(timer){clearInterval(timer);timer=null;}
-    submitted=false;
+    submitted=false;steerHeld=0;
     const diff=(($('racerDiff')||{}).value)||'normal';
     const cfg=CFG[diff]||CFG.normal;
     const track=buildTrack();
@@ -18231,15 +18247,16 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
     cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];_sx=t.clientX;const r=cv.getBoundingClientRect();if((t.clientY-r.top)<r.height*0.5)G.throttle=true;else G.brake=true;},{passive:false});
     cv.addEventListener('touchmove',e=>{e.preventDefault();if(_sx==null)return;const dx=e.touches[0].clientX-_sx;_steer(dx<-12?-1:dx>12?1:0);},{passive:false});
     cv.addEventListener('touchend',e=>{e.preventDefault();_sx=null;G.steer=0;G.throttle=false;G.brake=false;},{passive:false});
-    /* Arm steering with a 160ms auto-expiry so it can never get stuck on. */
+    /* Swipe steering arms a 160ms auto-expiry so it can never get stuck on
+       (touchmove keeps re-arming it while the finger is actually moving). */
     function _steer(d){G.steer=d;G.steerUntil=Date.now()+160;}
     const row=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',width:'100%',maxWidth:'300px',marginTop:'8px'}});
-    /* Steer buttons: while held, a repeat timer re-arms steer every 90ms so
-       holding turns continuously; on release (or if release is missed) the
-       160ms expiry stops it. Throttle/brake stay simple held flags. */
-    const mkHold=(lbl,setOn,setOff)=>{const b=txt('button',lbl,{className:'btn',style:{fontSize:'22px',minHeight:'56px',padding:'0'}});
-      let rep=null;const startHold=()=>{setOn();if(rep)clearInterval(rep);rep=setInterval(setOn,90);};
-      const endHold=()=>{if(rep){clearInterval(rep);rep=null;}setOff&&setOff();};
+    /* Steer buttons set a plain held flag that tick() samples every frame —
+       no repeat timer, no expiry to miss on a throttled Kindle. Release is
+       covered by touchend, touchcancel, mouseup and mouseleave. */
+    const mkHold=(lbl,dir)=>{const b=txt('button',lbl,{className:'btn',style:{fontSize:'22px',minHeight:'56px',padding:'0'}});
+      const startHold=()=>{steerHeld=dir;};
+      const endHold=()=>{if(steerHeld===dir){steerHeld=0;if(G)G.steer=0;}};
       b.ontouchstart=e=>{e.preventDefault();startHold();};b.ontouchend=e=>{e.preventDefault();endHold();};b.ontouchcancel=e=>{endHold();};
       b.onmousedown=startHold;b.onmouseup=endHold;b.onmouseleave=endHold;
       return b;};
@@ -18247,10 +18264,10 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
       b.ontouchstart=e=>{e.preventDefault();on();};b.ontouchend=e=>{e.preventDefault();off&&off();};
       b.onmousedown=on;b.onmouseup=off||(()=>{});b.onmouseleave=off||(()=>{});
       b.onclick=()=>{on();setTimeout(()=>off&&off(),200);};return b;};
-    row.appendChild(mkHold('◄',()=>_steer(-1),()=>{G.steer=0;}));
+    row.appendChild(mkHold('◄',-1));
     row.appendChild(mk('▲',()=>G.throttle=true,()=>G.throttle=false));
     row.appendChild(mk('▼',()=>G.brake=true,()=>G.brake=false));
-    row.appendChild(mkHold('►',()=>_steer(1),()=>{G.steer=0;}));
+    row.appendChild(mkHold('►',1));
     immersiveContent.appendChild(row);
     const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center',gap:'6px'}});
     /* Auto-accelerate: hold full throttle automatically so you only steer.
@@ -18291,12 +18308,14 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
     const adv=G.speed*dt*90;
     G.prog+=adv;
     G.lap=Math.min(LAPS,1+Math.floor(G.prog/G.track.length));
-    /* Steering = a HELD flag, but with a hard auto-release: a held press
-       only counts for ~160ms unless refreshed. This kills the Kindle bug
-       where a missed touchend left G.steer stuck at ±1 and the car turned
-       forever ("auto turns"). Holding a button re-arms steerUntil via a
-       repeat timer (see buildUI); if events stop, steer zeroes itself. */
-    if(G.steerUntil&&now>G.steerUntil)G.steer=0;
+    /* Steer sources, in priority order:
+       1. On-screen buttons — steerHeld flag, sampled here every tick, so
+          holding always turns regardless of how throttled timers are.
+       2. Canvas swipe / keyboard — G.steer armed with steerUntil; the
+          expiry auto-releases if a touchend was missed (the old Kindle
+          "turns forever" bug). */
+    if(steerHeld!==0){G.steer=steerHeld;G.steerUntil=0;}
+    else if(G.steerUntil&&now>G.steerUntil)G.steer=0;
     if(G.steer!==0&&G.speed>0.02){
       G.playerX+=G.steer*dt*1.4*Math.min(1,0.3+G.speed/G.cfg.max);
       G.playerX=Math.max(-2,Math.min(2,G.playerX));
@@ -41717,7 +41736,7 @@ sleeplog:()=>{
       statsCard.appendChild(txt('div','Last 30 nights — duration vs goal',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'10px',marginBottom:'4px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.4px'}}));
       const chartWrap=el('div',{style:{position:'relative',padding:'4px 4px 14px',border:'var(--thin)',borderRadius:'6px'}});
       const chart=el('div',{style:{display:'flex',gap:'2px',alignItems:'flex-end',height:'80px',position:'relative'}});
-      const maxDur=Math.max(goalMin*1.3,Math.max(...month.map(l=>l.duration)));
+      const maxDur=Math.max(1,goalMin*1.3,Math.max(...month.map(l=>l.duration)));
       /* Goal line marker */
       const goalLine=el('div',{style:'position:absolute;left:4px;right:4px;height:1px;background:var(--success);bottom:'+(((goalMin/maxDur)*80)+14)+'px;z-index:1;pointer-events:none;'});
       chartWrap.appendChild(goalLine);
@@ -42752,7 +42771,7 @@ stocks:()=>{
       v.appendChild(hdr);
       return;
     }
-    const change=p.price-p.prev, pct=change/p.prev*100, isUp=change>=0;
+    const change=p.price-p.prev, pct=p.prev?change/p.prev*100:0, isUp=change>=0;
     const sign=currSign(p.currency);
     const priceEl=txt('div',sign+fmtPrice(p.price,p.currency),{style:{fontSize:'32px',fontWeight:'900',fontFamily:'monospace',marginBottom:'2px'}});
     hdr.appendChild(priceEl);
@@ -42958,7 +42977,7 @@ stocks:()=>{
       let up=0,down=0,flat=0,sumChg=0,changed=0;
       watchlist.forEach(t=>{
         const p=prices[t];if(!p||p.price==null||p.prev==null)return;
-        const chg=((p.price-p.prev)/p.prev)*100;
+        const chg=p.prev?((p.price-p.prev)/p.prev)*100:0;
         if(!isFinite(chg))return;
         changed++;sumChg+=chg;
         if(chg>0.05)up++;else if(chg<-0.05)down++;else flat++;
@@ -49596,6 +49615,10 @@ messages:()=>{
        (15 s instead of the old 6 s) since we now have realtime as the
        primary path for most users. */
     if(!hasRealtime){
+      /* Kill any previous session's poller first. Its self-stop check looks
+         for #msgChatLog, and a REBUILT chat view recreates that same id —
+         so old timers survived re-entry and pollers stacked up. */
+      stopPoll();
       _pollTimer=setInterval(async()=>{
         const log2=document.getElementById('msgChatLog');
         if(!log2){stopPoll();cleanup();return;}
@@ -49607,7 +49630,10 @@ messages:()=>{
              the next cycle. Only adopt an empty result if we genuinely had
              none before; otherwise wait for the next poll / realtime event. */
           if(!msgs.length&&_messages.length)return;
-          if(msgs.length!==_lastMsgCount){_lastMsgCount=msgs.length;_messages=msgs;renderMessages(msgs);}
+          /* Compare tail id as well as length so a delete+insert that nets
+             the same count still re-renders. */
+          const tailChanged=msgs.length&&_messages.length&&msgs[msgs.length-1].id!==_messages[_messages.length-1].id;
+          if(msgs.length!==_lastMsgCount||tailChanged){_lastMsgCount=msgs.length;_messages=msgs;renderMessages(msgs);}
         }catch(e){}
       },15000);
     }
