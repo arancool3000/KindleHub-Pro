@@ -300,7 +300,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .book-status{font-size:11px;padding:4px 11px;border:var(--thin);border-radius:20px;background:var(--highlight);}
 .stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:var(--thin)}
 .stat-val{font-weight:700;font-family:monospace}
-.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--fg);color:var(--bg);z-index:600000;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--fg);color:var(--bg);z-index:1000001;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
 #drawCanvas{display:block;touch-action:none;cursor:crosshair;max-width:100%}
 footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:center;border-top:var(--thin);flex-shrink:0;background:var(--card);}
 .badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:600;border:var(--thin);font-family:var(--ui-font);margin:2px;background:var(--highlight);}
@@ -843,9 +843,9 @@ body.launcher-ui input,body.launcher-ui textarea,body.launcher-ui select{
 }
 body.launcher-ui .view{padding-bottom:80px;}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js" async></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" async></script>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" async></script>
+<!-- Export libraries (pptxgenjs / jspdf / pdfjs, ~1.5 MB combined) are
+     loaded on demand by loadVendorScript() the first time the Slides
+     tab actually exports or imports — not on boot. -->
 </head>
 <body>
 <!-- ────────────────────────────────────────────────────────────────
@@ -2011,6 +2011,24 @@ function setNavTabVisible(view,visible){
 
 const $=id=>document.getElementById(id);
 const qs=(s,p)=>(p||document).querySelector(s);
+/* On-demand vendor script loader. The export libraries (pptxgenjs,
+   jspdf, pdfjs) total ~1.5 MB — far too heavy to download on every
+   boot of a Kindle that may never open the Slides tab. They are now
+   fetched the first time an export/import actually needs them.
+   Returns a promise that resolves once the script has executed;
+   concurrent and repeat calls share the same promise. */
+const _khScriptPromises={};
+function loadVendorScript(src){
+  if(_khScriptPromises[src])return _khScriptPromises[src];
+  _khScriptPromises[src]=new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src;s.async=true;
+    s.onload=()=>res();
+    s.onerror=()=>{delete _khScriptPromises[src];rej(new Error('Failed to load '+src));};
+    document.head.appendChild(s);
+  });
+  return _khScriptPromises[src];
+}
 const qsa=(s,p)=>{try{return Array.from((p||document).querySelectorAll(s));}catch(e){return Array.prototype.slice.call((p||document).querySelectorAll(s));}};
 function el(tag,attrs={},children=[]){
   const e=document.createElement(tag);
@@ -10542,6 +10560,7 @@ ON_SHOW.games=()=>{
   const m=$('memRestore'); if(m) m.onclick=()=>Memory.restore();
   const w=$('wordleNew'); if(w) w.onclick=()=>Wordle.start();
   const mm=$('mastermindRestore'); if(mm) mm.onclick=()=>Mastermind.restore();
+  const c4=$('c4Restore'); if(c4) c4.onclick=()=>Connect4.restore();
 };
 try{qsa('.tab').filter(t=>t.closest('nav')).forEach(t=>t.addEventListener('click',function(){
   try{qsa('.tab').filter(x=>x.closest('nav')).forEach(x=>x.classList.remove('active'));}catch(e){}
@@ -11736,7 +11755,11 @@ const Hangman=(()=>{
     if(k&&!k.classList.contains('wrong'))guess(k.dataset.letter||k.textContent.trim());
   });
   document.addEventListener('keydown',e=>{
+    /* The .hm-word check pins this listener to the Hangman UI — without
+       it a stale unfinished game swallowed letter keys (and re-rendered
+       the Hangman board over the top) while OTHER games were on screen. */
     if(immersiveRoot.style.display!=='block'||!L||L.won||L.lost)return;
+    if(!immersiveContent.querySelector('.hm-word'))return;
     const k=e.key.toUpperCase();
     if(/^[A-Z]$/.test(k)){guess(k);e.preventDefault();}
   });
@@ -11998,6 +12021,9 @@ const TTT=(()=>{
     }
 
     enterImmersive('Tic-Tac-Toe',mode==='online'?'Online — You are '+myOnlinePiece:(mode==='2p'?'Player 1 (X)':'You: '+(humanPiece==='X'?'X (first)':'O (second)')));
+    /* Close the multiplayer subscription when the player exits — an open
+       sub kept rendering remote moves into the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     immersiveContent.innerHTML='';
 
     /* Mode label */
@@ -12124,11 +12150,10 @@ const TTT=(()=>{
       setTimeout(()=>{doAITurn();},400);
     }
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* TTT games are quick and never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save into TTT.) */
+  function restore(){toast('No saved game');}
   return{start,restore,startOnline};
 })();
 /* Accept-handler for invites on the TTT inbox channel. The acceptor
@@ -12181,6 +12206,9 @@ const Connect4=(()=>{
       (mode==='2p'?'2-Player — Red: O, Yellow: X':
       (humanFirst?'You: O    AI: X':'AI: X goes first'));
     enterImmersive('Connect 4',subtitle);
+    /* Close the multiplayer subscription when the player exits — an open
+       sub kept rendering remote drops into the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     /* Subscribe once per online session */
     if(mode==='online'&&_mpSession){
       if(_mpSub&&_mpSub.close)try{_mpSub.close();}catch(_){}
@@ -12435,10 +12463,21 @@ const Connect4=(()=>{
     else{C.humanTurn=true;save();render();}
   }
 
+  /* Resume the saved Connect 4 game. Reads from the correct slot
+     (the old version was a copy-paste of Mastermind's restore and
+     loaded a MASTERMIND save into Connect 4). Online games are never
+     restored from local cache — the session is gone after a reload. */
   function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
+    const g=S.games.connect4&&S.games.connect4.current;
+    if(!g||!Array.isArray(g.grid)||!g.active||g.mode==='online'){toast('No saved game');return;}
+    C=JSON.parse(JSON.stringify(g));
+    C.mpSession=null;C.myOnlinePiece=null;
+    _mpSession=null;
+    const subtitle=C.mode==='2p'?'2-Player — Red: O, Yellow: X':'You: O    AI: X';
+    enterImmersive('Connect 4',subtitle);
+    render();
+    /* If it was the AI's turn when saved, let it move */
+    if(C.mode!=='2p'&&!C.humanTurn)setTimeout(aiMove,350);
   }
   return{start,restore,startOnline};
 })();
@@ -14150,6 +14189,9 @@ const Chess=(()=>{
     _lastFrom=null;_lastTo=null;_gameOverModalShown=false;
     _clearSavedState();
     enterImmersive('Chess','White to move');
+    /* Close the online subscription when the player exits the board —
+       an open sub kept rendering remote moves into the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeOnlineSession;}
     render();
   }
 
@@ -14648,6 +14690,7 @@ const Chess=(()=>{
     selected=null;legalMoves=[];_history=[];_lastFrom=null;_lastTo=null;
     _gameOverModalShown=!!gameOver;
     enterImmersive('Chess',gameOver||((turn==='white'?'White':'Black')+' to move'));
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeOnlineSession;}
     render();
     return true;
   }
@@ -14745,6 +14788,10 @@ const Minesweeper=(()=>{
       lpTimer=setTimeout(()=>{const idx=parseInt(cell.dataset.idx);if(!ms.revealed[idx]){ms.flagged[idx]=!ms.flagged[idx];render();}},450);
     });
     grid.addEventListener('touchend',()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}});
+    /* Cancel the long-press flag when the touch is aborted or the finger
+       moves (scrolling the board must not toggle flags). */
+    grid.addEventListener('touchcancel',()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}});
+    grid.addEventListener('touchmove',()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}});
     grid.onclick=e=>{const c=e.target.closest('.ms-cell');if(c)reveal(parseInt(c.dataset.idx));};
     grid.oncontextmenu=e=>{e.preventDefault();const c=e.target.closest('.ms-cell');if(c){const idx=parseInt(c.dataset.idx);if(!ms.revealed[idx]){ms.flagged[idx]=!ms.flagged[idx];render();}}};
     const ctrl=el('div',{className:'card-row',style:{marginTop:'10px'}});
@@ -14788,11 +14835,10 @@ const Minesweeper=(()=>{
     if(safe>=ms.cells.length-ms.bombs){ms.active=false;render();toast('Board cleared!');recordStat('minesweeper',true,{time:Date.now()-ms.startTime});}
     else render();
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Minesweeper boards are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -14877,7 +14923,11 @@ const Wordle=(()=>{
     else{save();render();}
   }
   document.addEventListener('keydown',e=>{
+    /* The .wordle-cell check pins this listener to the Wordle UI — without
+       it a stale unfinished game swallowed letter keys and re-rendered the
+       Wordle board over whatever game was actually on screen. */
     if(immersiveRoot.style.display!=='block'||!C||C.won||C.attempts.length>=6)return;
+    if(!immersiveContent.querySelector('.wordle-cell'))return;
     const k=e.key.toUpperCase();
     if(k==='ENTER')submitGuess();
     else if(k==='BACKSPACE'||k==='DELETE'){C.input=C.input.slice(0,-1);render();}
@@ -14989,11 +15039,10 @@ const Sudoku=(()=>{
     ctrl.appendChild(revBtn);
     immersiveContent.appendChild(ctrl);
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Sudoku boards are never persisted mid-game, so there is nothing
+     to restore. (The old version was a copy-paste of Mastermind's
+     restore and loaded a MASTERMIND save into the Sudoku grid.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -16836,6 +16885,8 @@ function _initCheckers(){if(Checkers)return;Checkers=(()=>{
     if(!S.games.checkers)S.games.checkers={wins:0,losses:0};
 
     enterImmersive('Checkers','vs AI — '+diff);
+    /* Close any multiplayer subscription when the player exits. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     immersiveContent.innerHTML='';
     immersiveContent.style.cssText='padding:8px 6px;display:flex;flex-direction:column;align-items:center;width:100%;max-width:400px;margin:0 auto;box-sizing:border-box;';
     L=immersiveContent;
@@ -17639,11 +17690,10 @@ function _initBattleship(){if(Battleship)return;Battleship=(()=>{
     updateImmersiveScore('');
   }
 
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Battleship games are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();}
 
@@ -18359,6 +18409,9 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
 
   document.addEventListener('keydown',e=>{
     if(immersiveRoot.style.display!=='block'||!G||!G.active)return;
+    /* racerCanvas check pins this to the Racer UI so a stale game can't
+       hijack arrow keys while another game is on screen. */
+    if(!document.getElementById('racerCanvas'))return;
     /* Keyboard: hold steer with a long expiry; keyup clears it. */
     if(e.key==='ArrowLeft'){G.steer=-1;G.steerUntil=Date.now()+99999;e.preventDefault();}
     else if(e.key==='ArrowRight'){G.steer=1;G.steerUntil=Date.now()+99999;e.preventDefault();}
@@ -18710,6 +18763,10 @@ function _initFlightSim(){
     /* Reset all held-key flags in case previous interaction left them stuck */
     F._pu=false;F._pd=false;F._lu=false;F._ld=false;F._tu=false;F._td=false;
     _stickyPU=false;_stickyPD=false;
+    /* Defensive: a Restart that skips stop() must not stack a second
+       physics interval / RAF loop on top of the old one. */
+    if(physTimer){clearInterval(physTimer);physTimer=null;}
+    if(rafHandle){cancelAnimationFrame(rafHandle);rafHandle=null;}
     physTimer=setInterval(_physTick,50);
     rafHandle=requestAnimationFrame(_rafTick);
     updateStatusBar();
@@ -20536,7 +20593,7 @@ function renderNotes(filterText='',filterTag=''){
     del.onclick=()=>{S.notes.splice(realIdx,1);saveNow();renderNotes(filterText,filterTag);};
     const cardsBtn=txt('button','→ Cards',{className:'btn small',style:{padding:'2px 6px',fontSize:'10px'}});
     cardsBtn.title='Make AI flashcards from this note';
-    cardsBtn.onclick=async()=>{const o=cardsBtn.textContent;cardsBtn.disabled=true;cardsBtn.textContent='…';const deck=await _noteToFlashcards(n.text);cardsBtn.textContent=o;cardsBtn.disabled=false;if(deck)toast('Made '+deck.cards.length+' flashcards in "'+deck.name+'" — study them in Flashcards.',5500);};
+    cardsBtn.onclick=async()=>{const o=cardsBtn.textContent;cardsBtn.disabled=true;cardsBtn.textContent='…';let deck=null;try{deck=await _noteToFlashcards(n.text);}catch(e){toast('Flashcard generation failed — try again');}cardsBtn.textContent=o;cardsBtn.disabled=false;if(deck)toast('Made '+deck.cards.length+' flashcards in "'+deck.name+'" — study them in Flashcards.',5500);};
     btnRow.appendChild(editBtn);btnRow.appendChild(cardsBtn);btnRow.appendChild(del);
     meta.appendChild(btnRow);d.appendChild(meta);
     if(n.tags&&n.tags.length){const tw=el('div',{style:{marginBottom:'3px'}});n.tags.forEach(t=>tw.appendChild(txt('span',t,{className:'note-tag'})));d.appendChild(tw);}
@@ -24279,11 +24336,10 @@ const LightsOut=(()=>{
     }
   }
 
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Lights Out puzzles are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -24514,11 +24570,10 @@ const SnakesLadders=(()=>{
     drawBoard(canvas,null);
     updateStatus();
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Snakes & Ladders games are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -25063,7 +25118,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "The Games tab has 30+ titles grouped into Word & Logic (Hangman, Wordle, Sudoku, Minesweeper, Word Search, Lights Out, Mastermind), Board & Card (Tic-Tac-Toe, Connect 4, Chess, Battleship, Solitaire, Snakes & Ladders, Memory), Arcade (Snake, Tetris, Space Invaders, 2048, Gem Blast), and Simulation (Flight Sim, Tower Defence).",
 "",
-"Stats are tracked automatically — wins, streaks, games played. Ask the AI \"my stats\" any time to see them. Most games support save-and-resume; Hangman, Memory, Wordle, and Mastermind have explicit Restore buttons.",
+"Stats are tracked automatically — wins, streaks, games played. Ask the AI \"my stats\" any time to see them. Most games support save-and-resume; Hangman, Memory, Wordle, Mastermind, and Connect 4 have explicit Resume buttons, and Chess and Solitaire offer to resume a saved game when you open them.",
 "",
 "## Reading tracker, flashcards, journal",
 "",
@@ -25947,6 +26002,7 @@ games:()=>{
     const row=el('div',{className:'card-row',style:{marginTop:'6px',gap:'6px'}});
     row.appendChild(txt('button','Play',{className:'btn primary','data-game':'connect4',style:{flex:'1'}}));
     row.appendChild(txt('button','Play Online',{className:'btn small','data-online-game':'connect4'}));
+    row.appendChild(txt('button','Resume',{className:'btn small',id:'c4Restore'}));
     c.appendChild(row);
   }));
   rowBoard.appendChild(gc('Battleship',null,c=>{
@@ -27068,11 +27124,15 @@ dictionary:()=>{
     resultDiv.appendChild(txt('p','No definition found for "'+word+'".',{style:{color:'var(--muted)',fontSize:'13px'}}));
   }
 
-  let _searchTimer=null;
+  let _searchTimer=null,_searchSeq=0;
   function doSearch(){
     const q=searchIn.value.trim();
     if(!q)return;
     const ql=q.toLowerCase();
+    /* Sequence token: with the 400 ms debounce two lookups can be in
+       flight at once, and the SLOWER (older) response used to land
+       last and overwrite the newer word's definition. */
+    const seq=++_searchSeq;
     resultDiv.innerHTML='';
     // Show local result instantly if available
     if(DICT[ql]){
@@ -27087,10 +27147,12 @@ dictionary:()=>{
     fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(ql))
       .then(r=>{if(!r.ok)throw new Error('not found');return r.json();})
       .then(data=>{
+        if(seq!==_searchSeq)return; /* stale response — a newer search owns the panel */
         resultDiv.innerHTML='';
         showApiResult(q,data);
       })
       .catch(()=>{
+        if(seq!==_searchSeq)return;
         loadEl.remove();
         if(!DICT[ql])showNotFound(q);
       });
@@ -27589,7 +27651,7 @@ maps:()=>{
       if(px<-5||px>MAP_W+5||py<-5||py>MAP_H+5)return;
       const pin=el('div',{className:'saved-pin'});
       pin.style.cssText=`position:absolute;left:${px-6}px;top:${py-18}px;z-index:16;text-align:center;pointer-events:none;`;
-      pin.innerHTML=`<div style="width:12px;height:12px;background:#1a6bc4;border:2px solid #fff;border-radius:50%;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div><div style="font-size:7px;background:rgba(26,107,196,0.9);color:#fff;padding:1px 3px;border-radius:2px;margin-top:1px;white-space:nowrap;max-width:60px;overflow:hidden;text-overflow:ellipsis;">${p.name.slice(0,12)}</div>`;
+      pin.innerHTML=`<div style="width:12px;height:12px;background:#1a6bc4;border:2px solid #fff;border-radius:50%;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div><div style="font-size:7px;background:rgba(26,107,196,0.9);color:#fff;padding:1px 3px;border-radius:2px;margin-top:1px;white-space:nowrap;max-width:60px;overflow:hidden;text-overflow:ellipsis;">${String(p.name||'').slice(0,12).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}</div>`;
       mapWrap.insertBefore(pin,xhair);
     });
 
@@ -30789,7 +30851,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
           const tickRow=el('div',{style:'display:flex;justify-content:space-between;padding:0 2px;margin-top:-4px;'});
           allFrames.forEach((f,i)=>{
             const isFore=i>=pastFrames.length;
-            const dot=el('div',{style:'width:3px;height:3px;border-radius:50%;background:'+(isFore?'#0088ff':'var(--fg)')+';margin-top:2px;opacity:'+(i===frameIdx?'1':'0.4')+';;flex-shrink:0;'});
+            const dot=el('div',{style:'width:3px;height:3px;border-radius:50%;background:'+(isFore?'#0088ff':'var(--fg)')+';margin-top:2px;opacity:'+(i===frameIdx?'1':'0.4')+';flex-shrink:0;'});
             dot._idx=i;tickRow.appendChild(dot);
           });
           tlWrap.appendChild(tickRow);
@@ -31959,6 +32021,11 @@ breathe:()=>{
     const ex=EXERCISES[breathExIdx];
     breathLast=performance.now();
     breathAnim=setInterval(()=>{
+      /* Self-stop when the breathe UI has left the DOM (user switched
+         view mid-session) — otherwise this 80 ms tick ran forever,
+         draining the battery on e-ink devices. */
+      const lbl=document.getElementById('mfStepLbl');
+      if(!lbl||!lbl.isConnected){pauseBreath();return;}
       const now=performance.now();
       const dt=(now-breathLast)/1000;
       breathLast=now;
@@ -33012,7 +33079,7 @@ settings:()=>{
   const _accStatus=el('div',{style:{fontSize:'12px',marginBottom:'10px'}});
   function _updateAccStatus(){
     if(S.authToken&&S.email){
-      _accStatus.innerHTML='Signed in as <strong>'+S.email+'</strong>'+(S.syncEnabled?' &mdash; sync on':' &mdash; sync off')+'.';
+      _accStatus.innerHTML='Signed in as <strong>'+String(S.email||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))+'</strong>'+(S.syncEnabled?' &mdash; sync on':' &mdash; sync off')+'.';
     } else {
       _accStatus.textContent='Not signed in.';
     }
@@ -33996,7 +34063,7 @@ feedback:()=>{
       const masterOv=(function(){try{return localStorage.getItem('kh_master_override');}catch(e){return null;}})();
       if(!_sbActive()){
         const midRow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',marginBottom:'10px',fontSize:'11px',fontFamily:'monospace'}});
-        midRow.innerHTML='<strong>Master item:</strong> '+(masterOv?masterOv+'<br><span style="color:var(--danger);">⚠ Recovery override active — paste this ID into KH_REG in the source so other devices can find it.</span>':KH_REG);
+        midRow.innerHTML='<strong>Master item:</strong> '+(masterOv?String(masterOv).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))+'<br><span style="color:var(--danger);">⚠ Recovery override active — paste this ID into KH_REG in the source so other devices can find it.</span>':KH_REG);
         c.appendChild(midRow);
       }
       c.appendChild(txt('div','ORPHAN ITEM CLEANUP (jsonstorage only)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -40087,14 +40154,18 @@ rss:()=>{
         const aiBtn=txt('button','✦ Summary',{className:'rss-act-btn'});
         aiBtn.onclick=async()=>{
           aiBtn.disabled=true;aiBtn.textContent='✦ Thinking…';
-          const bodyEl=card.querySelector('.rss-article-body');
-          const src=bodyEl?bodyEl.textContent:(item.content||item.description||'').replace(/<[^>]+>/g,' ');
-          const out=await khiCall('Summarize this news article in 3 short bullets, capturing the who/what/why. No preamble.\n\nHeadline: '+(item.title||'')+'\n\n'+src.slice(0,4000),{maxTokens:400});
+          try{
+            const bodyEl=card.querySelector('.rss-article-body');
+            const src=bodyEl?bodyEl.textContent:(item.content||item.description||'').replace(/<[^>]+>/g,' ');
+            const out=await khiCall('Summarize this news article in 3 short bullets, capturing the who/what/why. No preamble.\n\nHeadline: '+(item.title||'')+'\n\n'+src.slice(0,4000),{maxTokens:400});
+            if(out){
+              const box=el('div',{className:'khi-output',style:'margin-top:6px;'});box.textContent=out.trim();
+              card.appendChild(box);
+            }
+          }catch(e){toast('Summary failed — try again');}
+          /* finally-style reset: without this a rejected call left the
+             button stuck on "Thinking…" forever */
           aiBtn.disabled=false;aiBtn.textContent='✦ Summary';
-          if(out){
-            const box=el('div',{className:'khi-output',style:'margin-top:6px;'});box.textContent=out.trim();
-            card.appendChild(box);
-          }
         };
         btnRow.appendChild(aiBtn);
       }
@@ -45192,8 +45263,11 @@ function buildUI(){
   exportPPTXBtn.onclick=async()=>{
     const d=activeDeck();
     if(!d){toast('No deck active');return;}
-    if(typeof PptxGenJS==='undefined'){toast('PPTX library not loaded');return;}
     exportPPTXBtn.disabled=true;exportPPTXBtn.textContent='...';
+    if(typeof PptxGenJS==='undefined'){
+      try{await loadVendorScript('https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js');}catch(e){}
+      if(typeof PptxGenJS==='undefined'){toast('PPTX library failed to load — check connection');exportPPTXBtn.disabled=false;exportPPTXBtn.textContent='PPTX';return;}
+    }
     try{
       const pptx=new PptxGenJS();pptx.layout='LAYOUT_16x9';pptx.author='KindleHub';pptx.title=d.title||'Presentation';
       for(const slide of d.slides){
@@ -45222,8 +45296,11 @@ function buildUI(){
   const exportPDFBtn=txt('button','PDF',{className:'btn small'});
   exportPDFBtn.onclick=async()=>{
     const d=activeDeck();if(!d){toast('No deck active');return;}
-    if(typeof window.jspdf==='undefined'){toast('PDF library not loaded');return;}
     exportPDFBtn.disabled=true;exportPDFBtn.textContent='...';
+    if(typeof window.jspdf==='undefined'||!window.jspdf.jsPDF){
+      try{await loadVendorScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');}catch(e){}
+      if(typeof window.jspdf==='undefined'||!window.jspdf.jsPDF){toast('PDF library failed to load — check connection');exportPDFBtn.disabled=false;exportPDFBtn.textContent='PDF';return;}
+    }
     try{
       const {jsPDF}=window.jspdf;
       const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[SLIDE_W,SLIDE_H]});
@@ -45373,7 +45450,10 @@ function buildDeckList(){
       const file=e.target.files&&e.target.files[0];if(!file)return;
       importPDFBtn.disabled=true;importPDFBtn.textContent='Importing...';
       try{
-        if(typeof pdfjsLib==='undefined'){toast('PDF library loading, please wait and retry');importPDFBtn.disabled=false;importPDFBtn.textContent='Import PDF';return;}
+        if(typeof pdfjsLib==='undefined'){
+          try{await loadVendorScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');}catch(e){}
+          if(typeof pdfjsLib==='undefined'){toast('PDF library failed to load — check connection');importPDFBtn.disabled=false;importPDFBtn.textContent='Import PDF';return;}
+        }
         pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
         const arrayBuf=await file.arrayBuffer();
         const pdfDoc=await pdfjsLib.getDocument({data:arrayBuf}).promise;
@@ -49001,7 +49081,7 @@ messages:()=>{
         if(m.replyTo&&msgById[m.replyTo]){
           const rq=el('div',{className:'msg-reply-quote'});
           const orig=msgById[m.replyTo];
-          rq.innerHTML='<b>'+(orig.displayName||'Unknown')+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
+          rq.innerHTML='<b>'+String(orig.displayName||'Unknown').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
           bubble.appendChild(rq);
         }
         if(m.important)bubble.appendChild(txt('span','IMPORTANT',{className:'msg-important-tag'}));
@@ -49046,7 +49126,7 @@ messages:()=>{
           actionRow=el('div',{className:'msg-action-row'});
           /* Reply */
           const rBtn=txt('button','Reply',{className:'msg-action-btn'});
-          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+(m.displayName||'?')+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
+          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+String(m.displayName||'?').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
           actionRow.appendChild(rBtn);
           /* React — opens a small inline picker */
           const reactBtn=txt('button','React',{className:'msg-action-btn'});
@@ -52569,7 +52649,10 @@ function injectStyles(){
   s.id='kh-kbd-css';
   /* Note: no template literals — plain string concat to avoid any parser issue */
   s.textContent=
-    '#kh-float-kbd{position:fixed;bottom:0;left:0;right:0;z-index:99999;'+
+    /* Above every input-bearing overlay (modals 600xxx, prompts 999999)
+       so the on-screen keyboard can always type into them; below the
+       selection overlay (1000050) and crash card (2000000). */
+    '#kh-float-kbd{position:fixed;bottom:0;left:0;right:0;z-index:1000000;'+
     'background:var(--card,#f5f5f5);border-top:1px solid var(--muted,#888);'+
     'box-shadow:0 -6px 28px rgba(0,0,0,.22);'+
     'display:none;flex-direction:column;gap:5px;padding:6px 4px 10px;'+
