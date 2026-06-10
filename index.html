@@ -16885,8 +16885,6 @@ function _initCheckers(){if(Checkers)return;Checkers=(()=>{
     if(!S.games.checkers)S.games.checkers={wins:0,losses:0};
 
     enterImmersive('Checkers','vs AI — '+diff);
-    /* Close any multiplayer subscription when the player exits. */
-    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     immersiveContent.innerHTML='';
     immersiveContent.style.cssText='padding:8px 6px;display:flex;flex-direction:column;align-items:center;width:100%;max-width:400px;margin:0 auto;box-sizing:border-box;';
     L=immersiveContent;
@@ -17119,6 +17117,9 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
       enterImmersive('Dots & Boxes','Waiting for host…');
       immersiveContent.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px;">Waiting for the host to set up the board…</div>';
     }
+    /* Close the multiplayer subscription when the player exits — an open
+       sub kept applying remote lines to the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     if(_mpSession){
       _mpSub=KH_MP.subscribe(_mpSession.code,function(env){
         const me=KH_MP.identity();
@@ -17154,6 +17155,7 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
   function _showOnlineBoard(){
     reset();
     enterImmersive('Dots & Boxes','Online — You are P'+_myPlayerNum);
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     immersiveContent.innerHTML='';
     immersiveContent.style.cssText='padding:8px 6px;display:flex;flex-direction:column;align-items:stretch;max-width:460px;margin:0 auto;';
     L=immersiveContent;
@@ -20232,8 +20234,8 @@ function _initFlightSim(){
     /* Grace period: suppress crashes for 3 seconds so the scene loads cleanly */
     F._gracePeriod=true;
     setTimeout(()=>{if(F)F._gracePeriod=false;},3000);
-    /* Sync weather button */
-    const bWX=document.getElementById('fsWeatherBtn');
+    /* Sync weather button (the cockpit builds it with id 'fsWX') */
+    const bWX=document.getElementById('fsWX');
     if(bWX)bWX.textContent=['CLR WX','OVC WX','RAIN'][_weather];
     /* Tap cockpit canvas to advance instruction steps */
     const can=document.getElementById('fsCockpit');
@@ -28010,9 +28012,16 @@ maps:()=>{
 
         renderMap();
 
-        // Fit map to show full route
-        const lats=coords.map(p=>p.lat),lons=coords.map(p=>p.lon);
-        const minLat=Math.min(...lats),maxLat=Math.max(...lats),minLon=Math.min(...lons),maxLon=Math.max(...lons);
+        // Fit map to show full route. Loop (not Math.min(...spread)):
+        // an empty geometry produced NaN coords that wedged the map,
+        // and spreading thousands of route points can overflow the
+        // call stack on older WebKit.
+        if(!coords.length)return;
+        let minLat=coords[0].lat,maxLat=coords[0].lat,minLon=coords[0].lon,maxLon=coords[0].lon;
+        for(const p of coords){
+          if(p.lat<minLat)minLat=p.lat;if(p.lat>maxLat)maxLat=p.lat;
+          if(p.lon<minLon)minLon=p.lon;if(p.lon>maxLon)maxLon=p.lon;
+        }
         mapState.lat=(minLat+maxLat)/2;mapState.lon=(minLon+maxLon)/2;
         // Pick zoom to fit
         const latSpan=maxLat-minLat,lonSpan=maxLon-minLon;
@@ -31797,10 +31806,40 @@ reading:()=>{
 
   v.appendChild(g);
 
+  /* ── Flashcards ──
+     The whole deck system (4 study modes, SRS spaced repetition, CSV
+     import) existed but had NO entry point anywhere in the UI:
+     renderDeckList() targets #deckList, which no view ever created, so
+     AI-generated decks were saved and then unreachable — and the home
+     widget's "Study" button jumped here to nothing. This card is that
+     missing home. */
+  const fcCard=el('div',{className:'card',style:{marginTop:'10px'}});
+  const fcHdr=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
+  fcHdr.appendChild(txt('h3','Flashcards',{style:{margin:'0'}}));
+  const fcBtns=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}});
+  const fcImportBtn=txt('button','Import CSV',{className:'btn small'});
+  fcImportBtn.onclick=()=>{
+    const inp=document.createElement('input');inp.type='file';inp.accept='.csv,.txt,text/csv,text/plain';
+    inp.onchange=e=>{
+      const f=e.target.files&&e.target.files[0];if(!f)return;
+      const rd=new FileReader();
+      rd.onload=()=>importCSV(String(rd.result||''),f.name.replace(/\.(csv|txt)$/i,''));
+      rd.readAsText(f);
+    };
+    inp.click();
+  };
+  fcBtns.appendChild(fcImportBtn);
+  fcHdr.appendChild(fcBtns);
+  fcCard.appendChild(fcHdr);
+  fcCard.appendChild(txt('p','Make decks by asking the Assistant for flashcards on any topic, or import a CSV (front, answer per line).',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 8px'}}));
+  fcCard.appendChild(el('div',{id:'deckList'}));
+  v.appendChild(fcCard);
+
   /* Hook into renderBooks to also update stat bar */
   const origRender=window._origRenderBooks||renderBooks;
-  ON_SHOW.reading=()=>{renderBooks();updateStatBar();refreshNoteBookList();};
+  ON_SHOW.reading=()=>{renderBooks();updateStatBar();refreshNoteBookList();renderDeckList();};
   updateStatBar();
+  renderDeckList();
   return v;
 },
 
