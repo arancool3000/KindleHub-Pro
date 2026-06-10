@@ -300,7 +300,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .book-status{font-size:11px;padding:4px 11px;border:var(--thin);border-radius:20px;background:var(--highlight);}
 .stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:var(--thin)}
 .stat-val{font-weight:700;font-family:monospace}
-.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--fg);color:var(--bg);z-index:600000;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--fg);color:var(--bg);z-index:1000001;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
 #drawCanvas{display:block;touch-action:none;cursor:crosshair;max-width:100%}
 footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:center;border-top:var(--thin);flex-shrink:0;background:var(--card);}
 .badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:600;border:var(--thin);font-family:var(--ui-font);margin:2px;background:var(--highlight);}
@@ -445,159 +445,6 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
   .g2048-cell{font-size:14px;}
   .mem-card{width:50px;height:50px;font-size:16px;}
   .msg{font-size:13px;}
-}
-
-/* ── KindleOS landscape: wider launcher grid, compact header ── */
-#rotateRoot[data-rotated="1"] #view-home .launchHdr{
-  padding:8px 8px 6px;
-}
-#rotateRoot[data-rotated="1"] #launcherClock{
-  font-size:32px!important;letter-spacing:2px!important;
-}
-#rotateRoot[data-rotated="1"] #view-home #launchAppGrid{
-  grid-template-columns:repeat(7,1fr)!important;
-}
-#rotateRoot[data-rotated="1"] #view-home .kh-mode-row{
-  flex-direction:row;gap:8px;
-}
-/* ── Landscape: cap #app to the rotated container's PRE-rotation height
-   so chat / chat-style flex-column views stop overflowing past the
-   visible viewport. Without this, `#app { height: 100vh }` evaluates
-   to the BROWSER viewport height (taller axis) while rotateRoot's
-   pre-rotation height is the viewport WIDTH (narrow axis), so #app
-   was overflowing rotateRoot by `vh - vw` px — pushing the composer
-   completely off the visible bottom edge in the messages view. Using
-   100vw here matches the rotated container's pre-rotation height in
-   every aspect ratio. */
-#rotateRoot[data-rotated="1"] #app{ height:100vw!important; }
-/* Messages view in landscape: composer must always remain visible at
-   the bottom. Hard-cap the textarea height so wrapping text doesn't
-   stretch the composer past the visible area, and keep the log
-   flex-1 so it absorbs the rest of the rotated viewport. */
-#rotateRoot[data-rotated="1"] #view-messages{ height:100%!important; }
-#rotateRoot[data-rotated="1"] #view-messages textarea{
-  max-height:60px!important;
-}
-/* Launcher mode adds 80px padding-bottom to every view as breathing
-   room for its bottom dock; in landscape that pushes the composer
-   right off the rotated viewport. Strip it for the messages view
-   only (other views still get the dock spacing). */
-body.launcher-ui #rotateRoot[data-rotated="1"] #view-messages{ padding-bottom:0!important; }
-/* The floating Kindle keyboard in landscape needs to sit ABOVE the
-   chat view (z-index already high) AND below the composer's bottom
-   edge so its suggestion strip isn't hidden by the chat UI. Pinning
-   it explicitly to the bottom of the rotated viewport. */
-#rotateRoot[data-rotated="1"] #kh-float-kbd{
-  bottom:0!important;left:0!important;right:0!important;
-  z-index:600001!important;
-}
-/* When the keyboard is showing in landscape on the messages view,
-   shrink the message log so the composer + suggestion strip stay
-   visible. The keyboard's _addKbdPadding() helper pads the scroll
-   ancestor of the textarea, but the chat log itself doesn't get
-   touched because the textarea isn't inside it. */
-#rotateRoot[data-rotated="1"] #view-messages #msgChatLog{
-  max-height:calc(100% - 110px);
-}
-
-/* ── Comprehensive landscape adaptation ───────────────────────────────
-   Many builders set explicit height:100vh, height:100%, or use flex
-   layouts that were sized against the pre-rotation viewport. In
-   landscape, rotateRoot's `width` is the pre-rotation height and its
-   `height` is the pre-rotation width — so anything sized against
-   `100vh` overflows by `(vh - vw)` px. These rules clamp every major
-   view to the rotated container's actual visible box so nothing
-   spills past the bottom edge.
-
-   Strategy: every flex-column view (chat, calc, messages, journal,
-   kanban, drawing, etc.) gets `height:100%` against the rotated
-   container, not `100vh`. The header/nav stays fixed; main scrolls.
-   Cards inside views shrink their padding so two columns can fit
-   horizontally on the wider landscape canvas. */
-#rotateRoot[data-rotated="1"] main{
-  height:calc(100% - var(--header-h) - var(--nav-h));
-}
-#rotateRoot[data-rotated="1"] .view{
-  /* Default views (suggestions, bug reports, journal list, etc.)
-     should fill the rotated viewport so the user's scroll position
-     is preserved on rotation. */
-  min-height:100%;
-}
-/* Chat view in landscape — keep composer pinned, history scrollable,
-   and let the model picker bar wrap onto two lines if needed. */
-#rotateRoot[data-rotated="1"] #view-chat{
-  height:100%!important;
-}
-#rotateRoot[data-rotated="1"] #view-chat .chat-log{
-  flex:1;min-height:0;
-}
-#rotateRoot[data-rotated="1"] #view-chat #aiStatusBar{
-  flex-wrap:wrap;gap:4px;
-}
-/* Calculator in landscape — use the wider canvas for a roomier keypad. */
-#rotateRoot[data-rotated="1"] #view-calc{
-  height:100%!important;
-}
-#rotateRoot[data-rotated="1"] .calc-grid{
-  gap:6px!important;
-}
-/* Settings panel — two-column card layout in landscape so settings
-   fit on screen without scrolling forever. */
-#rotateRoot[data-rotated="1"] #view-settings{
-  padding:6px var(--gap) var(--gap);
-}
-#rotateRoot[data-rotated="1"] #view-settings > div:not(:first-child){
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
-  gap:10px;align-items:start;
-}
-#rotateRoot[data-rotated="1"] #view-settings .card{
-  margin-bottom:0;
-}
-/* Feedback / Manual & Help — two columns for the manual cards so the
-   user can read more without scrolling. */
-#rotateRoot[data-rotated="1"] #view-feedback{
-  padding:6px var(--gap) var(--gap);
-}
-/* Games tab, reading tracker, notes — use a wider grid so more items
-   are visible at once. */
-#rotateRoot[data-rotated="1"] #view-games .game-grid,
-#rotateRoot[data-rotated="1"] #view-games .card-row{
-  display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))!important;gap:8px!important;
-}
-/* KindleOS launcher app body in landscape — let it take the full
-   rotated viewport minus the status bar / dock spacing. */
-#rotateRoot[data-rotated="1"] #kd-root{
-  width:100%!important;height:100%!important;
-}
-/* Tools and notes-style views with wide cards: shrink padding so they
-   don't waste horizontal space. */
-#rotateRoot[data-rotated="1"] #view-tools .card,
-#rotateRoot[data-rotated="1"] #view-reading .card,
-#rotateRoot[data-rotated="1"] #view-notes .card,
-#rotateRoot[data-rotated="1"] #view-kanban .card{
-  padding:10px;
-}
-/* Drawing, pixel art, slides — let the canvas size to the wider
-   landscape canvas instead of being stuck at portrait width. */
-#rotateRoot[data-rotated="1"] #view-draw,
-#rotateRoot[data-rotated="1"] #view-pixelart,
-#rotateRoot[data-rotated="1"] #view-slides{
-  height:100%!important;
-}
-/* Header controls in landscape — tighter spacing so all the icons
-   still fit on the shorter axis. */
-#rotateRoot[data-rotated="1"] header{
-  min-height:42px!important;padding:0 8px!important;
-}
-#rotateRoot[data-rotated="1"] nav{
-  min-height:38px!important;
-}
-#rotateRoot[data-rotated="1"] nav .tab{
-  min-height:38px;padding:0 8px;font-size:10px;
-}
-/* Feedback support-bot chat scrolls inside the card, not the page. */
-#rotateRoot[data-rotated="1"] #view-feedback .card{
-  margin-bottom:8px;
 }
 
 /* ── KindleHub Intelligence ── */
@@ -996,9 +843,9 @@ body.launcher-ui input,body.launcher-ui textarea,body.launcher-ui select{
 }
 body.launcher-ui .view{padding-bottom:80px;}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js" async></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" async></script>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" async></script>
+<!-- Export libraries (pptxgenjs / jspdf / pdfjs, ~1.5 MB combined) are
+     loaded on demand by loadVendorScript() the first time the Slides
+     tab actually exports or imports — not on boot. -->
 </head>
 <body>
 <!-- ────────────────────────────────────────────────────────────────
@@ -1158,7 +1005,6 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="header-controls">
       <div class="clock" id="sysClock"></div>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
-      <button class="btn small" id="landscapeBtn" title="Toggle landscape rotation">Landscape</button>
       <button class="btn small" id="themeBtn" title="Cycle theme: Light / Dark / Sepia">Light</button>
       <button class="btn small" id="uiModeBtn" title="Cycle home layout: Classic / Launcher / Retro">Classic</button>
       <button class="btn small" id="desktopLaunchBtn" title="Launch KindleOS" onclick="launchKindleDesktop()">KindleOS</button>
@@ -1315,7 +1161,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <button id="footerKdosBack" type="button" style="display:none;flex-shrink:0;align-items:center;gap:5px;padding:8px 16px;background:var(--fg);color:var(--bg);border:none;border-radius:16px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent;">&#8249;&nbsp;KindleOS</button>
   </footer>
 </div>
-<!-- Guided Tour System — inside rotateRoot so it rotates with the app in landscape mode -->
+<!-- Guided Tour System -->
 <div id="tourBackdrop" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:8000;pointer-events:none;box-sizing:border-box;"></div>
 <div id="tourHighlight" style="display:none;position:fixed;z-index:8001;border:3px solid #fff;border-radius:8px;box-shadow:0 0 0 4000px rgba(0,0,0,0.75);pointer-events:none;transition:all 0.3s ease;"></div>
 <div id="tourCard" style="display:none;position:fixed;z-index:8002;background:var(--card);color:var(--fg);border-radius:14px;padding:16px 18px;max-width:300px;min-width:220px;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
@@ -1431,7 +1277,7 @@ function defaultState(){
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,tutorialSeen:false,feedbackUrl:'',
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
-    msgGroups:[],kindleKeyboard:true,landscapeMode:false,calEvents:[],
+    msgGroups:[],kindleKeyboard:true,calEvents:[],
     navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
@@ -2165,6 +2011,24 @@ function setNavTabVisible(view,visible){
 
 const $=id=>document.getElementById(id);
 const qs=(s,p)=>(p||document).querySelector(s);
+/* On-demand vendor script loader. The export libraries (pptxgenjs,
+   jspdf, pdfjs) total ~1.5 MB — far too heavy to download on every
+   boot of a Kindle that may never open the Slides tab. They are now
+   fetched the first time an export/import actually needs them.
+   Returns a promise that resolves once the script has executed;
+   concurrent and repeat calls share the same promise. */
+const _khScriptPromises={};
+function loadVendorScript(src){
+  if(_khScriptPromises[src])return _khScriptPromises[src];
+  _khScriptPromises[src]=new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src;s.async=true;
+    s.onload=()=>res();
+    s.onerror=()=>{delete _khScriptPromises[src];rej(new Error('Failed to load '+src));};
+    document.head.appendChild(s);
+  });
+  return _khScriptPromises[src];
+}
 const qsa=(s,p)=>{try{return Array.from((p||document).querySelectorAll(s));}catch(e){return Array.prototype.slice.call((p||document).querySelectorAll(s));}};
 function el(tag,attrs={},children=[]){
   const e=document.createElement(tag);
@@ -3126,12 +2990,8 @@ function launchKindleDesktop(){
   kdPagesTrack.style.cssText='display:flex;width:100%;height:100%;will-change:transform;transition:transform 0.32s cubic-bezier(0.4,0,0.2,1);';
   kdPagesOuter.appendChild(kdPagesTrack);
   let _curPage=1;
-  /* In portrait we show 16 apps per page (4×4 in a 5-row grid).
-     In landscape the launcher is rotated and the visible viewport is
-     wider-than-tall, so a 4-across × 3-down grid (12 apps per page) fits
-     much more cleanly. ICONS_PER_PAGE is read live from the launcher
-     orientation so adding more apps automatically uses the right paging. */
-  function iconsPerPage(){return osState.landscape?12:16;}
+  /* 16 apps per page (4×4 in a 5-row grid). */
+  function iconsPerPage(){return 16;}
   function numIconPages(){return Math.max(1,Math.ceil(allApps().length/iconsPerPage()));}
   function numPages(){return 1+numIconPages();}
 
@@ -3392,8 +3252,7 @@ function launchKindleDesktop(){
     const apps=allApps();const iconPages=numIconPages();
     _curPage=Math.min(prev,numPages()-1);
     const PER=iconsPerPage();
-    /* Landscape: 4 columns × 3 rows = 12 apps. Portrait: 4 × 5 grid, 16 apps. */
-    const cols=4,rows=osState.landscape?3:5;
+    const cols=4,rows=5;
     const gridStyle='min-width:100%;height:100%;display:grid;grid-template-columns:repeat('+cols+',1fr);grid-template-rows:repeat('+rows+',1fr);align-content:start;padding:4px 6px 56px;box-sizing:border-box;';
     /* Build empty shells synchronously (cheap) and only populate icons for
        pages near the viewport. Pages further away get their icons lazily on
@@ -3688,56 +3547,6 @@ function launchKindleDesktop(){
     if(tile)ccGrid.appendChild(tile.el);
   });
 
-  /* Landscape rotation — rotate the whole shell 90° so a Kindle held sideways
-     gives proper widescreen layout. Persisted in osState.landscape.
-     When orientation flips we also rebuild the icon pages so the grid
-     reflows to the orientation-appropriate density (16 apps in portrait,
-     12 apps in landscape — 4 × 3). */
-  function applyLandscape(on){
-    const was=!!osState.landscape;
-    osState.landscape=!!on;
-    if(on){
-      const w=window.innerWidth,h=window.innerHeight;
-      kd.style.transform='rotate(90deg)';
-      kd.style.transformOrigin='center center';
-      kd.style.width=h+'px';
-      kd.style.height=w+'px';
-      kd.style.left=((w-h)/2)+'px';
-      kd.style.top=((h-w)/2)+'px';
-    }else{
-      kd.style.transform='';
-      kd.style.transformOrigin='';
-      kd.style.width='100%';
-      kd.style.height='100%';
-      kd.style.left='0';
-      kd.style.top='0';
-    }
-    /* Re-flow the icon grid for the new orientation (12 vs 16 apps/page). */
-    if(was!==osState.landscape&&typeof buildPages==='function'){
-      try{buildPages();}catch(e){}
-    }
-  }
-  /* Expose so app-level landscape toggle can propagate to KindleOS
-     while it's open. Cleared in the exit handler below. */
-  window._kdApplyLandscape=applyLandscape;
-  let _ccLand=!!osState.landscape;
-  const tLand=ccTile('Landscape','<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="6" cy="12" r="1" fill="currentColor"/></svg>',_ccLand,(t,lb,ic)=>{
-    _ccLand=!_ccLand;tLand.setActive(_ccLand);
-    applyLandscape(_ccLand);
-    persistOS();
-    toast(_ccLand?'Landscape on':'Portrait restored',1400);
-  });
-  ccGrid.appendChild(tLand.el);
-  /* Restore landscape on launch if previously enabled */
-  if(osState.landscape)setTimeout(()=>applyLandscape(true),120);
-  /* Rebind on viewport resize so geometry stays correct when device rotates.
-     CRITICAL: keep a named reference so the exit handler can remove it.
-     Previously this anonymous handler accumulated on every Exit→Re-launch
-     cycle — by the third launch a single resize fired three identical
-     applyLandscape calls, doubling memory pressure. */
-  const _kdResizeHandler=function(){if(osState.landscape)applyLandscape(true);};
-  window.addEventListener('resize',_kdResizeHandler);
-
   /* Tour tile — wired up below once startKindleOSTour is defined */
   const tTour=ccTile('Tour','<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',false,()=>{
     closeCC();
@@ -3809,12 +3618,8 @@ function launchKindleDesktop(){
     if(bgTimer)clearInterval(bgTimer);
     if(_clockTickInterval)clearInterval(_clockTickInterval);
     if(_clockTickAlign)clearTimeout(_clockTickAlign);
-    try{window.removeEventListener('resize',_kdResizeHandler);}catch(_){}
     /* The boot-poll timers from the tour also need to know we're gone */
     window._kdGone=true;
-    /* Drop the exposed landscape hook so app-level toggleLandscape
-       stops calling into torn-down DOM after exit. */
-    try{delete window._kdApplyLandscape;}catch(_){window._kdApplyLandscape=undefined;}
     /* Clean up the full-app-mode artefacts: the back FAB, the body
        class that hides #app header/nav, and any custom-HTML overlay. */
     try{document.body.classList.remove('kdos-fullapp');}catch(_){}
@@ -4385,7 +4190,7 @@ WEB SEARCH & LIVE DATA:
       {sel:'.kd-tour-sb',pos:'top',title:'The status bar',body:'Time, signal, search. Tap the time any time to open the Control Centre.',swipe:'down'},
       {sel:'.kd-tour-pages',pos:'center',title:'Your apps',body:'Tap any tile to launch a KindleHub page — Notes, Cookbook, Stars, anything.\\n\\nSwipe left or right to flip between pages of apps.'},
       {sel:'.kd-tour-dock',pos:'bottom',title:'The dock',body:'Your most-used apps live here. Hold-tap to rearrange.'},
-      {sel:'.kd-tour-sb',pos:'top',title:'Control Centre',body:'Swipe down on the status bar (or tap the clock) to open Control Centre — quick toggles for dark mode, wallpaper, font size, widgets, landscape rotation, and more.',swipe:'down'},
+      {sel:'.kd-tour-sb',pos:'top',title:'Control Centre',body:'Swipe down on the status bar (or tap the clock) to open Control Centre — quick toggles for dark mode, wallpaper, font size, widgets, and more.',swipe:'down'},
       {sel:null,title:'You\'re set',body:'Tap-and-hold an app to remove it, swipe up on the dock to add more, and the OS Settings button takes you to wallpapers and widgets.\\n\\nExit KindleOS any time from Control Centre.'},
     ];
     let idx=0;
@@ -5035,62 +4840,6 @@ $('uiModeBtn').onclick=()=>{
   }
   toast('UI mode: '+_uiModeLabel(next),1500);
 };
-
-// Landscape rotation — rotates #rotateRoot which contains both #app and #immersiveRoot
-$('landscapeBtn').onclick=()=>toggleLandscape();
-
-function toggleLandscape(forceTo){
-  const rr=$('rotateRoot');
-  const isRot=rr.getAttribute('data-rotated')==='1';
-  const goLandscape=(forceTo!==undefined)?forceTo:!isRot;
-  if(!goLandscape){
-    rr.removeAttribute('data-rotated');
-    rr.style.cssText='width:100%;height:100%;position:relative;';
-    document.body.style.overflow='';
-    $('landscapeBtn').textContent='Landscape';
-    $('landscapeBtn').classList.remove('primary');
-    const calcRotBtn=document.querySelector('.calc-angle-btn');
-    if(calcRotBtn){calcRotBtn.disabled=false;calcRotBtn.style.opacity='';}
-    S.landscapeMode=false;save();
-  } else {
-    const pw=window.innerWidth;
-    const ph=window.innerHeight;
-    rr.setAttribute('data-rotated','1');
-    rr.style.cssText=[
-      'position:fixed','top:0','left:0',
-      'width:'+ph+'px','height:'+pw+'px',
-      'transform-origin:top left',
-      'transform:rotate(90deg) translateX(0) translateY(-'+pw+'px)',
-      'overflow:hidden','background:var(--bg)'
-    ].join(';');
-    document.body.style.overflow='hidden';
-    $('landscapeBtn').textContent='Portrait';
-    $('landscapeBtn').classList.add('primary');
-    const calcRotBtn=document.querySelector('.calc-angle-btn');
-    if(calcRotBtn){calcRotBtn.disabled=true;calcRotBtn.style.opacity='0.35';}
-    S.landscapeMode=true;save();
-  }
-  /* Re-parent the floating keyboard so it tracks the rotation */
-  if(window._khKeyboard&&window._khKeyboard.relocate){
-    try{window._khKeyboard.relocate();}catch(e){}
-  }
-  /* Fire a synthetic resize event so any JS-driven layout (calculator
-     keypad, drawing canvas, KindleOS grid, chart widgets) re-measures
-     against the rotated viewport. Without this, canvases and grids
-     stay stuck at their pre-rotation dimensions until the user
-     interacts with them. */
-  try{window.dispatchEvent(new Event('resize'));}catch(_){}
-  /* If KindleOS is open, ask it to re-apply its own landscape state so
-     the launcher's grid switches between 4x4 and 4x3 immediately. */
-  try{
-    if(typeof window._kdApplyLandscape==='function'){
-      window._kdApplyLandscape(goLandscape);
-    }
-  }catch(_){}
-}
-
-/* Restore landscape on load */
-if(S.landscapeMode){setTimeout(()=>toggleLandscape(true),100);}
 
 function applyFontSize(size){
   const sz=(size||16);
@@ -7314,15 +7063,13 @@ function _parseItemIds(text){
     try{if(typeof currentView!=='undefined'&&currentView)view=currentView;}catch(_){}
     var ui='classic';
     try{if(typeof S!=='undefined'&&S.uiMode)ui=S.uiMode;}catch(_){}
-    var landscape=false;
-    try{var rr=document.getElementById('rotateRoot');if(rr)landscape=rr.getAttribute('data-rotated')==='1';}catch(_){}
     var ua=(navigator&&navigator.userAgent)?String(navigator.userAgent).slice(0,180):'?';
     var dims=(typeof innerWidth==='number')?(innerWidth+'x'+innerHeight):'?';
     var actions=_recentActions.join(' → ')||'(none)';
     var nav=_recentViews.join(' → ')||'(none)';
     var signedIn=false;
     try{if(typeof S!=='undefined'&&S.authToken)signedIn=true;}catch(_){}
-    return {view:view,ui:ui,landscape:landscape,ua:ua,dims:dims,actions:actions,nav:nav,
+    return {view:view,ui:ui,ua:ua,dims:dims,actions:actions,nav:nav,
             online:!!navigator.onLine,signedIn:signedIn,time:new Date().toISOString()};
   }
 
@@ -7348,7 +7095,7 @@ function _parseItemIds(text){
         +'\nFILE: '+where
         +'\nLINE:COL: '+lineno+(colno?':'+colno:'')
         +'\nSTACK:\n'+(stack||'(none)')
-        +'\nVIEW: '+ctx.view+' | UI mode: '+ctx.ui+' | Landscape: '+ctx.landscape
+        +'\nVIEW: '+ctx.view+' | UI mode: '+ctx.ui
         +'\nRECENT NAV: '+ctx.nav
         +'\nRECENT ACTIONS: '+ctx.actions
         +'\nVIEWPORT: '+ctx.dims+' | Online: '+ctx.online+' | Signed in: '+ctx.signedIn
@@ -7403,7 +7150,7 @@ function _parseItemIds(text){
     lines.push('File: '+where+'  |  Line: '+(lineno||'?')+(colno?':'+colno:''));
     if(stack)lines.push(stack);
     lines.push('───── CONTEXT ─────');
-    lines.push('View: '+ctx.view+'  |  UI mode: '+ctx.ui+'  |  Landscape: '+ctx.landscape);
+    lines.push('View: '+ctx.view+'  |  UI mode: '+ctx.ui);
     lines.push('Viewport: '+ctx.dims+'  |  Online: '+ctx.online+'  |  Signed in: '+ctx.signedIn);
     lines.push('Recent nav: '+ctx.nav);
     lines.push('Recent actions: '+ctx.actions);
@@ -10813,6 +10560,7 @@ ON_SHOW.games=()=>{
   const m=$('memRestore'); if(m) m.onclick=()=>Memory.restore();
   const w=$('wordleNew'); if(w) w.onclick=()=>Wordle.start();
   const mm=$('mastermindRestore'); if(mm) mm.onclick=()=>Mastermind.restore();
+  const c4=$('c4Restore'); if(c4) c4.onclick=()=>Connect4.restore();
 };
 try{qsa('.tab').filter(t=>t.closest('nav')).forEach(t=>t.addEventListener('click',function(){
   try{qsa('.tab').filter(x=>x.closest('nav')).forEach(x=>x.classList.remove('active'));}catch(e){}
@@ -12007,7 +11755,11 @@ const Hangman=(()=>{
     if(k&&!k.classList.contains('wrong'))guess(k.dataset.letter||k.textContent.trim());
   });
   document.addEventListener('keydown',e=>{
+    /* The .hm-word check pins this listener to the Hangman UI — without
+       it a stale unfinished game swallowed letter keys (and re-rendered
+       the Hangman board over the top) while OTHER games were on screen. */
     if(immersiveRoot.style.display!=='block'||!L||L.won||L.lost)return;
+    if(!immersiveContent.querySelector('.hm-word'))return;
     const k=e.key.toUpperCase();
     if(/^[A-Z]$/.test(k)){guess(k);e.preventDefault();}
   });
@@ -12269,6 +12021,9 @@ const TTT=(()=>{
     }
 
     enterImmersive('Tic-Tac-Toe',mode==='online'?'Online — You are '+myOnlinePiece:(mode==='2p'?'Player 1 (X)':'You: '+(humanPiece==='X'?'X (first)':'O (second)')));
+    /* Close the multiplayer subscription when the player exits — an open
+       sub kept rendering remote moves into the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     immersiveContent.innerHTML='';
 
     /* Mode label */
@@ -12395,11 +12150,10 @@ const TTT=(()=>{
       setTimeout(()=>{doAITurn();},400);
     }
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* TTT games are quick and never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save into TTT.) */
+  function restore(){toast('No saved game');}
   return{start,restore,startOnline};
 })();
 /* Accept-handler for invites on the TTT inbox channel. The acceptor
@@ -12452,6 +12206,9 @@ const Connect4=(()=>{
       (mode==='2p'?'2-Player — Red: O, Yellow: X':
       (humanFirst?'You: O    AI: X':'AI: X goes first'));
     enterImmersive('Connect 4',subtitle);
+    /* Close the multiplayer subscription when the player exits — an open
+       sub kept rendering remote drops into the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     /* Subscribe once per online session */
     if(mode==='online'&&_mpSession){
       if(_mpSub&&_mpSub.close)try{_mpSub.close();}catch(_){}
@@ -12706,10 +12463,21 @@ const Connect4=(()=>{
     else{C.humanTurn=true;save();render();}
   }
 
+  /* Resume the saved Connect 4 game. Reads from the correct slot
+     (the old version was a copy-paste of Mastermind's restore and
+     loaded a MASTERMIND save into Connect 4). Online games are never
+     restored from local cache — the session is gone after a reload. */
   function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
+    const g=S.games.connect4&&S.games.connect4.current;
+    if(!g||!Array.isArray(g.grid)||!g.active||g.mode==='online'){toast('No saved game');return;}
+    C=JSON.parse(JSON.stringify(g));
+    C.mpSession=null;C.myOnlinePiece=null;
+    _mpSession=null;
+    const subtitle=C.mode==='2p'?'2-Player — Red: O, Yellow: X':'You: O    AI: X';
+    enterImmersive('Connect 4',subtitle);
+    render();
+    /* If it was the AI's turn when saved, let it move */
+    if(C.mode!=='2p'&&!C.humanTurn)setTimeout(aiMove,350);
   }
   return{start,restore,startOnline};
 })();
@@ -13622,12 +13390,23 @@ const Chess=(()=>{
     return wrap;
   }
 
-  /* ── Piece images (Lichess cburnett set) ── */
-  const PIECE_IMG={};
-  'KQRBNPkqrbnp'.split('').forEach(p=>{
-    const col=p===p.toUpperCase()?'w':'b';
-    PIECE_IMG[p]='https://lichess1.org/assets/piece/cburnett/'+col+p.toUpperCase()+'.svg';
-  });
+  /* ── Piece glyphs — inline Unicode, no network.
+     The previous version loaded 12 SVGs from lichess1.org, which cost
+     12 requests per game on a Kindle and rendered broken-image icons
+     whenever the CDN was unreachable — despite the app advertising
+     offline play. The filled glyph is used for both sides; colour plus
+     an outline shadow keeps white and black legible on any square. */
+  const PIECE_GLYPH={K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟'};
+  function mkPieceEl(p,size){
+    const s=document.createElement('span');
+    s.textContent=PIECE_GLYPH[p.toUpperCase()]||'?';
+    const white=p===p.toUpperCase();
+    s.style.cssText='display:block;line-height:1;pointer-events:none;user-select:none;font-size:'+size+'px;'+
+      'font-family:"DejaVu Sans","Segoe UI Symbol","Noto Sans Symbols 2",sans-serif;'+
+      (white?'color:#fff;text-shadow:0 0 1.5px #000,0 0 1.5px #000,0 1px 2px rgba(0,0,0,.55);'
+            :'color:#151515;text-shadow:0 0 1.5px rgba(255,255,255,.45);');
+    return s;
+  }
 
   /* ── Board helpers ── */
   const INIT='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -14421,6 +14200,9 @@ const Chess=(()=>{
     _lastFrom=null;_lastTo=null;_gameOverModalShown=false;
     _clearSavedState();
     enterImmersive('Chess','White to move');
+    /* Close the online subscription when the player exits the board —
+       an open sub kept rendering remote moves into the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeOnlineSession;}
     render();
   }
 
@@ -14538,11 +14320,7 @@ const Chess=(()=>{
         tray.appendChild(txt('span','none yet',{style:'font-size:10px;color:var(--muted);font-style:italic;'}));
       } else {
         capList.forEach(p=>{
-          const img=document.createElement('img');
-          img.src=PIECE_IMG[p];
-          img.style.cssText='width:18px;height:18px;display:inline-block;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.3));';
-          img.alt=p;
-          tray.appendChild(img);
+          tray.appendChild(mkPieceEl(p,16));
         });
       }
       if(materialAdvantage>0){
@@ -14601,8 +14379,7 @@ const Chess=(()=>{
         const cell=el('div',{style:`width:${CELL}px;height:${CELL}px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;box-sizing:border-box;background:${bg};`});
 
         if(p){
-          const img=document.createElement('img');
-          img.src=PIECE_IMG[p];
+          const pieceEl=mkPieceEl(p,CELL-10);
           /* In face-to-face 2-player mode, flip ALL black pieces 180°.
              Black starts on rows 0-1 from white's perspective, so the
              black player sits on the opposite side of the device. With
@@ -14610,10 +14387,8 @@ const Chess=(()=>{
              white's side mid-game) rotated, each player always reads
              their own pieces right-way-up. */
           const flipThisPiece=(_flipPieces&&_mode==='2p'&&p===p.toLowerCase());
-          const transform=flipThisPiece?'transform:rotate(180deg);':'';
-          img.style.cssText=`width:${CELL-4}px;height:${CELL-4}px;display:block;pointer-events:none;${transform}`;
-          img.alt=p;
-          cell.appendChild(img);
+          if(flipThisPiece)pieceEl.style.transform='rotate(180deg)';
+          cell.appendChild(pieceEl);
         }
         if(isLeg&&!p){
           const dot=el('div',{style:'width:12px;height:12px;border-radius:50%;background:rgba(0,0,0,0.2);pointer-events:none;'});
@@ -14772,10 +14547,8 @@ const Chess=(()=>{
     const row=el('div',{style:'display:flex;gap:10px;justify-content:center;'});
     const pieces=t==='white'?['Q','R','B','N']:['q','r','b','n'];
     pieces.forEach(pc=>{
-      const btn=el('button',{className:'btn',style:'padding:8px;width:60px;height:60px;'});
-      const img=document.createElement('img');
-      img.src=PIECE_IMG[pc];img.style.cssText='width:40px;height:40px;pointer-events:none;';
-      btn.appendChild(img);
+      const btn=el('button',{className:'btn',style:'padding:8px;width:60px;height:60px;display:flex;align-items:center;justify-content:center;'});
+      btn.appendChild(mkPieceEl(pc,38));
       btn.onclick=()=>{overlay.remove();promotionCb=null;onPick(pc);};
       row.appendChild(btn);
     });
@@ -14919,6 +14692,7 @@ const Chess=(()=>{
     selected=null;legalMoves=[];_history=[];_lastFrom=null;_lastTo=null;
     _gameOverModalShown=!!gameOver;
     enterImmersive('Chess',gameOver||((turn==='white'?'White':'Black')+' to move'));
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeOnlineSession;}
     render();
     return true;
   }
@@ -15016,6 +14790,10 @@ const Minesweeper=(()=>{
       lpTimer=setTimeout(()=>{const idx=parseInt(cell.dataset.idx);if(!ms.revealed[idx]){ms.flagged[idx]=!ms.flagged[idx];render();}},450);
     });
     grid.addEventListener('touchend',()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}});
+    /* Cancel the long-press flag when the touch is aborted or the finger
+       moves (scrolling the board must not toggle flags). */
+    grid.addEventListener('touchcancel',()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}});
+    grid.addEventListener('touchmove',()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}});
     grid.onclick=e=>{const c=e.target.closest('.ms-cell');if(c)reveal(parseInt(c.dataset.idx));};
     grid.oncontextmenu=e=>{e.preventDefault();const c=e.target.closest('.ms-cell');if(c){const idx=parseInt(c.dataset.idx);if(!ms.revealed[idx]){ms.flagged[idx]=!ms.flagged[idx];render();}}};
     const ctrl=el('div',{className:'card-row',style:{marginTop:'10px'}});
@@ -15059,11 +14837,10 @@ const Minesweeper=(()=>{
     if(safe>=ms.cells.length-ms.bombs){ms.active=false;render();toast('Board cleared!');recordStat('minesweeper',true,{time:Date.now()-ms.startTime});}
     else render();
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Minesweeper boards are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -15148,7 +14925,11 @@ const Wordle=(()=>{
     else{save();render();}
   }
   document.addEventListener('keydown',e=>{
+    /* The .wordle-cell check pins this listener to the Wordle UI — without
+       it a stale unfinished game swallowed letter keys and re-rendered the
+       Wordle board over whatever game was actually on screen. */
     if(immersiveRoot.style.display!=='block'||!C||C.won||C.attempts.length>=6)return;
+    if(!immersiveContent.querySelector('.wordle-cell'))return;
     const k=e.key.toUpperCase();
     if(k==='ENTER')submitGuess();
     else if(k==='BACKSPACE'||k==='DELETE'){C.input=C.input.slice(0,-1);render();}
@@ -15260,11 +15041,10 @@ const Sudoku=(()=>{
     ctrl.appendChild(revBtn);
     immersiveContent.appendChild(ctrl);
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Sudoku boards are never persisted mid-game, so there is nothing
+     to restore. (The old version was a copy-paste of Mastermind's
+     restore and loaded a MASTERMIND save into the Sudoku grid.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -17339,6 +17119,9 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
       enterImmersive('Dots & Boxes','Waiting for host…');
       immersiveContent.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px;">Waiting for the host to set up the board…</div>';
     }
+    /* Close the multiplayer subscription when the player exits — an open
+       sub kept applying remote lines to the torn-down view. */
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     if(_mpSession){
       _mpSub=KH_MP.subscribe(_mpSession.code,function(env){
         const me=KH_MP.identity();
@@ -17374,6 +17157,7 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
   function _showOnlineBoard(){
     reset();
     enterImmersive('Dots & Boxes','Online — You are P'+_myPlayerNum);
+    {const _ir=$('immersiveRoot');if(_ir)_ir._trackStop=_closeMp;}
     immersiveContent.innerHTML='';
     immersiveContent.style.cssText='padding:8px 6px;display:flex;flex-direction:column;align-items:stretch;max-width:460px;margin:0 auto;';
     L=immersiveContent;
@@ -17910,11 +17694,10 @@ function _initBattleship(){if(Battleship)return;Battleship=(()=>{
     updateImmersiveScore('');
   }
 
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Battleship games are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();}
 
@@ -18630,6 +18413,9 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
 
   document.addEventListener('keydown',e=>{
     if(immersiveRoot.style.display!=='block'||!G||!G.active)return;
+    /* racerCanvas check pins this to the Racer UI so a stale game can't
+       hijack arrow keys while another game is on screen. */
+    if(!document.getElementById('racerCanvas'))return;
     /* Keyboard: hold steer with a long expiry; keyup clears it. */
     if(e.key==='ArrowLeft'){G.steer=-1;G.steerUntil=Date.now()+99999;e.preventDefault();}
     else if(e.key==='ArrowRight'){G.steer=1;G.steerUntil=Date.now()+99999;e.preventDefault();}
@@ -18981,6 +18767,10 @@ function _initFlightSim(){
     /* Reset all held-key flags in case previous interaction left them stuck */
     F._pu=false;F._pd=false;F._lu=false;F._ld=false;F._tu=false;F._td=false;
     _stickyPU=false;_stickyPD=false;
+    /* Defensive: a Restart that skips stop() must not stack a second
+       physics interval / RAF loop on top of the old one. */
+    if(physTimer){clearInterval(physTimer);physTimer=null;}
+    if(rafHandle){cancelAnimationFrame(rafHandle);rafHandle=null;}
     physTimer=setInterval(_physTick,50);
     rafHandle=requestAnimationFrame(_rafTick);
     updateStatusBar();
@@ -20446,8 +20236,8 @@ function _initFlightSim(){
     /* Grace period: suppress crashes for 3 seconds so the scene loads cleanly */
     F._gracePeriod=true;
     setTimeout(()=>{if(F)F._gracePeriod=false;},3000);
-    /* Sync weather button */
-    const bWX=document.getElementById('fsWeatherBtn');
+    /* Sync weather button (the cockpit builds it with id 'fsWX') */
+    const bWX=document.getElementById('fsWX');
     if(bWX)bWX.textContent=['CLR WX','OVC WX','RAIN'][_weather];
     /* Tap cockpit canvas to advance instruction steps */
     const can=document.getElementById('fsCockpit');
@@ -20807,7 +20597,7 @@ function renderNotes(filterText='',filterTag=''){
     del.onclick=()=>{S.notes.splice(realIdx,1);saveNow();renderNotes(filterText,filterTag);};
     const cardsBtn=txt('button','→ Cards',{className:'btn small',style:{padding:'2px 6px',fontSize:'10px'}});
     cardsBtn.title='Make AI flashcards from this note';
-    cardsBtn.onclick=async()=>{const o=cardsBtn.textContent;cardsBtn.disabled=true;cardsBtn.textContent='…';const deck=await _noteToFlashcards(n.text);cardsBtn.textContent=o;cardsBtn.disabled=false;if(deck)toast('Made '+deck.cards.length+' flashcards in "'+deck.name+'" — study them in Flashcards.',5500);};
+    cardsBtn.onclick=async()=>{const o=cardsBtn.textContent;cardsBtn.disabled=true;cardsBtn.textContent='…';let deck=null;try{deck=await _noteToFlashcards(n.text);}catch(e){toast('Flashcard generation failed — try again');}cardsBtn.textContent=o;cardsBtn.disabled=false;if(deck)toast('Made '+deck.cards.length+' flashcards in "'+deck.name+'" — study them in Flashcards.',5500);};
     btnRow.appendChild(editBtn);btnRow.appendChild(cardsBtn);btnRow.appendChild(del);
     meta.appendChild(btnRow);d.appendChild(meta);
     if(n.tags&&n.tags.length){const tw=el('div',{style:{marginBottom:'3px'}});n.tags.forEach(t=>tw.appendChild(txt('span',t,{className:'note-tag'})));d.appendChild(tw);}
@@ -21367,7 +21157,7 @@ function buildSYS(){
     "Practical skills (cooking, finance, fitness, travel, DIY, gardening). " +
     "Give detailed, accurate answers and cite reasoning. For medical/legal questions, give information but remind the user to consult a professional.\n\n" +
 
-    "APP SUPPORT: If the user asks how to do something inside this app (KindleHub) — change wallpaper, save chat history, add an API key, switch to landscape, export data, find a feature — answer using the manual below. Quote the exact button/tab names. If the answer isn't in the manual, say so plainly rather than guessing.\n\n" +
+    "APP SUPPORT: If the user asks how to do something inside this app (KindleHub) — change wallpaper, save chat history, add an API key, export data, find a feature — answer using the manual below. Quote the exact button/tab names. If the answer isn't in the manual, say so plainly rather than guessing.\n\n" +
     "==== KINDLEHUB MANUAL (for app-support questions) ====\n" +
     (typeof KINDLEHUB_MANUAL!=='undefined'?KINDLEHUB_MANUAL:'') +
     "\n==== END MANUAL ====";
@@ -24229,42 +24019,7 @@ function setMode(m){
 }
 tabCalc.onclick=()=>setMode('calc');
 tabStats.onclick=()=>setMode('stats');
-  // Landscape rotation button — in topbar, not overlapping keys
-  const rotBtn=txt('button','[>]',{className:'calc-angle-btn',title:'Rotate to landscape'});
-  (function(){
-    const rr=document.getElementById('rotateRoot');
-    if(rr&&rr.getAttribute('data-rotated')==='1'){
-      rotBtn.disabled=true;rotBtn.style.opacity='0.35';rotBtn.title='Disabled in landscape mode';
-    }
-  })();
-  rotBtn.onclick=()=>{
-    const rr=document.getElementById('rotateRoot');
-    if(rr&&rr.getAttribute('data-rotated')==='1')return;
-    // Use same rotateRoot approach
-    if(!rr)return;
-    const isRot=rr.getAttribute('data-rotated')==='1';
-    if(isRot){
-      rr.removeAttribute('data-rotated');
-      rr.style.cssText='width:100%;height:100%;position:relative;';
-      document.body.style.overflow='';
-      rotBtn.textContent='[>]';
-    } else {
-      const pw=window.innerWidth,ph=window.innerHeight;
-      if(pw>=ph)return;
-      rr.setAttribute('data-rotated','1');
-      rr.style.cssText=[
-        'position:fixed','top:0','left:0',
-        'width:'+ph+'px','height:'+pw+'px',
-        'transform-origin:top left',
-        'transform:rotate(90deg) translateX(0) translateY(-'+pw+'px)',
-        'overflow:hidden','background:var(--bg)'
-      ].join(';');
-      document.body.style.overflow='hidden';
-      rotBtn.textContent='[<]';
-    }
-  };
   root.style.position='relative';
-  topbar.appendChild(rotBtn);
 tab2d.onclick=()=>setMode('graph2d');
 tab3d.onclick=()=>setMode('graph3d');
 angleBtn.onclick=()=>{C.deg=!C.deg;angleBtn.textContent=C.deg?'DEG':'RAD';};
@@ -24585,11 +24340,10 @@ const LightsOut=(()=>{
     }
   }
 
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Lights Out puzzles are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -24820,11 +24574,10 @@ const SnakesLadders=(()=>{
     drawBoard(canvas,null);
     updateStatus();
   }
-  function restore(){
-    const g=S.games.mastermind&&S.games.mastermind.current;
-    if(g){G=JSON.parse(JSON.stringify(g));enterImmersive('Mastermind');render();}
-    else toast('No saved game');
-  }
+  /* Snakes & Ladders games are never persisted mid-game, so there is
+     nothing to restore. (The old version was a copy-paste of
+     Mastermind's restore and loaded a MASTERMIND save here.) */
+  function restore(){toast('No saved game');}
   return{start,restore};
 })();
 
@@ -25331,9 +25084,9 @@ const KINDLEHUB_MANUAL=[
 "",
 "## KindleOS launcher",
 "",
-"KindleOS is the full-screen launcher layered on top of KindleHub. It has three swipeable pages: the widget page (page 0) shows the clock, weather, and stats; pages 1 and 2 hold app icons in a grid (16 per page in portrait, 12 in landscape). Long-press an app icon to remove it from the grid. Swipe up on the dock to add more apps. Swipe down on the status bar to open Control Centre.",
+"KindleOS is the full-screen launcher layered on top of KindleHub. It has three swipeable pages: the widget page (page 0) shows the clock, weather, and stats; pages 1 and 2 hold app icons in a 4×4 grid (16 per page). Long-press an app icon to remove it from the grid. Swipe up on the dock to add more apps. Swipe down on the status bar to open Control Centre.",
 "",
-"Control Centre includes quick toggles for dark mode, font size, wallpaper, widgets, landscape rotation, and a Tour button that walks you through every part of KindleOS. The Exit KindleOS button returns you to the regular App-mode tab bar.",
+"Control Centre includes quick toggles for dark mode, font size, wallpaper, widgets, and a Tour button that walks you through every part of KindleOS. The Exit KindleOS button returns you to the regular App-mode tab bar.",
 "",
 "Wallpapers: open Settings → KindleOS → Wallpaper. Modes are Plain White, Gradient, Dark, and Photo. In Photo mode you pick from a curated set of 19 thumbnails. Widgets (weather, next event, quote, stats) can be turned on or off individually in the same panel.",
 "",
@@ -25369,7 +25122,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "The Games tab has 30+ titles grouped into Word & Logic (Hangman, Wordle, Sudoku, Minesweeper, Word Search, Lights Out, Mastermind), Board & Card (Tic-Tac-Toe, Connect 4, Chess, Battleship, Solitaire, Snakes & Ladders, Memory), Arcade (Snake, Tetris, Space Invaders, 2048, Gem Blast), and Simulation (Flight Sim, Tower Defence).",
 "",
-"Stats are tracked automatically — wins, streaks, games played. Ask the AI \"my stats\" any time to see them. Most games support save-and-resume; Hangman, Memory, Wordle, and Mastermind have explicit Restore buttons.",
+"Stats are tracked automatically — wins, streaks, games played. Ask the AI \"my stats\" any time to see them. Most games support save-and-resume; Hangman, Memory, Wordle, Mastermind, and Connect 4 have explicit Resume buttons, and Chess and Solitaire offer to resume a saved game when you open them.",
 "",
 "## Reading tracker, flashcards, journal",
 "",
@@ -25383,7 +25136,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "## Calculator, science, formulas",
 "",
-"The Calc tab is a full scientific calculator with history, graphing, and a unit-aware equation solver. Tap the rotate button inside the calculator to flip to landscape for easier input. The Science tab has unit converters, periodic table, formula reference (physics, chemistry, maths, engineering), and a constants browser.",
+"The Calc tab is a full scientific calculator with history, graphing, and a unit-aware equation solver. The Science tab has unit converters, periodic table, formula reference (physics, chemistry, maths, engineering), and a constants browser.",
 "",
 "## Weather, news, stocks, maps",
 "",
@@ -25405,10 +25158,6 @@ const KINDLEHUB_MANUAL=[
 "App Settings (default tab) covers: your name, theme, font, font size, dyslexic font toggle, language, default landing tab, AI provider and keys, hidden tabs (turn off tabs you do not use), keyboard mode (auto / always / landscape / off), and data export / import.",
 "",
 "KindleOS Settings covers wallpapers, widgets, dock pinning, and a Launch button that opens KindleOS immediately.",
-"",
-"## Landscape mode",
-"",
-"Tap the Landscape button in the header to rotate the whole app 90°. Everything reflows — chat composer stays at the bottom, the calculator flips to wide layout, KindleOS shows a 4×3 app grid instead of 4×4. Tap again to go back to portrait. Setting persists across launches.",
 "",
 "## Messages — chat groups and history caps",
 "",
@@ -26257,6 +26006,7 @@ games:()=>{
     const row=el('div',{className:'card-row',style:{marginTop:'6px',gap:'6px'}});
     row.appendChild(txt('button','Play',{className:'btn primary','data-game':'connect4',style:{flex:'1'}}));
     row.appendChild(txt('button','Play Online',{className:'btn small','data-online-game':'connect4'}));
+    row.appendChild(txt('button','Resume',{className:'btn small',id:'c4Restore'}));
     c.appendChild(row);
   }));
   rowBoard.appendChild(gc('Battleship',null,c=>{
@@ -27378,11 +27128,15 @@ dictionary:()=>{
     resultDiv.appendChild(txt('p','No definition found for "'+word+'".',{style:{color:'var(--muted)',fontSize:'13px'}}));
   }
 
-  let _searchTimer=null;
+  let _searchTimer=null,_searchSeq=0;
   function doSearch(){
     const q=searchIn.value.trim();
     if(!q)return;
     const ql=q.toLowerCase();
+    /* Sequence token: with the 400 ms debounce two lookups can be in
+       flight at once, and the SLOWER (older) response used to land
+       last and overwrite the newer word's definition. */
+    const seq=++_searchSeq;
     resultDiv.innerHTML='';
     // Show local result instantly if available
     if(DICT[ql]){
@@ -27397,10 +27151,12 @@ dictionary:()=>{
     fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(ql))
       .then(r=>{if(!r.ok)throw new Error('not found');return r.json();})
       .then(data=>{
+        if(seq!==_searchSeq)return; /* stale response — a newer search owns the panel */
         resultDiv.innerHTML='';
         showApiResult(q,data);
       })
       .catch(()=>{
+        if(seq!==_searchSeq)return;
         loadEl.remove();
         if(!DICT[ql])showNotFound(q);
       });
@@ -27899,7 +27655,7 @@ maps:()=>{
       if(px<-5||px>MAP_W+5||py<-5||py>MAP_H+5)return;
       const pin=el('div',{className:'saved-pin'});
       pin.style.cssText=`position:absolute;left:${px-6}px;top:${py-18}px;z-index:16;text-align:center;pointer-events:none;`;
-      pin.innerHTML=`<div style="width:12px;height:12px;background:#1a6bc4;border:2px solid #fff;border-radius:50%;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div><div style="font-size:7px;background:rgba(26,107,196,0.9);color:#fff;padding:1px 3px;border-radius:2px;margin-top:1px;white-space:nowrap;max-width:60px;overflow:hidden;text-overflow:ellipsis;">${p.name.slice(0,12)}</div>`;
+      pin.innerHTML=`<div style="width:12px;height:12px;background:#1a6bc4;border:2px solid #fff;border-radius:50%;margin:0 auto;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div><div style="font-size:7px;background:rgba(26,107,196,0.9);color:#fff;padding:1px 3px;border-radius:2px;margin-top:1px;white-space:nowrap;max-width:60px;overflow:hidden;text-overflow:ellipsis;">${String(p.name||'').slice(0,12).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}</div>`;
       mapWrap.insertBefore(pin,xhair);
     });
 
@@ -28258,9 +28014,16 @@ maps:()=>{
 
         renderMap();
 
-        // Fit map to show full route
-        const lats=coords.map(p=>p.lat),lons=coords.map(p=>p.lon);
-        const minLat=Math.min(...lats),maxLat=Math.max(...lats),minLon=Math.min(...lons),maxLon=Math.max(...lons);
+        // Fit map to show full route. Loop (not Math.min(...spread)):
+        // an empty geometry produced NaN coords that wedged the map,
+        // and spreading thousands of route points can overflow the
+        // call stack on older WebKit.
+        if(!coords.length)return;
+        let minLat=coords[0].lat,maxLat=coords[0].lat,minLon=coords[0].lon,maxLon=coords[0].lon;
+        for(const p of coords){
+          if(p.lat<minLat)minLat=p.lat;if(p.lat>maxLat)maxLat=p.lat;
+          if(p.lon<minLon)minLon=p.lon;if(p.lon>maxLon)maxLon=p.lon;
+        }
         mapState.lat=(minLat+maxLat)/2;mapState.lon=(minLon+maxLon)/2;
         // Pick zoom to fit
         const latSpan=maxLat-minLat,lonSpan=maxLon-minLon;
@@ -31099,7 +30862,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
           const tickRow=el('div',{style:'display:flex;justify-content:space-between;padding:0 2px;margin-top:-4px;'});
           allFrames.forEach((f,i)=>{
             const isFore=i>=pastFrames.length;
-            const dot=el('div',{style:'width:3px;height:3px;border-radius:50%;background:'+(isFore?'#0088ff':'var(--fg)')+';margin-top:2px;opacity:'+(i===frameIdx?'1':'0.4')+';;flex-shrink:0;'});
+            const dot=el('div',{style:'width:3px;height:3px;border-radius:50%;background:'+(isFore?'#0088ff':'var(--fg)')+';margin-top:2px;opacity:'+(i===frameIdx?'1':'0.4')+';flex-shrink:0;'});
             dot._idx=i;tickRow.appendChild(dot);
           });
           tlWrap.appendChild(tickRow);
@@ -32045,10 +31808,40 @@ reading:()=>{
 
   v.appendChild(g);
 
+  /* ── Flashcards ──
+     The whole deck system (4 study modes, SRS spaced repetition, CSV
+     import) existed but had NO entry point anywhere in the UI:
+     renderDeckList() targets #deckList, which no view ever created, so
+     AI-generated decks were saved and then unreachable — and the home
+     widget's "Study" button jumped here to nothing. This card is that
+     missing home. */
+  const fcCard=el('div',{className:'card',style:{marginTop:'10px'}});
+  const fcHdr=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
+  fcHdr.appendChild(txt('h3','Flashcards',{style:{margin:'0'}}));
+  const fcBtns=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}});
+  const fcImportBtn=txt('button','Import CSV',{className:'btn small'});
+  fcImportBtn.onclick=()=>{
+    const inp=document.createElement('input');inp.type='file';inp.accept='.csv,.txt,text/csv,text/plain';
+    inp.onchange=e=>{
+      const f=e.target.files&&e.target.files[0];if(!f)return;
+      const rd=new FileReader();
+      rd.onload=()=>importCSV(String(rd.result||''),f.name.replace(/\.(csv|txt)$/i,''));
+      rd.readAsText(f);
+    };
+    inp.click();
+  };
+  fcBtns.appendChild(fcImportBtn);
+  fcHdr.appendChild(fcBtns);
+  fcCard.appendChild(fcHdr);
+  fcCard.appendChild(txt('p','Make decks by asking the Assistant for flashcards on any topic, or import a CSV (front, answer per line).',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 8px'}}));
+  fcCard.appendChild(el('div',{id:'deckList'}));
+  v.appendChild(fcCard);
+
   /* Hook into renderBooks to also update stat bar */
   const origRender=window._origRenderBooks||renderBooks;
-  ON_SHOW.reading=()=>{renderBooks();updateStatBar();refreshNoteBookList();};
+  ON_SHOW.reading=()=>{renderBooks();updateStatBar();refreshNoteBookList();renderDeckList();};
   updateStatBar();
+  renderDeckList();
   return v;
 },
 
@@ -32269,6 +32062,11 @@ breathe:()=>{
     const ex=EXERCISES[breathExIdx];
     breathLast=performance.now();
     breathAnim=setInterval(()=>{
+      /* Self-stop when the breathe UI has left the DOM (user switched
+         view mid-session) — otherwise this 80 ms tick ran forever,
+         draining the battery on e-ink devices. */
+      const lbl=document.getElementById('mfStepLbl');
+      if(!lbl||!lbl.isConnected){pauseBreath();return;}
       const now=performance.now();
       const dt=(now-breathLast)/1000;
       breathLast=now;
@@ -33322,7 +33120,7 @@ settings:()=>{
   const _accStatus=el('div',{style:{fontSize:'12px',marginBottom:'10px'}});
   function _updateAccStatus(){
     if(S.authToken&&S.email){
-      _accStatus.innerHTML='Signed in as <strong>'+S.email+'</strong>'+(S.syncEnabled?' &mdash; sync on':' &mdash; sync off')+'.';
+      _accStatus.innerHTML='Signed in as <strong>'+String(S.email||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))+'</strong>'+(S.syncEnabled?' &mdash; sync on':' &mdash; sync off')+'.';
     } else {
       _accStatus.textContent='Not signed in.';
     }
@@ -34306,7 +34104,7 @@ feedback:()=>{
       const masterOv=(function(){try{return localStorage.getItem('kh_master_override');}catch(e){return null;}})();
       if(!_sbActive()){
         const midRow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',marginBottom:'10px',fontSize:'11px',fontFamily:'monospace'}});
-        midRow.innerHTML='<strong>Master item:</strong> '+(masterOv?masterOv+'<br><span style="color:var(--danger);">⚠ Recovery override active — paste this ID into KH_REG in the source so other devices can find it.</span>':KH_REG);
+        midRow.innerHTML='<strong>Master item:</strong> '+(masterOv?String(masterOv).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))+'<br><span style="color:var(--danger);">⚠ Recovery override active — paste this ID into KH_REG in the source so other devices can find it.</span>':KH_REG);
         c.appendChild(midRow);
       }
       c.appendChild(txt('div','ORPHAN ITEM CLEANUP (jsonstorage only)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -36238,7 +36036,7 @@ Deno.serve(async (req)=>{
 
     /* Chat transcript area */
     const botLog=el('div',{style:{maxHeight:'320px',overflowY:'auto',border:'var(--thin)',borderRadius:'8px',padding:'10px',background:'var(--bg)',display:'flex',flexDirection:'column',gap:'8px',minHeight:'80px'}});
-    const placeholder=txt('div','Hi! I\'m the KindleHub support bot. Ask me anything — wallpapers, AI setup, games, landscape mode, data backup. I\'m grounded in the manual below.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}});
+    const placeholder=txt('div','Hi! I\'m the KindleHub support bot. Ask me anything — wallpapers, AI setup, games, data backup. I\'m grounded in the manual below.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}});
     botLog.appendChild(placeholder);
     botCard.appendChild(botLog);
     let botMsgs=[];/* {role,text} */
@@ -36273,9 +36071,9 @@ Deno.serve(async (req)=>{
       'How do I change the wallpaper?',
       'Where do I add my Gemini key?',
       'How do I save a chat session?',
-      'How do I switch to landscape mode?',
       'How do I export my data?',
-      'How do I use the calculator in landscape?',
+      'How do I hide tabs I never use?',
+      'How do I back up my notes?',
     ];
     SUGGESTED.forEach(q=>{
       const c=txt('button',q,{className:'btn small'});
@@ -40397,14 +40195,18 @@ rss:()=>{
         const aiBtn=txt('button','✦ Summary',{className:'rss-act-btn'});
         aiBtn.onclick=async()=>{
           aiBtn.disabled=true;aiBtn.textContent='✦ Thinking…';
-          const bodyEl=card.querySelector('.rss-article-body');
-          const src=bodyEl?bodyEl.textContent:(item.content||item.description||'').replace(/<[^>]+>/g,' ');
-          const out=await khiCall('Summarize this news article in 3 short bullets, capturing the who/what/why. No preamble.\n\nHeadline: '+(item.title||'')+'\n\n'+src.slice(0,4000),{maxTokens:400});
+          try{
+            const bodyEl=card.querySelector('.rss-article-body');
+            const src=bodyEl?bodyEl.textContent:(item.content||item.description||'').replace(/<[^>]+>/g,' ');
+            const out=await khiCall('Summarize this news article in 3 short bullets, capturing the who/what/why. No preamble.\n\nHeadline: '+(item.title||'')+'\n\n'+src.slice(0,4000),{maxTokens:400});
+            if(out){
+              const box=el('div',{className:'khi-output',style:'margin-top:6px;'});box.textContent=out.trim();
+              card.appendChild(box);
+            }
+          }catch(e){toast('Summary failed — try again');}
+          /* finally-style reset: without this a rejected call left the
+             button stuck on "Thinking…" forever */
           aiBtn.disabled=false;aiBtn.textContent='✦ Summary';
-          if(out){
-            const box=el('div',{className:'khi-output',style:'margin-top:6px;'});box.textContent=out.trim();
-            card.appendChild(box);
-          }
         };
         btnRow.appendChild(aiBtn);
       }
@@ -45502,8 +45304,11 @@ function buildUI(){
   exportPPTXBtn.onclick=async()=>{
     const d=activeDeck();
     if(!d){toast('No deck active');return;}
-    if(typeof PptxGenJS==='undefined'){toast('PPTX library not loaded');return;}
     exportPPTXBtn.disabled=true;exportPPTXBtn.textContent='...';
+    if(typeof PptxGenJS==='undefined'){
+      try{await loadVendorScript('https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js');}catch(e){}
+      if(typeof PptxGenJS==='undefined'){toast('PPTX library failed to load — check connection');exportPPTXBtn.disabled=false;exportPPTXBtn.textContent='PPTX';return;}
+    }
     try{
       const pptx=new PptxGenJS();pptx.layout='LAYOUT_16x9';pptx.author='KindleHub';pptx.title=d.title||'Presentation';
       for(const slide of d.slides){
@@ -45532,8 +45337,11 @@ function buildUI(){
   const exportPDFBtn=txt('button','PDF',{className:'btn small'});
   exportPDFBtn.onclick=async()=>{
     const d=activeDeck();if(!d){toast('No deck active');return;}
-    if(typeof window.jspdf==='undefined'){toast('PDF library not loaded');return;}
     exportPDFBtn.disabled=true;exportPDFBtn.textContent='...';
+    if(typeof window.jspdf==='undefined'||!window.jspdf.jsPDF){
+      try{await loadVendorScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');}catch(e){}
+      if(typeof window.jspdf==='undefined'||!window.jspdf.jsPDF){toast('PDF library failed to load — check connection');exportPDFBtn.disabled=false;exportPDFBtn.textContent='PDF';return;}
+    }
     try{
       const {jsPDF}=window.jspdf;
       const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[SLIDE_W,SLIDE_H]});
@@ -45683,7 +45491,10 @@ function buildDeckList(){
       const file=e.target.files&&e.target.files[0];if(!file)return;
       importPDFBtn.disabled=true;importPDFBtn.textContent='Importing...';
       try{
-        if(typeof pdfjsLib==='undefined'){toast('PDF library loading, please wait and retry');importPDFBtn.disabled=false;importPDFBtn.textContent='Import PDF';return;}
+        if(typeof pdfjsLib==='undefined'){
+          try{await loadVendorScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');}catch(e){}
+          if(typeof pdfjsLib==='undefined'){toast('PDF library failed to load — check connection');importPDFBtn.disabled=false;importPDFBtn.textContent='Import PDF';return;}
+        }
         pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
         const arrayBuf=await file.arrayBuffer();
         const pdfDoc=await pdfjsLib.getDocument({data:arrayBuf}).promise;
@@ -49311,7 +49122,7 @@ messages:()=>{
         if(m.replyTo&&msgById[m.replyTo]){
           const rq=el('div',{className:'msg-reply-quote'});
           const orig=msgById[m.replyTo];
-          rq.innerHTML='<b>'+(orig.displayName||'Unknown')+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
+          rq.innerHTML='<b>'+String(orig.displayName||'Unknown').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
           bubble.appendChild(rq);
         }
         if(m.important)bubble.appendChild(txt('span','IMPORTANT',{className:'msg-important-tag'}));
@@ -49356,7 +49167,7 @@ messages:()=>{
           actionRow=el('div',{className:'msg-action-row'});
           /* Reply */
           const rBtn=txt('button','Reply',{className:'msg-action-btn'});
-          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+(m.displayName||'?')+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
+          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+String(m.displayName||'?').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
           actionRow.appendChild(rBtn);
           /* React — opens a small inline picker */
           const reactBtn=txt('button','React',{className:'msg-action-btn'});
@@ -51214,7 +51025,7 @@ BUILDERS.games=()=>{
 
     {view:'home',target:'header',pos:'below',label:'Header',
      title:'Header Bar',
-     body:'Top-left: the KindleHub Pro logo and version. Top-right: the clock, Landscape button (rotates the whole app 90 degrees), Theme toggle, and KindleOS launcher. Landscape preference is saved across sessions.'},
+     body:'Top-left: the KindleHub Pro logo and version. Top-right: the clock, Theme toggle, UI mode switch, and KindleOS launcher.'},
 
     {view:'home',target:'.header-controls',pos:'below',label:'Theme + AI',
      title:'Theme & AI Keys',
@@ -51286,7 +51097,7 @@ BUILDERS.games=()=>{
 
     {view:'calc',target:'.tab[data-view="calc"]',pos:'below',label:'Calc',
      title:'Calculator',
-     body:'A full scientific calculator with history, graphing mode and a unit-aware equation solver. Tap the rotate button inside the calculator to flip to landscape for easier input.'},
+     body:'A full scientific calculator with history, graphing mode and a unit-aware equation solver.'},
 
     {view:'weather',target:'.tab[data-view="weather"]',pos:'below',label:'Weather',
      title:'Weather',
@@ -51318,7 +51129,7 @@ BUILDERS.games=()=>{
 
     {view:'settings',target:'#view-settings .card',pos:'below',label:'Keyboard',
      title:'KindleHub Floating Keyboard',
-     body:'A custom on-screen keyboard with big round keys, word suggestions, and an AI completions button using Gemini Flash Lite. Works in portrait and landscape. Enable or disable it in Settings.'},
+     body:'A custom on-screen keyboard with big round keys, word suggestions, and an AI completions button using Gemini Flash Lite. Enable or disable it in Settings.'},
 
     {view:'feedback',target:'.tab[data-view="feedback"]',pos:'below',label:'Feedback',
      title:'Community Feedback Board',
@@ -51377,19 +51188,7 @@ BUILDERS.games=()=>{
   }
 
   function placeCard(sel,pos){
-    /* In landscape mode rotateRoot is rotated 90 ° CW and becomes the
-       containing block for position:fixed children.  Its local coordinate
-       space is (innerHeight) wide × (innerWidth) tall, and viewport coords
-       map to local as: local_x = vp_y,  local_y = innerWidth - vp_x.
-       We convert all element rects and use local dimensions throughout so
-       that the card and highlight are positioned correctly inside the
-       rotated context. */
-    const rr=document.getElementById('rotateRoot');
-    const isLS=rr&&rr.getAttribute('data-rotated')==='1';
-    const pw=window.innerWidth,ph=window.innerHeight;
-    /* lw/lh = usable width/height in the local coordinate space */
-    const lw=isLS?ph:pw;
-    const lh=isLS?pw:ph;
+    const lw=window.innerWidth,lh=window.innerHeight;
 
     const cw=Math.min(290,lw-32);
     card.style.width=cw+'px';
@@ -51404,17 +51203,7 @@ BUILDERS.games=()=>{
     if(!el){hl.style.display='none';arrow.style.display='none';return;}
 
     const rect=el.getBoundingClientRect();
-    /* Convert viewport bounding rect to local rotateRoot coordinates */
-    let r;
-    if(isLS){
-      const ll=rect.top;
-      const lt=pw-rect.right;
-      const lrw=rect.height;
-      const lrh=rect.width;
-      r={left:ll,top:lt,width:lrw,height:lrh,right:ll+lrw,bottom:lt+lrh};
-    }else{
-      r={left:rect.left,top:rect.top,width:rect.width,height:rect.height,right:rect.right,bottom:rect.bottom};
-    }
+    const r={left:rect.left,top:rect.top,width:rect.width,height:rect.height,right:rect.right,bottom:rect.bottom};
 
     const pad=5;
     hl.style.cssText='display:block;position:fixed;z-index:8001;border:2px solid #fff;border-radius:8px;box-shadow:0 0 0 4000px rgba(0,0,0,0.72),0 0 0 4px rgba(255,255,255,0.3);pointer-events:none;animation:tourPulse 1.5s ease-in-out infinite;';
@@ -52901,7 +52690,10 @@ function injectStyles(){
   s.id='kh-kbd-css';
   /* Note: no template literals — plain string concat to avoid any parser issue */
   s.textContent=
-    '#kh-float-kbd{position:fixed;bottom:0;left:0;right:0;z-index:99999;'+
+    /* Above every input-bearing overlay (modals 600xxx, prompts 999999)
+       so the on-screen keyboard can always type into them; below the
+       selection overlay (1000050) and crash card (2000000). */
+    '#kh-float-kbd{position:fixed;bottom:0;left:0;right:0;z-index:1000000;'+
     'background:var(--card,#f5f5f5);border-top:1px solid var(--muted,#888);'+
     'box-shadow:0 -6px 28px rgba(0,0,0,.22);'+
     'display:none;flex-direction:column;gap:5px;padding:6px 4px 10px;'+
@@ -52931,15 +52723,7 @@ function injectStyles(){
     'cursor:pointer;white-space:nowrap;flex-shrink:0;'+
     'box-shadow:0 1px 3px rgba(0,0,0,.09);-webkit-tap-highlight-color:transparent;}'+
     '.kh-sugg-chip:active{background:var(--highlight,#ddd);}'+
-    '.kh-sugg-empty{color:var(--muted,#888);font-size:11px;padding:4px 8px;}'+
-    /* When app is rotated to landscape, keyboard rotates with it via rotateRoot;
-       keep keys generous in both orientations for thumb-friendly tapping */
-    '#rotateRoot[data-rotated="1"] #kh-float-kbd{'+
-    'left:0;right:0;bottom:0;}'+
-    '#rotateRoot[data-rotated="1"] .kh-key{height:58px;width:58px;font-size:21px;border-radius:16px;}'+
-    '#rotateRoot[data-rotated="1"] .kh-key-wide{min-width:64px;height:58px;font-size:15px;}'+
-    '#rotateRoot[data-rotated="1"] .kh-row{gap:7px;}'+
-    '#rotateRoot[data-rotated="1"] #kh-float-kbd{gap:7px;padding:8px 8px 12px;}';
+    '.kh-sugg-empty{color:var(--muted,#888);font-size:11px;padding:4px 8px;}';
   document.head.appendChild(s);
 }
 
@@ -53521,8 +53305,6 @@ function init(){
 
 /* Module-level so window._khKeyboard.refresh can reach it */
 function isLandscape(){
-  var rr=document.getElementById('rotateRoot');
-  if(rr&&rr.getAttribute('data-rotated')==='1')return true;
   /* Prefer screen.orientation / window.orientation — those report *device*
      orientation and are immune to a soft keyboard shrinking the viewport.
      Comparing innerWidth/innerHeight was wrong: when the OS keyboard pops
@@ -53555,7 +53337,7 @@ function refreshKbd(){
   if(want&&!_enabled)enable();
   else if(!want&&_enabled)disable();
 }
-/* Re-evaluate on orientation/landscape toggle (handles 'landscape' mode) */
+/* Re-evaluate on orientation change (handles 'landscape' keyboard mode) */
 window.addEventListener('resize',refreshKbd);
 window.addEventListener('orientationchange',refreshKbd);
 /* Safety net: every 800 ms, if an input is focused but the keyboard isn't
@@ -53570,12 +53352,6 @@ setInterval(function(){
     _attachToTarget(af);
   }
 },800);
-document.addEventListener('DOMContentLoaded',function(){
-  if(typeof MutationObserver!=='undefined'){
-    var rr=document.getElementById('rotateRoot');
-    if(rr)new MutationObserver(refreshKbd).observe(rr,{attributes:true,attributeFilter:['data-rotated']});
-  }
-});
 
 window._khKeyboard={enable:enable,disable:disable,relocate:relocateKbd,isKindleBrowser:isKindleBrowser,refresh:function(){if(typeof refreshKbd==='function')refreshKbd();},hide:function(){if(typeof hideKbd==='function')hideKbd();}};
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}
@@ -53583,5 +53359,5 @@ else{setTimeout(init,0);}
 
 })(); /* ── end Keyboard IIFE ── */
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a09ac71b18fdd1fe',t:'MTc4MTExOTY5Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
