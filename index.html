@@ -1805,31 +1805,42 @@ if(typeof window!=='undefined'){
   });
 }
 
+/* True only for a genuine localStorage quota error. Everything else
+   (circular JSON, a throw from cloud-sync / boot-hints / compression) must
+   NOT raise the "Storage is full" banner — that false positive is why an
+   admin on a 1.5 MB blob saw the popup despite being nowhere near full. */
+function _isQuotaError(e){
+  if(!e)return false;
+  const name=e.name||'',code=e.code;
+  return name==='QuotaExceededError'||name==='NS_ERROR_DOM_QUOTA_REACHED'||code===22||code===1014;
+}
+/* Persist the main blob, then run ancillary work in isolation so a failure
+   in any of it can never be mistaken for "out of space". Returns true iff
+   the blob itself was written. */
+function _persistState(){
+  const json=JSON.stringify(S);          /* a throw here is a serialization bug, not quota */
+  localStorage.setItem(SK,json);          /* a throw here is the only real quota signal */
+  try{_writeBootHints();}catch(_){}
+  try{scheduleCloudSync(false);}catch(_){}
+  try{if(typeof _storageTick==='function')_storageTick();}catch(_){}
+  try{if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json);}catch(_){}
+  return true;
+}
+function _onSaveError(e){
+  if(_isQuotaError(e)){try{if(typeof _checkStorageHealth==='function')_checkStorageHealth(true);}catch(_){}}
+  else{try{console.warn('save failed (non-quota — not a storage-full condition):',e);}catch(_){}}
+}
 function save(d=1200){
   _stateDirty=true;_invalidateFp();
   if(_st)clearTimeout(_st);
   _st=setTimeout(()=>{
-    try{
-      const json=JSON.stringify(S);
-      localStorage.setItem(SK,json);
-      try{_writeBootHints();}catch(_){}
-      scheduleCloudSync(false);
-      try{if(typeof _storageTick==='function')_storageTick();}catch(_){}
-      try{if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json);}catch(_){}
-    }catch(e){try{if(typeof _checkStorageHealth==='function')_checkStorageHealth(true);}catch(_){}}
+    try{_persistState();}catch(e){_onSaveError(e);}
   },d);
 }
 function saveNow(){
   _stateDirty=true;_invalidateFp();
   if(_st){clearTimeout(_st);_st=null;}
-  try{
-    const json=JSON.stringify(S);
-    localStorage.setItem(SK,json);
-    try{_writeBootHints();}catch(_){}
-    scheduleCloudSync(false);
-    try{if(typeof _storageTick==='function')_storageTick();}catch(_){}
-    try{if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json);}catch(_){}
-  }catch(e){try{if(typeof _checkStorageHealth==='function')_checkStorageHealth(true);}catch(_){}}
+  try{_persistState();}catch(e){_onSaveError(e);}
 }
 
 /* ── Global time source ─────────────────────────────────────────────────────
@@ -10790,6 +10801,12 @@ const DigQuest=(function(){
   let spawn={x:0,y:0},checkpointAt=null;
   let crystals=0,keysHave=0,coins=0,lives=3,score=0,bank=0,flash=0,digCool=0,hintAt=0,hurtCool=0;
   let drillT=0,shieldT=0,hasSpring=false,jumpsLeft=0,wasJump=false;
+  /* jumpQueued latches a jump request from a tap so it survives until the
+     next physics step consumes it. On e-ink the render loop can run at
+     ~9 FPS, so a quick tap used to set input.jump true→false entirely
+     between two frames and the press was never sampled — the #1 reason
+     JUMP felt dead on Kindle. */
+  let jumpQueued=false;
   let enemies=[],boss=null,bossDown=false;
   const SHIELD_S=9,BOUNCE=0.55;
   let input={left:false,right:false,down:false,jump:false},digHeld=false,digDownHeld=false;
@@ -10871,7 +10888,7 @@ const DigQuest=(function(){
     const up=gd().up;
     player.x=spawn.x;player.y=spawn.y;player.vx=0;player.vy=0;player.onGround=false;player.facing=1;
     keysHave=0;lives=3+(up.lives||0);flash=0;acc=0;last=0;hurtCool=0;
-    drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;
+    drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;
     hideOverlay();mode='play';updateHud();render();
   }
 
@@ -10959,8 +10976,9 @@ const DigQuest=(function(){
     let ax=(input.right?1:0)-(input.left?1:0);
     if(ax!==0)player.facing=ax;
     player.vx=ax*MOVE;
-    const jp=input.jump&&!wasJump;
+    const jp=jumpQueued||(input.jump&&!wasJump);
     if(jp){if(player.onGround){player.vy=-JUMP;player.onGround=false;}else if(jumpsLeft>0){player.vy=-JUMP*0.9;jumpsLeft--;flash=Math.max(flash,0.08);}}
+    jumpQueued=false;
     wasJump=input.jump;
     player.vy+=GRAV*dt;if(player.vy>MAXFALL)player.vy=MAXFALL;
     let nx=player.x+player.vx*dt;
@@ -11082,7 +11100,7 @@ const DigQuest=(function(){
     if(k==='ArrowLeft'||k==='a'||k==='A'){input.left=true;e.preventDefault();}
     else if(k==='ArrowRight'||k==='d'||k==='D'){input.right=true;e.preventDefault();}
     else if(k==='ArrowDown'||k==='s'||k==='S'){input.down=true;e.preventDefault();}
-    else if(k==='ArrowUp'||k==='w'||k==='W'||k===' '){input.jump=true;e.preventDefault();}
+    else if(k==='ArrowUp'||k==='w'||k==='W'||k===' '){if(!input.jump)jumpQueued=true;input.jump=true;e.preventDefault();}
     else if(k==='z'||k==='Z'||k==='j'||k==='J'){digHeld=true;e.preventDefault();}
     else if(k==='x'||k==='X'){digDownHeld=true;e.preventDefault();}
   }
@@ -11109,7 +11127,7 @@ const DigQuest=(function(){
     bar.append(lg,rg);
     hold(bL,function(){input.left=true;},function(){input.left=false;});
     hold(bR,function(){input.right=true;},function(){input.right=false;});
-    hold(bJ,function(){input.jump=true;},function(){input.jump=false;});
+    hold(bJ,function(){jumpQueued=true;input.jump=true;},function(){input.jump=false;});
     hold(bDig,function(){digHeld=true;},function(){digHeld=false;});
     hold(bDn,function(){digDownHeld=true;},function(){digDownHeld=false;});
     return bar;
@@ -11152,7 +11170,7 @@ const DigQuest=(function(){
     running=false;persist();
     if(raf){cancelAnimationFrame(raf);raf=null;}
     document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);
-    input={left:false,right:false,down:false,jump:false};digHeld=false;digDownHeld=false;
+    input={left:false,right:false,down:false,jump:false};digHeld=false;digDownHeld=false;jumpQueued=false;
   }
   function loop(ts){
     if(!running)return;
@@ -14867,6 +14885,24 @@ const Wordle=(()=>{
       }
     }return best;
   }
+  /* Proper Wordle tile colouring with two-pass duplicate handling.
+     Pass 1 marks exact-position greens and consumes those answer letters;
+     pass 2 hands out yellows only while unused copies of that letter
+     remain. Without this, a guess of LLAMA against answer WORLD lit BOTH
+     L tiles yellow even though the answer has a single L — the classic
+     Wordle duplicate-letter bug. */
+  function scoreRow(guess){
+    const states=new Array(C.len).fill('absent');
+    const counts={};
+    for(let i=0;i<C.len;i++){const a=C.answer[i];counts[a]=(counts[a]||0)+1;}
+    for(let i=0;i<C.len;i++){if(guess[i]===C.answer[i]){states[i]='correct';counts[guess[i]]--;}}
+    for(let i=0;i<C.len;i++){
+      if(states[i]==='correct')continue;
+      const g=guess[i];
+      if(g&&counts[g]>0){states[i]='present';counts[g]--;}
+    }
+    return states;
+  }
   function render(){
     immersiveContent.innerHTML='';if(!C)return;
     updateImmersiveScore(`Try ${Math.min(C.attempts.length+1,6)}/6`);
@@ -14875,15 +14911,12 @@ const Wordle=(()=>{
       const row=el('div',{className:'wordle-row'});
       const guess=C.attempts[r]||'';
       const isCurrent=r===C.attempts.length&&!C.won&&C.attempts.length<6;
+      const states=(guess&&!isCurrent)?scoreRow(guess):null;
       for(let i=0;i<C.len;i++){
         const ch=isCurrent?(C.input[i]||''):(guess[i]||'');
         const cell=el('div',{className:'wordle-cell'});
         cell.textContent=ch;
-        if(guess&&!isCurrent){
-          if(C.answer[i]===ch)cell.classList.add('correct');
-          else if(C.answer.includes(ch))cell.classList.add('present');
-          else if(ch)cell.classList.add('absent');
-        }
+        if(states)cell.classList.add(states[i]);
         row.appendChild(cell);
       }
       gridWrap.appendChild(row);
@@ -15085,6 +15118,14 @@ const Snake=(()=>{
     let pos;let tries=0;
     do{pos={x:Math.floor(Math.random()*COLS),y:Math.floor(Math.random()*ROWS)};tries++;}
     while(tries<50&&game.snake.some(s=>s.x===pos.x&&s.y===pos.y));
+    /* Random sampling can fail on a nearly-full board; fall back to a
+       deterministic scan so food never spawns on the snake's body. */
+    if(game.snake.some(s=>s.x===pos.x&&s.y===pos.y)){
+      const occupied=new Set(game.snake.map(s=>s.x+','+s.y));
+      const free=[];
+      for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++)if(!occupied.has(x+','+y))free.push({x,y});
+      if(free.length)pos=free[Math.floor(Math.random()*free.length)];
+    }
     game.food=pos;
   }
 
@@ -17876,11 +17917,15 @@ function _initSolitaire(){if(Solitaire)return;Solitaire=(()=>{
       if(G.selected){
         let card=null;
         if(G.selected.zone==='waste'&&G.waste.length){card=G.waste[G.waste.length-1];}
-        else if(G.selected.zone==='tableau'){const tc=G.tableau[G.selected.col];card=tc[G.selected.row];}
+        /* Foundations take a single card, so only the TOP tableau card is
+           eligible. Without this guard, selecting a buried card and tapping
+           a foundation ran tc.splice(row) — deleting that card AND every
+           card stacked on it while only one reached the foundation. */
+        else if(G.selected.zone==='tableau'){const tc=G.tableau[G.selected.col];if(G.selected.row===tc.length-1)card=tc[G.selected.row];}
         if(card&&canFoundation(card,G.foundation[fi])){
           pushHistory();
           if(G.selected.zone==='waste'){G.waste.pop();}
-          else{const tc=G.tableau[G.selected.col];tc.splice(G.selected.row);if(tc.length&&!tc[tc.length-1].up)tc[tc.length-1].up=true;}
+          else{const tc=G.tableau[G.selected.col];tc.splice(G.selected.row,1);if(tc.length&&!tc[tc.length-1].up)tc[tc.length-1].up=true;}
           G.foundation[fi].push(card); G.moves++; G.score+=10;
           G.selected=null;
           checkWin(); draw(); persist(); updateImmersiveScore('Moves: '+G.moves+' · Score: '+G.score);
@@ -51525,7 +51570,10 @@ window.CandyCrush=(()=>{
     animating=true;
     combo=0;
     let totalPts=0;
-    while(true){
+    /* Safety cap: a pathological refill that keeps producing matches must
+       never freeze the (slow) Kindle render thread in an endless cascade. */
+    let guard=0;
+    while(guard++<200){
       const matched=findMatches();
       if(!matched)break;
       combo++;
