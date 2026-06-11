@@ -115,6 +115,12 @@ nav{
   scroll-snap-type:x proximity;
 }
 nav::-webkit-scrollbar{display:none}
+/* Landscape v2: #app sizes against 100vh of the BROWSER viewport, but the
+   rotated container's visible height is the viewport WIDTH — without this
+   clamp the lower part of every view (chat composer, calc keys) fell off
+   the visible edge. The one rule that matters. */
+#rotateRoot[data-rotated="1"] #app{height:100vw !important;}
+#rotateRoot[data-rotated="1"] main{min-height:0;}
 /* Unread dot for nav tabs (Mail) — high-contrast on e-ink */
 nav .tab.has-unread{position:relative;}
 nav .tab.has-unread::after{content:'';position:absolute;top:7px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--fg);}
@@ -1008,6 +1014,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="header-controls">
       <div class="clock" id="sysClock"></div>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
+      <button class="btn small" id="landscapeBtn" title="Rotate the app 90° for sideways reading">Landscape</button>
       <button class="btn small" id="themeBtn" title="Cycle theme: Light / Dark / Sepia">Light</button>
       <button class="btn small" id="uiModeBtn" title="Cycle home layout: Classic / Launcher / Retro">Classic</button>
       <button class="btn small" id="desktopLaunchBtn" title="Launch KindleOS" onclick="launchKindleDesktop()">KindleOS</button>
@@ -4607,10 +4614,26 @@ const KH_FONTS={system:['System',"-apple-system,BlinkMacSystemFont,'Segoe UI',Ro
 function _contrastColor(hex){try{var h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*g+0.114*b)>140?'#111111':'#ffffff';}catch(_){return '#ffffff';}}
 function applyCustomisation(){
   try{
-    var root=document.documentElement;
-    if(S.accent){root.style.setProperty('--accent',S.accent);root.style.setProperty('--accent-inv',_contrastColor(S.accent));}
-    var f=S.uiFont&&KH_FONTS[S.uiFont];
-    if(f)root.style.setProperty('--ui-font',f[1]);
+    /* Set the vars on BOTH <html> and <body>. The dark/sepia theme classes
+       (body.dark{--accent:…}) live on <body>, and custom properties resolve
+       from the nearest ancestor — so an inline override on <html> alone was
+       beaten by the theme for everything on the page. That is why accent
+       "did nothing" outside light mode. Inline-on-body outranks the class. */
+    var targets=[document.documentElement,document.body].filter(Boolean);
+    targets.forEach(function(t){
+      if(S.accent){t.style.setProperty('--accent',S.accent);t.style.setProperty('--accent-inv',_contrastColor(S.accent));}
+      else{t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');}
+      var f=S.uiFont&&KH_FONTS[S.uiFont];
+      if(f){
+        t.style.setProperty('--ui-font',f[1]);
+        /* Also drive the CONTENT font — --ui-font only covers buttons and
+           labels, and its default equals the "System" choice, so changing
+           the font looked like a no-op. Body text follows --body-font. */
+        t.style.setProperty('--body-font',f[1]);
+      }else{
+        t.style.removeProperty('--ui-font');t.style.removeProperty('--body-font');
+      }
+    });
     if(typeof _applyLang==='function')_applyLang();
   }catch(_){}
 }
@@ -4880,6 +4903,58 @@ $('uiModeBtn').onclick=()=>{
   }
   toast('UI mode: '+_uiModeLabel(next),1500);
 };
+
+/* ── Landscape mode (v2 — clean rebuild) ─────────────────────────────────
+   Rotates #rotateRoot 90° so a Kindle held sideways gets a widescreen
+   layout. Deliberately minimal compared with v1: one transform, one CSS
+   height clamp (#app must size against 100vw, the rotated viewport's
+   height), keyboard re-parent, and a resize re-apply. No per-view CSS
+   forks — that sprawl is what made v1 unmaintainable. KindleOS (which
+   mounts outside #rotateRoot) stays portrait by design. */
+function toggleLandscape(forceTo){
+  const rr=$('rotateRoot');if(!rr)return;
+  const isRot=rr.getAttribute('data-rotated')==='1';
+  const go=(forceTo!==undefined)?!!forceTo:!isRot;
+  const btn=$('landscapeBtn');
+  if(!go){
+    rr.removeAttribute('data-rotated');
+    rr.style.cssText='width:100%;height:100%;position:relative;';
+    document.body.style.overflow='';
+    if(btn){btn.textContent='Landscape';btn.classList.remove('primary');}
+    S.landscapeMode=false;
+  }else{
+    const pw=window.innerWidth,ph=window.innerHeight;
+    window._lsW=pw;window._lsH=ph;/* lets the resize handler tell a real viewport change from our own synthetic resize event */
+    rr.setAttribute('data-rotated','1');
+    rr.style.cssText=['position:fixed','top:0','left:0','width:'+ph+'px','height:'+pw+'px',
+      'transform-origin:top left','transform:rotate(90deg) translateY(-'+pw+'px)',
+      'overflow:hidden','background:var(--bg)'].join(';');
+    document.body.style.overflow='hidden';
+    if(btn){btn.textContent='Portrait';btn.classList.add('primary');}
+    S.landscapeMode=true;
+  }
+  save();
+  /* Keyboard mounts inside rotateRoot — ask it to re-seat itself. */
+  try{if(window._khKeyboard&&window._khKeyboard.relocate)window._khKeyboard.relocate();}catch(_){}
+  /* Canvases/grids re-measure against the rotated viewport. */
+  try{window.dispatchEvent(new Event('resize'));}catch(_){}
+}
+(function(){
+  const b=$('landscapeBtn');if(b)b.onclick=()=>toggleLandscape();
+  if(S.landscapeMode)setTimeout(()=>toggleLandscape(true),120);
+  /* Keep geometry correct if the viewport itself changes while rotated
+     (soft keyboard, browser chrome). Re-apply with fresh dimensions. */
+  let _lsT=null;
+  window.addEventListener('resize',()=>{
+    const rr=$('rotateRoot');
+    if(!rr||rr.getAttribute('data-rotated')!=='1')return;
+    /* Our own toggle dispatches a synthetic resize — without this check it
+       would re-trigger itself forever. Only re-apply on a REAL change. */
+    if(window.innerWidth===window._lsW&&window.innerHeight===window._lsH)return;
+    if(_lsT)clearTimeout(_lsT);
+    _lsT=setTimeout(()=>{if(S.landscapeMode)toggleLandscape(true);},250);
+  });
+})();
 
 function applyFontSize(size){
   const sz=(size||16);
@@ -43748,9 +43823,24 @@ mail:()=>{
   v.appendChild(khCard);
   if(!S.authToken||!_myMailUser()){
     khCard.appendChild(khHdr);
-    khCard.appendChild(txt('p','Sign in (Settings → Account) and you get your own address — username@'+KH_MAIL_DOMAIN+' — to send and receive mail with every other KindleHub user. Free, encrypted, works on this Kindle.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6'}}));
-    const goBtn=txt('button','Open Settings → Account',{className:'btn primary small',style:{marginTop:'6px'}});
-    goBtn.onclick=()=>{const t=document.querySelector('nav .tab[data-view="settings"]');if(t)t.click();};
+    if(S.authToken&&!_myMailUser()){
+      /* Signed in but the session has no stored username (account predates
+         it, or state was partially restored) — tell them exactly what to
+         do instead of pointing at a Settings page that can't help. */
+      khCard.appendChild(txt('p','You are signed in, but this session has no username attached — that is what becomes your address. Fix: Settings → Account → Log out, then sign back in with your username and password. Your address will be username@'+KH_MAIL_DOMAIN+'.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6'}}));
+    }else{
+      khCard.appendChild(txt('p','Your mail address is your account username + @'+KH_MAIL_DOMAIN+'. To claim it: Settings → scroll to the ACCOUNT card → type a username and password → tap Register (or Sign In if you already have one). Come back here and your inbox is live.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6'}}));
+    }
+    const goBtn=txt('button','Open Settings',{className:'btn primary small',style:{marginTop:'6px'}});
+    goBtn.onclick=()=>{
+      const t=document.querySelector('nav .tab[data-view="settings"]');if(t)t.click();
+      /* Scroll the Account card into view so "in Settings" is not a hunt. */
+      setTimeout(()=>{try{
+        const heads=[...document.querySelectorAll('#view-settings h2')];
+        const acc=heads.find(h=>/account/i.test(h.textContent));
+        if(acc)acc.scrollIntoView({block:'start'});
+      }catch(_){}},600);
+    };
     khCard.appendChild(goBtn);
   } else {
     const myAddr=_myMailUser()+'@'+KH_MAIL_DOMAIN;
@@ -53919,6 +54009,8 @@ function init(){
 
 /* Module-level so window._khKeyboard.refresh can reach it */
 function isLandscape(){
+  /* App-level soft rotation counts as landscape (landscape mode v2). */
+  try{var _rr=document.getElementById('rotateRoot');if(_rr&&_rr.getAttribute('data-rotated')==='1')return true;}catch(_){}
   /* Prefer screen.orientation / window.orientation — those report *device*
      orientation and are immune to a soft keyboard shrinking the viewport.
      Comparing innerWidth/innerHeight was wrong: when the OS keyboard pops
