@@ -115,6 +115,9 @@ nav{
   scroll-snap-type:x proximity;
 }
 nav::-webkit-scrollbar{display:none}
+/* Unread dot for nav tabs (Mail) — high-contrast on e-ink */
+nav .tab.has-unread{position:relative;}
+nav .tab.has-unread::after{content:'';position:absolute;top:7px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--fg);}
 nav .tab{
   flex:0 0 auto;text-align:center;
   padding:0 9px;
@@ -5216,6 +5219,24 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
       -- by the CHECK constraint added below.
       alter table kh_messages add column if not exists location_hint text default '';
       create index if not exists kh_messages_group_ts on kh_messages(group_code, ts);
+      -- v8.2: KindleHub Mail — username@kindlehub.pro mail between accounts.
+      -- subject/body are AES-GCM blobs keyed off the recipient username
+      -- (same scheme as kh_messages group encryption). Read/archive/trash
+      -- state lives in each user's own synced state, NOT here, so rows are
+      -- immutable except sender-unsend via owner_secret.
+      create table if not exists kh_mail (
+        id text primary key,
+        to_user text not null,                            -- recipient username (lowercase)
+        from_user text default '',                        -- sender username (display)
+        from_id text default '',                          -- sender userId
+        subject text default '',                          -- AES-GCM blob
+        body text default '',                             -- AES-GCM blob
+        ts timestamptz default now(),
+        reply_to text default '',
+        owner_secret text                                 -- sender's per-row secret
+      );
+      create index if not exists kh_mail_to_ts on kh_mail(to_user, ts);
+      create index if not exists kh_mail_from_ts on kh_mail(from_id, ts);
       create table if not exists kh_feedback (
         id text primary key,
         type text not null,
@@ -5299,6 +5320,18 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
         using (owner_secret is not null and owner_secret = kh_request_secret())
         with check (owner_secret is not null and owner_secret = kh_request_secret());
       create policy "kh_messages_delete" on kh_messages for delete
+        using (owner_secret is not null and owner_secret = kh_request_secret());
+
+      -- MAIL — anyone can read & send (privacy = AES layer, same model as
+      -- messages); only the sender can unsend (delete). No UPDATE at all:
+      -- read/archive/trash live client-side in each user's synced state.
+      alter table kh_mail enable row level security;
+      drop policy if exists "kh_mail_read"   on kh_mail;
+      drop policy if exists "kh_mail_insert" on kh_mail;
+      drop policy if exists "kh_mail_delete" on kh_mail;
+      create policy "kh_mail_read"   on kh_mail for select using (true);
+      create policy "kh_mail_insert" on kh_mail for insert with check (true);
+      create policy "kh_mail_delete" on kh_mail for delete
         using (owner_secret is not null and owner_secret = kh_request_secret());
 
       -- FEEDBACK — read, post, update votes (no delete)
@@ -8574,6 +8607,72 @@ async function _groupFetchMessages(code){
     });
   }catch(_){}
   return msgs;
+}
+
+/* ══ KindleHub Mail — username@kindlehub.pro between accounts ═══════════════
+   Built on the same primitives as group chat: rows in kh_mail, subject+body
+   AES-GCM encrypted with a key derived from 'mail:'+recipient (so both the
+   recipient AND the sender — who knows the recipient — can decrypt their
+   copy), per-row owner_secret so only the sender can unsend. Read/Archive/
+   Trash state is per-user and lives in S.mailState (synced with normal
+   state sync) — the server rows stay immutable, which keeps RLS trivial
+   and costs zero extra requests. */
+const KH_MAIL_DOMAIN='kindlehub.pro';
+function _mailNorm(u){return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40);}
+function _myMailUser(){return _mailNorm(S.email||'');}
+function _mailState(){if(!S.mailState||typeof S.mailState!=='object')S.mailState={};return S.mailState;}
+async function _mailSend(toUser,subject,body,replyTo){
+  if(!_sbActive())throw new Error('Mail needs the cloud backend — check your connection.');
+  const to=_mailNorm(toUser);
+  if(!to)throw new Error('Enter a recipient username.');
+  /* Tiny existence check so typos bounce immediately instead of vanishing. */
+  const hit=await _sbSelect('kh_users','email=eq.'+encodeURIComponent(to)+'&select=email&limit=1');
+  if(!Array.isArray(hit)||!hit.length)throw new Error('No KindleHub account called "'+to+'" — check the address.');
+  const id='m_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const secret=(typeof _newSecret==='function')?_newSecret():(String(Math.random()).slice(2)+Date.now());
+  const encSubject=await _msgEncrypt('mail:'+to,String(subject||'(no subject)').slice(0,160));
+  const encBody=await _msgEncrypt('mail:'+to,String(body||'').slice(0,8000));
+  await _sbInsert('kh_mail',[{id,to_user:to,from_user:_myMailUser(),from_id:S.userId||'',subject:encSubject,body:encBody,ts:new Date().toISOString(),reply_to:String(replyTo||''),owner_secret:secret}]);
+  try{if(!S.msgSecrets)S.msgSecrets={};S.msgSecrets[id]=secret;save();}catch(_){}
+  return id;
+}
+async function _mailFetch(folder){
+  if(!_sbActive())return[];
+  const me=_myMailUser();
+  let q;
+  if(folder==='sent')q='from_id=eq.'+encodeURIComponent(S.userId||'')+'&order=ts.desc&limit=40&select=id,to_user,from_user,from_id,subject,body,ts,reply_to';
+  else q='to_user=eq.'+encodeURIComponent(me)+'&order=ts.desc&limit=40&select=id,to_user,from_user,from_id,subject,body,ts,reply_to';
+  const rows=await _sbSelect('kh_mail',q);
+  if(!Array.isArray(rows))return[];
+  const out=[];
+  for(const r of rows){
+    let subject='',body='';
+    try{subject=await _msgDecrypt('mail:'+r.to_user,r.subject);}catch(_){subject='(unreadable)';}
+    try{body=await _msgDecrypt('mail:'+r.to_user,r.body);}catch(_){body='(unreadable)';}
+    out.push({id:r.id,to:r.to_user,from:r.from_user||'unknown',fromId:r.from_id||'',subject,body,ts:r.ts,replyTo:r.reply_to||''});
+  }
+  return out;
+}
+async function _mailUnsend(id){
+  const secret=_getMsgSecret(id);
+  if(!secret)throw new Error('Only the device that sent this mail can unsend it.');
+  await _sbDelete('kh_mail','id=eq.'+encodeURIComponent(id),secret);
+}
+/* Egress-light unread probe: one row, id+ts only. Stores the newest seen ts
+   in localStorage and flags the nav tab when something newer exists. */
+async function _mailUnreadProbe(){
+  try{
+    if(!_sbActive()||!S.authToken||!_myMailUser())return false;
+    const rows=await _sbSelect('kh_mail','to_user=eq.'+encodeURIComponent(_myMailUser())+'&order=ts.desc&limit=1&select=id,ts');
+    if(!Array.isArray(rows)||!rows.length)return false;
+    const newest=rows[0].ts||'';
+    const seen=localStorage.getItem('kh_mail_lastseen')||'';
+    const st=_mailState();
+    const isNew=newest&&newest>seen&&!(st[rows[0].id]&&st[rows[0].id].read);
+    const tab=document.querySelector('nav .tab[data-view="mail"]');
+    if(tab){tab.classList.toggle('has-unread',!!isNew);}
+    return !!isNew;
+  }catch(_){return false;}
 }
 async function _groupEditMessage(code,id,newText){
   if(_sbActive()){
@@ -25268,6 +25367,10 @@ const KINDLEHUB_MANUAL=[
 "",
 "KindleOS Settings covers wallpapers, widgets, dock pinning, and a Launch button that opens KindleOS immediately.",
 "",
+"## KindleHub Mail — your @kindlehub.pro address",
+"",
+"Every signed-in user automatically has a mail address: their username followed by @kindlehub.pro. Open the Mail tab to use it like a normal inbox — Inbox, Sent, Archive and Trash folders, Compose, Reply, Forward, and Unsend for mail you sent. To write to someone you only need their KindleHub username. Mail is encrypted in transit and at rest, read/archive state syncs across your devices, and a dot appears on the Mail tab when something new arrives. It delivers between KindleHub accounts (it is not connected to outside email like Gmail — the Mail tab has launcher buttons for those).",
+"",
 "## Messages — chat groups and history caps",
 "",
 "The Messages tab hosts group chats. The Global Chat is shared by every KindleHub user; private groups are 12-digit-code rooms you invite people to via share-sheet or QR.",
@@ -30423,6 +30526,14 @@ body.sepia #view-weather{--muted:#4a3a26;}
     _lastWxData=data;_lastWxLocName=locName;_lastAqData=aqData;
     wxOut.innerHTML='';
     const cur=data.current,daily=data.daily,hourly=data.hourly;
+    /* A partial response (daily/hourly missing — truncated API reply or a
+       stale cache shape) used to crash the renderer mid-build and leave a
+       half-drawn page. Render a soft message instead; callers' fallback
+       paths stay usable. */
+    if(!cur||!daily||!hourly){
+      wxOut.innerHTML='<div style="color:var(--muted);padding:16px;text-align:center;">Weather data incomplete — tap Refresh to retry.</div>';
+      return;
+    }
     const isDay=cur.is_day===1;
     /* ── Helpers ── */
     function dewPoint(tempC,rh){return tempC-(100-rh)/5;}
@@ -31426,10 +31537,14 @@ tools:()=>{
   notes.appendChild(txt('h2','Quick Notes'));
   const nsearch=el('div',{style:{display:'flex',gap:'5px',marginBottom:'6px'}});
   const ni=el('input',{id:'noteSearch',placeholder:'Search notes...',style:{flex:'1'}});
-  ni.oninput=()=>renderNotes(ni.value,($('noteTagFilter')||{}).value||'');
+  /* Debounced — rebuilding the whole note list on EVERY keystroke made
+     typing in search feel laggy on e-ink once you had a few dozen notes. */
+  let _noteSearchT=null;
+  const _noteSearchGo=()=>renderNotes(($('noteSearch')||{}).value||'',($('noteTagFilter')||{}).value||'');
+  ni.oninput=()=>{if(_noteSearchT)clearTimeout(_noteSearchT);_noteSearchT=setTimeout(_noteSearchGo,180);};
   nsearch.appendChild(ni);
   const tf=el('input',{id:'noteTagFilter',placeholder:'#tag',style:{width:'90px',flex:'none'}});
-  tf.oninput=()=>renderNotes(($('noteSearch')||{}).value||'',tf.value);
+  tf.oninput=()=>{if(_noteSearchT)clearTimeout(_noteSearchT);_noteSearchT=setTimeout(_noteSearchGo,180);};
   nsearch.appendChild(tf);notes.appendChild(nsearch);
   const nta=el('textarea',{id:'noteBody',rows:'3',placeholder:'Type note... use #tags'});
   notes.appendChild(nta);
@@ -31451,7 +31566,7 @@ tools:()=>{
     {view:'qrgen',label:'QR Code Generator',desc:'Turn any URL or text into a scannable QR code.'},
     {view:'stocks',label:'Stocks Tracker',desc:'Live prices via Yahoo Finance + Stooq with smart fallbacks.'},
     {view:'wikipedia',label:'Wikipedia',desc:'Search or get a random Wikipedia article.'},
-    {view:'mail',label:'Mail',desc:'Quick launchers for Gmail, Outlook, Proton, Yahoo and more — plus a mailto compose box.'},
+    {view:'mail',label:'Mail',desc:'Your own username@kindlehub.pro inbox — send and receive mail with any KindleHub user — plus launchers for Gmail, Outlook and more.'},
     {view:'worldclock',label:'World Clock',desc:'Track multiple time zones with live updating clocks.'},
     {view:'wheel',label:'Decision Wheel',desc:'Customisable spinning wheel for decisions and random picks.'},
   ];
@@ -31878,7 +31993,9 @@ reading:()=>{
   /* Filter row */
   const filterRow=el('div',{style:{display:'flex',gap:'5px',marginBottom:'6px',flexWrap:'wrap'}});
   const bs=el('input',{id:'bookSearch',placeholder:'Search title or author...',style:{flex:'1',minWidth:'120px'}});
-  bs.oninput=()=>renderBooks();
+  /* Debounced — full library re-render per keystroke lagged on e-ink. */
+  let _bookSearchT=null;
+  bs.oninput=()=>{if(_bookSearchT)clearTimeout(_bookSearchT);_bookSearchT=setTimeout(()=>renderBooks(),180);};
   const statusFilter=el('select',{id:'bookStatusFilter',style:{fontSize:'11px',padding:'4px',border:'var(--thin)',borderRadius:'4px',background:'var(--card)',color:'var(--fg)'}});
   [['all','All'],['to-read','To Read'],['reading','Reading'],['finished','Finished']].forEach(([v2,t])=>{const o=el('option',{value:v2});o.textContent=t;statusFilter.appendChild(o);});
   statusFilter.onchange=()=>renderBooks();
@@ -37085,11 +37202,22 @@ starmap:()=>{
       '#view-starmap{font-family:var(--ui-font,sans-serif);}'+
       '.sm-canvas{position:absolute;top:0;right:0;bottom:0;left:0;display:block;touch-action:none;background:#060610;z-index:0;}'+
       '.sm-fab{position:absolute;z-index:30;background:rgba(13,13,26,0.92);color:#fff;border:1.5px solid #fff;border-radius:50%;width:42px;height:42px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.6);font-family:var(--ui-font,sans-serif);}'+
+      /* The floating chips (city pill, menu, guide) sit at z-index 30 —
+         ABOVE the slide-down settings panel (25) — so with the panel open
+         they covered its header text. Hide them while it is open; the
+         panel has its own close button and city selector. */
+      '.sm-settings-panel.open~.sm-fab{display:none;}'+
       '.sm-fab:active{background:#fff;color:#000;}'+
       '.sm-fab-menu{top:10px;right:10px;}'+
       '.sm-fab-guide{top:10px;right:60px;font-size:13px;width:auto;height:42px;border-radius:21px;padding:0 14px;background:#fff;color:#000;border-color:#000;font-weight:800;letter-spacing:0.3px;}'+
       '.sm-fab-city{top:10px;left:10px;font-size:11px;width:auto;height:32px;border-radius:16px;padding:0 12px;background:rgba(13,13,26,0.92);color:#fff;border:1.5px solid #fff;font-weight:700;}'+
       '.sm-settings-panel{position:absolute;top:0;left:0;right:0;background:#0d0d1a;border-bottom:2px solid #fff;padding:12px 10px;z-index:25;max-height:65vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(-110%);transition:transform .22s ease-out;box-shadow:0 8px 24px rgba(0,0,0,0.7);}'+
+      /* Opaque select menus — Kindle WebKit renders the open option list
+         in-page with the select's own colours; without these the city
+         picker's menu overlapped (and showed through onto) the text
+         beneath it. */
+      '#view-starmap select{background:#1a1a35;color:#cce;}'+
+      '#view-starmap select option{background:#0d0d1a;color:#cce;}'+
       '.sm-settings-panel.open{transform:translateY(0);}'+
       '.sm-settings-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #334;}'+
       '.sm-settings-title{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px;color:#fff;flex:1;}'+
@@ -37141,7 +37269,13 @@ starmap:()=>{
      other location-aware pages stay in sync. */
   const cityWrap=el('div',{style:'display:flex;align-items:center;gap:5px;padding:3px 6px 3px 9px;background:#1a1a35;border:1px solid #334;border-radius:14px;flex-shrink:0;'});
   cityWrap.innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#cce" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
-  const citySel=el('select',{style:'background:transparent;border:none;color:#cce;font-size:11px;font-weight:700;font-family:var(--ui-font);cursor:pointer;outline:none;padding:2px 0 2px 2px;-webkit-appearance:menulist;appearance:auto;'});
+  /* Solid background, NOT transparent: on Kindle WebKit the opened option
+     list inherits the select's styling, so a transparent select painted its
+     menu straight over the star canvas / bar text underneath — light text
+     on whatever happened to be below it. An opaque pill keeps the open
+     menu legible everywhere. Option colours are pinned in the injected
+     starmap CSS for the same reason. */
+  const citySel=el('select',{style:'background:#1a1a35;border:none;color:#cce;font-size:11px;font-weight:700;font-family:var(--ui-font);cursor:pointer;outline:none;padding:2px 0 2px 2px;-webkit-appearance:menulist;appearance:auto;max-width:46vw;'});
   /* Build option list: dedupe by name, sort alphabetically, current city pre-selected. */
   const seenCities={};
   (CITIES||[]).forEach(c=>{const k=c.n||c.name;if(k&&!seenCities[k])seenCities[k]=c;});
@@ -39247,7 +39381,7 @@ sheets:()=>{
       const _ROUND=(x,d)=>{const k=Math.pow(10,d||0);return Math.round(num(x)*k)/k;};
       const _FLOOR=(x,m)=>{m=m||1;return Math.floor(num(x)/m)*m;};
       const _CEILING=(x,m)=>{m=m||1;return Math.ceil(num(x)/m)*m;};
-      const _MOD=(a,b)=>num(a)%num(b);
+      const _MOD=(a,b)=>{const nb=num(b);if(nb===0)throw new Error('#DIV0');return num(a)%nb;};
       const _POW=(a,b)=>Math.pow(num(a),num(b));
       const _SIN=x=>Math.sin(num(x)),_COS=x=>Math.cos(num(x)),_TAN=x=>Math.tan(num(x));
       const _PI=Math.PI,_E=Math.E;
@@ -43595,7 +43729,151 @@ mail:()=>{
   ];
 
   v.appendChild(txt('h2','Mail',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
-  v.appendChild(txt('p','Quick launchers for the major web-mail providers. Mail content can\'t be embedded directly (providers block iframes for security), so each button opens the official site in a new tab.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'14px',lineHeight:'1.55'}}));
+
+  /* ══ KINDLEHUB MAIL — your own @kindlehub.pro address ══════════════════ */
+  const khCard=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px',boxShadow:'var(--shadow)'}});
+  const khHdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
+  khHdr.appendChild(txt('strong','KindleHub Mail',{style:{fontSize:'14px'}}));
+  v.appendChild(khCard);
+  if(!S.authToken||!_myMailUser()){
+    khCard.appendChild(khHdr);
+    khCard.appendChild(txt('p','Sign in (Settings → Account) and you get your own address — username@'+KH_MAIL_DOMAIN+' — to send and receive mail with every other KindleHub user. Free, encrypted, works on this Kindle.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6'}}));
+    const goBtn=txt('button','Open Settings → Account',{className:'btn primary small',style:{marginTop:'6px'}});
+    goBtn.onclick=()=>{const t=document.querySelector('nav .tab[data-view="settings"]');if(t)t.click();};
+    khCard.appendChild(goBtn);
+  } else {
+    const myAddr=_myMailUser()+'@'+KH_MAIL_DOMAIN;
+    khHdr.appendChild(txt('span',myAddr,{style:{fontSize:'11px',fontFamily:'monospace',color:'var(--muted)'}}));
+    khCard.appendChild(khHdr);
+    /* Folder chips + actions */
+    let folder='inbox',mails=[],openId=null,loading=false;
+    const bar=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',alignItems:'center',marginBottom:'8px'}});
+    const listEl=el('div');
+    const FOLDERS=[['inbox','Inbox'],['sent','Sent'],['archive','Archive'],['trash','Trash']];
+    function st(){return _mailState();}
+    function effFolder(m){
+      if(folder==='sent')return 'sent';
+      const e=st()[m.id]||{};
+      return e.folder||'inbox';
+    }
+    function setMailFlag(id,patch){const s=st();s[id]=Object.assign({},s[id]||{},patch);save();}
+    function fmtTs(ts){try{const d=new Date(ts);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(_){return '';}}
+    function renderBar(){
+      bar.innerHTML='';
+      FOLDERS.forEach(([id,label])=>{
+        const b=txt('button',label,{className:'btn small'+(folder===id?' primary':'')});
+        b.onclick=()=>{folder=id;openId=null;loadMail();};
+        bar.appendChild(b);
+      });
+      const spacer=el('span',{style:{flex:'1'}});bar.appendChild(spacer);
+      const compose=txt('button','✉ Compose',{className:'btn small primary'});
+      compose.onclick=()=>composeModal();
+      const refresh=txt('button','Refresh',{className:'btn small'});
+      refresh.onclick=()=>loadMail(true);
+      bar.append(compose,refresh);
+    }
+    function renderList(){
+      listEl.innerHTML='';
+      if(loading){listEl.appendChild(txt('div','Loading mail…',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'10px 0'}}));return;}
+      const visible=mails.filter(m=>effFolder(m)===folder||(folder==='sent'));
+      if(!visible.length){
+        listEl.appendChild(txt('div',folder==='inbox'?'No mail yet. Tap Compose to write to any KindleHub user — just their username.':'Nothing in '+folder+'.',{style:{fontSize:'12px',color:'var(--muted)',padding:'12px 4px',lineHeight:'1.6'}}));
+        return;
+      }
+      visible.forEach(m=>{
+        const e=st()[m.id]||{};
+        const unread=folder!=='sent'&&!e.read;
+        const row=el('div',{style:{borderTop:'var(--thin)',padding:'9px 4px',cursor:'pointer'}});
+        const line1=el('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'baseline'}});
+        const who=folder==='sent'?('To: '+m.to+'@'+KH_MAIL_DOMAIN):(m.from+'@'+KH_MAIL_DOMAIN);
+        line1.appendChild(txt('span',who,{style:{fontSize:'12px',fontWeight:unread?'900':'600',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'60%'}}));
+        line1.appendChild(txt('span',fmtTs(m.ts),{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0'}}));
+        row.appendChild(line1);
+        row.appendChild(txt('div',m.subject||'(no subject)',{style:{fontSize:'12px',fontWeight:unread?'800':'400',color:unread?'var(--fg)':'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:'2px'}}));
+        if(openId===m.id){
+          const body=el('div',{style:{margin:'8px 0',padding:'10px',background:'var(--highlight)',borderRadius:'8px',fontSize:'13px',lineHeight:'1.65',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
+          body.textContent=m.body||'(empty)';
+          row.appendChild(body);
+          const acts=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}});
+          if(folder!=='sent'){
+            const rep=txt('button','Reply',{className:'btn small primary'});
+            rep.onclick=ev=>{ev.stopPropagation();composeModal(m.from,'Re: '+(m.subject||''),'\n\n— On '+fmtTs(m.ts)+', '+m.from+' wrote —\n'+(m.body||'').split('\n').map(l=>'> '+l).join('\n'),m.id);};
+            acts.appendChild(rep);
+            const fwd=txt('button','Forward',{className:'btn small'});
+            fwd.onclick=ev=>{ev.stopPropagation();composeModal('','Fwd: '+(m.subject||''),'\n\n— Forwarded from '+m.from+'@'+KH_MAIL_DOMAIN+' —\n'+(m.body||''));};
+            acts.appendChild(fwd);
+            if(effFolder(m)!=='archive'){const ar=txt('button','Archive',{className:'btn small'});ar.onclick=ev=>{ev.stopPropagation();setMailFlag(m.id,{folder:'archive'});renderList();};acts.appendChild(ar);}
+            else{const un=txt('button','To Inbox',{className:'btn small'});un.onclick=ev=>{ev.stopPropagation();setMailFlag(m.id,{folder:'inbox'});renderList();};acts.appendChild(un);}
+            if(effFolder(m)!=='trash'){const tr=txt('button','Trash',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});tr.onclick=ev=>{ev.stopPropagation();setMailFlag(m.id,{folder:'trash'});openId=null;renderList();};acts.appendChild(tr);}
+          } else {
+            const un=txt('button','Unsend',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
+            un.onclick=async ev=>{ev.stopPropagation();if(!await kindleConfirm('Unsend this mail? It disappears from the recipient too.'))return;
+              try{await _mailUnsend(m.id);mails=mails.filter(x=>x.id!==m.id);openId=null;renderList();toast('Mail unsent.');}
+              catch(e2){toast(String(e2&&e2.message||'Could not unsend.'),3500);}};
+            acts.appendChild(un);
+          }
+          row.appendChild(acts);
+        }
+        row.onclick=()=>{
+          openId=openId===m.id?null:m.id;
+          if(folder!=='sent'&&!(st()[m.id]||{}).read){setMailFlag(m.id,{read:true});}
+          try{if(m.ts&&m.ts>(localStorage.getItem('kh_mail_lastseen')||''))localStorage.setItem('kh_mail_lastseen',m.ts);}catch(_){}
+          const tab=document.querySelector('nav .tab[data-view="mail"]');if(tab)tab.classList.remove('has-unread');
+          renderList();
+        };
+        listEl.appendChild(row);
+      });
+    }
+    async function loadMail(force){
+      loading=true;renderBar();renderList();
+      try{
+        mails=await _mailFetch(folder==='sent'?'sent':'inbox');
+        /* Newest-seen watermark so the nav dot clears once you've looked. */
+        if(folder!=='sent'&&mails.length){try{const newest=mails[0].ts||'';if(newest>(localStorage.getItem('kh_mail_lastseen')||''))localStorage.setItem('kh_mail_lastseen',newest);}catch(_){}}
+      }catch(e){
+        mails=[];listEl.textContent='';
+        listEl.appendChild(txt('div','Could not load mail — '+String(e&&e.message||'check connection.'),{style:{fontSize:'12px',color:'var(--danger)',padding:'10px 0'}}));
+        loading=false;renderBar();return;
+      }
+      loading=false;renderBar();renderList();
+    }
+    function composeModal(toPre,subjPre,bodyPre,replyTo){
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.55)',zIndex:'600300',display:'flex',alignItems:'center',justifyContent:'center',padding:'14px'}});
+      const box=el('div',{style:{background:'var(--card)',borderRadius:'12px',padding:'14px',width:'100%',maxWidth:'460px',maxHeight:'90vh',overflowY:'auto',boxShadow:'var(--shadow-md)'}});
+      box.appendChild(txt('h3','New mail',{style:{margin:'0 0 8px',fontFamily:'var(--title-font)'}}));
+      const toRow=el('div',{style:{display:'flex',alignItems:'center',gap:'4px',marginBottom:'6px'}});
+      const toIn=el('input',{type:'text',placeholder:'username',value:toPre||'',style:{flex:'1',fontSize:'13px'}});
+      toRow.appendChild(toIn);toRow.appendChild(txt('span','@'+KH_MAIL_DOMAIN,{style:{fontSize:'12px',color:'var(--muted)',fontFamily:'monospace'}}));
+      box.appendChild(toRow);
+      const subjIn=el('input',{type:'text',placeholder:'Subject',value:subjPre||'',style:{width:'100%',fontSize:'13px',marginBottom:'6px'}});
+      box.appendChild(subjIn);
+      const bodyIn=el('textarea',{rows:8,placeholder:'Write your mail…',style:{width:'100%',fontSize:'13px',fontFamily:'var(--body-font)',resize:'vertical'}});
+      bodyIn.value=bodyPre||'';
+      box.appendChild(bodyIn);
+      const btns=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end',marginTop:'10px'}});
+      const cancel=txt('button','Cancel',{className:'btn small'});cancel.onclick=()=>ov.remove();
+      const send=txt('button','Send',{className:'btn small primary'});
+      send.onclick=async()=>{
+        send.disabled=true;send.textContent='Sending…';
+        try{
+          await _mailSend(toIn.value,subjIn.value,bodyIn.value,replyTo);
+          ov.remove();toast('Mail sent to '+_mailNorm(toIn.value)+'@'+KH_MAIL_DOMAIN,3000);
+          if(folder==='sent')loadMail();
+        }catch(e){send.disabled=false;send.textContent='Send';toast(String(e&&e.message||'Send failed.'),4000);}
+      };
+      btns.append(cancel,send);box.appendChild(btns);
+      ov.onclick=e=>{if(e.target===ov)ov.remove();};
+      ov.appendChild(box);document.body.appendChild(ov);
+      setTimeout(()=>{(toPre?subjPre?bodyIn:subjIn:toIn).focus();},60);
+    }
+    khCard.appendChild(bar);
+    khCard.appendChild(listEl);
+    renderBar();
+    loadMail();
+  }
+
+  /* ══ External web-mail launchers (Gmail, Outlook…) ═════════════════════ */
+  v.appendChild(txt('p','Other mailboxes: quick launchers for the major providers. Their content can\'t be embedded (they block iframes), so each opens the official site in a new tab.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'14px',lineHeight:'1.55'}}));
 
   /* ── Default provider selector ── */
   const defCard=el('div',{style:{background:'var(--card)',border:'var(--thin)',borderRadius:'10px',padding:'12px 14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
@@ -52502,6 +52780,10 @@ window._showWelcome=function(){
     /* Background message notifier — polls each joined group every 45s and
        shows push-notification toasts when new messages arrive. */
     setTimeout(()=>{try{_startMessageNotifier();}catch(e){}},3000);
+    /* KindleHub Mail unread dot — one ~60-byte probe at boot and then every
+       5 minutes. Deliberately sparse to protect the Supabase quota. */
+    setTimeout(()=>{try{_mailUnreadProbe();}catch(e){}},4000);
+    setInterval(()=>{try{if(!document.hidden)_mailUnreadProbe();}catch(e){}},300000);
     /* Auto-restore KindleOS launcher if it was the last active surface.
        Already detected up-front as `_willLaunchOS` — we just need to
        fire the actual launch now and pull down the bootmask. No setTimeout

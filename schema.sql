@@ -71,6 +71,32 @@ alter table kh_messages add column if not exists location_hint text default '';
 alter table kh_messages add column if not exists owner_secret  text;
 create index if not exists kh_messages_group_ts on kh_messages(group_code, ts);
 
+-- v8.2: KindleHub Mail — username@kindlehub.pro mail between accounts.
+-- subject/body are AES-GCM blobs keyed off the recipient username (same
+-- scheme as kh_messages). Read/archive/trash state lives in each user's
+-- synced state, NOT here — rows are immutable except sender-unsend.
+create table if not exists kh_mail (
+  id           text primary key,
+  to_user      text not null,
+  from_user    text default '',
+  from_id      text default '',
+  subject      text default '',
+  body         text default '',
+  ts           timestamptz default now(),
+  reply_to     text default '',
+  owner_secret text
+);
+create index if not exists kh_mail_to_ts   on kh_mail(to_user, ts);
+create index if not exists kh_mail_from_ts on kh_mail(from_id, ts);
+alter table kh_mail enable row level security;
+drop policy if exists "kh_mail_read"   on kh_mail;
+drop policy if exists "kh_mail_insert" on kh_mail;
+drop policy if exists "kh_mail_delete" on kh_mail;
+create policy "kh_mail_read"   on kh_mail for select using (true);
+create policy "kh_mail_insert" on kh_mail for insert with check (true);
+create policy "kh_mail_delete" on kh_mail for delete
+  using (owner_secret is not null and owner_secret = kh_request_secret());
+
 create table if not exists kh_feedback (
   id       text primary key,
   type     text not null,
