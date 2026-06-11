@@ -7407,6 +7407,12 @@ function _trimStateForCloud(stateObj){
   delete t.desktopMode;
   delete t.chessFlipPieces;
   delete t.tutorialSeen;
+  /* SECURITY: localFixes holds executable JS run via new Function() at boot.
+     It must never travel through the cloud — a tampered server copy would
+     become persistent remote code execution on every device that synced it.
+     Patches are device-local and only created by the local approve-a-fix
+     modal, so strip them from every upload. */
+  delete t.localFixes;
   /* The floating-keyboard preference is per-device (a Kindle wants it on,
      a phone/PC has its own keyboard) — keep it in this device's
      localStorage only, never sync it, or one device keeps overwriting the
@@ -8770,6 +8776,11 @@ function mergeCloudState(cloudState,opts){
   const cloudTombs=Array.isArray(cloudState.leftGroups)?cloudState.leftGroups:[];
   const tombSet=new Set([...localTombs,...cloudTombs]);
   Object.keys(cloudState).forEach(key=>{
+    /* SECURITY: never accept executable patch code from the cloud — see
+       _trimStateForCloud. localFixes is run via new Function() at boot, so
+       a compromised or tampered cloud copy would be remote code execution.
+       It stays strictly device-local. */
+    if(key==='localFixes')return;
     /* msgGroups gets special treatment: union of local + cloud, with
        any code listed in leftGroups (local OR cloud) excluded. This
        stops the "I left a group but reload brought it back" bug
@@ -25901,7 +25912,7 @@ home:()=>{
     bNews.appendChild(txt('div','Latest Headlines',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',marginBottom:'4px',fontFamily:'var(--ui-font)'}}));
     allItems.forEach(item=>{
       const h=txt('div','- '+(item.title||'').slice(0,80),{style:{fontSize:'12px',padding:'2px 0',lineHeight:'1.4',borderBottom:'var(--thin)',color:'var(--fg)',cursor:'pointer'}});
-      if(item.link)h.onclick=()=>window.open(item.link,'_blank');
+      if(item.link)h.onclick=()=>window.open(item.link,'_blank','noopener,noreferrer');
       bNews.appendChild(h);
     });
     briefCard.appendChild(bNews);
@@ -27560,7 +27571,7 @@ maps:()=>{
 
   /* OSM street view */
   const osmBtn=txt('button','OSM',{className:'btn small',style:'font-size:9px;padding:3px 7px;min-height:24px;'});
-  osmBtn.onclick=()=>{window.open('https://www.openstreetmap.org/#map='+mapState.zoom+'/'+mapState.lat.toFixed(5)+'/'+mapState.lon.toFixed(5),'_blank');};
+  osmBtn.onclick=()=>{window.open('https://www.openstreetmap.org/#map='+mapState.zoom+'/'+mapState.lat.toFixed(5)+'/'+mapState.lon.toFixed(5),'_blank','noopener,noreferrer');};
 
   infoBar.appendChild(zOut);infoBar.appendChild(zIn);infoBar.appendChild(elevBtn);infoBar.appendChild(osmBtn);infoBar.appendChild(zoomNameEl);infoBar.appendChild(coordDisplay);infoBar.appendChild(scaleBar);
 
@@ -38772,7 +38783,7 @@ starmap:()=>{
       const q=encodeURIComponent((s.name||'').replace(/\s*\(.+?\)\s*/g,'').trim());
       const t=document.querySelector('nav .tab[data-view="wikipedia"]');
       if(t){t.style.display='';t.click();setTimeout(()=>{const inp=document.querySelector('#view-wikipedia input');if(inp){inp.value=decodeURIComponent(q);const btn=document.querySelector('#view-wikipedia button.primary');if(btn)btn.click();}},300);}
-      else window.open('https://en.wikipedia.org/wiki/Special:Search?search='+q,'_blank');
+      else window.open('https://en.wikipedia.org/wiki/Special:Search?search='+q,'_blank','noopener,noreferrer');
     };
     actions.appendChild(wikiBtn);
     const aiBtn=document.createElement('button');
@@ -40213,7 +40224,7 @@ rss:()=>{
           const linkEl=el('div',{style:'margin-top:10px;padding:8px;background:var(--highlight);border-radius:4px;font-size:11px;border:var(--thin);'});
           linkEl.appendChild(txt('div','Source: '+item.feedLabel,{style:'font-weight:700;margin-bottom:3px;'}));
           const openBtn=txt('button','Open original article',{className:'btn small',style:'width:100%;margin-top:4px;'});
-          openBtn.onclick=()=>window.open(item.link,'_blank');
+          openBtn.onclick=()=>window.open(item.link,'_blank','noopener,noreferrer');
           linkEl.appendChild(openBtn);
           fullDiv.appendChild(linkEl);
         }
@@ -40229,7 +40240,7 @@ rss:()=>{
 
       if(item.link){
         const openBtn=txt('button','Open link',{className:'rss-act-btn'});
-        openBtn.onclick=()=>{if(!isRead){S.rssRead[id]=true;save();}window.open(item.link,'_blank');};
+        openBtn.onclick=()=>{if(!isRead){S.rssRead[id]=true;save();}window.open(item.link,'_blank','noopener,noreferrer');};
         btnRow.appendChild(openBtn);
       }
 
@@ -40323,7 +40334,7 @@ rss:()=>{
       }
       const btnRow=el('div',{className:'rss-btn-row'});
       btnRow.appendChild(Object.assign(txt('button',isExpanded?'Collapse':'Read',{className:'rss-act-btn'+(isExpanded?' on':'')}),{onclick:()=>{expandedId=isExpanded?null:s.id;renderContent();}}));
-      if(s.link){btnRow.appendChild(Object.assign(txt('button','Open link',{className:'rss-act-btn'}),{onclick:()=>window.open(s.link,'_blank')}));}
+      if(s.link){btnRow.appendChild(Object.assign(txt('button','Open link',{className:'rss-act-btn'}),{onclick:()=>window.open(s.link,'_blank','noopener,noreferrer')}));}
       btnRow.appendChild(Object.assign(txt('button','Remove',{className:'rss-act-btn',style:{color:'var(--danger)',borderColor:'var(--danger)'}}),{onclick:()=>{S.rssSaved=(S.rssSaved||[]).filter(x=>x.id!==s.id);save();refreshViewTabs();renderContent();}}));
       card.appendChild(btnRow);
       contentDiv.appendChild(card);
@@ -43250,7 +43261,7 @@ stocks:()=>{
     row.appendChild(pctEl);
     /* Quick "open on Yahoo" news link */
     const newsBtn=txt('button','News',{className:'btn small',style:{fontSize:'9px',padding:'3px 8px',minHeight:'24px'}});
-    newsBtn.onclick=e=>{e.stopPropagation();window.open('https://finance.yahoo.com/quote/'+encodeURIComponent(ticker)+'/news','_blank');};
+    newsBtn.onclick=e=>{e.stopPropagation();window.open('https://finance.yahoo.com/quote/'+encodeURIComponent(ticker)+'/news','_blank','noopener,noreferrer');};
     row.appendChild(newsBtn);
     row.onclick=()=>openDetail(ticker);
     return row;
@@ -43408,7 +43419,7 @@ wikipedia:()=>{
     v.appendChild(aCard);
     if(article.content_urls){
       const link=txt('button','Read full article on Wikipedia ↗',{className:'btn small',style:{marginTop:'10px',display:'block'}});
-      link.onclick=()=>window.open(article.content_urls.mobile&&article.content_urls.mobile.page,'_blank');
+      link.onclick=()=>window.open((article.content_urls.mobile&&article.content_urls.mobile.page)||'about:blank','_blank','noopener,noreferrer');
       v.appendChild(link);
     }
     /* KHI: 3-bullet summary of the article */
@@ -43710,7 +43721,7 @@ cookbook:()=>{
     actionRow.appendChild(saveBtn);
     if(m.strSource){
       const src=txt('button','Source',{className:'btn small'});
-      src.onclick=()=>window.open(m.strSource,'_blank');
+      src.onclick=()=>window.open(m.strSource,'_blank','noopener,noreferrer');
       actionRow.appendChild(src);
     }
     if(typeof khiEnabled==='function'&&khiEnabled()){
@@ -46674,6 +46685,12 @@ function startPresent(){
     presCanvas.width=Math.round(SLIDE_W*sc);presCanvas.height=Math.round(SLIDE_H*sc);
     drawPresSlide();
   }
+  /* Only ever keep ONE presentation resize handler alive. Re-entering
+     present mode used to add a fresh closure each time while the old ones
+     kept firing against stale canvases on every resize — a slow leak that
+     made the Kindle choppier the more you presented. */
+  if(window._khPresResize)window.removeEventListener('resize',window._khPresResize);
+  window._khPresResize=sizePresCanvas;
   window.addEventListener('resize',sizePresCanvas);
 
   function drawPresSlide(animate){
