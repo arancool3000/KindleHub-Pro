@@ -1543,9 +1543,16 @@ function _startMessageNotifier(){
     const _oneGroup=[groups[_notifyIdx++]];
     for(const g of _oneGroup){
       try{
+        /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
+           group — the common case — it matches what we've already seen and
+           we skip the full 30-row body download entirely. Only pull bodies
+           when there is genuinely something new to toast. */
+        const _seenId=localStorage.getItem(lastSeenKey(g.code))||'';
+        const _latestId=await _groupLatestId(g.code);
+        if(_latestId!==null&&_latestId===_seenId)continue;/* nothing new */
         const msgs=await _groupFetchMessages(g.code);
         if(!msgs||!msgs.length)continue;
-        const lastSeen=localStorage.getItem(lastSeenKey(g.code))||'';
+        const lastSeen=_seenId;
         /* Find any messages newer than lastSeen */
         let idx=msgs.findIndex(m=>m.id===lastSeen);
         if(idx<0)idx=-1; /* lastSeen not found → notify only the very latest */
@@ -2943,11 +2950,12 @@ function launchKindleDesktop(){
     const n=NOW();
     const h=n.getHours()%12||12;
     const m=String(n.getMinutes()).padStart(2,'0');
-    /* Static colon — no blinking on e-ink */
-    kdClockTime.textContent=h+':'+m;
-    kdClockDate.textContent=n.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
-    kdClockGreet.textContent=getGreeting();
-    sbTime.textContent=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    /* Static colon — no blinking on e-ink. Guard each write so an
+       unchanged minute doesn't rewrite the text node and flash e-ink. */
+    const _t=h+':'+m;if(kdClockTime.textContent!==_t)kdClockTime.textContent=_t;
+    const _d=n.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});if(kdClockDate.textContent!==_d)kdClockDate.textContent=_d;
+    const _g=getGreeting();if(kdClockGreet.textContent!==_g)kdClockGreet.textContent=_g;
+    const _s=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});if(sbTime.textContent!==_s)sbTime.textContent=_s;
   }
   updateClockWidget();
 
@@ -4516,7 +4524,11 @@ try{
     }catch(e){}
     const timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
     const dateStr=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
-    if(c)c.textContent=dateStr+'  '+timeStr;
+    const str=dateStr+'  '+timeStr;
+    /* Only touch the DOM when the displayed minute actually changes —
+       rewriting the text node every 30s flashed the e-ink panel for no
+       reason (HH:MM is identical on every other tick). */
+    if(c&&c.textContent!==str)c.textContent=str;
   }
   tick();
   let _iv=null;
@@ -8527,6 +8539,23 @@ async function _groupSend(code,msg){
   });
   return out;
 }
+/* EGRESS: ultra-cheap "is there anything new?" probe — selects a single id
+   column for the newest row (~50 bytes) instead of pulling up to 30 full
+   message bodies + reactions JSON. The background notifier calls this first
+   and only downloads bodies when the latest id has actually changed, which
+   turned the dominant Supabase egress (a full history fetch every 45s per
+   group, mostly of quiet rooms) into near-zero traffic. Returns the id, the
+   '__empty__' sentinel for an empty room, or null when the probe itself
+   failed so the caller can fall back to a full fetch. */
+async function _groupLatestId(code){
+  try{
+    if(typeof _sbActive==='function'&&_sbActive()){
+      const rows=await _sbSelect('kh_messages','group_code=eq.'+encodeURIComponent(code)+'&order=ts.desc&limit=1&select=id');
+      if(Array.isArray(rows))return rows.length?(rows[0].id||''):'__empty__';
+    }
+  }catch(_){}
+  return null;
+}
 async function _groupFetchMessages(code){
   const looked=await _groupLookup(code);
   const msgs=looked?looked.messages:[];
@@ -11226,10 +11255,15 @@ const Hanoi=(function(){
     pegs.forEach((peg,pi)=>{
       const col=el('div',{style:{flex:'1',height:'100%',display:'flex',flexDirection:'column',justifyContent:'flex-end',alignItems:'center',position:'relative',cursor:'pointer',borderBottom:'5px solid var(--fg)',borderRadius:'2px'}});
       col.appendChild(el('div',{style:{position:'absolute',bottom:'0',left:'50%',marginLeft:'-3px',width:'6px',height:'92%',background:'var(--muted)',borderRadius:'3px'}}));
-      peg.forEach((d,di)=>{
+      /* pegs[pi] is ordered bottom→top (index 0 = largest, on the base).
+         A flex-column stacks children top-to-bottom in DOM order, so we
+         must append the TOP disk first and the base disk last — otherwise
+         the widest disk renders at the top and the tower is upside down. */
+      for(let di=peg.length-1;di>=0;di--){
+        const d=peg[di];
         const lifted=(selPeg===pi&&di===peg.length-1);
         col.appendChild(el('div',{style:{position:'relative',zIndex:'1',height:dh+'px',width:(28+(d/disks)*70)+'%',borderRadius:'7px',background:lifted?'var(--fg)':colour(d),border:'2px solid var(--fg)',marginBottom:'3px',boxShadow:'var(--shadow)'}}));
-      });
+      }
       col.onclick=()=>tap(pi);
       board.appendChild(col);
     });
@@ -33216,8 +33250,20 @@ settings:()=>{
       _ultraBox.appendChild(txt('div','Your tier: '+tierName,{style:{fontSize:'12px',fontWeight:'700',marginBottom:'4px'}}));
       if(p.tier!=='creator'){
         _ultraBox.appendChild(txt('div','Active days this week: '+p.windowDays+'/'+p.need+(p.todayQualified?' · today counts ✓':(' · today '+p.todayMin+'/10 min')),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
+        /* Visual progress toward Ultra — fills as qualifying days accrue so
+           the path to unlocking is obvious at a glance, not buried in text. */
+        const barOuter=el('div',{style:{height:'10px',borderRadius:'999px',background:'var(--card)',border:'var(--thin)',overflow:'hidden',margin:'2px 0 6px'}});
+        const pctDays=Math.max(0,Math.min(100,Math.round((p.windowDays/Math.max(1,p.need))*100)));
+        barOuter.appendChild(el('div',{style:{height:'100%',width:pctDays+'%',background:'var(--fg)',transition:'width .3s'}}));
+        _ultraBox.appendChild(barOuter);
+        if(p.tier!=='ultra'){
+          const need=Math.max(0,p.need-p.windowDays);
+          const cta=el('div',{style:{fontSize:'12px',fontWeight:'700',color:'var(--fg)',background:'var(--card)',border:'var(--thin)',borderRadius:'8px',padding:'8px 10px',margin:'2px 0 6px',lineHeight:'1.5'}});
+          cta.textContent=need<=0?'You qualify — Ultra unlocks shortly!':('Unlock Ultra: be active '+need+' more day'+(need===1?'':'s')+' this week (just 10+ minutes each).');
+          _ultraBox.appendChild(cta);
+        }
       }
-      _ultraBox.appendChild(txt('div',p.tier==='creator'?'Unlimited storage, full AI, and the Creator badge — forever.':(p.tier==='ultra'?'You have Ultra: first-come AI + KHI, 3 MB cloud storage, and the Big Contributor badge. Use KindleHub 3 days a week (10+ min each) to keep it — it rolls, so a steady week never lets it lapse.':'Use KindleHub 3 days a week, 10+ minutes each, to unlock Ultra: more AI, KHI, 3 MB storage and a badge. It rolls like a points system — stay active 3×/week and you never lose it.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+      _ultraBox.appendChild(txt('div',p.tier==='creator'?'Unlimited storage, full AI, and the Creator badge — forever.':(p.tier==='ultra'?'You have Ultra: first-come AI + KHI, 3 MB cloud storage, and the Big Contributor badge. Use KindleHub 3 days a week (10+ min each) to keep it — it rolls, so a steady week never lets it lapse.':'Ultra perks: more AI + KHI, 3 MB cloud storage, and a Big Contributor badge. It works like a rolling points system — stay active 3×/week (10+ min each) and you never lose it. No payment, ever.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
       const rf=txt('button','Refresh',{className:'btn small',style:{marginTop:'8px',fontSize:'10px'}});rf.onclick=function(){try{if(typeof _khUltraTick==='function')_khUltraTick(0);}catch(_){}_renderUltra();};
       _ultraBox.appendChild(rf);
     }
@@ -34071,7 +34117,44 @@ settings:()=>{
   fbRow.append(tourBtn,welcomeBtn,fbBtn);cFb.appendChild(fbRow);
   g.appendChild(cFb);
 
-
+  /* ── Contributors ─────────────────────────────────────────────────────
+     Credits the AI collaborators that built KindleHub and every user who
+     filed a bug report or feature suggestion. Human names are read from the
+     local kh_contributors cache that the Feedback board fills in from data
+     it already fetched — so this card adds ZERO Supabase bandwidth. */
+  const cContrib=el('div',{className:'card',style:{gridColumn:'1/-1'}});
+  cContrib.appendChild(txt('h2','Contributors'));
+  cContrib.appendChild(txt('p','KindleHub was designed and built collaboratively with these AI models, and shaped by the community.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const _aiContribs=[
+    ['Fable 5','Anthropic'],
+    ['Claude Opus 4.8','Anthropic'],
+    ['Claude Opus 4.7','Anthropic'],
+    ['Claude Sonnet 4.6','Anthropic'],
+    ['ChatGPT 5','OpenAI'],
+    ['ChatGPT 4o','OpenAI'],
+    ['DeepSeek','DeepSeek'],
+  ];
+  cContrib.appendChild(txt('div','AI collaborators',{style:{fontSize:'11px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',margin:'4px 0 6px'}}));
+  const aiGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'6px',marginBottom:'12px'}});
+  _aiContribs.forEach(([name,org])=>{
+    const chip=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'7px 10px',background:'var(--highlight)'}});
+    chip.appendChild(txt('div',name,{style:{fontSize:'12px',fontWeight:'700'}}));
+    chip.appendChild(txt('div',org,{style:{fontSize:'10px',color:'var(--muted)'}}));
+    aiGrid.appendChild(chip);
+  });
+  cContrib.appendChild(aiGrid);
+  cContrib.appendChild(txt('div','Community contributors',{style:{fontSize:'11px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',margin:'4px 0 6px'}}));
+  let _humans=[];try{const _h=JSON.parse(localStorage.getItem('kh_contributors')||'[]');if(Array.isArray(_h))_humans=_h.filter(Boolean);}catch(_){}
+  if(_humans.length){
+    const hWrap=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px'}});
+    _humans.sort((a,b)=>a.localeCompare(b)).forEach(n=>{
+      const tag=el('span',{style:{fontSize:'11px',fontWeight:'600',padding:'3px 9px',borderRadius:'999px',border:'var(--thin)',background:'var(--card)'}});
+      tag.textContent=n;hWrap.appendChild(tag);
+    });
+    cContrib.appendChild(hWrap);
+  }
+  cContrib.appendChild(txt('p','…and everyone who submitted a bug report or feature suggestion. Thank you — your feedback shaped this app. Open the Feedback board and post to see your name added here.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',marginTop:_humans.length?'8px':'0'}}));
+  g.appendChild(cContrib);
 
   });/* end last deferred card */
   return v;
@@ -35460,6 +35543,49 @@ Deno.serve(async (req)=>{
       return c;
     }
 
+    /* Local Insights — admin info computed ENTIRELY on-device (localStorage
+       scan + cached backup status). Adds zero Supabase reads, so it costs no
+       egress even though it surfaces useful operational detail. */
+    function buildLocalInsightsCard(){
+      const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
+      c.appendChild(txt('div','LOCAL INSIGHTS · NO BANDWIDTH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'10px'}}));
+      /* Device storage breakdown */
+      let total=0;const sizes=[];
+      try{
+        for(let i=0;i<localStorage.length;i++){
+          const k=localStorage.key(i);const v=localStorage.getItem(k)||'';
+          const b=(k.length+v.length);total+=b;sizes.push([k,b]);
+        }
+      }catch(_){}
+      sizes.sort((a,b)=>b[1]-a[1]);
+      const fmt=n=>n>=1048576?(n/1048576).toFixed(2)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
+      c.appendChild(txt('div','Device storage: '+fmt(total)+' across '+sizes.length+' keys',{style:{fontSize:'12px',fontWeight:'700',marginBottom:'4px'}}));
+      const top=el('div',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.6',marginBottom:'10px',fontFamily:'monospace'}});
+      sizes.slice(0,6).forEach(([k,b])=>top.appendChild(txt('div',fmt(b).padStart(8)+'  '+k)));
+      c.appendChild(top);
+      /* Backup backend status (cached/local) */
+      try{
+        if(typeof _khBackupStatus==='function'){
+          const bs=_khBackupStatus();
+          const when=bs.last?new Date(bs.last).toLocaleString():'never';
+          c.appendChild(txt('div','Backup backend: '+(bs.configured?'configured':'not configured'),{style:{fontSize:'12px',fontWeight:'700',marginTop:'4px'}}));
+          c.appendChild(txt('div','Last run: '+when+' · '+(bs.count||0)+' accounts · '+(bs.due?'DUE now':'up to date'),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}}));
+        }
+      }catch(_){}
+      /* Egress measures summary (static — documents what's protecting the quota) */
+      c.appendChild(txt('div','Egress safeguards active',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:'4px'}}));
+      const meas=[
+        'Chat notifier probes a 1-row id (~50 B) before pulling bodies',
+        'Cloud pull checks updated_at before the full state download',
+        'Message history capped (global 30 · groups 10–30)',
+        'Weekly account backup is incremental (changed rows only)',
+        'Background pollers pause while the tab is hidden',
+      ];
+      const ul=el('div',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.6'}});
+      meas.forEach(m=>ul.appendChild(txt('div','✓ '+m)));
+      c.appendChild(ul);
+      return c;
+    }
     async function renderErrPanel(){
       errPanel.innerHTML='';
       /* Admin-only cards: backend Diagnostics (exposes DB user/group counts),
@@ -35476,6 +35602,7 @@ Deno.serve(async (req)=>{
       if(_isAdm)errPanel.appendChild(buildUserBackupCard());
       errPanel.appendChild(buildLocalFixesCard());
       if(_isAdm)errPanel.appendChild(await buildVisitsCard());
+      if(_isAdm)errPanel.appendChild(buildLocalInsightsCard());
       const errHdr=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}});
       errHdr.appendChild(txt('h2','Auto-Reported Errors',{style:{margin:'0',color:'var(--danger)',flex:'1'}}));
       /* "Unhide all resolved" — undo for the dismissed list */
@@ -35948,6 +36075,15 @@ Deno.serve(async (req)=>{
     setStatus('Loading...');
     try{
       items=(await fbRead(activeType)).filter(i=>i&&i.id&&i.text);
+      /* Harvest contributor names from feedback we already fetched (zero
+         extra bandwidth) so the Settings → Contributors card can credit
+         everyone who filed a bug or suggestion. Cached in localStorage. */
+      try{
+        const cur=JSON.parse(localStorage.getItem('kh_contributors')||'[]');
+        const set=new Set(Array.isArray(cur)?cur:[]);
+        items.forEach(i=>{const a=(i.author||'').trim();if(a&&a.toLowerCase()!=='anonymous'&&a.toLowerCase()!=='anon')set.add(a.slice(0,40));});
+        localStorage.setItem('kh_contributors',JSON.stringify([...set].slice(0,300)));
+      }catch(_){}
       setStatus('');
     }catch(e){
       setStatus('Could not load — check internet connection.',true);items=[];
