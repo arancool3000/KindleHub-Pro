@@ -8633,7 +8633,14 @@ async function _mailSend(toUser,subject,body,replyTo){
   const encSubject=await _msgEncrypt('mail:'+to,String(subject||'(no subject)').slice(0,160));
   const encBody=await _msgEncrypt('mail:'+to,String(body||'').slice(0,8000));
   await _sbInsert('kh_mail',[{id,to_user:to,from_user:_myMailUser(),from_id:S.userId||'',subject:encSubject,body:encBody,ts:new Date().toISOString(),reply_to:String(replyTo||''),owner_secret:secret}]);
-  try{if(!S.msgSecrets)S.msgSecrets={};S.msgSecrets[id]=secret;save();}catch(_){}
+  try{if(!S.msgSecrets)S.msgSecrets={};S.msgSecrets[id]=secret;}catch(_){}
+  /* Remember the recipient for the compose modal's one-tap chips
+     (most-recent first, deduped, capped). */
+  try{
+    const list=Array.isArray(S.mailContacts)?S.mailContacts:[];
+    S.mailContacts=[to].concat(list.filter(c=>c!==to)).slice(0,12);
+  }catch(_){}
+  save();
   return id;
 }
 async function _mailFetch(folder){
@@ -43746,8 +43753,14 @@ mail:()=>{
     khHdr.appendChild(txt('span',myAddr,{style:{fontSize:'11px',fontFamily:'monospace',color:'var(--muted)'}}));
     khCard.appendChild(khHdr);
     /* Folder chips + actions */
-    let folder='inbox',mails=[],openId=null,loading=false;
-    const bar=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',alignItems:'center',marginBottom:'8px'}});
+    let folder='inbox',mails=[],openId=null,loading=false,query='';
+    const bar=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',alignItems:'center',marginBottom:'6px'}});
+    /* Local search — filters the already-fetched rows, zero extra requests */
+    const searchRow=el('div',{style:{display:'flex',gap:'5px',marginBottom:'8px'}});
+    const searchIn=el('input',{type:'text',placeholder:'Search mail…',style:{flex:'1',fontSize:'12px'}});
+    let _mailSearchT=null;
+    searchIn.oninput=()=>{if(_mailSearchT)clearTimeout(_mailSearchT);_mailSearchT=setTimeout(()=>{query=searchIn.value.trim().toLowerCase();renderList();},180);};
+    searchRow.appendChild(searchIn);
     const listEl=el('div');
     const FOLDERS=[['inbox','Inbox'],['sent','Sent'],['archive','Archive'],['trash','Trash']];
     function st(){return _mailState();}
@@ -43758,14 +43771,24 @@ mail:()=>{
     }
     function setMailFlag(id,patch){const s=st();s[id]=Object.assign({},s[id]||{},patch);save();}
     function fmtTs(ts){try{const d=new Date(ts);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(_){return '';}}
+    function unreadCount(){
+      if(folder==='sent')return 0;
+      return mails.filter(m=>effFolder(m)==='inbox'&&!(st()[m.id]||{}).read).length;
+    }
     function renderBar(){
       bar.innerHTML='';
       FOLDERS.forEach(([id,label])=>{
-        const b=txt('button',label,{className:'btn small'+(folder===id?' primary':'')});
+        const n=(id==='inbox')?unreadCount():0;
+        const b=txt('button',label+(n?' ('+n+')':''),{className:'btn small'+(folder===id?' primary':'')});
         b.onclick=()=>{folder=id;openId=null;loadMail();};
         bar.appendChild(b);
       });
       const spacer=el('span',{style:{flex:'1'}});bar.appendChild(spacer);
+      if(folder==='inbox'&&unreadCount()>1){
+        const mar=txt('button','Mark all read',{className:'btn small'});
+        mar.onclick=()=>{mails.forEach(m=>{if(effFolder(m)==='inbox')setMailFlag(m.id,{read:true});});renderBar();renderList();};
+        bar.appendChild(mar);
+      }
       const compose=txt('button','✉ Compose',{className:'btn small primary'});
       compose.onclick=()=>composeModal();
       const refresh=txt('button','Refresh',{className:'btn small'});
@@ -43780,20 +43803,61 @@ mail:()=>{
         listEl.appendChild(txt('div',folder==='inbox'?'No mail yet. Tap Compose to write to any KindleHub user — just their username.':'Nothing in '+folder+'.',{style:{fontSize:'12px',color:'var(--muted)',padding:'12px 4px',lineHeight:'1.6'}}));
         return;
       }
-      visible.forEach(m=>{
+      const q=query;
+      const shown=q?visible.filter(m=>((m.subject||'')+' '+(m.from||'')+' '+(m.to||'')+' '+(m.body||'')).toLowerCase().includes(q)):visible;
+      if(q&&!shown.length){listEl.appendChild(txt('div','No mail matches "'+q+'".',{style:{fontSize:'12px',color:'var(--muted)',padding:'12px 4px'}}));return;}
+      shown.forEach(m=>{
         const e=st()[m.id]||{};
         const unread=folder!=='sent'&&!e.read;
         const row=el('div',{style:{borderTop:'var(--thin)',padding:'9px 4px',cursor:'pointer'}});
-        const line1=el('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'baseline'}});
-        const who=folder==='sent'?('To: '+m.to+'@'+KH_MAIL_DOMAIN):(m.from+'@'+KH_MAIL_DOMAIN);
-        line1.appendChild(txt('span',who,{style:{fontSize:'12px',fontWeight:unread?'900':'600',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'60%'}}));
-        line1.appendChild(txt('span',fmtTs(m.ts),{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0'}}));
+        const line1=el('div',{style:{display:'flex',gap:'8px',alignItems:'center'}});
+        const who=folder==='sent'?('To: '+m.to):(m.from);
+        if(typeof _avatarEl==='function')line1.appendChild(_avatarEl(folder==='sent'?m.to:m.from,24));
+        const whoCol=el('div',{style:{flex:'1',minWidth:'0'}});
+        whoCol.appendChild(txt('div',who+'@'+KH_MAIL_DOMAIN,{style:{fontSize:'12px',fontWeight:unread?'900':'600',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        whoCol.appendChild(txt('div',m.subject||'(no subject)',{style:{fontSize:'12px',fontWeight:unread?'800':'400',color:unread?'var(--fg)':'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        line1.appendChild(whoCol);
+        line1.appendChild(txt('span',fmtTs(m.ts),{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0',alignSelf:'flex-start',marginTop:'2px'}}));
         row.appendChild(line1);
-        row.appendChild(txt('div',m.subject||'(no subject)',{style:{fontSize:'12px',fontWeight:unread?'800':'400',color:unread?'var(--fg)':'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:'2px'}}));
+        /* One-line body preview under the subject (closed rows only) */
+        if(openId!==m.id){
+          const prev=(m.body||'').replace(/\s+/g,' ').trim().slice(0,90);
+          if(prev)row.appendChild(txt('div',prev,{style:{fontSize:'11px',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:'2px',paddingLeft:'32px'}}));
+        }
         if(openId===m.id){
-          const body=el('div',{style:{margin:'8px 0',padding:'10px',background:'var(--highlight)',borderRadius:'8px',fontSize:'13px',lineHeight:'1.65',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
+          /* Reading pane header — who/when in full, then the body */
+          const hdrBox=el('div',{style:{margin:'8px 0 0',padding:'8px 10px',background:'var(--card)',border:'var(--thin)',borderRadius:'8px 8px 0 0',fontSize:'11px',color:'var(--muted)',lineHeight:'1.6'}});
+          hdrBox.appendChild(txt('div','From: '+(folder==='sent'?_myMailUser():m.from)+'@'+KH_MAIL_DOMAIN));
+          hdrBox.appendChild(txt('div','To: '+m.to+'@'+KH_MAIL_DOMAIN+'   ·   '+fmtTs(m.ts)));
+          row.appendChild(hdrBox);
+          const body=el('div',{style:{margin:'0 0 8px',padding:'10px',background:'var(--highlight)',borderRadius:'0 0 8px 8px',fontSize:'13px',lineHeight:'1.65',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
           body.textContent=m.body||'(empty)';
           row.appendChild(body);
+          /* KHI row — summarise long mail, draft a reply. Uses the user's
+             own AI key (khiCall); costs no Supabase bandwidth. */
+          if(typeof khiEnabled==='function'&&khiEnabled()&&(m.body||'').length>0){
+            const khiRow=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'6px'}});
+            const khiOut=el('div',{className:'khi-output',style:{display:'none',marginBottom:'6px'}});
+            if((m.body||'').length>220){
+              const sumBtn=txt('button','✦ Summarise',{className:'btn small'});
+              sumBtn.onclick=async ev=>{ev.stopPropagation();sumBtn.disabled=true;sumBtn.textContent='✦ Thinking…';
+                try{const out=await khiCall('Summarise this mail in 2 short bullet points. No preamble.\n\nFrom: '+m.from+'\nSubject: '+(m.subject||'')+'\n\n'+(m.body||'').slice(0,4000),{maxTokens:200});
+                  if(out){khiOut.textContent=out.trim();khiOut.style.display='block';}}
+                catch(_){toast('Summary failed — try again');}
+                sumBtn.disabled=false;sumBtn.textContent='✦ Summarise';};
+              khiRow.appendChild(sumBtn);
+            }
+            if(folder!=='sent'){
+              const draftBtn=txt('button','✦ Draft reply',{className:'btn small'});
+              draftBtn.onclick=async ev=>{ev.stopPropagation();draftBtn.disabled=true;draftBtn.textContent='✦ Drafting…';
+                try{const out=await khiCall('Write a short, friendly reply (2-4 sentences) to this mail. Output ONLY the reply body, no greeting-name placeholders, no signature.\n\nFrom: '+m.from+'\nSubject: '+(m.subject||'')+'\n\n'+(m.body||'').slice(0,3000),{maxTokens:260});
+                  if(out)composeModal(m.from,'Re: '+(m.subject||''),out.trim()+'\n\n— On '+fmtTs(m.ts)+', '+m.from+' wrote —\n'+(m.body||'').split('\n').map(l=>'> '+l).join('\n'),m.id);}
+                catch(_){toast('Draft failed — try again');}
+                draftBtn.disabled=false;draftBtn.textContent='✦ Draft reply';};
+              khiRow.appendChild(draftBtn);
+            }
+            row.appendChild(khiRow);row.appendChild(khiOut);
+          }
           const acts=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}});
           if(folder!=='sent'){
             const rep=txt('button','Reply',{className:'btn small primary'});
@@ -43847,10 +43911,46 @@ mail:()=>{
       box.appendChild(toRow);
       const subjIn=el('input',{type:'text',placeholder:'Subject',value:subjPre||'',style:{width:'100%',fontSize:'13px',marginBottom:'6px'}});
       box.appendChild(subjIn);
+      /* Recent recipients — one-tap chips, filled from mail you've sent */
+      const recents=(Array.isArray(S.mailContacts)?S.mailContacts:[]).filter(c=>c&&c!==_myMailUser()).slice(0,6);
+      if(recents.length&&!toPre){
+        const chipRow=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'6px'}});
+        recents.forEach(c=>{
+          const chip=txt('button',c,{className:'btn small',style:{fontSize:'10px',padding:'2px 9px',minHeight:'24px'}});
+          chip.onclick=()=>{toIn.value=c;subjIn.focus();};
+          chipRow.appendChild(chip);
+        });
+        box.appendChild(chipRow);
+      }
       const bodyIn=el('textarea',{rows:8,placeholder:'Write your mail…',style:{width:'100%',fontSize:'13px',fontFamily:'var(--body-font)',resize:'vertical'}});
       bodyIn.value=bodyPre||'';
       box.appendChild(bodyIn);
-      const btns=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end',marginTop:'10px'}});
+      const meta=txt('div','',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'right',marginTop:'2px'}});
+      const updMeta=()=>{meta.textContent=bodyIn.value.length+' / 8000';};
+      bodyIn.addEventListener('input',updMeta);updMeta();
+      box.appendChild(meta);
+      const btns=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end',marginTop:'10px',flexWrap:'wrap'}});
+      /* ✦ Polish — KHI rewrite of the draft for clarity/tone (user's own
+         AI key, no Supabase cost). Keeps the quoted thread intact. */
+      if(typeof khiEnabled==='function'&&khiEnabled()){
+        const polish=txt('button','✦ Polish',{className:'btn small',style:{marginRight:'auto'}});
+        polish.onclick=async()=>{
+          const raw=bodyIn.value;
+          if(!raw.trim()){toast('Write something first.');return;}
+          polish.disabled=true;polish.textContent='✦ Polishing…';
+          try{
+            /* Split off any quoted thread ("— On … wrote —") so only the
+               user's own words get rewritten. */
+            const cut=raw.search(/\n+— (On |Forwarded from )/);
+            const mine=cut>=0?raw.slice(0,cut):raw;
+            const rest=cut>=0?raw.slice(cut):'';
+            const out=await khiCall('Rewrite this mail draft to be clearer and friendlier. Keep the same meaning and rough length. Output ONLY the rewritten draft.\n\n'+mine.slice(0,3000),{maxTokens:400});
+            if(out){bodyIn.value=out.trim()+rest;updMeta();toast('Draft polished — review before sending.');}
+          }catch(_){toast('Polish failed — try again');}
+          polish.disabled=false;polish.textContent='✦ Polish';
+        };
+        btns.appendChild(polish);
+      }
       const cancel=txt('button','Cancel',{className:'btn small'});cancel.onclick=()=>ov.remove();
       const send=txt('button','Send',{className:'btn small primary'});
       send.onclick=async()=>{
@@ -43867,6 +43967,7 @@ mail:()=>{
       setTimeout(()=>{(toPre?subjPre?bodyIn:subjIn:toIn).focus();},60);
     }
     khCard.appendChild(bar);
+    khCard.appendChild(searchRow);
     khCard.appendChild(listEl);
     renderBar();
     loadMail();
