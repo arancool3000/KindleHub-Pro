@@ -35538,6 +35538,49 @@ Deno.serve(async (req)=>{
       return c;
     }
 
+    /* Local Insights — admin info computed ENTIRELY on-device (localStorage
+       scan + cached backup status). Adds zero Supabase reads, so it costs no
+       egress even though it surfaces useful operational detail. */
+    function buildLocalInsightsCard(){
+      const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
+      c.appendChild(txt('div','LOCAL INSIGHTS · NO BANDWIDTH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'10px'}}));
+      /* Device storage breakdown */
+      let total=0;const sizes=[];
+      try{
+        for(let i=0;i<localStorage.length;i++){
+          const k=localStorage.key(i);const v=localStorage.getItem(k)||'';
+          const b=(k.length+v.length);total+=b;sizes.push([k,b]);
+        }
+      }catch(_){}
+      sizes.sort((a,b)=>b[1]-a[1]);
+      const fmt=n=>n>=1048576?(n/1048576).toFixed(2)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
+      c.appendChild(txt('div','Device storage: '+fmt(total)+' across '+sizes.length+' keys',{style:{fontSize:'12px',fontWeight:'700',marginBottom:'4px'}}));
+      const top=el('div',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.6',marginBottom:'10px',fontFamily:'monospace'}});
+      sizes.slice(0,6).forEach(([k,b])=>top.appendChild(txt('div',fmt(b).padStart(8)+'  '+k)));
+      c.appendChild(top);
+      /* Backup backend status (cached/local) */
+      try{
+        if(typeof _khBackupStatus==='function'){
+          const bs=_khBackupStatus();
+          const when=bs.last?new Date(bs.last).toLocaleString():'never';
+          c.appendChild(txt('div','Backup backend: '+(bs.configured?'configured':'not configured'),{style:{fontSize:'12px',fontWeight:'700',marginTop:'4px'}}));
+          c.appendChild(txt('div','Last run: '+when+' · '+(bs.count||0)+' accounts · '+(bs.due?'DUE now':'up to date'),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}}));
+        }
+      }catch(_){}
+      /* Egress measures summary (static — documents what's protecting the quota) */
+      c.appendChild(txt('div','Egress safeguards active',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:'4px'}}));
+      const meas=[
+        'Chat notifier probes a 1-row id (~50 B) before pulling bodies',
+        'Cloud pull checks updated_at before the full state download',
+        'Message history capped (global 30 · groups 10–30)',
+        'Weekly account backup is incremental (changed rows only)',
+        'Background pollers pause while the tab is hidden',
+      ];
+      const ul=el('div',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.6'}});
+      meas.forEach(m=>ul.appendChild(txt('div','✓ '+m)));
+      c.appendChild(ul);
+      return c;
+    }
     async function renderErrPanel(){
       errPanel.innerHTML='';
       /* Admin-only cards: backend Diagnostics (exposes DB user/group counts),
@@ -35554,6 +35597,7 @@ Deno.serve(async (req)=>{
       if(_isAdm)errPanel.appendChild(buildUserBackupCard());
       errPanel.appendChild(buildLocalFixesCard());
       if(_isAdm)errPanel.appendChild(await buildVisitsCard());
+      if(_isAdm)errPanel.appendChild(buildLocalInsightsCard());
       const errHdr=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}});
       errHdr.appendChild(txt('h2','Auto-Reported Errors',{style:{margin:'0',color:'var(--danger)',flex:'1'}}));
       /* "Unhide all resolved" — undo for the dismissed list */
