@@ -1543,9 +1543,16 @@ function _startMessageNotifier(){
     const _oneGroup=[groups[_notifyIdx++]];
     for(const g of _oneGroup){
       try{
+        /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
+           group — the common case — it matches what we've already seen and
+           we skip the full 30-row body download entirely. Only pull bodies
+           when there is genuinely something new to toast. */
+        const _seenId=localStorage.getItem(lastSeenKey(g.code))||'';
+        const _latestId=await _groupLatestId(g.code);
+        if(_latestId!==null&&_latestId===_seenId)continue;/* nothing new */
         const msgs=await _groupFetchMessages(g.code);
         if(!msgs||!msgs.length)continue;
-        const lastSeen=localStorage.getItem(lastSeenKey(g.code))||'';
+        const lastSeen=_seenId;
         /* Find any messages newer than lastSeen */
         let idx=msgs.findIndex(m=>m.id===lastSeen);
         if(idx<0)idx=-1; /* lastSeen not found → notify only the very latest */
@@ -8526,6 +8533,23 @@ async function _groupSend(code,msg){
     out=g.m;
   });
   return out;
+}
+/* EGRESS: ultra-cheap "is there anything new?" probe — selects a single id
+   column for the newest row (~50 bytes) instead of pulling up to 30 full
+   message bodies + reactions JSON. The background notifier calls this first
+   and only downloads bodies when the latest id has actually changed, which
+   turned the dominant Supabase egress (a full history fetch every 45s per
+   group, mostly of quiet rooms) into near-zero traffic. Returns the id, the
+   '__empty__' sentinel for an empty room, or null when the probe itself
+   failed so the caller can fall back to a full fetch. */
+async function _groupLatestId(code){
+  try{
+    if(typeof _sbActive==='function'&&_sbActive()){
+      const rows=await _sbSelect('kh_messages','group_code=eq.'+encodeURIComponent(code)+'&order=ts.desc&limit=1&select=id');
+      if(Array.isArray(rows))return rows.length?(rows[0].id||''):'__empty__';
+    }
+  }catch(_){}
+  return null;
 }
 async function _groupFetchMessages(code){
   const looked=await _groupLookup(code);
