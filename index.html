@@ -2032,6 +2032,10 @@ function setNavTabVisible(view,visible){
 
 const $=id=>document.getElementById(id);
 const qs=(s,p)=>(p||document).querySelector(s);
+/* Shared input debouncer — full list re-renders on EVERY keystroke are the
+   single biggest cause of laggy typing on e-ink. Wrap the handler once and
+   the rebuild runs when the user pauses instead of per letter. */
+function khDebounce(fn,ms){let t=null;return function(){const a=arguments,s=this;if(t)clearTimeout(t);t=setTimeout(()=>{t=null;fn.apply(s,a);},ms||180);};}
 /* On-demand vendor script loader. The export libraries (pptxgenjs,
    jspdf, pdfjs) total ~1.5 MB — far too heavy to download on every
    boot of a Kindle that may never open the Slides tab. They are now
@@ -2215,7 +2219,7 @@ function khOpenSelect(sel,trigger){
     };
     return row;
   }
-  if(searchInp){searchInp.addEventListener('input',()=>renderOpts(searchInp.value));}
+  if(searchInp){searchInp.addEventListener('input',khDebounce(()=>renderOpts(searchInp.value),180));}
   renderOpts('');
 
   overlay.appendChild(panel);
@@ -10347,7 +10351,7 @@ function openCrosswordCatalogue(){
     });
   }
   renderList();
-  searchInput.addEventListener('input',renderList);
+  searchInput.addEventListener('input',khDebounce(renderList,180));
 }
 
 /* ── Crossword game engine ─────────────────────────────────── */
@@ -33173,7 +33177,7 @@ settings:()=>{
     /* If current selection gone, pick first */
     if(!locSel.value)locSel.selectedIndex=0;
   }
-  citySearchInp.oninput=()=>filterCities(citySearchInp.value);
+  citySearchInp.oninput=khDebounce(()=>filterCities(citySearchInp.value),180);
   c1.appendChild(citySearchInp);
 
   const locSel=el('select',{style:{marginBottom:'6px',fontSize:'12px'}});
@@ -40865,8 +40869,8 @@ notes:()=>{
   const tagInp=el('input',{placeholder:'#tag filter',style:{width:'90px',flex:'none',fontSize:'12px'}});
   const sortSel=el('select',{style:{fontSize:'11px',padding:'4px 6px',border:'var(--thin)',borderRadius:'6px',background:'var(--card)',color:'var(--fg)'}});
   [['newest','Newest first'],['oldest','Oldest first'],['az','A-Z'],['pinned','Pinned first'],['longest','Longest first'],['shortest','Shortest first']].forEach(([v2,t])=>{const o=el('option',{value:v2});o.textContent=t;sortSel.appendChild(o);});
-  searchInp.oninput=()=>renderList();
-  tagInp.oninput=()=>renderList();
+  searchInp.oninput=khDebounce(()=>renderList(),180);
+  tagInp.oninput=khDebounce(()=>renderList(),180);
   sortSel.onchange=()=>renderList();
   toolbar.append(searchInp,tagInp,sortSel);
   /* Bulk-select toggle — when ON, every note card sprouts a checkbox
@@ -41184,8 +41188,8 @@ notes:()=>{
     });
   }
 
-  searchInp.oninput=renderList;
-  tagInp.oninput=renderList;
+  searchInp.oninput=khDebounce(renderList,180);
+  tagInp.oninput=khDebounce(renderList,180);
   sortSel.onchange=renderList;
   renderList();
   return v;
@@ -41619,7 +41623,7 @@ periodic:()=>{
       dp.appendChild(row);
     });
   }
-  srchInp.oninput=()=>renderTable(srchInp.value);
+  srchInp.oninput=khDebounce(()=>renderTable(srchInp.value),180);
   renderTable('');
   table.appendChild(ptGrid);
   tableWrap.appendChild(table);
