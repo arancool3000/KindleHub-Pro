@@ -2950,11 +2950,12 @@ function launchKindleDesktop(){
     const n=NOW();
     const h=n.getHours()%12||12;
     const m=String(n.getMinutes()).padStart(2,'0');
-    /* Static colon — no blinking on e-ink */
-    kdClockTime.textContent=h+':'+m;
-    kdClockDate.textContent=n.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
-    kdClockGreet.textContent=getGreeting();
-    sbTime.textContent=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    /* Static colon — no blinking on e-ink. Guard each write so an
+       unchanged minute doesn't rewrite the text node and flash e-ink. */
+    const _t=h+':'+m;if(kdClockTime.textContent!==_t)kdClockTime.textContent=_t;
+    const _d=n.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});if(kdClockDate.textContent!==_d)kdClockDate.textContent=_d;
+    const _g=getGreeting();if(kdClockGreet.textContent!==_g)kdClockGreet.textContent=_g;
+    const _s=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});if(sbTime.textContent!==_s)sbTime.textContent=_s;
   }
   updateClockWidget();
 
@@ -4523,7 +4524,11 @@ try{
     }catch(e){}
     const timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
     const dateStr=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
-    if(c)c.textContent=dateStr+'  '+timeStr;
+    const str=dateStr+'  '+timeStr;
+    /* Only touch the DOM when the displayed minute actually changes —
+       rewriting the text node every 30s flashed the e-ink panel for no
+       reason (HH:MM is identical on every other tick). */
+    if(c&&c.textContent!==str)c.textContent=str;
   }
   tick();
   let _iv=null;
