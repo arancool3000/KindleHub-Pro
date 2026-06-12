@@ -7992,6 +7992,10 @@ function _refreshStorageUI(){
 async function _saveUser(key,email,stateObj){
   const encKey=S._encKey||key;
   const packed=await _encryptState(encKey,_trimStateForCloud(stateObj));
+  /* Mirror the encrypted blob into the on-device offline-login cache so the
+     account stays usable with no network. Runs on every save/sync, so the
+     cached copy is always current. */
+  try{_cacheOfflineCred(key,email,packed);}catch(_){}
   if(_sbActive()){
     /* Upsert on hash; if email/state changed we update; otherwise insert */
     await _sbUpsert('kh_users',{hash:key,email,state:packed,updated_at:new Date().toISOString()},'hash');
@@ -8204,6 +8208,26 @@ function _loginNoteFailure(name){
   try{localStorage.setItem(_loginFailKey(name),JSON.stringify(s));}catch(_){}
 }
 function _loginClearFailures(name){try{localStorage.removeItem(_loginFailKey(name));}catch(_){}}
+/* ── Offline login cache ───────────────────────────────────────────────
+   Stores each account's encrypted state blob on THIS device, keyed by its
+   auth hash, so a user can sign in (and out, then back in) with no network.
+   The blob is the same AES-GCM ciphertext the cloud holds — useless without
+   the password (which alone derives the key), so it's safe at rest. Kept to
+   the 3 most-recent accounts. */
+function _cacheOfflineCred(key,email,packed){
+  try{
+    if(!key||typeof packed!=='string'||!packed)return;
+    let store={};try{store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');}catch(_){store={};}
+    store[key]={email:email||'',packed:packed,at:Date.now()};
+    const ks=Object.keys(store);
+    if(ks.length>3){ks.sort((a,b)=>(store[a].at||0)-(store[b].at||0));while(Object.keys(store).length>3)delete store[ks.shift()];}
+    localStorage.setItem('kh_offline_cred',JSON.stringify(store));
+    if(email)localStorage.setItem('kh_last_user',email);
+  }catch(_){}
+}
+function _offlineCred(key){
+  try{const store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');return store[key]||null;}catch(_){return null;}
+}
 
 async function authRegister(email,password){
   try{
@@ -8282,12 +8306,27 @@ async function authLogin(email,password){
         }
       }catch(e){console.warn('Legacy login lookup failed',e);}
     }
+    /* OFFLINE LOGIN: the server lookups returned nothing — usually no
+       network. If THIS device cached an encrypted copy for this exact key
+       (from a prior successful sign-in here), use it so the user can still
+       get in. The password still has to decrypt it, so it's not a bypass. */
+    let _offline=false;
     if(!packed){
-      return{success:false,error:'No account found. Check email/password or register first.'};
+      const cred=_offlineCred(key);
+      if(cred&&cred.packed){packed=cred.packed;_offline=true;}
+    }
+    if(!packed){
+      return{success:false,error:(navigator&&navigator.onLine===false)
+        ?'You’re offline and this device has no saved copy of that account. Connect to Wi-Fi to sign in the first time.'
+        :'No account found. Check email/password or register first.'};
     }
     const cloudState=await _decryptState(key,packed);
     if(!cloudState)return{success:false,error:'Decryption failed — wrong password?'};
     S.userId=key.slice(0,16);S.authToken=key;S.email=email;S.syncEnabled=true;S._encKey=key;
+    /* Refresh the offline cache for this device (and remember the username
+       for the login form) even when we signed in from the server. */
+    try{_cacheOfflineCred(key,email,packed);}catch(_){}
+    if(_offline&&typeof toast==='function')toast('Signed in offline — your data syncs when you reconnect.',3500);
     if(cloudState&&Object.keys(cloudState).length>0)mergeCloudState(cloudState);
     if(needsMigration){
       /* Move the user record over to Supabase (or refresh the legacy entry) */
@@ -33480,6 +33519,8 @@ settings:()=>{
   let _isRegMode=false,_pwConfirmWrap=null;
   const _accForm=el('div',{style:{display:S.authToken?'none':'flex',flexDirection:'column',gap:'6px',marginBottom:'8px'}});
   const _accEmail=el('input',{type:'text',placeholder:'Username',autocomplete:'username',style:{fontSize:'12px'}});
+  /* Remember the last account so signing back in (incl. offline) is one tap. */
+  try{const _lu=localStorage.getItem('kh_last_user');if(_lu)_accEmail.value=_lu;}catch(_){}
   const _accPw=el('input',{type:'password',placeholder:'Password',style:{fontSize:'12px'}});
   const _accPwConfirm=el('input',{type:'password',placeholder:'Confirm password',style:{fontSize:'12px',display:'none'}});
   const _pwNote=txt('p','Use a unique password for KindleHub Pro only.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0',lineHeight:'1.5',padding:'6px 8px',background:'var(--highlight)',borderRadius:'7px'}});
@@ -51584,6 +51625,49 @@ BUILDERS.browser=()=>{
     const grid=el('div',{className:'br-picks'});
     PICKS.forEach(p=>{const b=el('div',{className:'br-pick'});b.textContent=p.label;b.onclick=()=>go(p.url);grid.appendChild(b);});
     ov.appendChild(grid);
+
+    /* ── My Shortcuts ── save any site as a named tile (top community
+       request — "enter a URL & decide a name for it"). Persisted in
+       S.brShortcuts and synced with normal state. */
+    const shHdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'18px 0 8px',gap:'8px'}});
+    shHdr.appendChild(txt('h3','My Shortcuts',{style:{margin:'0'}}));
+    const addBtn=txt('button','+ Add site',{className:'btn small'});
+    shHdr.appendChild(addBtn);
+    ov.appendChild(shHdr);
+    const shGrid=el('div',{className:'br-picks'});
+    ov.appendChild(shGrid);
+    function renderShortcuts(){
+      shGrid.innerHTML='';
+      const list=Array.isArray(S.brShortcuts)?S.brShortcuts:[];
+      if(!list.length){
+        shGrid.appendChild(txt('div','No shortcuts yet — tap "+ Add site" to save any page with a name you choose.',{style:{gridColumn:'1/-1',fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',padding:'2px'}}));
+        return;
+      }
+      list.forEach((s,i)=>{
+        const b=el('div',{className:'br-pick',style:{position:'relative',paddingRight:'24px'}});
+        b.textContent=s.name||hostOf(s.url);
+        b.title=s.url;
+        b.onclick=()=>go(s.url);
+        const x=el('button',{type:'button',style:{position:'absolute',top:'4px',right:'4px',width:'18px',height:'18px',lineHeight:'16px',padding:'0',borderRadius:'50%',border:'var(--thin)',background:'var(--bg)',color:'var(--muted)',fontSize:'12px',fontWeight:'900',cursor:'pointer'}});
+        x.textContent='×';x.title='Remove';
+        x.onclick=ev=>{ev.stopPropagation();S.brShortcuts.splice(i,1);save();renderShortcuts();};
+        b.appendChild(x);
+        shGrid.appendChild(b);
+      });
+    }
+    addBtn.onclick=()=>{
+      kindlePrompt('Web address (e.g. booky.io)','',function(url){
+        if(!url)return;
+        const norm=normalize(url);
+        if(!norm){toast('That doesn\'t look like a web address.',2500);return;}
+        kindlePrompt('Name this shortcut',hostOf(norm),function(name){
+          if(!S.brShortcuts)S.brShortcuts=[];
+          S.brShortcuts.push({name:String(name||hostOf(norm)).slice(0,40),url:norm});
+          save();renderShortcuts();toast('Shortcut saved.',1800);
+        });
+      });
+    };
+    renderShortcuts();
     stage.appendChild(ov);
   }
 
