@@ -11525,7 +11525,14 @@ const Blackjack=(function(){
   function draw(){if(!deck.length)newDeck();return deck.pop();}
   function val(hand){let t=0,a=0;hand.forEach(c=>{if(c.r==='A'){a++;t+=11;}else if(c.r==='K'||c.r==='Q'||c.r==='J'||c.r==='10')t+=10;else t+=parseInt(c.r,10);});while(t>21&&a){t-=10;a--;}return t;}
   function deal(){
-    if(chips<bet)chips=100;
+    /* Out of chips → a fresh 100-chip buy-in. CLAMP the bet to what's
+       actually available first: an all-in bet carried over from a richer
+       round used to exceed the 100 rebuy, so chips-=bet went NEGATIVE (the
+       'go all-in twice → negative, then win everything +100' bug). */
+    if(chips<bet){
+      if(chips<5){chips=100;if(typeof toast==='function')toast('Out of chips — fresh 100-chip buy-in.',2200);}
+      bet=Math.max(5,Math.min(bet,chips));
+    }
     chips-=bet;newDeck();phand=[draw(),draw()];dhand=[draw(),draw()];msg='';
     if(val(phand)===21){phase='over';settle();}else phase='player';
     render();
@@ -11572,7 +11579,7 @@ const Blackjack=(function(){
     }else{
       const minus=txt('button','– bet',{className:'btn small'});minus.onclick=()=>{bet=Math.max(5,bet-5);render();};
       const dealB=txt('button','Deal ('+bet+')',{className:'btn small primary'});dealB.onclick=deal;
-      const plus=txt('button','+ bet',{className:'btn small'});plus.onclick=()=>{bet=Math.min(Math.max(5,chips||100),bet+5);render();};
+      const plus=txt('button','+ bet',{className:'btn small'});plus.onclick=()=>{bet=Math.min(Math.max(5,chips),bet+5);render();};
       ctr.append(minus,dealB,plus);
     }
     wrap.appendChild(ctr);
@@ -11916,6 +11923,17 @@ const CrazyEights=(function(){
    is up, so this works even when accepted cold from the invite banner. */
 (window._khGameAcceptors=window._khGameAcceptors||{}).crazy8=function(session,fromName){try{CrazyEights.startOnline(session);}catch(e){}};
 
+/* Wrap a game's "New Game" button so it asks before discarding a game that
+   is still in progress. activeFn() returns true while a round is live; when
+   it's already over the new game starts immediately (no nag on replay).
+   kindleConfirm centres correctly on old Kindle WebKit. */
+function newGameGuard(activeFn,startFn){
+  return function(){
+    let active=false;try{active=!!(activeFn&&activeFn());}catch(_){}
+    if(active){kindleConfirm('Start a new game? Your current game will be lost.',function(ok){if(ok){try{startFn();}catch(_){}}});}
+    else{try{startFn();}catch(_){}}
+  };
+}
 function launchGame(g){
   window._currentGame=g;
   S.lastPlay={game:g,at:NOW().toISOString()};save();updateLastPlayUI();
@@ -12674,7 +12692,7 @@ const Connect4=(()=>{
 
     board.onclick=e=>{const cc=e.target.closest('.cf-cell');if(cc)drop(parseInt(cc.dataset.col));};
     const ctrl=el('div',{className:'card-row',style:'margin-top:10px;justify-content:center;'});
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn'}),{onclick:start}));
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn'}),{onclick:newGameGuard(()=>C&&C.active,start)}));
     immersiveContent.appendChild(ctrl);
   }
 
@@ -14711,7 +14729,7 @@ const Chess=(()=>{
 
     /* Controls */
     const ctrl=el('div',{className:'card-row',style:'justify-content:center;flex-wrap:wrap;'});
-    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn small'}),{onclick:start}));
+    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn small'}),{onclick:newGameGuard(()=>!gameOver&&moveHistory&&moveHistory.length>0,start)}));
     ctrl.appendChild(Object.assign(txt('button','Undo',{className:'btn small'}),{onclick:undoMove}));
     /* Board flip — useful when playing as black online, or when
        sharing a Kindle face-to-face and want to swap perspectives. */
@@ -15084,7 +15102,7 @@ const Minesweeper=(()=>{
     grid.onclick=e=>{const c=e.target.closest('.ms-cell');if(c)reveal(parseInt(c.dataset.idx));};
     grid.oncontextmenu=e=>{e.preventDefault();const c=e.target.closest('.ms-cell');if(c){const idx=parseInt(c.dataset.idx);if(!ms.revealed[idx]){ms.flagged[idx]=!ms.flagged[idx];render();}}};
     const ctrl=el('div',{className:'card-row',style:{marginTop:'10px'}});
-    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:start}));
+    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:newGameGuard(()=>ms&&ms.active,start)}));
     immersiveContent.appendChild(ctrl);
   }
   function reveal(i){
@@ -15337,7 +15355,7 @@ const Sudoku=(()=>{
     numpad.appendChild(clrBtn);
     immersiveContent.appendChild(numpad);
     const ctrl=el('div',{className:'card-row',style:{marginTop:'8px'}});
-    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:start}));
+    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:newGameGuard(()=>game&&game.active,start)}));
     const revBtn=txt('button','Reveal Cell',{className:'btn small'});
     revBtn.onclick=()=>{if(!selected||G.fixed[selected[0]][selected[1]])return;G.user[selected[0]][selected[1]]=G.solution[selected[0]][selected[1]];render();toast('Cell revealed');};
     ctrl.appendChild(revBtn);
@@ -15435,7 +15453,7 @@ const Snake=(()=>{
     dpad.appendChild(rB);dpad.appendChild(el('div'));dpad.appendChild(el('div'));dpad.appendChild(el('div'));
     immersiveContent.appendChild(dpad);
     const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center'}});
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:start}));
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>G&&G.active,start)}));
     immersiveContent.appendChild(ctrl);
     if(timer)clearInterval(timer);
     timer=setInterval(tick,speed);
@@ -15606,7 +15624,7 @@ const G2048=(()=>{
     const ctrl=el('div',{className:'card-row',style:{marginTop:'20px',justifyContent:'center'}});
     const ngBtn=txt('button','New Game',{className:'btn small'});
     ngBtn.style.minWidth='110px';
-    ngBtn.onclick=start;
+    ngBtn.onclick=newGameGuard(()=>gameActive,start);
     ctrl.appendChild(ngBtn);
     immersiveContent.appendChild(ctrl);
   }
@@ -18534,7 +18552,7 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
     const autoBtn=txt('button',G.auto?'Auto: ON':'Auto-accelerate',{className:'btn small'+(G.auto?' primary':'')});
     autoBtn.onclick=()=>{G.auto=!G.auto;autoBtn.textContent=G.auto?'Auto: ON':'Auto-accelerate';autoBtn.classList.toggle('primary',G.auto);toast(G.auto?'Auto-accelerate on — just steer!':'Auto-accelerate off',1600);};
     ctrl.appendChild(autoBtn);
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:start}));
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>G&&G.active,start)}));
     immersiveContent.appendChild(ctrl);
     if(timer)clearInterval(timer);
     lastT=Date.now();
@@ -33182,60 +33200,6 @@ settings:()=>{
   /* Thin shim so card code can still reference the setTimeout block pattern */
   function _defer(fn){_qPush(fn);}
 
-  /* ── Header Tabs card ─────────────────────────────────────────
-     Mirrors the Setup Wizard's "Your tabs" step: a clean 2-column
-     button grid where each tab is one toggle. Active (visible) tabs
-     are the primary black-on-white button; hidden ones are the
-     outline variant. State is stored in S.navHidden so it stays in
-     sync with the wizard, the existing "Top Menu Pages" card, and
-     syncNavVisibility() — one source of truth for nav state. */
-  _defer(()=>{
-    const card=el('div',{className:'card',style:{gridColumn:'1/-1'}});
-    card.appendChild(txt('h2','Header Tabs'));
-    card.appendChild(txt('p','Tap a page to toggle it in the top menu. Hidden pages are still reachable from Home, search and direct links.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'12px',lineHeight:'1.55'}}));
-    if(!S.navHidden)S.navHidden={};
-    /* Same layout as the wizard step (line ~39944): 2-column grid of
-       left-aligned small buttons. Auto-fit so it expands on wide
-       screens but doesn't squash on a Kindle. */
-    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'6px'}});
-    NAV_TABS.forEach(([view,label])=>{
-      const isOn=!S.navHidden[view];
-      const b=txt('button',label,{className:'btn small'+(isOn?' primary':''),style:{textAlign:'left',fontSize:'11px'}});
-      b.dataset.htView=view;
-      /* Home + Settings are always visible — disable their buttons */
-      const locked=(view==='home'||view==='settings');
-      if(locked){b.disabled=true;b.style.opacity='0.55';b.title=label+' is always visible';}
-      else b.onclick=()=>{
-        S.navHidden[view]=!S.navHidden[view];
-        b.classList.toggle('primary',!S.navHidden[view]);
-        save();
-        if(typeof syncNavVisibility==='function')syncNavVisibility();
-      };
-      grid.appendChild(b);
-    });
-    card.appendChild(grid);
-    /* Quick actions row */
-    const actions=el('div',{style:{display:'flex',gap:'6px',marginTop:'12px',flexWrap:'wrap'}});
-    const showAllBtn=txt('button','Show all',{className:'btn small'});
-    showAllBtn.onclick=()=>{
-      NAV_TABS.forEach(([view])=>{S.navHidden[view]=false;});
-      save();
-      if(typeof syncNavVisibility==='function')syncNavVisibility();
-      grid.querySelectorAll('button[data-ht-view]').forEach(b=>{if(!b.disabled)b.classList.add('primary');});
-      toast('All tabs visible');
-    };
-    const hideAllBtn=txt('button','Hide all (except Home & Settings)',{className:'btn small'});
-    hideAllBtn.onclick=()=>{
-      NAV_TABS.forEach(([view])=>{if(view!=='home'&&view!=='settings')S.navHidden[view]=true;});
-      save();
-      if(typeof syncNavVisibility==='function')syncNavVisibility();
-      grid.querySelectorAll('button[data-ht-view]').forEach(b=>{if(!b.disabled)b.classList.remove('primary');});
-      toast('All optional tabs hidden');
-    };
-    actions.appendChild(showAllBtn);actions.appendChild(hideAllBtn);
-    card.appendChild(actions);
-    g.appendChild(card);
-  });
 
   _defer(()=>{
 
@@ -34114,14 +34078,17 @@ settings:()=>{
   });
   cKbd.appendChild(modeRow);
   g.appendChild(cKbd);
-  });
-  _defer(()=>{
+  /* NOTE: this used to close the _defer here and reopen a new one, which
+     left `c5` (declared above) out of scope below — so the Keyboard
+     Shortcuts AND Top Menu Pages cards both threw 'c5 is not defined' and
+     never rendered. Kept as ONE block so c5 stays in scope. */
   const st=el('div',{style:{fontSize:'12px',lineHeight:'2'}});
   [['Snake / 2048','Arrow keys'],['Wordle — type','Letter keys'],['Wordle — submit','Enter'],['Wordle — delete','Backspace'],['Hangman — type','Letter keys'],['Chat — send','Enter']].forEach(([k,val])=>{
     const row=el('div',{style:{display:'flex',justifyContent:'space-between',borderBottom:'1px dashed var(--muted)',padding:'1px 0'}});
     row.appendChild(txt('span',k));row.appendChild(txt('code',val,{style:{background:'var(--highlight)',padding:'1px 5px',borderRadius:'3px',fontSize:'11px'}}));st.appendChild(row);
   });
   c5.appendChild(st);
+  g.appendChild(c5);/* was never appended — the Keyboard Shortcuts card never showed */
   /* ── Top Menu Pages — re-orderable + hide/show ── */
   const cNav=el('div',{className:'card',style:{gridColumn:'1/-1'}});
   cNav.appendChild(txt('h2','Top Menu Pages'));
@@ -34135,13 +34102,19 @@ settings:()=>{
     const labelMap=Object.fromEntries(NAV_TABS);
     order.forEach((view,idx)=>{
       const label=labelMap[view]||view;
-      const isHidden=S.navHidden[view]===true;
+      /* Home + Settings can never be hidden — they anchor the nav. Force
+         their state correct so a stale navHidden entry can't strand the
+         user, and lock their toggle. */
+      const locked=(view==='home'||view==='settings');
+      if(locked&&S.navHidden[view]){S.navHidden[view]=false;}
+      const isHidden=!locked&&S.navHidden[view]===true;
       const row=el('div',{style:'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card);border-radius:6px;'});
       /* Visibility checkbox */
-      const tog=el('button',{style:'width:22px;height:22px;border:2px solid var(--fg);border-radius:4px;padding:0;background:'+(isHidden?'transparent':'var(--fg)')+';color:var(--bg);cursor:pointer;flex-shrink:0;font-weight:900;font-size:14px;line-height:1;'});
+      const tog=el('button',{style:'width:22px;height:22px;border:2px solid var(--fg);border-radius:4px;padding:0;background:'+(isHidden?'transparent':'var(--fg)')+';color:var(--bg);cursor:'+(locked?'default':'pointer')+';flex-shrink:0;font-weight:900;font-size:14px;line-height:1;'+(locked?'opacity:0.5;':'')});
       tog.textContent=isHidden?'':'✓';
-      tog.title=isHidden?'Show in top menu':'Hide from top menu';
-      tog.onclick=()=>{
+      tog.title=locked?label+' is always in the menu':(isHidden?'Show in top menu':'Hide from top menu');
+      tog.disabled=locked;
+      if(!locked)tog.onclick=()=>{
         S.navHidden[view]=!isHidden;save();
         setNavTabVisible(view,!S.navHidden[view]);
         _renderNavList();
@@ -34180,7 +34153,9 @@ settings:()=>{
   };
   const hideAllBtn=txt('button','Hide All',{className:'btn small'});
   hideAllBtn.onclick=()=>{
-    NAV_TABS.forEach(([view])=>{S.navHidden[view]=true;setNavTabVisible(view,false);});
+    /* Never hide Home/Settings — hiding them used to strand the user with
+       no way back until a reload. */
+    NAV_TABS.forEach(([view])=>{if(view==='home'||view==='settings')return;S.navHidden[view]=true;setNavTabVisible(view,false);});
     save();_renderNavList();toast('All optional top-menu pages hidden');
   };
   const resetBtn=txt('button','Reset Order',{className:'btn small'});
