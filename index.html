@@ -1012,6 +1012,7 @@ body.launcher-ui .view{padding-bottom:80px;}
       <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
     </div>
     <div class="header-controls">
+      <button class="btn small" id="recentBtn" title="Recent activities — jump back to a page you were on">Recent</button>
       <div class="clock" id="sysClock"></div>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
       <button class="btn small" id="landscapeBtn" title="Rotate the app 90° for sideways reading">Landscape</button>
@@ -1093,6 +1094,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="wikipedia" style="display:none">Wikipedia</div>
     <div class="tab" data-view="cookbook">Cookbook</div>
     <div class="tab" data-view="files">Files</div>
+    <div class="tab" data-view="gallery">Gallery</div>
     <div class="tab" data-view="mail">Mail</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
@@ -1978,7 +1980,7 @@ const NAV_TABS=[
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
-  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['mail','Mail']
+  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['gallery','Gallery'],['mail','Mail']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -4941,6 +4943,22 @@ function toggleLandscape(forceTo){
 }
 (function(){
   const b=$('landscapeBtn');if(b)b.onclick=()=>toggleLandscape();
+  /* Recent-activities quick switcher — a lightweight "open tabs" panel. */
+  const _rb=$('recentBtn');
+  if(_rb)_rb.onclick=()=>{
+    const rv=(window._khRecentViews||[]).filter(x=>x!==currentView);
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.5)',zIndex:'600200',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'60px 16px 16px'}});
+    const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'14px',width:'100%',maxWidth:'420px',boxShadow:'var(--shadow-md)'}});
+    box.appendChild(txt('h3','Recent activities',{style:{margin:'0 0 10px',fontFamily:'var(--title-font)'}}));
+    if(!rv.length)box.appendChild(txt('p','No other activities yet — open a few pages and they\'ll show here so you can jump back.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5'}}));
+    const labelOf=v=>{const m=(typeof NAV_TABS!=='undefined'?NAV_TABS:[]).find(t=>t[0]===v);return m?m[1]:(v==='home'?'Home':v==='settings'?'Settings':v.charAt(0).toUpperCase()+v.slice(1));};
+    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'6px'}});
+    rv.forEach(v=>{const bb=txt('button',labelOf(v),{className:'btn small',style:{textAlign:'left'}});bb.onclick=()=>{ov.remove();const t=document.querySelector('nav .tab[data-view="'+v+'"]');if(t)t.click();else showView(v);};grid.appendChild(bb);});
+    box.appendChild(grid);
+    const cl=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=()=>ov.remove();box.appendChild(cl);
+    ov.onclick=e=>{if(e.target===ov)ov.remove();};
+    ov.appendChild(box);document.body.appendChild(ov);
+  };
   if(S.landscapeMode)setTimeout(()=>toggleLandscape(true),120);
   /* Keep geometry correct if the viewport itself changes while rotated
      (soft keyboard, browser chrome). Re-apply with fresh dimensions. */
@@ -10823,6 +10841,14 @@ const ALWAYS_REBUILD=new Set(['games','messages','pet']);
 
 function showView(id){
   currentView=id;
+  /* Recent-activities tracker for the header quick-switcher ("minimise a
+     tab and jump back" request). Keeps the last few DISTINCT views. */
+  try{
+    if(!window._khRecentViews)window._khRecentViews=[];
+    const rv=window._khRecentViews;
+    const at=rv.indexOf(id);if(at>=0)rv.splice(at,1);
+    rv.unshift(id);if(rv.length>8)rv.length=8;
+  }catch(_){}
   while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
   if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
   if(!VIEWS[id]){
@@ -15393,11 +15419,35 @@ const Sudoku=(()=>{
     clrBtn.onclick=()=>{if(selected&&!G.fixed[selected[0]][selected[1]]){G.user[selected[0]][selected[1]]=0;render();}};
     numpad.appendChild(clrBtn);
     immersiveContent.appendChild(numpad);
-    const ctrl=el('div',{className:'card-row',style:{marginTop:'8px'}});
-    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:newGameGuard(()=>game&&game.active,start)}));
+    const ctrl=el('div',{className:'card-row',style:{marginTop:'8px',flexWrap:'wrap'}});
+    ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:newGameGuard(()=>G&&G.user&&G.user.some(row=>row.some(Boolean)),start)}));
     const revBtn=txt('button','Reveal Cell',{className:'btn small'});
     revBtn.onclick=()=>{if(!selected||G.fixed[selected[0]][selected[1]])return;G.user[selected[0]][selected[1]]=G.solution[selected[0]][selected[1]];render();toast('Cell revealed');};
     ctrl.appendChild(revBtn);
+    /* ── Team Sudoku ── share the exact puzzle so friends solve the same
+       board and race. The code is just the 81 givens; the loader re-solves
+       it for validation. (Community request: "team sudoku".) */
+    const shareBtn=txt('button','Share puzzle',{className:'btn small'});
+    shareBtn.onclick=()=>{
+      if(!G)return;
+      const code=G.puzzle.map(row=>row.map(v=>v||0).join('')).join('');
+      if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(code).then(()=>toast('Puzzle code copied — share it and race a friend!',3000),()=>kindlePrompt('Copy this puzzle code:',code,()=>{}));
+      else kindlePrompt('Copy this puzzle code to share:',code,()=>{});
+    };
+    const loadBtn=txt('button','Load shared',{className:'btn small'});
+    loadBtn.onclick=()=>{
+      kindlePrompt('Paste a shared Sudoku code (81 digits):','',function(code){
+        const clean=String(code||'').replace(/[^0-9]/g,'');
+        if(clean.length!==81){toast('That code isn\'t a valid puzzle (need 81 digits).',3000);return;}
+        const puzzle=[];for(let r=0;r<9;r++){const row=[];for(let c=0;c<9;c++)row.push(parseInt(clean[r*9+c],10));puzzle.push(row);}
+        const sol=puzzle.map(r=>[...r]);
+        if(!solve(sol)){toast('That puzzle has no valid solution — check the code.',3500);return;}
+        G={puzzle:puzzle.map(r=>[...r]),solution:sol,user:Array.from({length:9},()=>Array(9).fill(0)),fixed:puzzle.map(r=>r.map(v=>v!==0)),errors:0,diff:'shared',startTime:Date.now()};
+        selected=null;enterImmersive('Sudoku','shared puzzle');render();
+        toast('Shared puzzle loaded — good luck!',2500);
+      });
+    };
+    ctrl.appendChild(shareBtn);ctrl.appendChild(loadBtn);
     immersiveContent.appendChild(ctrl);
   }
   /* Sudoku boards are never persisted mid-game, so there is nothing
@@ -20642,6 +20692,28 @@ function _initFlightSim(){
     title.style.cssText='font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:1px;text-align:center;padding:6px 0 10px;border-bottom:1px solid var(--fg);margin-bottom:8px;';
     title.textContent='FLIGHT SIM — SELECT MODE';
     immersiveContent.appendChild(title);
+
+    /* ── How to fly (community asked for clearer instructions) ── */
+    const helpBtn=document.createElement('button');helpBtn.className='btn small';
+    helpBtn.textContent='✈ How to fly (read first)';
+    helpBtn.style.cssText='width:100%;margin-bottom:8px;font-weight:700;';
+    helpBtn.onclick=()=>{
+      const ov=document.createElement('div');
+      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:600300;display:flex;align-items:center;justify-content:center;padding:16px;';
+      const box=document.createElement('div');
+      box.style.cssText='background:var(--card);color:var(--fg);border-radius:12px;padding:16px 18px;max-width:420px;max-height:88vh;overflow-y:auto;font-size:13px;line-height:1.6;box-shadow:var(--shadow-md);';
+      box.innerHTML='<h3 style="margin:0 0 10px;font-family:var(--title-font);">How to fly</h3>'+
+        '<p style="margin:0 0 8px;"><b>Goal:</b> take off, fly to an airport, and land gently on the runway.</p>'+
+        '<p style="margin:0 0 8px;"><b>1. Take off:</b> tap <b>MAX THR</b> (full throttle). When your speed passes the rotate speed (about 55kt in the Cessna), hold <b>NOSE UP</b> until you climb.</p>'+
+        '<p style="margin:0 0 8px;"><b>2. Climb &amp; cruise:</b> ease off the nose so the climb is steady. Keep the wings level with the <b>◄ ►</b> bank buttons. Watch your altitude (ALT) and speed (KT) on the instrument bar.</p>'+
+        '<p style="margin:0 0 8px;"><b>3. Navigate:</b> open <b>MAP</b>, tap to drop a waypoint to an airport. The heading bug points the way.</p>'+
+        '<p style="margin:0 0 8px;"><b>4. Land:</b> line up with the runway, lower <b>GEAR</b> and <b>FLAPS</b>, reduce throttle, and descend slowly. Touch down near stall speed with the nose slightly up. Too fast or too steep = crash.</p>'+
+        '<p style="margin:0 0 4px;color:var(--muted);font-size:12px;"><b>Tip:</b> the Cessna 172 is the most forgiving — start there. Buttons that stay lit are <b>held</b>; tap again to release.</p>';
+      const cl=document.createElement('button');cl.className='btn small primary';cl.textContent='Got it';cl.style.marginTop='10px';cl.onclick=()=>ov.remove();
+      box.appendChild(cl);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+      ov.appendChild(box);document.body.appendChild(ov);
+    };
+    immersiveContent.appendChild(helpBtn);
 
     /* ── Aircraft selector ── */
     const acTitle=document.createElement('div');
@@ -33262,8 +33334,27 @@ settings:()=>{
 
 
   const c1=el('div',{className:'card'});c1.appendChild(txt('h2','Profile'));
+  /* Avatar preview + a "shuffle" so users get some profile identity
+     (the identicon is derived from a seed they can change). */
+  const _avatarRow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}});
+  const _avatarWrap=el('div',{id:'profileAvatar'});
+  function _paintAvatar(){
+    _avatarWrap.innerHTML='';
+    const seed=S.avatarSeed||S.user||'Reader';
+    if(typeof _avatarEl==='function')_avatarWrap.appendChild(_avatarEl(seed,52));
+  }
+  _paintAvatar();
+  const _shuf=txt('button','Shuffle avatar',{className:'btn small'});
+  _shuf.onclick=()=>{S.avatarSeed=(S.user||'Reader')+'_'+Math.random().toString(36).slice(2,7);save();_paintAvatar();toast('New avatar');};
+  _avatarRow.append(_avatarWrap,_shuf);c1.appendChild(_avatarRow);
   c1.appendChild(el('input',{id:'userNameInput',value:S.user||'Reader'}));
   c1.appendChild(txt('button','Save Name',{className:'btn',id:'saveUserName',style:{marginTop:'6px'}}));
+  /* Status line — a short "about me" shown nowhere sensitive, just a bit of
+     profile personality (community asked for more customisation). */
+  c1.appendChild(txt('div','STATUS',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',margin:'10px 0 4px'}}));
+  const _statusInp=el('input',{id:'profileStatus',placeholder:'A short status or motto…',value:S.profileStatus||'',maxLength:80,style:{width:'100%'}});
+  _statusInp.oninput=()=>{S.profileStatus=_statusInp.value.slice(0,80);save();};
+  c1.appendChild(_statusInp);
 
   /* Location picker */
   c1.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'10px 0'}}));
@@ -44297,6 +44388,55 @@ mail:()=>{
      random.php              → one random recipe
      filter.php?c=<category> → list by category
 ─────────────────────────────────────────────────────────── */
+gallery:()=>{
+  /* Screenshot / image viewer (community request). Kindles save screenshots
+     to the device; a web page can't read the filesystem, so the user picks
+     image files and views them here. Kept in-session (not persisted) so it
+     never bloats the saved state. */
+  const v=el('section',{id:'view-gallery',className:'view'});
+  v.appendChild(txt('h2','Gallery',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  v.appendChild(txt('p','View your Kindle screenshots and images. Tap "Add images" and pick the screenshots from your device — they show here for this session. Tap any image to view it full-size.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.55',marginBottom:'12px'}}));
+  if(!window._khGallery)window._khGallery=[];/* session-only list of {name,url} */
+  const fileInp=el('input',{type:'file',accept:'image/*',multiple:true,style:{display:'none'}});
+  const addBtn=txt('button','+ Add images',{className:'btn primary small'});
+  addBtn.onclick=()=>fileInp.click();
+  const clearBtn=txt('button','Clear',{className:'btn small'});
+  const row=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px',flexWrap:'wrap'}});
+  row.append(addBtn,clearBtn);v.appendChild(row);v.appendChild(fileInp);
+  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:'8px'}});
+  v.appendChild(grid);
+  function renderGrid(){
+    grid.innerHTML='';
+    if(!window._khGallery.length){grid.appendChild(txt('div','No images yet. Tap "+ Add images" to load your screenshots.',{style:{gridColumn:'1/-1',fontSize:'12px',color:'var(--muted)',padding:'10px',textAlign:'center'}}));return;}
+    window._khGallery.forEach((img,i)=>{
+      const cell=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',overflow:'hidden',background:'var(--card)',aspectRatio:'1',cursor:'pointer'}});
+      const im=el('img',{src:img.url,style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}});
+      im.onclick=()=>showFull(i);
+      cell.appendChild(im);
+      const x=el('button',{type:'button',style:{position:'absolute',top:'3px',right:'3px',width:'20px',height:'20px',lineHeight:'18px',padding:'0',borderRadius:'50%',border:'none',background:'rgba(0,0,0,0.6)',color:'#fff',fontSize:'13px',fontWeight:'900',cursor:'pointer'}});
+      x.textContent='×';x.onclick=ev=>{ev.stopPropagation();try{URL.revokeObjectURL(img.url);}catch(_){}window._khGallery.splice(i,1);renderGrid();};
+      cell.appendChild(x);grid.appendChild(cell);
+    });
+  }
+  function showFull(i){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.92)',zIndex:'600200',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'10px'}});
+    const im=el('img',{src:window._khGallery[i].url,style:{maxWidth:'100%',maxHeight:'88%',objectFit:'contain'}});
+    const cap=txt('div',window._khGallery[i].name||'',{style:{color:'#fff',fontSize:'11px',marginTop:'8px',maxWidth:'90%',textAlign:'center',wordBreak:'break-all'}});
+    const close=txt('button','Close',{className:'btn small',style:{marginTop:'10px'}});
+    close.onclick=()=>ov.remove();ov.onclick=e=>{if(e.target===ov)ov.remove();};
+    ov.append(im,cap,close);document.body.appendChild(ov);
+  }
+  fileInp.onchange=e=>{
+    const files=Array.from(e.target.files||[]);
+    files.forEach(f=>{if(f.type.startsWith('image/'))window._khGallery.push({name:f.name,url:URL.createObjectURL(f)});});
+    fileInp.value='';renderGrid();
+    if(files.length)toast(files.length+' image'+(files.length===1?'':'s')+' added.',1800);
+  };
+  clearBtn.onclick=()=>{window._khGallery.forEach(g=>{try{URL.revokeObjectURL(g.url);}catch(_){}});window._khGallery=[];renderGrid();};
+  renderGrid();
+  return v;
+},
+
 cookbook:()=>{
   const v=el('section',{id:'view-cookbook',className:'view'});
 
