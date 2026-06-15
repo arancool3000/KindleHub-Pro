@@ -2613,8 +2613,12 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   if(_khAlreadyNotified(key))return;
   _khMarkNotified(key);
   const TRIM=30;
-  const safeName=String(name||'New message').replace(/\s+/g,' ').trim().slice(0,40);
-  const body=String(text||'').replace(/\s+/g,' ').trim();
+  /* Apply the same profanity blocker the chat list uses (_censorText). The
+     toast was the one user-text surface still showing messages raw — that's
+     the reported "bad word blocker doesn't block notification popups" bug.
+     Both the sender name and the body are run through it. */
+  const safeName=_censorText(String(name||'New message').replace(/\s+/g,' ').trim()).slice(0,40);
+  const body=_censorText(String(text||'').replace(/\s+/g,' ').trim());
   const truncated=body.length>TRIM?body.slice(0,TRIM)+'…':body;
   /* If we know which group it's from, make the toast tappable to open that
      chat directly (the messages builder reads window._khPendingOpenGroup). */
