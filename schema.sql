@@ -110,6 +110,7 @@ create table if not exists kh_feedback (
 alter table kh_feedback add column if not exists status   text  default 'open';
 alter table kh_feedback add column if not exists author   text  default '';
 alter table kh_feedback add column if not exists comments jsonb default '[]'::jsonb;
+alter table kh_feedback add column if not exists status_at timestamptz;
 
 create table if not exists kh_errors (
   id   text primary key,
@@ -257,6 +258,10 @@ create policy "kh_messages_delete" on kh_messages    for delete
 create policy "kh_feedback_read"   on kh_feedback    for select using (true);
 create policy "kh_feedback_insert" on kh_feedback    for insert with check (true);
 create policy "kh_feedback_update" on kh_feedback    for update using (true) with check (true);
+-- v8.3 auto-prune: allow deleting ONLY done/ignored items resolved >7 days ago.
+drop policy if exists "kh_feedback_delete" on kh_feedback;
+create policy "kh_feedback_delete" on kh_feedback for delete
+  using (status in ('done','ignored') and status_at is not null and status_at < now() - interval '7 days');
 
 create policy "kh_errors_insert"   on kh_errors      for insert with check (true);
 

@@ -2818,7 +2818,10 @@ function launchKindleDesktop(){
 
     if(app.customHTML){
       /* Custom AI-built app — full-screen iframe in its own overlay,
-         NOT inside kd-root. */
+         NOT inside kd-root. Remove ANY stray overlays first so two opens
+         can never leave more than one iframe layered on screen (the
+         "shows three different apps" report). */
+      try{document.querySelectorAll('#kd-customapp').forEach((n,i)=>{if(i>0&&n.parentNode)n.parentNode.removeChild(n);});}catch(_){}
       let frWrap=document.getElementById('kd-customapp');
       if(!frWrap){
         frWrap=document.createElement('div');
@@ -4200,8 +4203,12 @@ WEB SEARCH & LIVE DATA:
       const ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
       const appColor=parsed.color||ACCS[Math.floor(Math.random()*ACCS.length)];
       const appIcon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+appColor+'" font-family="sans-serif">'+(parsed.label||'App').substring(0,3).toUpperCase()+'</text></svg>';
+      let _installed=false;
       installBtn.onclick=()=>{
-        const newApp={id:'custom_'+Date.now(),label:parsed.label,color:appColor,icon:appIcon,customHTML:parsed.html,builtWith:m2.label};
+        /* Guard against Kindle double/triple-tap installing the SAME app
+           several times — that was the "I see three of my app" bug. */
+        if(_installed)return;_installed=true;installBtn.disabled=true;
+        const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:parsed.label,color:appColor,icon:appIcon,customHTML:parsed.html,builtWith:m2.label};
         osState.customApps.push(newApp);persistOS();buildPages();renderInstalled();
         stStatus.textContent='"'+parsed.label+'" added to your KindleOS.';
         stPreview.style.display='none';stPreview.innerHTML='';stTextarea.value='';
@@ -34552,17 +34559,33 @@ feedback:()=>{
            still renders. */
         let rows;
         try{
-          rows=await _sbSelect('kh_feedback','type=eq.'+encodeURIComponent(type)+'&select=id,type,text,votes,date,status,comments,author&order=votes.desc');
+          rows=await _sbSelect('kh_feedback','type=eq.'+encodeURIComponent(type)+'&select=id,type,text,votes,date,status,comments,author,status_at&order=votes.desc');
         }catch(eCols){
-          rows=await _sbSelect('kh_feedback','type=eq.'+encodeURIComponent(type)+'&select=id,type,text,votes,date&order=votes.desc');
+          try{rows=await _sbSelect('kh_feedback','type=eq.'+encodeURIComponent(type)+'&select=id,type,text,votes,date,status,comments,author&order=votes.desc');}
+          catch(eCols2){rows=await _sbSelect('kh_feedback','type=eq.'+encodeURIComponent(type)+'&select=id,type,text,votes,date&order=votes.desc');}
         }
-        if(Array.isArray(rows))return rows.map(r=>({
-          id:r.id,type:r.type,text:r.text,
-          votes:r.votes||0,date:r.date,
-          status:r.status||'open',
-          comments:Array.isArray(r.comments)?r.comments:[],
-          author:r.author||'',
-        }));
+        if(Array.isArray(rows)){
+          let list=rows.map(r=>({
+            id:r.id,type:r.type,text:r.text,
+            votes:r.votes||0,date:r.date,
+            status:r.status||'open',
+            comments:Array.isArray(r.comments)?r.comments:[],
+            author:r.author||'',
+            status_at:r.status_at||null,
+          }));
+          /* Auto-prune: a done/ignored item older than 7 days disappears.
+             Best-effort server delete (works once the kh_feedback delete
+             policy from the schema is applied); always hidden from the list
+             regardless, so it goes away after 7 days either way. */
+          const cutoff=Date.now()-7*86400000;
+          const stale=list.filter(it=>(it.status==='done'||it.status==='ignored')&&it.status_at&&Date.parse(it.status_at)<cutoff);
+          if(stale.length){
+            stale.forEach(it=>{try{_sbDelete('kh_feedback','id=eq.'+encodeURIComponent(it.id)).catch(function(){});}catch(_){}});
+            const drop=new Set(stale.map(it=>it.id));
+            list=list.filter(it=>!drop.has(it.id));
+          }
+          return list;
+        }
       }catch(e){console.warn('SB feedback read failed',e);}
     }
     const doc=await _masterRead();
@@ -36263,8 +36286,14 @@ Deno.serve(async (req)=>{
       return false;
     }
     try{
-      await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(id),{status});
-      const it=items.find(x=>x.id===id);if(it)it.status=status;
+      /* Stamp WHEN it was resolved so done/ignored items can auto-prune
+         after 7 days. status_at is optional in older schemas — the update
+         falls back below if the column is missing. */
+      const _resolved=(status==='done'||status==='ignored');
+      const _patch=_resolved?{status,status_at:new Date().toISOString()}:{status,status_at:null};
+      try{await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(id),_patch);}
+      catch(_e){if(_isMissingColumnError(_e,'status_at'))await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(id),{status});else throw _e;}
+      const it=items.find(x=>x.id===id);if(it){it.status=status;it.status_at=_resolved?new Date().toISOString():null;}
       return true;
     }catch(e){
       console.error('[Status change failed]',e);
