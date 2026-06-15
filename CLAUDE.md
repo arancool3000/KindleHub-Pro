@@ -17,7 +17,7 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   Seed a logged-in/onboarded state via `addInitScript` setting `localStorage['kindlehub_v5']`
   (note: the app gzip-compresses saved state, so read it back via `window._KH.S`, not raw JSON.parse).
   The repeated game-launch regression lives at `/tmp/games_test.cjs` (launches all 22 data-game buttons).
-- Commit when the user asks; branch is `claude/stoic-mayer-ylygsn`. The user merges PRs (or asks me to).
+- Commit when the user asks; branch is `claude/wonderful-clarke-6hm5ex`. The user merges PRs (or asks me to).
   End commit messages with the session URL line.
 
 ## Architecture cheat-sheet (grep anchors)
@@ -25,6 +25,13 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `NOW()` = `Date.now()+S.clockOffset` — **all time display must use NOW()/clockOffset**, never raw `new Date()`.
 - **Views**: builders in `const BUILDERS={ home:()=>{…}, … }`; mounted by `showView(id)` into `#mainHost`.
   Nav tabs in the `<nav>` HTML + `const NAV_TABS=[…]`. New view = add tab HTML + NAV_TABS entry + a `BUILDERS.xxx`.
+- **Free Library / reader**: `window.khOpenBookReader(meta)` + `window.khGutenSearch(q)` (defined right after the
+  `el()/txt()` helpers). Search = Gutendex JSON (CORS-open); book text via gutenberg.org through the
+  allorigins/corsproxy fallbacks (no CORS header on gutenberg). Full-screen `#kh-reader` overlay paginates
+  cleaned text (~1700 chars/page), saves position onto the matching `S.books` entry (`gutenbergId/readerPos/
+  readerPages`). **Book text is cached in-memory only — never written to S** (a novel >1 MB would blow the
+  gzip'd state quota). UI entry = the "Free Library" card at the top of `BUILDERS.reading`, plus Read/Continue
+  buttons in `renderBooks`.
 - **Games**: each is an IIFE module (`const Hangman=(()=>{…})()`), launched via `launchGame(id)` → `_doLaunch`.
   Immersive overlay (`enterImmersive`/`exitImmersive`, `#immersiveRoot`). Some lazy-init via `_initX()`.
   `newGameGuard(activeFn,start)` wraps "New Game" buttons to confirm mid-game.
@@ -49,7 +56,7 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   triggers/columns/policies after each schema change.
 
 ## Deploy / "how do I get the changes"
-1. Merge the open PR for branch `claude/stoic-mayer-ylygsn` into `main` (GitHub → Merge).
+1. Merge the open PR for branch `claude/wonderful-clarke-6hm5ex` into `main` (GitHub → Merge).
 2. Download `index.html` from `main` and upload to the host.
 3. Site is behind **Cloudflare** — if changes don't show, **Purge Everything** (cache).
 4. For real internet email: deploy `email-worker.js` (full setup guide in its header), paste its URL into
@@ -61,9 +68,16 @@ Gallery (screenshot viewer — pick image files, thumbnail grid, full view), Rec
 (header "Recent" button = lightweight "minimise/jump between activities"), landscape mode v2,
 offline login + username prefill, website shortcuts (browser New-Tab), Contributors card, Ultra progress,
 admin Local Insights, Team Sudoku (share/load puzzle code), Flight Sim "How to fly", profile avatar+status,
-feedback 7-day auto-prune, app-maker double-install guard.
+feedback 7-day auto-prune, app-maker double-install guard,
+Free Library (in-app Project Gutenberg reader — search + read full text, paginated, resume position, font
+size; wired to the books tracker. Closes the one gap vs **ReKindle** — rekindle.ink, the competitor users
+compare us to: it can read free Gutenberg/Libby books; we now read full text too AND keep everything else).
 
 PENDING / bigger jobs (each its own session):
+- **Online real-time 2-player games** to beat ReKindle: our chess/checkers/connect4/battleship are local
+  pass-and-play (same as ReKindle). Live cross-device play (Supabase realtime/polling + matchmaking) would
+  pull ahead. Big, its own session — requested alongside the reader but deferred to avoid bundling risk.
+- **Tools/productivity parity+** vs ReKindle's Tools tab: Pomodoro/focus timer, flashcard review polish.
 - **True minimisable multi-tab multitasking** (keep several activities "open" at once, incl. KindleOS).
   Current "Recent switcher" is the light version, not true background tabs.
 - **Dedicated platformer game** — note: **DigQuest already IS a platformer** (`const DigQuest`), described
