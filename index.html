@@ -3629,7 +3629,7 @@ function launchKindleDesktop(){
       if(!t){ov.remove();return;}
       if(!S.notes)S.notes=[];
       const tags=[...t.matchAll(/#(\w+)/g)].map(m=>m[1]);
-      S.notes.unshift({id:Date.now(),text:t,tags,date:new Date().toISOString(),pinned:false});
+      S.notes.unshift({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),text:t,tags,date:new Date().toISOString(),pinned:false});
       saveNow();
       ov.remove();
       toast('Note saved.',1400);
@@ -5605,6 +5605,41 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
       create trigger kh_messages_cap
         after insert on kh_messages
         for each row execute function kh_messages_cap_trigger();
+
+      -- v8.3 STORAGE GUARD: cap kh_mail (60 newest per recipient) so the
+      -- mailbox table can't grow without bound as the userbase grows.
+      create or replace function kh_mail_cap_trigger()
+        returns trigger language plpgsql security definer as $body$
+      begin
+        delete from kh_mail
+          where to_user = new.to_user
+            and id not in (
+              select id from kh_mail where to_user = new.to_user
+              order by ts desc limit 60
+            );
+        return null;
+      end;
+      $body$;
+      drop trigger if exists kh_mail_cap on kh_mail;
+      create trigger kh_mail_cap
+        after insert on kh_mail
+        for each row execute function kh_mail_cap_trigger();
+
+      -- v8.3 STORAGE GUARD: cap kh_errors at ~600 newest rows globally.
+      create or replace function kh_errors_cap_trigger()
+        returns trigger language plpgsql security definer as $body$
+      begin
+        if (random() < 0.05) then
+          delete from kh_errors
+            where id not in (select id from kh_errors order by date desc limit 600);
+        end if;
+        return null;
+      end;
+      $body$;
+      drop trigger if exists kh_errors_cap on kh_errors;
+      create trigger kh_errors_cap
+        after insert on kh_errors
+        for each row execute function kh_errors_cap_trigger();
 
       -- Also rate-limit feedback submissions globally (anti-spam)
       create or replace function kh_feedback_rate_trigger()
@@ -15542,7 +15577,7 @@ const Snake=(()=>{
     dpad.appendChild(rB);dpad.appendChild(el('div'));dpad.appendChild(el('div'));dpad.appendChild(el('div'));
     immersiveContent.appendChild(dpad);
     const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center'}});
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>G&&G.active,start)}));
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>game&&game.active,start)}));
     immersiveContent.appendChild(ctrl);
     if(timer)clearInterval(timer);
     timer=setInterval(tick,speed);
@@ -15713,7 +15748,7 @@ const G2048=(()=>{
     const ctrl=el('div',{className:'card-row',style:{marginTop:'20px',justifyContent:'center'}});
     const ngBtn=txt('button','New Game',{className:'btn small'});
     ngBtn.style.minWidth='110px';
-    ngBtn.onclick=newGameGuard(()=>gameActive,start);
+    ngBtn.onclick=newGameGuard(()=>G&&G.active,start);
     ctrl.appendChild(ngBtn);
     immersiveContent.appendChild(ctrl);
   }
@@ -22834,7 +22869,7 @@ function renderQuizSaveCard(quiz,container){
   const saveBtn=txt('button','Save',{className:'btn small primary',style:{fontSize:'11px',padding:'5px 12px',minHeight:'28px',flex:'1'}});
   saveBtn.onclick=()=>{
     if(!S.savedQuizzes)S.savedQuizzes=[];
-    S.savedQuizzes.unshift({...quiz,id:Date.now(),saved:new Date().toISOString()});
+    S.savedQuizzes.unshift({...quiz,id:Date.now()+'_'+Math.random().toString(36).slice(2,6),saved:new Date().toISOString()});
     save();saveBtn.textContent='Saved!';saveBtn.disabled=true;
     refreshQuizList&&refreshQuizList();
     toast('Quiz saved: '+quiz.title);
@@ -22924,7 +22959,7 @@ const AI_TOOLS={
       const text=String(a.text||'').trim();if(!text)return null;
       if(!S.notes)S.notes=[];
       const tags=Array.isArray(a.tags)?a.tags.map(String):[...text.matchAll(/#(\w+)/g)].map(m=>m[1]);
-      S.notes.unshift({id:Date.now(),text,tags,date:new Date().toISOString(),pinned:false});
+      S.notes.unshift({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),text,tags,date:new Date().toISOString(),pinned:false});
       if(typeof saveNow==='function')saveNow();
       if(typeof renderNotes==='function')renderNotes();
       return 'Saved note: "'+text.slice(0,80)+(text.length>80?'…':'')+'"';
@@ -22953,7 +22988,7 @@ const AI_TOOLS={
     run:a=>{
       const name=String(a.name||'').trim();if(!name)return null;
       let habits;try{habits=JSON.parse(localStorage.getItem('kh_habits')||'[]');}catch(_){habits=[];}
-      habits.push({name,emoji:String(a.emoji||'*'),id:Date.now(),log:{},created:new Date().toISOString()});
+      habits.push({name,emoji:String(a.emoji||'*'),id:Date.now()+'_'+Math.random().toString(36).slice(2,6),log:{},created:new Date().toISOString()});
       try{localStorage.setItem('kh_habits',JSON.stringify(habits));}catch(_){}
       return 'Added habit "'+name+'" to your tracker.';
     },
@@ -44411,17 +44446,18 @@ gallery:()=>{
     window._khGallery.forEach((img,i)=>{
       const cell=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',overflow:'hidden',background:'var(--card)',aspectRatio:'1',cursor:'pointer'}});
       const im=el('img',{src:img.url,style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}});
-      im.onclick=()=>showFull(i);
+      im.onclick=()=>showFull(img);
       cell.appendChild(im);
       const x=el('button',{type:'button',style:{position:'absolute',top:'3px',right:'3px',width:'20px',height:'20px',lineHeight:'18px',padding:'0',borderRadius:'50%',border:'none',background:'rgba(0,0,0,0.6)',color:'#fff',fontSize:'13px',fontWeight:'900',cursor:'pointer'}});
-      x.textContent='×';x.onclick=ev=>{ev.stopPropagation();try{URL.revokeObjectURL(img.url);}catch(_){}window._khGallery.splice(i,1);renderGrid();};
+      x.textContent='×';x.onclick=ev=>{ev.stopPropagation();const j=window._khGallery.indexOf(img);if(j<0)return;try{URL.revokeObjectURL(img.url);}catch(_){}window._khGallery.splice(j,1);renderGrid();};
       cell.appendChild(x);grid.appendChild(cell);
     });
   }
-  function showFull(i){
+  function showFull(img){
     const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.92)',zIndex:'600200',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'10px'}});
-    const im=el('img',{src:window._khGallery[i].url,style:{maxWidth:'100%',maxHeight:'88%',objectFit:'contain'}});
-    const cap=txt('div',window._khGallery[i].name||'',{style:{color:'#fff',fontSize:'11px',marginTop:'8px',maxWidth:'90%',textAlign:'center',wordBreak:'break-all'}});
+    if(!img)return;
+    const im=el('img',{src:img.url,style:{maxWidth:'100%',maxHeight:'88%',objectFit:'contain'}});
+    const cap=txt('div',img.name||'',{style:{color:'#fff',fontSize:'11px',marginTop:'8px',maxWidth:'90%',textAlign:'center',wordBreak:'break-all'}});
     const close=txt('button','Close',{className:'btn small',style:{marginTop:'10px'}});
     close.onclick=()=>ov.remove();ov.onclick=e=>{if(e.target===ov)ov.remove();};
     ov.append(im,cap,close);document.body.appendChild(ov);
@@ -51795,7 +51831,7 @@ BUILDERS.browser=()=>{
         b.onclick=()=>go(s.url);
         const x=el('button',{type:'button',style:{position:'absolute',top:'4px',right:'4px',width:'18px',height:'18px',lineHeight:'16px',padding:'0',borderRadius:'50%',border:'var(--thin)',background:'var(--bg)',color:'var(--muted)',fontSize:'12px',fontWeight:'900',cursor:'pointer'}});
         x.textContent='×';x.title='Remove';
-        x.onclick=ev=>{ev.stopPropagation();S.brShortcuts.splice(i,1);save();renderShortcuts();};
+        x.onclick=ev=>{ev.stopPropagation();const j=S.brShortcuts.indexOf(s);if(j<0)return;S.brShortcuts.splice(j,1);save();renderShortcuts();};
         b.appendChild(x);
         shGrid.appendChild(b);
       });
@@ -52232,8 +52268,17 @@ BUILDERS.games=()=>{
     setTimeout(()=>waitAndPlace(15),s.view?150:30);
   }
 
-  function show(){cur=0;card.style.display='block';render();}
-  function hide(){card.style.display='none';hl.style.display='none';arrow.style.display='none';navTo('home');}
+  /* KindleOS is its own surface with its own tour. This App-mode tour
+     navigates between #app views (navTo→showView), which fights KindleOS's
+     full-app state — and hide()'s navTo('home') was dumping the user onto
+     the launcher when they closed it. So: never run this tour while
+     KindleOS is mounted, and never navigate views to close it there. */
+  function _kdActive(){try{return !!document.getElementById('kd-root');}catch(_){return false;}}
+  function show(){
+    if(_kdActive()){S.tutorialSeen=true;try{save();}catch(_){}return;}
+    cur=0;card.style.display='block';render();
+  }
+  function hide(){card.style.display='none';hl.style.display='none';arrow.style.display='none';if(!_kdActive())navTo('home');}
 
   nextBtn.onclick=()=>{if(cur<STEPS.length-1){cur++;render();}else{hide();S.tutorialSeen=true;save();}};
   prevBtn.onclick=()=>{if(cur>0){cur--;render();}};
