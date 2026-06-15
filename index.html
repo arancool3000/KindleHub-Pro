@@ -6241,13 +6241,47 @@ window._sanitizeMsgText=_sanitizeMsgText;
    so a false positive is fully reversible and nothing is lost. */
 var _PROFANITY_WORDS=['fuck','fucking','fucker','motherfucker','shit','bullshit','bitch','cunt','asshole','arsehole','dick','dickhead','piss','bastard','slut','whore','nigger','nigga','faggot','retard','cock','pussy','douche','douchebag','wanker','twat','prick','bollocks','jackass','dumbass','jerkoff'];
 var _PROFANITY_RE=new RegExp('\\b(?:'+_PROFANITY_WORDS.join('|')+')\\b','gi');
+/* Embedded-profanity pass: catch a bad word that's buried inside a larger
+   token ("shithead", "dumbfuck", "a55hole") — which the \b word-boundary
+   regex above misses — WITHOUT tripping on legitimate words that merely
+   contain a root (the "Scunthorpe problem"). Two guards keep false positives
+   away: (1) only roots that are rarely an innocent substring are matched as
+   substrings (the genuinely ambiguous short ones — ass, cock, dick, anal,
+   piss, tit — are deliberately NOT here, so class/cockpit/Dickens/analysis/
+   Mississippi stay clean); (2) a small allow-list of real words that do
+   contain a listed root. Tokens are leet-normalised first (same mapping as
+   the username check) so "sh1t"/"n1gg3r" are caught too. */
+var _PROFANITY_SUBSTR=['fuck','shit','cunt','nigger','nigga','faggot','bitch','wanker','bastard','bollock','whore','asshole','arsehole','dickhead','jackass','dumbass','douchebag','cocksuck'];
+var _PROFANITY_SAFE={shiitake:1,scunthorpe:1,niggard:1,niggardly:1,niggardliness:1};
+function _normLeet(w){
+  return String(w||'').toLowerCase()
+    .replace(/[0]/g,'o').replace(/[1!|]/g,'i').replace(/[3]/g,'e')
+    .replace(/[4@]/g,'a').replace(/[5$]/g,'s').replace(/[7]/g,'t').replace(/[8]/g,'b')
+    .replace(/[^a-z]/g,'');
+}
+function _tokenProfane(norm){
+  if(!norm||_PROFANITY_SAFE[norm])return false;
+  for(var i=0;i<_PROFANITY_SUBSTR.length;i++){if(norm.indexOf(_PROFANITY_SUBSTR[i])>=0)return true;}
+  return false;
+}
 function _censorText(s){
   if(typeof s!=='string'||!s)return s;
-  return s.replace(_PROFANITY_RE,function(m){return '█'.repeat(Math.max(3,m.length));});
+  /* Pass 1: exact words (word-boundary) — original behaviour. */
+  var out=s.replace(_PROFANITY_RE,function(m){return '█'.repeat(Math.max(3,m.length));});
+  /* Pass 2: bad word embedded in a larger token. Already-censored runs are
+     solid blocks (not A-Za-z), so they're never re-matched here. */
+  out=out.replace(/[A-Za-z][A-Za-z0-9_'’*@$!|]*/g,function(tok){
+    if(_tokenProfane(_normLeet(tok)))return '█'.repeat(Math.max(3,tok.replace(/[^A-Za-z0-9]/g,'').length));
+    return tok;
+  });
+  return out;
 }
 function _hasProfanity(s){
   if(typeof s!=='string'||!s)return false;
-  return new RegExp(_PROFANITY_RE.source,'i').test(s);
+  if(new RegExp(_PROFANITY_RE.source,'i').test(s))return true;
+  var toks=s.match(/[A-Za-z][A-Za-z0-9_'’*@$!|]*/g)||[];
+  for(var i=0;i<toks.length;i++){if(_tokenProfane(_normLeet(toks[i])))return true;}
+  return false;
 }
 /* ── Username moderation ──────────────────────────────────────────────
    Inappropriate usernames are blocked at sign-up by default. Unlike chat
@@ -6466,6 +6500,28 @@ async function _khUnbanUsername(name){
   return res.ok;
 }
 window._khBanUsername=_khBanUsername;window._khUnbanUsername=_khUnbanUsername;window._khIsBanned=_khIsBanned;
+
+/* ── Warnings (a lighter alternative to a ban) ─────────────────────────
+   Instead of banning, an admin can send a formal WARNING to one user.
+   Delivered as a PRIVATE (targeted) announcement through the existing
+   kh_post_announcement RPC — so it needs NO new table or schema change: the
+   user sees it in their announcements like any private note, prefixed so it
+   unmistakably reads as a moderator warning. Admin-token gated, same as ban. */
+async function _khWarnUsername(name){
+  name=String(name||'').trim();
+  if(!name){toast('No username to warn');return false;}
+  if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
+  if(!window._adminToken){toast('Admin only — open the admin panel first.',4000);return false;}
+  const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
+  if(reason==null)return false;/* admin cancelled */
+  const msg=String(reason||'').trim()||'Please follow the community rules.';
+  const text='⚠️ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
+  if(ok)toast('Warning sent privately to “'+name+'”.',3500);
+  /* _announceRpc surfaces its own error toast on failure. */
+  return !!ok;
+}
+window._khWarnUsername=_khWarnUsername;
 
 function _composeAnnouncement(card){
   card.innerHTML='';
@@ -36690,6 +36746,20 @@ Deno.serve(async (req)=>{
         const _m=/Username:\s*"([^"]*)"/.exec(item.text||'');
         const _banName=_m?_m[1]:'';
         if(_banName){
+          /* Lighter option than a ban: warn the reported user instead, then
+             clear the report. Shown right alongside Approve & ban so the admin
+             can choose the proportionate response to a ban request. */
+          const warnBtn=txt('button','⚠ Warn instead',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+          warnBtn.onclick=async()=>{
+            warnBtn.disabled=true;
+            const ok=await _khWarnUsername(_banName);
+            if(ok){
+              if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
+              toast('Warned “'+_banName+'” and marked the report done.',3000);
+              renderItems();
+            } else { warnBtn.disabled=false; }
+          };
+          actRow.appendChild(warnBtn);
           const banBtn=txt('button','Approve & ban "'+_banName.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
             if(!await kindleConfirm('Ban the username "'+_banName+'"? They will no longer be able to sign in or post, and the name will show as [removed] in chat. This approves the report.'))return;
@@ -50167,6 +50237,16 @@ messages:()=>{
          queue — you ARE the moderator). */
       const _nm=msg.displayName||'';
       if(_nm){
+        /* Warn — a lighter action than a ban: sends a private warning notice
+           instead of removing the account. */
+        const warnBtn=txt('button','⚠ Warn',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+        warnBtn.onclick=async()=>{
+          warnBtn.disabled=true;
+          const ok=await _khWarnUsername(_nm);
+          warnBtn.disabled=false;
+          if(ok)ov.remove();
+        };
+        btnBar.append(warnBtn);
         const banBtn=txt('button','Ban username',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
         banBtn.onclick=async()=>{
           if(!await kindleConfirm('Ban "'+_nm+'"? They can no longer sign in or post, and the name shows as [removed] in chat.'))return;

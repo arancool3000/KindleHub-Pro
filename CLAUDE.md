@@ -43,6 +43,13 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   kh_presence, kh_shared_api_usage, kh_banned_usernames, kh_rate.
 - **Auth**: `authRegister/authLogin/authLogout`. Hash = SHA-256(username+password) = lookup key AND AES key.
   Offline login via `_cacheOfflineCred`/`_offlineCred` (encrypted blob cached on device, `kh_offline_cred`).
+- **Moderation**: profanity filter `_censorText`/`_hasProfanity` (DISPLAY-side only, used in chat, feedback
+  AND notification toasts via `notifyMsg`) — two passes: exact word-boundary (`_PROFANITY_WORDS`) + embedded
+  roots (`_PROFANITY_SUBSTR`, leet-normalised, guarded by the `_PROFANITY_SAFE` allow-list to dodge the
+  Scunthorpe problem). Actions: `_khBanUsername`/`_khUnbanUsername` (kh_banned_usernames RPC) and
+  `_khWarnUsername(name)` — a lighter warning delivered as a PRIVATE targeted announcement (no new schema).
+  Admin surfaces: the chat "Admin About" modal (`_openUserAboutModal`) and the feedback review of
+  `[USERNAME]` reports (which are user ban-requests, stored in kh_feedback) — both have Warn + Ban.
 - **Encryption**: `_encryptState/_decryptState` (user state), `_msgEncrypt/_msgDecrypt` (chat & mail).
 - **AI**: `khiCall(prompt,opts)` (user's Gemini/OpenRouter key), `khiEnabled()`. Shared-key proxy too.
 
