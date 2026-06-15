@@ -15935,7 +15935,7 @@ const G2048=(()=>{
     if(saveTimer2048){clearInterval(saveTimer2048);saveTimer2048=null;}
     G={board:Array(16).fill(0),score:0,best:S.games['2048']&&S.games['2048'].best||0,active:true,won:false,merged:new Set()};
     addTile();addTile();enterImmersive('2048','Score: 0');buildUI();draw2048();
-    saveTimer2048=setInterval(()=>{if(G&&G.best){S.games['2048']={best:G.best};saveNow();}},5000);
+    saveTimer2048=setInterval(()=>{if(G&&G.best&&(!S.games['2048']||S.games['2048'].best!==G.best)){S.games['2048']={best:G.best};saveNow();}},5000);
   }
 
   function addTile(){
@@ -38332,7 +38332,7 @@ starmap:()=>{
           list.appendChild(card);
         });
       }
-      search.oninput=()=>paint(search.value);
+      search.oninput=khDebounce(()=>paint(search.value),200);
       paint('');
     }
 
@@ -40128,7 +40128,9 @@ sheets:()=>{
   v.appendChild(findBar);
   let _findHits=[],_findIdx=-1;
   function _clearMatches(){_findHits=[];_findIdx=-1;tbody.querySelectorAll('td.sh-match').forEach(t=>t.classList.remove('sh-match'));}
-  findInp.oninput=()=>{
+  /* Debounced — this scans every cell (rows×cols) on each keystroke, which
+     lagged typing in the Find box on large sheets. */
+  findInp.oninput=khDebounce(()=>{
     _clearMatches();
     const q=findInp.value.toLowerCase();
     if(!q)return;
@@ -40139,7 +40141,7 @@ sheets:()=>{
     }
     _findHits.forEach(h=>{const tr=tbody.children[h.r];if(tr){const td=tr.children[h.c+1];if(td)td.classList.add('sh-match');}});
     if(_findHits.length){_findIdx=0;_selectCell(_findHits[0].r,_findHits[0].c);}
-  };
+  },180);
   findNext.onclick=()=>{
     if(!_findHits.length)return;
     _findIdx=(_findIdx+1)%_findHits.length;
@@ -40900,7 +40902,9 @@ rss:()=>{
   /* Search row */
   const searchRow=el('div',{className:'rss-search'});
   const searchIn=el('input',{type:'text',placeholder:'Search headlines...'});
-  searchIn.oninput=()=>{searchQuery=searchIn.value.toLowerCase().trim();renderContent();};
+  /* Debounced — re-rendering the whole headline list on every keystroke
+     was laggy typing on e-ink (the single biggest such cost per CLAUDE.md). */
+  searchIn.oninput=khDebounce(()=>{searchQuery=searchIn.value.toLowerCase().trim();renderContent();},200);
   const refreshAllBtn=txt('button','Refresh',{className:'btn small',style:{flexShrink:'0',fontSize:'11px'}});
   refreshAllBtn.onclick=()=>{
     refreshAllBtn.textContent='...';refreshAllBtn.disabled=true;
@@ -45210,16 +45214,18 @@ worldclock:()=>{
     addRow.appendChild(labelInp);addRow.appendChild(tzSel);addRow.appendChild(addBtn);v.appendChild(addRow);
     const grid=el('div',{id:'clock-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:'8px'}});
     v.appendChild(grid);
+    let _clockEls=[];
     function renderClocks(){
-      const g=document.getElementById('clock-grid');if(!g)return;
-      g.innerHTML='';
+      const g=grid;if(!g)return;/* use the in-scope ref: works while detached during build, so no 1s empty-grid flash on entry */
+      g.innerHTML='';_clockEls=[];
       zones.forEach((z,i)=>{
         const isHome=z.home===true;
         const card=el('div',{style:'background:var(--card);border:'+(isHome?'2px solid var(--fg)':'var(--thin)')+';border-radius:10px;padding:12px;text-align:center;box-shadow:var(--shadow);position:relative;'+(isHome?'padding-top:20px;':'')});
         if(isHome)card.appendChild(txt('div','HOME',{style:{position:'absolute',top:'4px',left:'8px',fontSize:'8px',fontWeight:'900',letterSpacing:'1px',color:'var(--muted)',textTransform:'uppercase'}}));
         card.appendChild(txt('div',z.label,{style:{fontSize:'12px',fontWeight:'700',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'4px'}}));
-        card.appendChild(txt('div',fmtTime(z.tz),{style:{fontSize:'24px',fontWeight:'900',fontFamily:'monospace',letterSpacing:'2px'}}));
-        card.appendChild(txt('div',fmtDate(z.tz),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
+        const timeEl=txt('div',fmtTime(z.tz),{style:{fontSize:'24px',fontWeight:'900',fontFamily:'monospace',letterSpacing:'2px'}});card.appendChild(timeEl);
+        const dateEl=txt('div',fmtDate(z.tz),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}});card.appendChild(dateEl);
+        _clockEls.push({timeEl:timeEl,dateEl:dateEl,tz:z.tz});
         if(!isHome){
           const del=txt('button','X',{style:{position:'absolute',top:'6px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)',padding:'2px 4px'}});
           del.onclick=()=>{zones.splice(i,1);saveZones(zones);render();};
@@ -45228,9 +45234,20 @@ worldclock:()=>{
         g.appendChild(card);
       });
     }
+    /* Per-second tick updates ONLY the time/date text on existing cards
+       (guarded) instead of tearing down and rebuilding the whole grid
+       every second — that full innerHTML rebuild was a per-second e-ink
+       flash and the heaviest idle cost in this view. */
+    function tickClocks(){
+      for(let i=0;i<_clockEls.length;i++){
+        const c=_clockEls[i];
+        const t=fmtTime(c.tz);if(c.timeEl.textContent!==t)c.timeEl.textContent=t;
+        const d=fmtDate(c.tz);if(c.dateEl.textContent!==d)c.dateEl.textContent=d;
+      }
+    }
     renderClocks();
     if(interval)clearInterval(interval);
-    interval=setInterval(()=>{if(document.hidden)return;renderClocks();},1000);
+    interval=setInterval(()=>{if(document.hidden)return;tickClocks();},1000);
     const mo=new MutationObserver(()=>{if(!document.contains(v)){clearInterval(interval);}});
     mo.observe(document.body,{childList:true,subtree:true});
   }
@@ -53365,7 +53382,8 @@ window._showWelcome=function(){
           const m=String(d.getMinutes()).padStart(2,'0');
           const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
           const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          nowDisp.textContent=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()]+'  '+h+':'+m;
+          const _disp=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()]+'  '+h+':'+m;
+          if(nowDisp.textContent!==_disp)nowDisp.textContent=_disp;/* guard: HH:MM changes once/min, not every tick */
         }
         _refreshDisp();
         const _iv2=setInterval(()=>{if(document.hidden)return;_refreshDisp();},1000);

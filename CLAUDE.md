@@ -91,5 +91,14 @@ PENDING / bigger jobs (each its own session):
 - Line numbers shift constantly; when wiring by line, grep the exact module/anchor first (a past batch
   mis-wired Snake/2048 new-game guards because line numbers moved between grep and edit).
 - e-ink: guard text writes with `if(el.textContent!==v)el.textContent=v` to avoid flashes (clocks do this).
+- e-ink perf: a per-second `setInterval` must NOT `innerHTML=''`+rebuild a list every tick — that's a full
+  flash + GC churn each second. Build the structure once, then tick ONLY the changing text (guarded). World
+  Clock is the canonical example: `renderClocks()` builds cards into the in-scope `grid` ref (works while the
+  view is still detached during build — using `document.getElementById` there silently no-ops and caused a 1s
+  empty-grid flash on entry); `tickClocks()` updates just the time/date text. Same anti-pattern still lives in
+  the home countdown widget (`renderCd`) — left alone for now (only 4 rows, shared widget area).
+- Per-keystroke `oninput` that re-renders a list = laggy e-ink typing — wrap in `khDebounce(fn,~200)` (RSS
+  headline search, science glossary `paint`, Sheets Find now do). Leave live single-cell edits / word-counters
+  un-debounced (instant feedback, cheap).
 - Don't store non-serializable things in S (functions/DOM) — JSON.stringify in save() would throw and
   (previously) be misread as "storage full". `save()` now only treats real QuotaExceededError as full.
