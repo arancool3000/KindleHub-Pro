@@ -25,6 +25,12 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `NOW()` = `Date.now()+S.clockOffset` — **all time display must use NOW()/clockOffset**, never raw `new Date()`.
 - **Views**: builders in `const BUILDERS={ home:()=>{…}, … }`; mounted by `showView(id)` into `#mainHost`.
   Nav tabs in the `<nav>` HTML + `const NAV_TABS=[…]`. New view = add tab HTML + NAV_TABS entry + a `BUILDERS.xxx`.
+- **Split screen ("2 pages in 1")**: `enterSplit(viewId)`/`exitSplit()`/`mountSecondary(id)`/`_swapSplit()`
+  + the `_khOpenMultitask()` panel (the header **Recent** button opens it — no new header button, the header
+  is full). `_splitOn`/`_splitSecondary` (session-only). In split, `mainHost` holds `#kh-split` → two stacked
+  panes (`#kh-pane-primary-body` / `#kh-pane-secondary-body`); `showView` mounts the PRIMARY via `_viewHost()`
+  and the bottom nav drives it. Safe only because inner element IDs are unique per view — NEVER allow the same
+  view in both panes (navigating primary onto the secondary's view auto-swaps instead).
 - **Free Library / reader**: `window.khOpenBookReader(meta)` + `window.khGutenSearch(q)` (defined right after the
   `el()/txt()` helpers). Search = Gutendex JSON (CORS-open); book text via gutenberg.org through the
   allorigins/corsproxy fallbacks (no CORS header on gutenberg). Full-screen `#kh-reader` overlay paginates
@@ -80,13 +86,17 @@ Free Library (in-app Project Gutenberg reader — search + read full text, pagin
 size; wired to the books tracker. Closes the one gap vs **ReKindle** — rekindle.ink, the competitor users
 compare us to: it can read free Gutenberg/Libby books; we now read full text too AND keep everything else).
 
+Split screen / "2 pages in 1" multitasking — two stacked, independently-scrolling panes, each a real view;
+entry via the repurposed header "Recent" button (now the `_khOpenMultitask` panel). Delivered the community
+"multitasking" request; the heavier "true N-tab background multitasking incl. KindleOS" is still pending.
+
 PENDING / bigger jobs (each its own session):
+- **True N-tab background multitasking** (keep 3+ activities alive at once, incl. KindleOS). Split screen
+  covers 2 side-by-side; this is the heavier multi-tab version.
 - **Online real-time 2-player games** to beat ReKindle: our chess/checkers/connect4/battleship are local
   pass-and-play (same as ReKindle). Live cross-device play (Supabase realtime/polling + matchmaking) would
   pull ahead. Big, its own session — requested alongside the reader but deferred to avoid bundling risk.
 - **Tools/productivity parity+** vs ReKindle's Tools tab: Pomodoro/focus timer, flashcard review polish.
-- **True minimisable multi-tab multitasking** (keep several activities "open" at once, incl. KindleOS).
-  Current "Recent switcher" is the light version, not true background tabs.
 - **Dedicated platformer game** — note: **DigQuest already IS a platformer** (`const DigQuest`), described
   as a 2.5D dig-and-smash story platformer. A new cleaner Mario-style platformer was requested.
 - **Online real-time team games** (live shared board for 3–4 players). Team Sudoku is share-a-code only.

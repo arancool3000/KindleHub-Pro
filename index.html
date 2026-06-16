@@ -1012,7 +1012,7 @@ body.launcher-ui .view{padding-bottom:80px;}
       <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
     </div>
     <div class="header-controls">
-      <button class="btn small" id="recentBtn" title="Recent activities — jump back to a page you were on">Recent</button>
+      <button class="btn small" id="recentBtn" title="Recent activities &amp; split screen — show two pages at once">Recent</button>
       <div class="clock" id="sysClock"></div>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
       <button class="btn small" id="landscapeBtn" title="Rotate the app 90° for sideways reading">Landscape</button>
@@ -5178,20 +5178,7 @@ function toggleLandscape(forceTo){
   const b=$('landscapeBtn');if(b)b.onclick=()=>toggleLandscape();
   /* Recent-activities quick switcher — a lightweight "open tabs" panel. */
   const _rb=$('recentBtn');
-  if(_rb)_rb.onclick=()=>{
-    const rv=(window._khRecentViews||[]).filter(x=>x!==currentView);
-    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.5)',zIndex:'600200',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'60px 16px 16px'}});
-    const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'14px',width:'100%',maxWidth:'420px',boxShadow:'var(--shadow-md)'}});
-    box.appendChild(txt('h3','Recent activities',{style:{margin:'0 0 10px',fontFamily:'var(--title-font)'}}));
-    if(!rv.length)box.appendChild(txt('p','No other activities yet — open a few pages and they\'ll show here so you can jump back.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5'}}));
-    const labelOf=v=>{const m=(typeof NAV_TABS!=='undefined'?NAV_TABS:[]).find(t=>t[0]===v);return m?m[1]:(v==='home'?'Home':v==='settings'?'Settings':v.charAt(0).toUpperCase()+v.slice(1));};
-    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'6px'}});
-    rv.forEach(v=>{const bb=txt('button',labelOf(v),{className:'btn small',style:{textAlign:'left'}});bb.onclick=()=>{ov.remove();const t=document.querySelector('nav .tab[data-view="'+v+'"]');if(t)t.click();else showView(v);};grid.appendChild(bb);});
-    box.appendChild(grid);
-    const cl=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=()=>ov.remove();box.appendChild(cl);
-    ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.appendChild(box);document.body.appendChild(ov);
-  };
+  if(_rb)_rb.onclick=()=>{ if(typeof _khOpenMultitask==='function')_khOpenMultitask(); };
   if(S.landscapeMode)setTimeout(()=>toggleLandscape(true),120);
   /* Keep geometry correct if the viewport itself changes while rotated
      (soft keyboard, browser chrome). Re-apply with fresh dimensions. */
@@ -11163,7 +11150,132 @@ function appendRelatedPages(viewId,viewEl){
        per-action refreshes) to stay current. */
 const ALWAYS_REBUILD=new Set(['games','messages','pet']);
 
+/* ════════════════════════════════════════════════════════════════════
+   Split screen — "2 pages in 1" multitasking. mainHost normally holds ONE
+   view; in split mode it holds two stacked, independently-scrolling panes,
+   each running a real view. Safe because inner element IDs are unique per
+   view (verified — no generic cross-view IDs), so two DIFFERENT views never
+   collide on getElementById; we forbid the same view in both panes, and if
+   you navigate the primary onto the secondary's view we SWAP the panes (a
+   DOM node can only live in one place). The bottom nav drives the PRIMARY
+   (top) pane; the secondary is chosen from the Recent/multitask panel — so
+   there's NO new header button (the existing "Recent" control is the entry
+   point, which is what the community member meant by multitasking). Stacked
+   in portrait; Landscape mode renders the two panes side-by-side. Session-
+   only (not persisted) to keep boot simple. */
+let _splitOn=false,_splitSecondary=null;
+function _viewLabel(v){
+  try{const m=(typeof NAV_TABS!=='undefined'?NAV_TABS:[]).find(t=>t[0]===v);if(m)return m[1];}catch(_){}
+  return v==='home'?'Home':v==='settings'?'Settings':(v?v.charAt(0).toUpperCase()+v.slice(1):'?');
+}
+function _viewHost(){
+  if(_splitOn){const b=document.getElementById('kh-pane-primary-body');if(b)return b;}
+  return mainHost;
+}
+function _updateSplitLabels(){
+  const a=document.getElementById('kh-pane-primary-label');if(a&&a.textContent!=='▣ '+_viewLabel(currentView))a.textContent='▣ '+_viewLabel(currentView);
+  const b=document.getElementById('kh-pane-secondary-label');if(b){const t=_viewLabel(_splitSecondary);if(b.textContent!==t)b.textContent=t;}
+}
+function _fillPaneBar(which){
+  const bar=document.getElementById('kh-pane-'+which+'-bar');if(!bar)return;
+  bar.innerHTML='';
+  bar.appendChild(txt('span','',{id:'kh-pane-'+which+'-label',style:{flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+  if(which==='secondary'){
+    const mk=(label,fn,danger)=>{const b=txt('button',label,{className:'btn small',style:{minHeight:'26px',fontSize:'10px',padding:'2px 8px'}});if(danger){b.style.borderColor='var(--danger)';b.style.color='var(--danger)';}b.onclick=fn;return b;};
+    bar.append(mk('⇄ Swap',()=>_swapSplit()),mk('Change',()=>_khOpenMultitask()),mk('✕ Close',()=>exitSplit(),true));
+  }else{
+    bar.appendChild(txt('span','tabs ↓ control this pane',{style:{fontSize:'9px',fontWeight:'600',color:'var(--muted)',flexShrink:'0'}}));
+  }
+}
+function _buildSplitScaffold(){
+  while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
+  function pane(which){
+    const bar=el('div',{id:'kh-pane-'+which+'-bar',style:{display:'flex',alignItems:'center',gap:'6px',padding:'3px 8px',background:'var(--card)',borderBottom:'var(--thin)',fontSize:'11px',fontWeight:'800',color:'var(--fg)',flexShrink:'0',minHeight:'30px'}});
+    const body=el('div',{id:'kh-pane-'+which+'-body',style:{flex:'1',minHeight:'0',overflowY:'auto',webkitOverflowScrolling:'touch'}});
+    return el('div',{id:'kh-pane-'+which,style:{flex:'1 1 50%',minHeight:'0',display:'flex',flexDirection:'column',overflow:'hidden'}},[bar,body]);
+  }
+  const wrap=el('div',{id:'kh-split',style:{display:'flex',flexDirection:'column',height:'100%',minHeight:'0'}},[
+    pane('primary'),
+    el('div',{style:{height:'4px',background:'var(--fg)',opacity:'0.3',flexShrink:'0'}}),
+    pane('secondary')
+  ]);
+  mainHost.appendChild(wrap);
+  _fillPaneBar('primary');_fillPaneBar('secondary');
+}
+function mountSecondary(id){
+  if(id===currentView){toast('Choose a different activity for the second pane.',3500);return;}
+  _splitSecondary=id;
+  const body=document.getElementById('kh-pane-secondary-body');if(!body)return;
+  while(body.firstChild)body.removeChild(body.firstChild);
+  if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
+  if(!VIEWS[id]){
+    try{VIEWS[id]=BUILDERS[id]();}
+    catch(e){body.appendChild(txt('div','Couldn’t load “'+_viewLabel(id)+'”.',{style:{padding:'16px',color:'var(--muted)',fontSize:'12px'}}));_updateSplitLabels();return;}
+  }
+  body.appendChild(VIEWS[id]);
+  try{if(ON_SHOW[id])ON_SHOW[id]();}catch(_){}
+  try{appendRelatedPages(id,VIEWS[id]);}catch(_){}
+  _updateSplitLabels();
+}
+function enterSplit(secondaryId){
+  if(typeof BUILDERS[secondaryId]!=='function'){toast('That activity can’t be opened in split.');return;}
+  if(secondaryId===currentView){toast('Choose a different activity for the second pane.',3500);return;}
+  const primary=currentView;
+  _splitOn=true;_splitSecondary=secondaryId;
+  _buildSplitScaffold();
+  showView(primary);            /* mounts into the primary pane (split is on) */
+  mountSecondary(secondaryId);
+  toast('Split on — '+_viewLabel(primary)+' + '+_viewLabel(secondaryId),3000);
+}
+function exitSplit(){
+  if(!_splitOn)return;
+  _splitOn=false;_splitSecondary=null;
+  while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
+  showView(currentView);
+  toast('Split off',1800);
+}
+function _swapSplit(){ if(_splitOn&&_splitSecondary)showView(_splitSecondary); }
+function _khOpenMultitask(){
+  const recents=(window._khRecentViews||[]).filter(x=>x&&x!==currentView);
+  const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.5)',zIndex:'600200',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'54px 16px 16px'}});
+  const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'14px',width:'100%',maxWidth:'440px',maxHeight:'80vh',overflowY:'auto',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('h3','Activities & split screen',{style:{margin:'0 0 4px',fontFamily:'var(--title-font)'}}));
+  box.appendChild(txt('p','Tap a name to open it. Tap ⊞ Split to show it beside the current page — two pages at once.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 10px',lineHeight:'1.5'}}));
+  if(_splitOn){
+    const banner=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap',padding:'8px 10px',background:'var(--highlight)',borderRadius:'8px',marginBottom:'10px'}});
+    banner.appendChild(txt('span','Split on: ▣ '+_viewLabel(currentView)+'  +  '+_viewLabel(_splitSecondary),{style:{flex:'1',fontSize:'12px',fontWeight:'800',minWidth:'140px'}}));
+    const sw=txt('button','⇄ Swap',{className:'btn small'});sw.onclick=()=>{_swapSplit();ov.remove();};
+    const cl=txt('button','✕ Close split',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});cl.onclick=()=>{exitSplit();ov.remove();};
+    banner.append(sw,cl);
+    box.appendChild(banner);
+  }
+  if(!recents.length)box.appendChild(txt('p','No other recent activities yet — open a few pages and they’ll show here.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const list=el('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}});
+  recents.forEach(v=>{
+    const row=el('div',{style:{display:'flex',gap:'6px',alignItems:'stretch'}});
+    const open=txt('button',_viewLabel(v),{className:'btn small',style:{flex:'1',textAlign:'left'}});
+    open.onclick=()=>{ov.remove();const t=document.querySelector('nav .tab[data-view="'+v+'"]');if(t)t.click();else showView(v);};
+    const split=txt('button',(_splitOn?'⊞ 2nd':'⊞ Split'),{className:'btn small',style:{flexShrink:'0',borderColor:'var(--fg)'}});
+    split.onclick=()=>{if(_splitOn)mountSecondary(v);else enterSplit(v);ov.remove();};
+    row.append(open,split);
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  const close=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});close.onclick=()=>ov.remove();
+  box.appendChild(close);
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.appendChild(box);document.body.appendChild(ov);
+}
+window.enterSplit=enterSplit;window.exitSplit=exitSplit;window._khOpenMultitask=_khOpenMultitask;
+
 function showView(id){
+  /* Split view: navigating the primary pane onto the activity already in the
+     SECOND pane swaps the two panes (a DOM node can only live in one place). */
+  const _prevView=currentView;
+  let _needSecondaryRemount=false;
+  if(_splitOn&&_splitSecondary&&id===_splitSecondary&&_prevView&&_prevView!==id){
+    _splitSecondary=_prevView;_needSecondaryRemount=true;
+  }
   currentView=id;
   /* Recent-activities tracker for the header quick-switcher ("minimise a
      tab and jump back" request). Keeps the last few DISTINCT views. */
@@ -11173,7 +11285,8 @@ function showView(id){
     const at=rv.indexOf(id);if(at>=0)rv.splice(at,1);
     rv.unshift(id);if(rv.length>8)rv.length=8;
   }catch(_){}
-  while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
+  const _host=_viewHost();
+  while(_host.firstChild)_host.removeChild(_host.firstChild);
   if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
   if(!VIEWS[id]){
     try{
@@ -11182,7 +11295,7 @@ function showView(id){
       var errDiv=document.createElement('div');
       errDiv.style.cssText='padding:24px;font-family:var(--ui-font);';
       errDiv.innerHTML='<strong>Failed to load this page.</strong><br><span style="font-size:12px;color:var(--muted)">'+String(e)+'</span>';
-      mainHost.appendChild(errDiv);
+      _host.appendChild(errDiv);
       if(typeof toast==='function')toast('Error loading view: '+id);
       /* CRITICAL: pipe the caught error into the auto-bug reporter. The
          try/catch above prevents the BUILDER throw from reaching
@@ -11202,7 +11315,7 @@ function showView(id){
       return;
     }
   }
-  mainHost.appendChild(VIEWS[id]);
+  _host.appendChild(VIEWS[id]);
   try{if(ON_SHOW[id])ON_SHOW[id]();}
   catch(e){
     if(typeof window._khReportBug==='function'){
@@ -11217,6 +11330,7 @@ function showView(id){
       try{window._khReportBug('Related-pages strip failed on "'+id+'": '+(e&&e.message||String(e)),null,null,null,e instanceof Error?e:new Error(String(e)),'related_pages');}catch(_){}
     }
   }
+  if(_splitOn){ if(_needSecondaryRemount){try{mountSecondary(_splitSecondary);}catch(_){}} try{_updateSplitLabels();}catch(_){} }
 }
 const ON_SHOW={};
 ON_SHOW.games=()=>{
