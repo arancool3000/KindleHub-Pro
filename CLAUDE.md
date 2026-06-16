@@ -77,7 +77,7 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
 
 ## Feature status
 DONE: Mail (internal + external via worker, KHI summarise/draft/polish, folders, search, avatars),
-Gallery (screenshot viewer — pick image files, thumbnail grid, full view), Recent-activities switcher
+Recent-activities switcher
 (header "Recent" button = lightweight "minimise/jump between activities"), landscape mode v2,
 offline login + username prefill, website shortcuts (browser New-Tab), Contributors card, Ultra progress,
 admin Local Insights, Team Sudoku (share/load puzzle code), Flight Sim "How to fly", profile avatar+status,
@@ -101,7 +101,6 @@ PENDING / bigger jobs (each its own session):
   as a 2.5D dig-and-smash story platformer. A new cleaner Mario-style platformer was requested.
 - **Online real-time team games** (live shared board for 3–4 players). Team Sudoku is share-a-code only.
 - Non-UTC streak date-keys (habits/notes use UTC `toISOString().slice(0,10)` — wrong rollover off-UTC).
-- Screenshot viewer can't read the Kindle filesystem (web sandbox) — it's a file-picker viewer by necessity.
 
 ## Known gotchas
 - Editing `index.html` desyncs the editor's file-state after a `sed` write — Read again before Edit.

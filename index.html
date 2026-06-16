@@ -1094,7 +1094,6 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="wikipedia" style="display:none">Wikipedia</div>
     <div class="tab" data-view="cookbook">Cookbook</div>
     <div class="tab" data-view="files">Files</div>
-    <div class="tab" data-view="gallery">Gallery</div>
     <div class="tab" data-view="mail">Mail</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
@@ -1980,7 +1979,7 @@ const NAV_TABS=[
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
-  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['gallery','Gallery'],['mail','Mail']
+  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['mail','Mail']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -44937,56 +44936,6 @@ mail:()=>{
      random.php              → one random recipe
      filter.php?c=<category> → list by category
 ─────────────────────────────────────────────────────────── */
-gallery:()=>{
-  /* Screenshot / image viewer (community request). Kindles save screenshots
-     to the device; a web page can't read the filesystem, so the user picks
-     image files and views them here. Kept in-session (not persisted) so it
-     never bloats the saved state. */
-  const v=el('section',{id:'view-gallery',className:'view'});
-  v.appendChild(txt('h2','Gallery',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
-  v.appendChild(txt('p','View your Kindle screenshots and images. Tap "Add images" and pick the screenshots from your device — they show here for this session. Tap any image to view it full-size.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.55',marginBottom:'12px'}}));
-  if(!window._khGallery)window._khGallery=[];/* session-only list of {name,url} */
-  const fileInp=el('input',{type:'file',accept:'image/*',multiple:true,style:{display:'none'}});
-  const addBtn=txt('button','+ Add images',{className:'btn primary small'});
-  addBtn.onclick=()=>fileInp.click();
-  const clearBtn=txt('button','Clear',{className:'btn small'});
-  const row=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px',flexWrap:'wrap'}});
-  row.append(addBtn,clearBtn);v.appendChild(row);v.appendChild(fileInp);
-  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:'8px'}});
-  v.appendChild(grid);
-  function renderGrid(){
-    grid.innerHTML='';
-    if(!window._khGallery.length){grid.appendChild(txt('div','No images yet. Tap "+ Add images" to load your screenshots.',{style:{gridColumn:'1/-1',fontSize:'12px',color:'var(--muted)',padding:'10px',textAlign:'center'}}));return;}
-    window._khGallery.forEach((img,i)=>{
-      const cell=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',overflow:'hidden',background:'var(--card)',aspectRatio:'1',cursor:'pointer'}});
-      const im=el('img',{src:img.url,style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}});
-      im.onclick=()=>showFull(img);
-      cell.appendChild(im);
-      const x=el('button',{type:'button',style:{position:'absolute',top:'3px',right:'3px',width:'20px',height:'20px',lineHeight:'18px',padding:'0',borderRadius:'50%',border:'none',background:'rgba(0,0,0,0.6)',color:'#fff',fontSize:'13px',fontWeight:'900',cursor:'pointer'}});
-      x.textContent='×';x.onclick=ev=>{ev.stopPropagation();const j=window._khGallery.indexOf(img);if(j<0)return;try{URL.revokeObjectURL(img.url);}catch(_){}window._khGallery.splice(j,1);renderGrid();};
-      cell.appendChild(x);grid.appendChild(cell);
-    });
-  }
-  function showFull(img){
-    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.92)',zIndex:'600200',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'10px'}});
-    if(!img)return;
-    const im=el('img',{src:img.url,style:{maxWidth:'100%',maxHeight:'88%',objectFit:'contain'}});
-    const cap=txt('div',img.name||'',{style:{color:'#fff',fontSize:'11px',marginTop:'8px',maxWidth:'90%',textAlign:'center',wordBreak:'break-all'}});
-    const close=txt('button','Close',{className:'btn small',style:{marginTop:'10px'}});
-    close.onclick=()=>ov.remove();ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.append(im,cap,close);document.body.appendChild(ov);
-  }
-  fileInp.onchange=e=>{
-    const files=Array.from(e.target.files||[]);
-    files.forEach(f=>{if(f.type.startsWith('image/'))window._khGallery.push({name:f.name,url:URL.createObjectURL(f)});});
-    fileInp.value='';renderGrid();
-    if(files.length)toast(files.length+' image'+(files.length===1?'':'s')+' added.',1800);
-  };
-  clearBtn.onclick=()=>{window._khGallery.forEach(g=>{try{URL.revokeObjectURL(g.url);}catch(_){}});window._khGallery=[];renderGrid();};
-  renderGrid();
-  return v;
-},
-
 cookbook:()=>{
   const v=el('section',{id:'view-cookbook',className:'view'});
 
