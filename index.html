@@ -1012,7 +1012,7 @@ body.launcher-ui .view{padding-bottom:80px;}
       <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
     </div>
     <div class="header-controls">
-      <button class="btn small" id="recentBtn" title="Recent activities — jump back to a page you were on">Recent</button>
+      <button class="btn small" id="recentBtn" title="Recent activities &amp; split screen — show two pages at once">Recent</button>
       <div class="clock" id="sysClock"></div>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
       <button class="btn small" id="landscapeBtn" title="Rotate the app 90° for sideways reading">Landscape</button>
@@ -2079,6 +2079,228 @@ function el(tag,attrs={},children=[]){
 }
 function txt(tag,text,attrs={}){const e=el(tag,attrs);e.textContent=text;return e;}
 
+/* ──────────────────────────────────────────────────────────────────
+   Free Library — in-app reader for Project Gutenberg public-domain
+   books. Turns KindleHub into an actual e-reader (search + read full
+   text), not just a reading tracker — the one thing ReKindle had that
+   we didn't. Book text is cached in memory for the session only and is
+   NEVER written to S/localStorage (a single novel can exceed 1 MB and
+   would blow the gzip'd state quota); only a few bytes of position
+   metadata live on the matching S.books entry.
+   Search uses the Gutendex JSON API (CORS-open). Book text is pulled
+   through the same allorigins/corsproxy fallbacks the rest of the app
+   uses, because gutenberg.org itself sends no CORS header. */
+window.khOpenBookReader=(function(){
+  var _cache={};       /* gutenberg id -> cleaned full text (session only) */
+  var _saveT=null;
+
+  function rfetch(url,ms){
+    return new Promise(function(resolve,reject){
+      var done=false;
+      var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      var tid=setTimeout(function(){done=true;if(ctrl){try{ctrl.abort();}catch(e){}}reject(new Error('timeout'));},ms||12000);
+      fetch(url,ctrl?{signal:ctrl.signal}:{}).then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return r.text();
+      }).then(function(t){if(done)return;clearTimeout(tid);resolve(t);})
+        .catch(function(e){if(done)return;clearTimeout(tid);reject(e);});
+    });
+  }
+
+  function gutenSearch(query){
+    query=(query||'').trim();
+    if(!query)return Promise.resolve([]);
+    var api='https://gutendex.com/books?search='+encodeURIComponent(query);
+    function parse(raw){
+      var data=JSON.parse(raw);
+      return ((data&&data.results)||[]).slice(0,24).map(function(b){
+        return {id:b.id,title:b.title||'Untitled',
+          author:(b.authors&&b.authors[0]&&b.authors[0].name)||'',
+          formats:b.formats||{},
+          lang:(b.languages&&b.languages[0])||''};
+      });
+    }
+    return rfetch(api,12000).then(parse).catch(function(){
+      return rfetch('https://api.allorigins.win/raw?url='+encodeURIComponent(api),15000).then(parse);
+    });
+  }
+  window.khGutenSearch=gutenSearch;
+
+  function textUrls(book){
+    var urls=[],f=book.formats||{};
+    Object.keys(f).forEach(function(k){
+      var u=f[k];
+      if(/text\/plain/i.test(k)&&u&&!/\.zip(\?|$)/i.test(u))urls.push(u);
+    });
+    var id=book.id;
+    urls.push('https://www.gutenberg.org/cache/epub/'+id+'/pg'+id+'.txt');
+    urls.push('https://www.gutenberg.org/files/'+id+'/'+id+'-0.txt');
+    urls.push('https://www.gutenberg.org/files/'+id+'/'+id+'.txt');
+    var seen={},out=[];
+    urls.forEach(function(u){u=String(u).replace(/^http:/,'https:');if(!seen[u]){seen[u]=1;out.push(u);}});
+    return out;
+  }
+
+  function cleanGutenberg(raw){
+    var t=String(raw||'').replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+    var sM=t.match(/\*\*\*\s*START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[\s\S]*?\*\*\*/i);
+    if(sM)t=t.slice(sM.index+sM[0].length);
+    var eM=t.match(/\*\*\*\s*END OF (?:THE|THIS) PROJECT GUTENBERG EBOOK/i);
+    if(eM)t=t.slice(0,eM.index);
+    return t.replace(/\n{3,}/g,'\n\n').trim();
+  }
+
+  function paginate(text,budget){
+    budget=budget||1700;
+    var paras=text.split(/\n{2,}/).map(function(p){return p.replace(/[ \t]*\n[ \t]*/g,' ').trim();}).filter(Boolean);
+    var pages=[],cur=[],len=0,i,j;
+    for(i=0;i<paras.length;i++){
+      var p=paras[i];
+      if(p.length>budget*1.6){
+        for(j=0;j<p.length;j+=budget){
+          var chunk=p.slice(j,j+budget);
+          if(len&&len+chunk.length>budget){pages.push(cur);cur=[];len=0;}
+          cur.push(chunk);len+=chunk.length;
+          if(len>=budget){pages.push(cur);cur=[];len=0;}
+        }
+        continue;
+      }
+      if(len&&len+p.length>budget){pages.push(cur);cur=[];len=0;}
+      cur.push(p);len+=p.length;
+    }
+    if(cur.length)pages.push(cur);
+    return pages.length?pages:[['(This book appears to be empty.)']];
+  }
+
+  function ensureBook(meta){
+    if(!S.books)S.books=[];
+    var b=null,i;
+    for(i=0;i<S.books.length;i++){if(S.books[i].gutenbergId===meta.id){b=S.books[i];break;}}
+    if(!b){
+      b={id:Date.now(),title:meta.title||'Untitled',author:meta.author||'',gutenbergId:meta.id,status:'reading',added:new Date().toISOString()};
+      S.books.unshift(b);
+    }else if(!b.status||b.status==='to-read'){b.status='reading';}
+    try{saveNow();}catch(e){}
+    return b;
+  }
+
+  function fetchBookText(book){
+    if(_cache[book.id])return Promise.resolve(_cache[book.id]);
+    var urls=textUrls(book);
+    var wraps=[
+      function(u){return u;},
+      function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);},
+      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);}
+    ];
+    var attempts=[];
+    urls.forEach(function(u){wraps.forEach(function(w){attempts.push(w(u));});});
+    var idx=0;
+    function tryNext(){
+      if(idx>=attempts.length)return Promise.reject(new Error('load-failed'));
+      var a=attempts[idx++];
+      return rfetch(a,16000).then(function(raw){
+        if(raw&&raw.length>800&&/[A-Za-z]/.test(raw)){
+          var cleaned=cleanGutenberg(raw);
+          if(cleaned.length>300){_cache[book.id]=cleaned;return cleaned;}
+        }
+        return tryNext();
+      }).catch(function(){return tryNext();});
+    }
+    return tryNext();
+  }
+
+  function openReader(meta){
+    if(!meta||meta.id==null)return;
+    var b=ensureBook(meta);
+    var prevOvf=document.body.style.overflow;
+    var fontSize=Math.min(28,Math.max(14,(S&&S.readerFont)||18));
+    var pages=null,pos=0;
+
+    var titleEl=txt('div',(meta.title||b.title||'Reading'),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700',fontSize:'14px'}});
+    var progEl=txt('div','',{style:{fontSize:'12px',color:'var(--muted)',whiteSpace:'nowrap'}});
+    var finishBtn=txt('button','✓ Finished',{className:'btn small'});
+    var closeBtn=txt('button','✕ Close',{className:'btn small'});
+    var aMinus=txt('button','A−',{className:'btn small'});
+    var aPlus=txt('button','A+',{className:'btn small'});
+
+    var topBar=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',padding:'8px 12px',borderBottom:'var(--thin)',background:'var(--card)',flexWrap:'nowrap'}},[closeBtn,titleEl,aMinus,aPlus]);
+
+    var content=el('div',{style:{flex:'1',overflowY:'auto',webkitOverflowScrolling:'touch',padding:'18px 20px 28px',maxWidth:'680px',width:'100%',margin:'0 auto',boxSizing:'border-box',lineHeight:'1.7',fontSize:fontSize+'px'}});
+
+    var prevBtn=txt('button','‹ Prev',{className:'btn',style:{minWidth:'84px',minHeight:'48px'}});
+    var nextBtn=txt('button','Next ›',{className:'btn primary',style:{minWidth:'84px',minHeight:'48px'}});
+    var centerCol=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',flex:'1'}},[progEl,finishBtn]);
+    var bottomBar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderTop:'var(--thin)',background:'var(--card)'}},[prevBtn,centerCol,nextBtn]);
+
+    var root=el('div',{id:'kh-reader',style:{position:'fixed',left:'0',top:'0',width:'100%',height:'100%',background:'var(--bg,#fff)',color:'var(--fg,#111)',zIndex:'100000',display:'flex',flexDirection:'column'}},[topBar,content,bottomBar]);
+
+    function scheduleSave(){if(_saveT)clearTimeout(_saveT);_saveT=setTimeout(function(){_saveT=null;try{saveNow();}catch(e){}},1200);}
+    function flushSave(){if(_saveT){clearTimeout(_saveT);_saveT=null;}try{saveNow();}catch(e){}}
+    function onKey(e){
+      if(e.key==='Escape'){close();e.preventDefault();}
+      else if(e.key==='ArrowRight'||e.key==='PageDown'){go(1);e.preventDefault();}
+      else if(e.key==='ArrowLeft'||e.key==='PageUp'){go(-1);e.preventDefault();}
+    }
+    function close(){
+      flushSave();
+      document.body.style.overflow=prevOvf||'';
+      document.removeEventListener('keydown',onKey,true);
+      if(root.parentNode)root.parentNode.removeChild(root);
+      if(window._khReadingRefresh){try{window._khReadingRefresh();}catch(e){}}
+    }
+    function renderPage(){
+      if(!pages)return;
+      if(pos<0)pos=0;if(pos>pages.length-1)pos=pages.length-1;
+      content.innerHTML='';
+      var pg=pages[pos]||[],i;
+      for(i=0;i<pg.length;i++)content.appendChild(txt('p',pg[i],{style:{margin:'0 0 0.9em'}}));
+      content.scrollTop=0;
+      var pctTxt='p.'+(pos+1)+'/'+pages.length+'  ·  '+Math.round((pos+1)/pages.length*100)+'%';
+      if(progEl.textContent!==pctTxt)progEl.textContent=pctTxt;
+      prevBtn.disabled=(pos<=0);
+      var nt=(pos>=pages.length-1)?'End':'Next ›';
+      if(nextBtn.textContent!==nt)nextBtn.textContent=nt;
+      b.readerPos=pos;b.readerPages=pages.length;if(b.status!=='finished')b.status='reading';
+      scheduleSave();
+    }
+    function go(d){if(!pages)return;var np=pos+d;if(np<0||np>pages.length-1)return;pos=np;renderPage();}
+    function applyFont(delta){
+      fontSize=Math.min(28,Math.max(14,fontSize+delta));
+      content.style.fontSize=fontSize+'px';
+      if(S){S.readerFont=fontSize;scheduleSave();}
+    }
+    prevBtn.onclick=function(){go(-1);};
+    nextBtn.onclick=function(){go(1);};
+    closeBtn.onclick=close;
+    aMinus.onclick=function(){applyFont(-2);};
+    aPlus.onclick=function(){applyFont(2);};
+    finishBtn.onclick=function(){b.status='finished';try{saveNow();}catch(e){}if(typeof toast==='function')toast('Marked as finished');close();};
+    content.addEventListener('click',function(e){
+      var r=content.getBoundingClientRect(),x=e.clientX-r.left;
+      if(x<r.width*0.28)go(-1);else if(x>r.width*0.72)go(1);
+    });
+    document.addEventListener('keydown',onKey,true);
+
+    document.body.style.overflow='hidden';
+    document.body.appendChild(root);
+    content.appendChild(txt('p','Loading “'+(meta.title||b.title||'book')+'” from Project Gutenberg…',{style:{color:'var(--muted)'}}));
+
+    fetchBookText({id:b.gutenbergId,title:b.title,author:b.author,formats:meta.formats}).then(function(text){
+      pages=paginate(text,1700);
+      pos=Math.min(Math.max(0,b.readerPos||0),pages.length-1);
+      renderPage();
+    }).catch(function(){
+      content.innerHTML='';
+      content.appendChild(txt('p','Sorry — this book could not be loaded right now. Project Gutenberg or the proxy may be unreachable on this network. Please try again.',{style:{color:'var(--danger,#b00)'}}));
+      var retry=txt('button','Retry',{className:'btn small primary',style:{marginTop:'10px'}});
+      retry.onclick=function(){close();openReader(meta);};
+      content.appendChild(retry);
+    });
+  }
+
+  return openReader;
+})();
+
 /* ── KindleHub custom dropdown ───────────────────────────────────────
    Replaces native <select> rendering with a tap-friendly button that
    opens a centered list overlay. The original <select> stays in the
@@ -2391,8 +2613,12 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   if(_khAlreadyNotified(key))return;
   _khMarkNotified(key);
   const TRIM=30;
-  const safeName=String(name||'New message').replace(/\s+/g,' ').trim().slice(0,40);
-  const body=String(text||'').replace(/\s+/g,' ').trim();
+  /* Apply the same profanity blocker the chat list uses (_censorText). The
+     toast was the one user-text surface still showing messages raw — that's
+     the reported "bad word blocker doesn't block notification popups" bug.
+     Both the sender name and the body are run through it. */
+  const safeName=_censorText(String(name||'New message').replace(/\s+/g,' ').trim()).slice(0,40);
+  const body=_censorText(String(text||'').replace(/\s+/g,' ').trim());
   const truncated=body.length>TRIM?body.slice(0,TRIM)+'…':body;
   /* If we know which group it's from, make the toast tappable to open that
      chat directly (the messages builder reads window._khPendingOpenGroup). */
@@ -4952,20 +5178,7 @@ function toggleLandscape(forceTo){
   const b=$('landscapeBtn');if(b)b.onclick=()=>toggleLandscape();
   /* Recent-activities quick switcher — a lightweight "open tabs" panel. */
   const _rb=$('recentBtn');
-  if(_rb)_rb.onclick=()=>{
-    const rv=(window._khRecentViews||[]).filter(x=>x!==currentView);
-    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.5)',zIndex:'600200',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'60px 16px 16px'}});
-    const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'14px',width:'100%',maxWidth:'420px',boxShadow:'var(--shadow-md)'}});
-    box.appendChild(txt('h3','Recent activities',{style:{margin:'0 0 10px',fontFamily:'var(--title-font)'}}));
-    if(!rv.length)box.appendChild(txt('p','No other activities yet — open a few pages and they\'ll show here so you can jump back.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5'}}));
-    const labelOf=v=>{const m=(typeof NAV_TABS!=='undefined'?NAV_TABS:[]).find(t=>t[0]===v);return m?m[1]:(v==='home'?'Home':v==='settings'?'Settings':v.charAt(0).toUpperCase()+v.slice(1));};
-    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'6px'}});
-    rv.forEach(v=>{const bb=txt('button',labelOf(v),{className:'btn small',style:{textAlign:'left'}});bb.onclick=()=>{ov.remove();const t=document.querySelector('nav .tab[data-view="'+v+'"]');if(t)t.click();else showView(v);};grid.appendChild(bb);});
-    box.appendChild(grid);
-    const cl=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=()=>ov.remove();box.appendChild(cl);
-    ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.appendChild(box);document.body.appendChild(ov);
-  };
+  if(_rb)_rb.onclick=()=>{ if(typeof _khOpenMultitask==='function')_khOpenMultitask(); };
   if(S.landscapeMode)setTimeout(()=>toggleLandscape(true),120);
   /* Keep geometry correct if the viewport itself changes while rotated
      (soft keyboard, browser chrome). Re-apply with fresh dimensions. */
@@ -6015,13 +6228,47 @@ window._sanitizeMsgText=_sanitizeMsgText;
    so a false positive is fully reversible and nothing is lost. */
 var _PROFANITY_WORDS=['fuck','fucking','fucker','motherfucker','shit','bullshit','bitch','cunt','asshole','arsehole','dick','dickhead','piss','bastard','slut','whore','nigger','nigga','faggot','retard','cock','pussy','douche','douchebag','wanker','twat','prick','bollocks','jackass','dumbass','jerkoff'];
 var _PROFANITY_RE=new RegExp('\\b(?:'+_PROFANITY_WORDS.join('|')+')\\b','gi');
+/* Embedded-profanity pass: catch a bad word that's buried inside a larger
+   token ("shithead", "dumbfuck", "a55hole") — which the \b word-boundary
+   regex above misses — WITHOUT tripping on legitimate words that merely
+   contain a root (the "Scunthorpe problem"). Two guards keep false positives
+   away: (1) only roots that are rarely an innocent substring are matched as
+   substrings (the genuinely ambiguous short ones — ass, cock, dick, anal,
+   piss, tit — are deliberately NOT here, so class/cockpit/Dickens/analysis/
+   Mississippi stay clean); (2) a small allow-list of real words that do
+   contain a listed root. Tokens are leet-normalised first (same mapping as
+   the username check) so "sh1t"/"n1gg3r" are caught too. */
+var _PROFANITY_SUBSTR=['fuck','shit','cunt','nigger','nigga','faggot','bitch','wanker','bastard','bollock','whore','asshole','arsehole','dickhead','jackass','dumbass','douchebag','cocksuck'];
+var _PROFANITY_SAFE={shiitake:1,scunthorpe:1,niggard:1,niggardly:1,niggardliness:1};
+function _normLeet(w){
+  return String(w||'').toLowerCase()
+    .replace(/[0]/g,'o').replace(/[1!|]/g,'i').replace(/[3]/g,'e')
+    .replace(/[4@]/g,'a').replace(/[5$]/g,'s').replace(/[7]/g,'t').replace(/[8]/g,'b')
+    .replace(/[^a-z]/g,'');
+}
+function _tokenProfane(norm){
+  if(!norm||_PROFANITY_SAFE[norm])return false;
+  for(var i=0;i<_PROFANITY_SUBSTR.length;i++){if(norm.indexOf(_PROFANITY_SUBSTR[i])>=0)return true;}
+  return false;
+}
 function _censorText(s){
   if(typeof s!=='string'||!s)return s;
-  return s.replace(_PROFANITY_RE,function(m){return '█'.repeat(Math.max(3,m.length));});
+  /* Pass 1: exact words (word-boundary) — original behaviour. */
+  var out=s.replace(_PROFANITY_RE,function(m){return '█'.repeat(Math.max(3,m.length));});
+  /* Pass 2: bad word embedded in a larger token. Already-censored runs are
+     solid blocks (not A-Za-z), so they're never re-matched here. */
+  out=out.replace(/[A-Za-z][A-Za-z0-9_'’*@$!|]*/g,function(tok){
+    if(_tokenProfane(_normLeet(tok)))return '█'.repeat(Math.max(3,tok.replace(/[^A-Za-z0-9]/g,'').length));
+    return tok;
+  });
+  return out;
 }
 function _hasProfanity(s){
   if(typeof s!=='string'||!s)return false;
-  return new RegExp(_PROFANITY_RE.source,'i').test(s);
+  if(new RegExp(_PROFANITY_RE.source,'i').test(s))return true;
+  var toks=s.match(/[A-Za-z][A-Za-z0-9_'’*@$!|]*/g)||[];
+  for(var i=0;i<toks.length;i++){if(_tokenProfane(_normLeet(toks[i])))return true;}
+  return false;
 }
 /* ── Username moderation ──────────────────────────────────────────────
    Inappropriate usernames are blocked at sign-up by default. Unlike chat
@@ -6240,6 +6487,28 @@ async function _khUnbanUsername(name){
   return res.ok;
 }
 window._khBanUsername=_khBanUsername;window._khUnbanUsername=_khUnbanUsername;window._khIsBanned=_khIsBanned;
+
+/* ── Warnings (a lighter alternative to a ban) ─────────────────────────
+   Instead of banning, an admin can send a formal WARNING to one user.
+   Delivered as a PRIVATE (targeted) announcement through the existing
+   kh_post_announcement RPC — so it needs NO new table or schema change: the
+   user sees it in their announcements like any private note, prefixed so it
+   unmistakably reads as a moderator warning. Admin-token gated, same as ban. */
+async function _khWarnUsername(name){
+  name=String(name||'').trim();
+  if(!name){toast('No username to warn');return false;}
+  if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
+  if(!window._adminToken){toast('Admin only — open the admin panel first.',4000);return false;}
+  const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
+  if(reason==null)return false;/* admin cancelled */
+  const msg=String(reason||'').trim()||'Please follow the community rules.';
+  const text='⚠️ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
+  if(ok)toast('Warning sent privately to “'+name+'”.',3500);
+  /* _announceRpc surfaces its own error toast on failure. */
+  return !!ok;
+}
+window._khWarnUsername=_khWarnUsername;
 
 function _composeAnnouncement(card){
   card.innerHTML='';
@@ -10881,7 +11150,132 @@ function appendRelatedPages(viewId,viewEl){
        per-action refreshes) to stay current. */
 const ALWAYS_REBUILD=new Set(['games','messages','pet']);
 
+/* ════════════════════════════════════════════════════════════════════
+   Split screen — "2 pages in 1" multitasking. mainHost normally holds ONE
+   view; in split mode it holds two stacked, independently-scrolling panes,
+   each running a real view. Safe because inner element IDs are unique per
+   view (verified — no generic cross-view IDs), so two DIFFERENT views never
+   collide on getElementById; we forbid the same view in both panes, and if
+   you navigate the primary onto the secondary's view we SWAP the panes (a
+   DOM node can only live in one place). The bottom nav drives the PRIMARY
+   (top) pane; the secondary is chosen from the Recent/multitask panel — so
+   there's NO new header button (the existing "Recent" control is the entry
+   point, which is what the community member meant by multitasking). Stacked
+   in portrait; Landscape mode renders the two panes side-by-side. Session-
+   only (not persisted) to keep boot simple. */
+let _splitOn=false,_splitSecondary=null;
+function _viewLabel(v){
+  try{const m=(typeof NAV_TABS!=='undefined'?NAV_TABS:[]).find(t=>t[0]===v);if(m)return m[1];}catch(_){}
+  return v==='home'?'Home':v==='settings'?'Settings':(v?v.charAt(0).toUpperCase()+v.slice(1):'?');
+}
+function _viewHost(){
+  if(_splitOn){const b=document.getElementById('kh-pane-primary-body');if(b)return b;}
+  return mainHost;
+}
+function _updateSplitLabels(){
+  const a=document.getElementById('kh-pane-primary-label');if(a&&a.textContent!=='▣ '+_viewLabel(currentView))a.textContent='▣ '+_viewLabel(currentView);
+  const b=document.getElementById('kh-pane-secondary-label');if(b){const t=_viewLabel(_splitSecondary);if(b.textContent!==t)b.textContent=t;}
+}
+function _fillPaneBar(which){
+  const bar=document.getElementById('kh-pane-'+which+'-bar');if(!bar)return;
+  bar.innerHTML='';
+  bar.appendChild(txt('span','',{id:'kh-pane-'+which+'-label',style:{flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+  if(which==='secondary'){
+    const mk=(label,fn,danger)=>{const b=txt('button',label,{className:'btn small',style:{minHeight:'26px',fontSize:'10px',padding:'2px 8px'}});if(danger){b.style.borderColor='var(--danger)';b.style.color='var(--danger)';}b.onclick=fn;return b;};
+    bar.append(mk('⇄ Swap',()=>_swapSplit()),mk('Change',()=>_khOpenMultitask()),mk('✕ Close',()=>exitSplit(),true));
+  }else{
+    bar.appendChild(txt('span','tabs ↓ control this pane',{style:{fontSize:'9px',fontWeight:'600',color:'var(--muted)',flexShrink:'0'}}));
+  }
+}
+function _buildSplitScaffold(){
+  while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
+  function pane(which){
+    const bar=el('div',{id:'kh-pane-'+which+'-bar',style:{display:'flex',alignItems:'center',gap:'6px',padding:'3px 8px',background:'var(--card)',borderBottom:'var(--thin)',fontSize:'11px',fontWeight:'800',color:'var(--fg)',flexShrink:'0',minHeight:'30px'}});
+    const body=el('div',{id:'kh-pane-'+which+'-body',style:{flex:'1',minHeight:'0',overflowY:'auto',webkitOverflowScrolling:'touch'}});
+    return el('div',{id:'kh-pane-'+which,style:{flex:'1 1 50%',minHeight:'0',display:'flex',flexDirection:'column',overflow:'hidden'}},[bar,body]);
+  }
+  const wrap=el('div',{id:'kh-split',style:{display:'flex',flexDirection:'column',height:'100%',minHeight:'0'}},[
+    pane('primary'),
+    el('div',{style:{height:'4px',background:'var(--fg)',opacity:'0.3',flexShrink:'0'}}),
+    pane('secondary')
+  ]);
+  mainHost.appendChild(wrap);
+  _fillPaneBar('primary');_fillPaneBar('secondary');
+}
+function mountSecondary(id){
+  if(id===currentView){toast('Choose a different activity for the second pane.',3500);return;}
+  _splitSecondary=id;
+  const body=document.getElementById('kh-pane-secondary-body');if(!body)return;
+  while(body.firstChild)body.removeChild(body.firstChild);
+  if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
+  if(!VIEWS[id]){
+    try{VIEWS[id]=BUILDERS[id]();}
+    catch(e){body.appendChild(txt('div','Couldn’t load “'+_viewLabel(id)+'”.',{style:{padding:'16px',color:'var(--muted)',fontSize:'12px'}}));_updateSplitLabels();return;}
+  }
+  body.appendChild(VIEWS[id]);
+  try{if(ON_SHOW[id])ON_SHOW[id]();}catch(_){}
+  try{appendRelatedPages(id,VIEWS[id]);}catch(_){}
+  _updateSplitLabels();
+}
+function enterSplit(secondaryId){
+  if(typeof BUILDERS[secondaryId]!=='function'){toast('That activity can’t be opened in split.');return;}
+  if(secondaryId===currentView){toast('Choose a different activity for the second pane.',3500);return;}
+  const primary=currentView;
+  _splitOn=true;_splitSecondary=secondaryId;
+  _buildSplitScaffold();
+  showView(primary);            /* mounts into the primary pane (split is on) */
+  mountSecondary(secondaryId);
+  toast('Split on — '+_viewLabel(primary)+' + '+_viewLabel(secondaryId),3000);
+}
+function exitSplit(){
+  if(!_splitOn)return;
+  _splitOn=false;_splitSecondary=null;
+  while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
+  showView(currentView);
+  toast('Split off',1800);
+}
+function _swapSplit(){ if(_splitOn&&_splitSecondary)showView(_splitSecondary); }
+function _khOpenMultitask(){
+  const recents=(window._khRecentViews||[]).filter(x=>x&&x!==currentView);
+  const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.5)',zIndex:'600200',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'54px 16px 16px'}});
+  const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'14px',width:'100%',maxWidth:'440px',maxHeight:'80vh',overflowY:'auto',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('h3','Activities & split screen',{style:{margin:'0 0 4px',fontFamily:'var(--title-font)'}}));
+  box.appendChild(txt('p','Tap a name to open it. Tap ⊞ Split to show it beside the current page — two pages at once.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 10px',lineHeight:'1.5'}}));
+  if(_splitOn){
+    const banner=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap',padding:'8px 10px',background:'var(--highlight)',borderRadius:'8px',marginBottom:'10px'}});
+    banner.appendChild(txt('span','Split on: ▣ '+_viewLabel(currentView)+'  +  '+_viewLabel(_splitSecondary),{style:{flex:'1',fontSize:'12px',fontWeight:'800',minWidth:'140px'}}));
+    const sw=txt('button','⇄ Swap',{className:'btn small'});sw.onclick=()=>{_swapSplit();ov.remove();};
+    const cl=txt('button','✕ Close split',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});cl.onclick=()=>{exitSplit();ov.remove();};
+    banner.append(sw,cl);
+    box.appendChild(banner);
+  }
+  if(!recents.length)box.appendChild(txt('p','No other recent activities yet — open a few pages and they’ll show here.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const list=el('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}});
+  recents.forEach(v=>{
+    const row=el('div',{style:{display:'flex',gap:'6px',alignItems:'stretch'}});
+    const open=txt('button',_viewLabel(v),{className:'btn small',style:{flex:'1',textAlign:'left'}});
+    open.onclick=()=>{ov.remove();const t=document.querySelector('nav .tab[data-view="'+v+'"]');if(t)t.click();else showView(v);};
+    const split=txt('button',(_splitOn?'⊞ 2nd':'⊞ Split'),{className:'btn small',style:{flexShrink:'0',borderColor:'var(--fg)'}});
+    split.onclick=()=>{if(_splitOn)mountSecondary(v);else enterSplit(v);ov.remove();};
+    row.append(open,split);
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+  const close=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});close.onclick=()=>ov.remove();
+  box.appendChild(close);
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.appendChild(box);document.body.appendChild(ov);
+}
+window.enterSplit=enterSplit;window.exitSplit=exitSplit;window._khOpenMultitask=_khOpenMultitask;
+
 function showView(id){
+  /* Split view: navigating the primary pane onto the activity already in the
+     SECOND pane swaps the two panes (a DOM node can only live in one place). */
+  const _prevView=currentView;
+  let _needSecondaryRemount=false;
+  if(_splitOn&&_splitSecondary&&id===_splitSecondary&&_prevView&&_prevView!==id){
+    _splitSecondary=_prevView;_needSecondaryRemount=true;
+  }
   currentView=id;
   /* Recent-activities tracker for the header quick-switcher ("minimise a
      tab and jump back" request). Keeps the last few DISTINCT views. */
@@ -10891,7 +11285,8 @@ function showView(id){
     const at=rv.indexOf(id);if(at>=0)rv.splice(at,1);
     rv.unshift(id);if(rv.length>8)rv.length=8;
   }catch(_){}
-  while(mainHost.firstChild)mainHost.removeChild(mainHost.firstChild);
+  const _host=_viewHost();
+  while(_host.firstChild)_host.removeChild(_host.firstChild);
   if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
   if(!VIEWS[id]){
     try{
@@ -10900,7 +11295,7 @@ function showView(id){
       var errDiv=document.createElement('div');
       errDiv.style.cssText='padding:24px;font-family:var(--ui-font);';
       errDiv.innerHTML='<strong>Failed to load this page.</strong><br><span style="font-size:12px;color:var(--muted)">'+String(e)+'</span>';
-      mainHost.appendChild(errDiv);
+      _host.appendChild(errDiv);
       if(typeof toast==='function')toast('Error loading view: '+id);
       /* CRITICAL: pipe the caught error into the auto-bug reporter. The
          try/catch above prevents the BUILDER throw from reaching
@@ -10920,7 +11315,7 @@ function showView(id){
       return;
     }
   }
-  mainHost.appendChild(VIEWS[id]);
+  _host.appendChild(VIEWS[id]);
   try{if(ON_SHOW[id])ON_SHOW[id]();}
   catch(e){
     if(typeof window._khReportBug==='function'){
@@ -10935,6 +11330,7 @@ function showView(id){
       try{window._khReportBug('Related-pages strip failed on "'+id+'": '+(e&&e.message||String(e)),null,null,null,e instanceof Error?e:new Error(String(e)),'related_pages');}catch(_){}
     }
   }
+  if(_splitOn){ if(_needSecondaryRemount){try{mountSecondary(_splitSecondary);}catch(_){}} try{_updateSplitLabels();}catch(_){} }
 }
 const ON_SHOW={};
 ON_SHOW.games=()=>{
@@ -15713,7 +16109,7 @@ const G2048=(()=>{
     if(saveTimer2048){clearInterval(saveTimer2048);saveTimer2048=null;}
     G={board:Array(16).fill(0),score:0,best:S.games['2048']&&S.games['2048'].best||0,active:true,won:false,merged:new Set()};
     addTile();addTile();enterImmersive('2048','Score: 0');buildUI();draw2048();
-    saveTimer2048=setInterval(()=>{if(G&&G.best){S.games['2048']={best:G.best};saveNow();}},5000);
+    saveTimer2048=setInterval(()=>{if(G&&G.best&&(!S.games['2048']||S.games['2048'].best!==G.best)){S.games['2048']={best:G.best};saveNow();}},5000);
   }
 
   function addTile(){
@@ -21121,11 +21517,18 @@ function renderBooks(){
     info.appendChild(txt('div',b.title,{style:{fontWeight:'700',fontSize:'14px'}}));
     if(b.author)info.appendChild(txt('div',b.author,{style:{fontSize:'12px',color:'var(--muted)'}}));
     if(b.rating)info.appendChild(txt('div','*'.repeat(b.rating)+'-'.repeat(5-b.rating),{style:{fontFamily:'monospace',fontSize:'12px'}}));
+    if(b.gutenbergId&&b.readerPages)info.appendChild(txt('div','Free book · '+Math.round(((b.readerPos||0)+1)/b.readerPages*100)+'% read',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    else if(b.gutenbergId)info.appendChild(txt('div','Free book',{style:{fontSize:'11px',color:'var(--muted)'}}));
     d.appendChild(info);
     const right=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px'}});
     const statBtn=txt('button',b.status||'to-read',{className:'btn small book-status'});
     statBtn.onclick=()=>{const ss=['to-read','reading','finished'];b.status=ss[(ss.indexOf(b.status||'to-read')+1)%ss.length];save();renderBooks();};
     right.appendChild(statBtn);
+    if(b.gutenbergId&&window.khOpenBookReader){
+      const readBtn=txt('button',(b.readerPages?'Continue':'Read'),{className:'btn small primary'});
+      readBtn.onclick=()=>{window.khOpenBookReader({id:b.gutenbergId,title:b.title,author:b.author});};
+      right.appendChild(readBtn);
+    }
     const del=txt('button','x',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
     del.onclick=()=>{S.books.splice(actualIdx,1);save();renderBooks();};
     right.appendChild(del);
@@ -32239,6 +32642,68 @@ reading:()=>{
 
   const g=el('div',{className:'grid'});
 
+  /* ── Free Library (Project Gutenberg) — read full books in-app ──
+     The headline upgrade: search 75,000+ public-domain classics and
+     read them right here, not just track a title. window.khGutenSearch
+     / window.khOpenBookReader are defined near the el()/txt() helpers. */
+  const flCard=el('div',{className:'card',style:{gridColumn:'1/-1'}});
+  flCard.appendChild(txt('h2','Free Library'));
+  flCard.appendChild(txt('p','Search 75,000+ free, full-text classics from Project Gutenberg and read them right here — not just track them.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 8px'}}));
+  const flRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'6px'}});
+  const flQ=el('input',{placeholder:'Title or author — e.g. Sherlock Holmes, Austen, Dracula',style:{flex:'1',minWidth:'160px'}});
+  const flGo=txt('button','Search',{className:'btn primary'});
+  flRow.append(flQ,flGo);
+  flCard.appendChild(flRow);
+  const flChips=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'8px'}});
+  ['Pride and Prejudice','Sherlock Holmes','Dracula','Frankenstein','Alice in Wonderland','Shakespeare','Adventure','Mystery'].forEach(c=>{
+    const chip=txt('button',c,{className:'btn small'});
+    chip.onclick=()=>{flQ.value=c;runFreeLib(c);};
+    flChips.appendChild(chip);
+  });
+  flCard.appendChild(flChips);
+  const flResults=el('div',{});
+  flCard.appendChild(flResults);
+  function runFreeLib(query){
+    query=(query||'').trim();
+    if(!query){flResults.innerHTML='';return;}
+    flResults.innerHTML='';
+    flResults.appendChild(txt('div','Searching…',{style:{color:'var(--muted)',fontSize:'12px',padding:'6px 0'}}));
+    (window.khGutenSearch?window.khGutenSearch(query):Promise.resolve([])).then(list=>{
+      flResults.innerHTML='';
+      const eng=list.filter(b=>!b.lang||b.lang==='en');
+      const show=(eng.length?eng:list).slice(0,12);
+      if(!show.length){flResults.appendChild(txt('div','No free books found for "'+query+'".',{style:{color:'var(--muted)',fontSize:'12px',padding:'6px 0'}}));return;}
+      show.forEach(bk=>{
+        const row=el('div',{className:'book-item'});
+        const info=el('div',{style:{flex:'1',minWidth:0}});
+        info.appendChild(txt('div',bk.title,{style:{fontWeight:'700',fontSize:'14px'}}));
+        if(bk.author)info.appendChild(txt('div',bk.author,{style:{fontSize:'12px',color:'var(--muted)'}}));
+        row.appendChild(info);
+        const right=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px'}});
+        const readBtn=txt('button','Read',{className:'btn small primary'});
+        readBtn.onclick=()=>{if(window.khOpenBookReader)window.khOpenBookReader(bk);};
+        right.appendChild(readBtn);
+        const addBtn=txt('button','+ List',{className:'btn small'});
+        addBtn.onclick=()=>{
+          if(!S.books)S.books=[];
+          if(S.books.some(x=>x.gutenbergId===bk.id)){toast('Already in your library.');return;}
+          S.books.unshift({id:Date.now(),title:bk.title,author:bk.author||'',gutenbergId:bk.id,status:'to-read',added:new Date().toISOString()});
+          saveNow();renderBooks();updateStatBar();refreshNoteBookList();
+          addBtn.textContent='Added';addBtn.disabled=true;
+        };
+        right.appendChild(addBtn);
+        row.appendChild(right);
+        flResults.appendChild(row);
+      });
+    }).catch(()=>{
+      flResults.innerHTML='';
+      flResults.appendChild(txt('div','Search failed — the network or proxy may be unavailable. Please try again.',{style:{color:'var(--danger)',fontSize:'12px',padding:'6px 0'}}));
+    });
+  }
+  flGo.onclick=()=>runFreeLib(flQ.value);
+  flQ.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runFreeLib(flQ.value);}});
+  g.appendChild(flCard);
+
   /* ── Add Book ── */
   const c1=el('div',{className:'card'});
   c1.appendChild(txt('h2','Add Book'));
@@ -32351,6 +32816,8 @@ reading:()=>{
 
   /* Hook into renderBooks to also update stat bar */
   const origRender=window._origRenderBooks||renderBooks;
+  /* Lets the Free Library reader refresh this view's list+stats on close. */
+  window._khReadingRefresh=()=>{try{renderBooks();}catch(e){}try{updateStatBar();}catch(e){}try{refreshNoteBookList();}catch(e){}};
   ON_SHOW.reading=()=>{renderBooks();updateStatBar();refreshNoteBookList();renderDeckList();};
   updateStatBar();
   renderDeckList();
@@ -36393,6 +36860,20 @@ Deno.serve(async (req)=>{
         const _m=/Username:\s*"([^"]*)"/.exec(item.text||'');
         const _banName=_m?_m[1]:'';
         if(_banName){
+          /* Lighter option than a ban: warn the reported user instead, then
+             clear the report. Shown right alongside Approve & ban so the admin
+             can choose the proportionate response to a ban request. */
+          const warnBtn=txt('button','⚠ Warn instead',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+          warnBtn.onclick=async()=>{
+            warnBtn.disabled=true;
+            const ok=await _khWarnUsername(_banName);
+            if(ok){
+              if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
+              toast('Warned “'+_banName+'” and marked the report done.',3000);
+              renderItems();
+            } else { warnBtn.disabled=false; }
+          };
+          actRow.appendChild(warnBtn);
           const banBtn=txt('button','Approve & ban "'+_banName.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
             if(!await kindleConfirm('Ban the username "'+_banName+'"? They will no longer be able to sign in or post, and the name will show as [removed] in chat. This approves the report.'))return;
@@ -38039,7 +38520,7 @@ starmap:()=>{
           list.appendChild(card);
         });
       }
-      search.oninput=()=>paint(search.value);
+      search.oninput=khDebounce(()=>paint(search.value),200);
       paint('');
     }
 
@@ -39835,7 +40316,9 @@ sheets:()=>{
   v.appendChild(findBar);
   let _findHits=[],_findIdx=-1;
   function _clearMatches(){_findHits=[];_findIdx=-1;tbody.querySelectorAll('td.sh-match').forEach(t=>t.classList.remove('sh-match'));}
-  findInp.oninput=()=>{
+  /* Debounced — this scans every cell (rows×cols) on each keystroke, which
+     lagged typing in the Find box on large sheets. */
+  findInp.oninput=khDebounce(()=>{
     _clearMatches();
     const q=findInp.value.toLowerCase();
     if(!q)return;
@@ -39846,7 +40329,7 @@ sheets:()=>{
     }
     _findHits.forEach(h=>{const tr=tbody.children[h.r];if(tr){const td=tr.children[h.c+1];if(td)td.classList.add('sh-match');}});
     if(_findHits.length){_findIdx=0;_selectCell(_findHits[0].r,_findHits[0].c);}
-  };
+  },180);
   findNext.onclick=()=>{
     if(!_findHits.length)return;
     _findIdx=(_findIdx+1)%_findHits.length;
@@ -40607,7 +41090,9 @@ rss:()=>{
   /* Search row */
   const searchRow=el('div',{className:'rss-search'});
   const searchIn=el('input',{type:'text',placeholder:'Search headlines...'});
-  searchIn.oninput=()=>{searchQuery=searchIn.value.toLowerCase().trim();renderContent();};
+  /* Debounced — re-rendering the whole headline list on every keystroke
+     was laggy typing on e-ink (the single biggest such cost per CLAUDE.md). */
+  searchIn.oninput=khDebounce(()=>{searchQuery=searchIn.value.toLowerCase().trim();renderContent();},200);
   const refreshAllBtn=txt('button','Refresh',{className:'btn small',style:{flexShrink:'0',fontSize:'11px'}});
   refreshAllBtn.onclick=()=>{
     refreshAllBtn.textContent='...';refreshAllBtn.disabled=true;
@@ -44917,16 +45402,18 @@ worldclock:()=>{
     addRow.appendChild(labelInp);addRow.appendChild(tzSel);addRow.appendChild(addBtn);v.appendChild(addRow);
     const grid=el('div',{id:'clock-grid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:'8px'}});
     v.appendChild(grid);
+    let _clockEls=[];
     function renderClocks(){
-      const g=document.getElementById('clock-grid');if(!g)return;
-      g.innerHTML='';
+      const g=grid;if(!g)return;/* use the in-scope ref: works while detached during build, so no 1s empty-grid flash on entry */
+      g.innerHTML='';_clockEls=[];
       zones.forEach((z,i)=>{
         const isHome=z.home===true;
         const card=el('div',{style:'background:var(--card);border:'+(isHome?'2px solid var(--fg)':'var(--thin)')+';border-radius:10px;padding:12px;text-align:center;box-shadow:var(--shadow);position:relative;'+(isHome?'padding-top:20px;':'')});
         if(isHome)card.appendChild(txt('div','HOME',{style:{position:'absolute',top:'4px',left:'8px',fontSize:'8px',fontWeight:'900',letterSpacing:'1px',color:'var(--muted)',textTransform:'uppercase'}}));
         card.appendChild(txt('div',z.label,{style:{fontSize:'12px',fontWeight:'700',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:'4px'}}));
-        card.appendChild(txt('div',fmtTime(z.tz),{style:{fontSize:'24px',fontWeight:'900',fontFamily:'monospace',letterSpacing:'2px'}}));
-        card.appendChild(txt('div',fmtDate(z.tz),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
+        const timeEl=txt('div',fmtTime(z.tz),{style:{fontSize:'24px',fontWeight:'900',fontFamily:'monospace',letterSpacing:'2px'}});card.appendChild(timeEl);
+        const dateEl=txt('div',fmtDate(z.tz),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}});card.appendChild(dateEl);
+        _clockEls.push({timeEl:timeEl,dateEl:dateEl,tz:z.tz});
         if(!isHome){
           const del=txt('button','X',{style:{position:'absolute',top:'6px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)',padding:'2px 4px'}});
           del.onclick=()=>{zones.splice(i,1);saveZones(zones);render();};
@@ -44935,9 +45422,20 @@ worldclock:()=>{
         g.appendChild(card);
       });
     }
+    /* Per-second tick updates ONLY the time/date text on existing cards
+       (guarded) instead of tearing down and rebuilding the whole grid
+       every second — that full innerHTML rebuild was a per-second e-ink
+       flash and the heaviest idle cost in this view. */
+    function tickClocks(){
+      for(let i=0;i<_clockEls.length;i++){
+        const c=_clockEls[i];
+        const t=fmtTime(c.tz);if(c.timeEl.textContent!==t)c.timeEl.textContent=t;
+        const d=fmtDate(c.tz);if(c.dateEl.textContent!==d)c.dateEl.textContent=d;
+      }
+    }
     renderClocks();
     if(interval)clearInterval(interval);
-    interval=setInterval(()=>{if(document.hidden)return;renderClocks();},1000);
+    interval=setInterval(()=>{if(document.hidden)return;tickClocks();},1000);
     const mo=new MutationObserver(()=>{if(!document.contains(v)){clearInterval(interval);}});
     mo.observe(document.body,{childList:true,subtree:true});
   }
@@ -49853,6 +50351,16 @@ messages:()=>{
          queue — you ARE the moderator). */
       const _nm=msg.displayName||'';
       if(_nm){
+        /* Warn — a lighter action than a ban: sends a private warning notice
+           instead of removing the account. */
+        const warnBtn=txt('button','⚠ Warn',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+        warnBtn.onclick=async()=>{
+          warnBtn.disabled=true;
+          const ok=await _khWarnUsername(_nm);
+          warnBtn.disabled=false;
+          if(ok)ov.remove();
+        };
+        btnBar.append(warnBtn);
         const banBtn=txt('button','Ban username',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
         banBtn.onclick=async()=>{
           if(!await kindleConfirm('Ban "'+_nm+'"? They can no longer sign in or post, and the name shows as [removed] in chat.'))return;
@@ -53072,7 +53580,8 @@ window._showWelcome=function(){
           const m=String(d.getMinutes()).padStart(2,'0');
           const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
           const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          nowDisp.textContent=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()]+'  '+h+':'+m;
+          const _disp=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()]+'  '+h+':'+m;
+          if(nowDisp.textContent!==_disp)nowDisp.textContent=_disp;/* guard: HH:MM changes once/min, not every tick */
         }
         _refreshDisp();
         const _iv2=setInterval(()=>{if(document.hidden)return;_refreshDisp();},1000);
