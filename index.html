@@ -288,6 +288,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .tetris-wrap{display:flex;gap:10px;justify-content:center;align-items:flex-start;flex-wrap:wrap;margin-top:4px}
 .tetris-side{display:flex;flex-direction:column;gap:8px;align-items:center;min-width:80px}
 .tetris-info{font-family:monospace;font-size:14px;font-weight:700;text-align:center;line-height:1.8}
+.kh-arcade{font-family:"Courier New",Courier,monospace;text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
 .tetris-dpad{display:grid;grid-template-columns:repeat(3,60px);grid-template-rows:repeat(2,60px);gap:8px;margin-top:10px}
 .tetris-dpad .btn{width:60px;height:60px;padding:0;font-size:24px;display:flex;align-items:center;justify-content:center}
 .g2048-board{display:grid;grid-template-columns:repeat(4,70px);gap:6px;background:var(--highlight);padding:8px;border-radius:12px;width:312px;margin:6px auto;border:var(--border);box-shadow:var(--shadow);}
@@ -11366,6 +11367,8 @@ const appNode=$('app');
    polish lift across the whole Arcade). */
 const GAME_HELP={
   digquest:{name:'Deep Dig',how:'A dig-and-smash story platformer over SIX chapters. ◄ ► move, JUMP leaps (grab a Spring-cap for a double-jump), DIG smashes the earth you face, DIG▼ digs straight down (keyboard: arrows/WASD, Space, Z). Tunnel for crystals, coins and gate-stones; a drilling-charm breaks solid stone and a ward-shield keeps you safe for a while; STOMP the crawling grubs from above (touch one and it bites). Touch a checkpoint flag and you respawn there. Bank crystals to buy permanent upgrades between runs. Clear each exit, then stomp the Gravecrawler boss three times to free the Heartspring. Toggle E-ink mode for fewer, chunkier frames.'},
+  platformer:{name:'Pixel Quest',how:'A classic run-and-jump adventure across SIX hand-built worlds. ◄ ► run, JUMP leaps — hold JUMP for a higher jump (keyboard: arrows/WASD to move, Space/Up/W/Z to jump). Collect coins (10) and gems (50), STOMP goombas from above (+100) but never touch them from the side, and steer clear of spikes and pits. Raise the flag at the end of each level before the timer runs out for a big time bonus. You have 3 lives. Toggle E-ink mode for fewer, chunkier frames.'},
+  dungeon3d:{name:'Dungeon 3D',how:'A true first-person 3D dungeon crawl rendered with ray casting — descend FOUR catacomb floors. ↺ ↻ turn, ▲ forward, ▼ back (keyboard: arrows/WASD, Q/E strafe, M toggles the map). Grab the gold (+10 each) for score, find the KEY, then reach the glowing EXIT stairs to descend. Wandering wraiths drain your health on contact — keep your distance; lose all 5 hearts and it is over. The corner mini-map shows walls, the key and the exit. Toggle E-ink mode for fewer, chunkier frames.'},
   hanoi:{name:'Tower of Hanoi',how:'Move the whole stack of disks from the left peg to the right peg. Tap a peg to lift its top disk, then tap another peg to drop it. You can never place a bigger disk on a smaller one. Fewer moves is better — the minimum is 2ⁿ−1 for n disks. Choose 3 to 7 disks.'},
   blackjack:{name:'Blackjack',how:'Get closer to 21 than the dealer without going over. Hit for another card, Stand to hold. Face cards are 10; an Ace counts as 1 or 11. The dealer draws to 17. A two-card 21 (Blackjack) pays 3:2. Adjust your bet, then Deal — build the biggest chip stack you can.'},
   crazy8:{name:'Crazy Eights',how:'An Uno-style card game — play the computer or a friend online. Empty your hand first. Play a card that matches the discard by COLOUR (shown by the letter R/Y/G/B and the coloured border) or by NUMBER/symbol. Action cards: Skip and Reverse skip the other player, Draw Two makes them draw 2 and miss a turn. Wild lets you pick the colour; Wild Draw Four also makes them draw 4. Can’t play? Tap the deck to Draw, then play it or Pass. From the start menu choose “Play vs Computer” or “Play Online — 2 players”; online, the host runs the game so each player only ever sees their own hand, and there’s a chat panel to talk.'},
@@ -11951,6 +11954,925 @@ const DigQuest=(function(){
   return{start:start,stop:stop};
 })();
 
+/* ════════════════════════════════════════════════════════════════════
+   RETRO "ELECTRONIC" BITMAP FONT — shared by Pixel Quest & Dungeon 3D.
+   A self-contained 5x7 pixel font (no network, no font file) so every
+   banner/title reads like a classic arcade cabinet. Draw with
+   _khPixelText(ctx,str,x,y,scale,color,align).
+   ════════════════════════════════════════════════════════════════════ */
+const _KH_PIXFONT=(function(){
+  return {
+    ' ':['00000','00000','00000','00000','00000','00000','00000'],
+    '0':['01110','10001','10011','10101','11001','10001','01110'],
+    '1':['00100','01100','00100','00100','00100','00100','01110'],
+    '2':['01110','10001','00001','00010','00100','01000','11111'],
+    '3':['11111','00010','00100','00010','00001','10001','01110'],
+    '4':['00010','00110','01010','10010','11111','00010','00010'],
+    '5':['11111','10000','11110','00001','00001','10001','01110'],
+    '6':['00110','01000','10000','11110','10001','10001','01110'],
+    '7':['11111','00001','00010','00100','01000','01000','01000'],
+    '8':['01110','10001','10001','01110','10001','10001','01110'],
+    '9':['01110','10001','10001','01111','00001','00010','01100'],
+    'A':['01110','10001','10001','11111','10001','10001','10001'],
+    'B':['11110','10001','10001','11110','10001','10001','11110'],
+    'C':['01110','10001','10000','10000','10000','10001','01110'],
+    'D':['11110','10001','10001','10001','10001','10001','11110'],
+    'E':['11111','10000','10000','11110','10000','10000','11111'],
+    'F':['11111','10000','10000','11110','10000','10000','10000'],
+    'G':['01110','10001','10000','10111','10001','10001','01111'],
+    'H':['10001','10001','10001','11111','10001','10001','10001'],
+    'I':['01110','00100','00100','00100','00100','00100','01110'],
+    'J':['00111','00010','00010','00010','00010','10010','01100'],
+    'K':['10001','10010','10100','11000','10100','10010','10001'],
+    'L':['10000','10000','10000','10000','10000','10000','11111'],
+    'M':['10001','11011','10101','10101','10001','10001','10001'],
+    'N':['10001','10001','11001','10101','10011','10001','10001'],
+    'O':['01110','10001','10001','10001','10001','10001','01110'],
+    'P':['11110','10001','10001','11110','10000','10000','10000'],
+    'Q':['01110','10001','10001','10001','10101','10010','01101'],
+    'R':['11110','10001','10001','11110','10100','10010','10001'],
+    'S':['01111','10000','10000','01110','00001','00001','11110'],
+    'T':['11111','00100','00100','00100','00100','00100','00100'],
+    'U':['10001','10001','10001','10001','10001','10001','01110'],
+    'V':['10001','10001','10001','10001','10001','01010','00100'],
+    'W':['10001','10001','10001','10101','10101','11011','10001'],
+    'X':['10001','10001','01010','00100','01010','10001','10001'],
+    'Y':['10001','10001','01010','00100','00100','00100','00100'],
+    'Z':['11111','00001','00010','00100','01000','10000','11111'],
+    '!':['00100','00100','00100','00100','00100','00000','00100'],
+    '?':['01110','10001','00001','00010','00100','00000','00100'],
+    '.':['00000','00000','00000','00000','00000','00110','00110'],
+    ',':['00000','00000','00000','00000','00110','00100','01000'],
+    ':':['00000','00110','00110','00000','00110','00110','00000'],
+    '-':['00000','00000','00000','11111','00000','00000','00000'],
+    '+':['00000','00100','00100','11111','00100','00100','00000'],
+    '/':['00001','00010','00010','00100','01000','01000','10000'],
+    '\'':['00100','00100','00100','00000','00000','00000','00000'],
+    '*':['00000','10101','01110','11111','01110','10101','00000']
+  };
+})();
+function _khPixelText(ctx,str,x,y,scale,color,align){
+  scale=scale||2;color=color||'#000';align=align||'left';
+  str=String(str).toUpperCase();
+  const cw=6*scale;
+  const totalW=str.length*cw-scale;
+  let sx=x;
+  if(align==='center')sx=x-totalW/2;else if(align==='right')sx=x-totalW;
+  ctx.fillStyle=color;
+  for(let i=0;i<str.length;i++){
+    const g=_KH_PIXFONT[str[i]]||_KH_PIXFONT[' '];
+    const gx=sx+i*cw;
+    for(let r=0;r<7;r++){
+      const row=g[r];
+      for(let c=0;c<5;c++){
+        if(row.charCodeAt(c)===49)ctx.fillRect(Math.round(gx+c*scale),Math.round(y+r*scale),scale,scale);
+      }
+    }
+  }
+  return totalW;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PIXEL QUEST — a clean, Mario-style adventure platformer (original).
+   Run, jump and stomp across six hand-built worlds; collect coins and
+   gems, dodge spikes and pits, squash the goombas and raise the flag at
+   the end of each level. Lives, a countdown timer and a banked best
+   score. Fixed-timestep physics; render capped so e-ink keeps up.
+   ════════════════════════════════════════════════════════════════════ */
+const Platformer=(function(){
+  'use strict';
+  const TILE=16,VW=20,VH=12,CW=VW*TILE,CH=VH*TILE;
+  const PW=11,PH=14;
+  const GRAV=1500,MOVE=128,ACCEL=900,FRICT=1300,JUMP=372,MAXFALL=520;
+  const ESPEED=42,EW=13,EH=13;
+
+  /* Tile legend: '#' ground  'B' brick  'o' coin  '*' gem  '^' spike
+     'E' enemy  'F' flag/goal  'P' start  ' ' sky. Ground-standing
+     entities (P/E/^/F) sit on row 10; row 11 is the ground line. */
+  const LEVELS=[
+    {name:'MEADOW MORN',time:240,rows:[
+      "                                                            ",
+      "                          ***                               ",
+      "             o           BBBBB           o                  ",
+      "            BBB                          BBB                 ",
+      "                    o        o                               ",
+      "        oo         BBB      BBB        oo          o         ",
+      "       BBBB                            BBBB       BBB        ",
+      "                 o                                           ",
+      "                BBB        o     o                  o        ",
+      "                         BBB   BBB                BBB        ",
+      "  P      o      E      ^^          E       o            F    ",
+      "############################################################"
+    ]},
+    {name:'BRIDGE OF GAPS',time:240,rows:[
+      "                                                                ",
+      "                   ***            o   o                          ",
+      "          o       BBBBB          BBB BBB         ***             ",
+      "         BBB                                    BBBBB            ",
+      "                       o     o                                   ",
+      "     oo              BBB   BBB              o        o           ",
+      "    BBBB                                  BBB      BBB           ",
+      "                 o              o                                ",
+      "              BBBB            BBBBBB           o     o    o       ",
+      "                                            BBB   BBB  BBB       ",
+      "  P     o     E       o        E      o    ^^         F          ",
+      "##############   ############   ##############   ###############"
+    ]},
+    {name:'CRYSTAL CLIMB',time:260,rows:[
+      "                                                              ",
+      "                                              ***   o          ",
+      "                          o              o   BBBBB BBB         ",
+      "             ***         BBB    o   o    BBB                   ",
+      "            BBBBB              BBB BBB              o           ",
+      "                    o                            BBB           ",
+      "       o   o       BBB      ^^        o    o                   ",
+      "      BBB BBB                        BBB  BBB           o       ",
+      "                 o     E                           o  BBB      ",
+      "                BBB                  o   o        BBB          ",
+      "  P    E      ^^      o      E      ^^       E          F       ",
+      "#######   ##################   ###################   ##########"
+    ]},
+    {name:'SPIKE HOLLOW',time:260,rows:[
+      "                                                                ",
+      "        o o o                            ***                     ",
+      "       BBBBBBB        o   o   o          BBBBB        o o          ",
+      "                     BBB BBB BBB                     BBBBB         ",
+      "             ***                  o                               ",
+      "            BBBBB      o         BBB        o   o                 ",
+      "                     BBB                   BBB BBB      o          ",
+      "    o   o                    ^^^                       BBB         ",
+      "   BBB BBB      E                       E       o                 ",
+      "                            o   o             BBB        o        ",
+      "  P    ^^    E     ^^^    BBBBBBB     ^^    E      ^^^       F      ",
+      "########   ####   #########   #########   ####   ###############"
+    ]},
+    {name:'SKY FORTRESS',time:280,rows:[
+      "                                                                  ",
+      "   ***        o o        ***          o o o        ***             ",
+      "  BBBBB      BBBBB       BBBBB        BBBBBBB       BBBBB            ",
+      "                  o                              o                  ",
+      "        o o      BBB     E      o o      E       BBB     o o         ",
+      "       BBBBB            ^^     BBBBB            ^^      BBBBB         ",
+      "                  o                       o                         ",
+      "    E      o     BBB    o o      E       BBB     o o      E          ",
+      "          BBB          BBBBB            ^^      BBBBB                ",
+      "   o o                            o o                     o o        ",
+      "  P  ^^   E    ^^^    E    ^^^   BBB   ^^^    E   ^^^    E       F    ",
+      "#####   ####   ####   ####   ####   ####   ####   ####   ##########"
+    ]},
+    {name:'CASTLE OF THE CROWN',time:300,rows:[
+      "                                                                    ",
+      "          ***              o o o              ***                     ",
+      "         BBBBB            BBBBBBB            BBBBB          o o         ",
+      "                  o                  o                    BBBBB        ",
+      "      o o        BBB    E       E    BBB      o o    E                 ",
+      "     BBBBB             ^^^     ^^^          BBBBB          o o         ",
+      "               o                                  o      BBBBB        ",
+      "   E      o   BBB    o o   E   o o   E   o o     BBB    E              ",
+      "         BBB        BBBBB     BBBBB     BBBBB          ^^^             ",
+      "  o o                  o             o                      o o        ",
+      " P  ^^  E   ^^^   E   ^^^  E   ^^^   E   ^^^  E   ^^^   E   ^^^    F    ",
+      "####   ###   ###   ###   ###   ###   ###   ###   ###   ###   #########"
+    ]}
+  ];
+
+  let cv,ctx,host,hud,wrap,overlay;
+  let running=false,raf=null,mode='title';
+  let lvlIdx=0,W=0,worldW=0;
+  let grid=[];
+  let player={x:0,y:0,vx:0,vy:0,onGround:false,facing:1,hurt:0,blink:0};
+  let startX=0,startY=0,flagX=0;
+  let enemies=[],coins=[],spikes=[];
+  let score=0,coinCount=0,lives=3,timeLeft=0,levelScore=0;
+  let camX=0,anim=0;
+  let input={left:false,right:false,jump:false},jumpQueued=false,jumpHeld=false,jumpCut=false;
+  let coyote=0,jumpBuf=0;
+  let last=0,acc=0,lastRender=0,renderEveryMs=33;
+
+  function gd(){S.games=S.games||{};S.games.platformer=S.games.platformer||{};const d=S.games.platformer;if(typeof d.best!=='number')d.best=0;return d;}
+  function solid(c){return c==='#'||c==='B';}
+  function tileAt(col,row){if(row<0||row>=VH||col<0||col>=W)return ' ';return grid[row][col];}
+  function solidAt(px,py){return solid(tileAt(Math.floor(px/TILE),Math.floor(py/TILE)));}
+  function hitsSolid(x,y,w,h){
+    const x0=Math.floor(x/TILE),x1=Math.floor((x+w-1)/TILE),y0=Math.floor(y/TILE),y1=Math.floor((y+h-1)/TILE);
+    for(let r=y0;r<=y1;r++)for(let c=x0;c<=x1;c++)if(solid(tileAt(c,r)))return true;
+    return false;
+  }
+  function overlap(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;}
+
+  function loadLevel(i){
+    const L=LEVELS[i];
+    W=0;L.rows.forEach(r=>{if(r.length>W)W=r.length;});
+    grid=L.rows.map(r=>{r=r.replace(/[PEoF^*]/g,' ');while(r.length<W)r+=' ';return r;});
+    worldW=W*TILE;
+    enemies=[];coins=[];spikes=[];flagX=worldW-TILE*2;
+    for(let row=0;row<L.rows.length&&row<VH;row++){
+      const line=L.rows[row];
+      for(let col=0;col<line.length;col++){
+        const ch=line[col];
+        const px=col*TILE,py=row*TILE;
+        if(ch==='P'){startX=px+(TILE-PW)/2;startY=py+(TILE-PH);}
+        else if(ch==='E')enemies.push({x:px+(TILE-EW)/2,y:py+(TILE-EH),dir:Math.random()<0.5?-1:1,alive:true});
+        else if(ch==='o')coins.push({x:px+4,y:py+4,gem:false,got:false});
+        else if(ch==='*')coins.push({x:px+3,y:py+3,gem:true,got:false});
+        else if(ch==='^')spikes.push({x:px+2,y:py+TILE-7,w:TILE-4,h:7});
+        else if(ch==='F')flagX=px+4;
+      }
+    }
+    timeLeft=L.time;
+    player.x=startX;player.y=startY;player.vx=0;player.vy=0;player.onGround=false;player.facing=1;player.hurt=0;player.blink=0;
+    camX=0;coyote=0;jumpBuf=0;jumpCut=false;
+  }
+
+  function hurtPlayer(){
+    if(player.hurt>0)return;
+    lives--;
+    if(lives<=0){gameOver();return;}
+    flashBanner('OUCH!  '+lives+' LEFT');
+    loadLevel(lvlIdx);
+    player.hurt=1.2;
+  }
+  function gameOver(){
+    mode='over';
+    const d=gd();if(score>d.best)d.best=score;if(typeof save==='function')save();
+    try{if(typeof _khSubmitScore==='function')_khSubmitScore('platformer',score);}catch(_){}
+    drawOverlay('GAME OVER','Score '+score+'  -  Best '+gd().best,'Play Again',start);
+  }
+  function levelClear(){
+    mode='clear';
+    const bonus=Math.max(0,Math.floor(timeLeft))*2+200;
+    score+=bonus;levelScore=bonus;
+    const d=gd();if(score>d.best)d.best=score;if(typeof save==='function')save();
+    if(lvlIdx>=LEVELS.length-1){
+      try{if(typeof _khSubmitScore==='function')_khSubmitScore('platformer',score);}catch(_){}
+      drawOverlay('YOU WIN!','Kingdom saved!  Score '+score,'Play Again',start);
+    }else{
+      drawOverlay('LEVEL CLEAR','+'+bonus+' bonus  -  Score '+score,'Next World',function(){lvlIdx++;beginLevel();});
+    }
+  }
+
+  let bannerText='',bannerT=0;
+  function flashBanner(t){bannerText=t;bannerT=1.6;}
+
+  function step(dt){
+    if(mode!=='play')return;
+    anim+=dt;
+    if(player.hurt>0)player.hurt-=dt;
+    player.blink+=dt*12;
+    timeLeft-=dt;
+    if(timeLeft<=0){timeLeft=0;hurtPlayer();return;}
+
+    /* horizontal */
+    let dir=0;if(input.left)dir-=1;if(input.right)dir+=1;
+    if(dir!==0){player.vx+=dir*ACCEL*dt;player.facing=dir;if(player.vx>MOVE)player.vx=MOVE;if(player.vx<-MOVE)player.vx=-MOVE;}
+    else{if(player.vx>0){player.vx-=FRICT*dt;if(player.vx<0)player.vx=0;}else if(player.vx<0){player.vx+=FRICT*dt;if(player.vx>0)player.vx=0;}}
+    let nx=player.x+player.vx*dt;
+    if(nx<0)nx=0;if(nx>worldW-PW)nx=worldW-PW;
+    if(hitsSolid(nx,player.y,PW,PH)){
+      if(player.vx>0)nx=Math.floor((nx+PW)/TILE)*TILE-PW-0.01;
+      else if(player.vx<0)nx=(Math.floor(nx/TILE)+1)*TILE+0.01;
+      player.vx=0;
+    }
+    player.x=nx;
+
+    /* jump (coyote + buffer + variable height) */
+    if(player.onGround)coyote=0.09;else if(coyote>0)coyote-=dt;
+    if(jumpQueued){jumpBuf=0.12;jumpQueued=false;}
+    if(jumpBuf>0)jumpBuf-=dt;
+    if(jumpBuf>0&&coyote>0){player.vy=-JUMP;player.onGround=false;coyote=0;jumpBuf=0;jumpCut=false;}
+    if(!jumpHeld&&!jumpCut&&player.vy<0){player.vy*=0.45;jumpCut=true;}
+
+    /* gravity + vertical */
+    player.vy+=GRAV*dt;if(player.vy>MAXFALL)player.vy=MAXFALL;
+    let ny=player.y+player.vy*dt;
+    const wasFalling=player.vy>0;
+    player.onGround=false;
+    if(hitsSolid(player.x,ny,PW,PH)){
+      if(player.vy>0){ny=Math.floor((ny+PH)/TILE)*TILE-PH-0.01;player.onGround=true;jumpCut=false;}
+      else if(player.vy<0)ny=(Math.floor(ny/TILE)+1)*TILE+0.01;
+      player.vy=0;
+    }
+    player.y=ny;
+
+    if(player.y>CH+40){hurtPlayer();return;}
+
+    /* coins */
+    for(const c of coins){
+      if(c.got)continue;
+      const s=c.gem?10:8;
+      if(overlap(player.x,player.y,PW,PH,c.x,c.y,s,s)){c.got=true;if(c.gem){score+=50;}else{score+=10;coinCount++;}}
+    }
+    /* spikes */
+    for(const sp of spikes){
+      if(overlap(player.x+1,player.y+1,PW-2,PH-1,sp.x,sp.y,sp.w,sp.h)){hurtPlayer();return;}
+    }
+    /* enemies */
+    for(const e of enemies){
+      if(!e.alive)continue;
+      e.x+=e.dir*ESPEED*dt;
+      /* wall / ledge turn */
+      const front=e.dir>0?e.x+EW:e.x-1;
+      const footRow=Math.floor((e.y+EH+1)/TILE);
+      if(solid(tileAt(Math.floor(front/TILE),Math.floor((e.y+EH-2)/TILE)))||!solid(tileAt(Math.floor(front/TILE),footRow))){
+        e.dir*=-1;e.x+=e.dir*2;
+      }
+      if(e.x<0){e.x=0;e.dir=1;}if(e.x>worldW-EW){e.x=worldW-EW;e.dir=-1;}
+      if(player.hurt>0)continue;
+      if(overlap(player.x,player.y,PW,PH,e.x,e.y,EW,EH)){
+        if(wasFalling&&player.y+PH-e.y<10){e.alive=false;player.vy=-260;jumpCut=true;score+=100;flashBanner('STOMP +100');}
+        else{hurtPlayer();return;}
+      }
+    }
+
+    /* flag */
+    if(player.x+PW/2>=flagX){levelClear();return;}
+
+    if(bannerT>0)bannerT-=dt;
+
+    camX=player.x+PW/2-CW/2;
+    if(camX<0)camX=0;if(camX>worldW-CW)camX=worldW-CW;if(worldW<CW)camX=0;
+    updateHud();
+  }
+
+  function updateHud(){
+    if(!hud)return;
+    const t='STAGE '+(lvlIdx+1)+'/'+(LEVELS.length)+'   SCORE '+score+'   COINS '+coinCount+'   LIVES '+lives+'   TIME '+Math.ceil(timeLeft);
+    if(hud.textContent!==t)hud.textContent=t;
+  }
+
+  /* ── rendering ── */
+  function render(){
+    if(!ctx)return;
+    ctx.fillStyle='#e8eef3';ctx.fillRect(0,0,CW,CH);
+    /* distant hills band */
+    ctx.fillStyle='#d2dae1';
+    for(let i=0;i<6;i++){const hx=((i*120-(camX*0.4))%(CW+160))-80;ctx.beginPath();ctx.arc(hx+60,CH-12,70,Math.PI,0);ctx.fill();}
+    const c0=Math.floor(camX/TILE)-1,c1=c0+VW+2;
+    for(let row=0;row<VH;row++){
+      for(let col=c0;col<=c1;col++){
+        const ch=tileAt(col,row);if(ch===' ')continue;
+        const x=col*TILE-camX,y=row*TILE;
+        if(ch==='#'){ctx.fillStyle='#4a4f57';ctx.fillRect(x,y,TILE,TILE);ctx.fillStyle='#6b7178';ctx.fillRect(x,y,TILE,3);}
+        else if(ch==='B'){ctx.fillStyle='#7c828b';ctx.fillRect(x,y,TILE,TILE);ctx.fillStyle='#5b616a';ctx.fillRect(x,y+TILE-2,TILE,2);ctx.fillRect(x+TILE-2,y,2,TILE);}
+      }
+    }
+    /* coins / gems */
+    for(const c of coins){
+      if(c.got)continue;const x=c.x-camX,y=c.y;if(x<-16||x>CW+16)continue;
+      if(c.gem){ctx.fillStyle='#1f6f8b';ctx.beginPath();ctx.moveTo(x+5,y);ctx.lineTo(x+10,y+5);ctx.lineTo(x+5,y+10);ctx.lineTo(x,y+5);ctx.closePath();ctx.fill();}
+      else{ctx.fillStyle='#b8860b';ctx.beginPath();ctx.arc(x+4,y+4,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#e8eef3';ctx.fillRect(x+3,y+2,1,4);}
+    }
+    /* spikes */
+    ctx.fillStyle='#22262c';
+    for(const sp of spikes){const x=sp.x-camX,y=sp.y;if(x<-16||x>CW+16)continue;const n=Math.round(sp.w/5);for(let i=0;i<n;i++){const tx=x+i*5;ctx.beginPath();ctx.moveTo(tx,y+sp.h);ctx.lineTo(tx+2.5,y);ctx.lineTo(tx+5,y+sp.h);ctx.closePath();ctx.fill();}}
+    /* flag */
+    {const fx=flagX-camX;if(fx>-20&&fx<CW+20){ctx.fillStyle='#33383f';ctx.fillRect(fx+3,16,2,CH-32-16);ctx.fillStyle='#2a2e34';ctx.beginPath();ctx.moveTo(fx+5,18);ctx.lineTo(fx+24,24);ctx.lineTo(fx+5,30);ctx.closePath();ctx.fill();ctx.fillStyle='#6b7178';ctx.fillRect(fx-4,CH-16-16,12,8);}}
+    /* enemies */
+    for(const e of enemies){
+      if(!e.alive)continue;const x=e.x-camX,y=e.y;if(x<-16||x>CW+16)continue;
+      ctx.fillStyle='#33383f';ctx.fillRect(x+1,y+3,EW-2,EH-3);ctx.fillRect(x+2,y+1,EW-4,3);
+      ctx.fillStyle='#e8eef3';ctx.fillRect(x+3,y+5,2,2);ctx.fillRect(x+EW-5,y+5,2,2);
+      ctx.fillStyle='#33383f';ctx.fillRect(x+1,y+EH-2,3,2);ctx.fillRect(x+EW-4,y+EH-2,3,2);
+    }
+    /* player */
+    if(!(player.hurt>0&&Math.floor(player.blink)%2)){
+      const x=player.x-camX,y=player.y;
+      ctx.fillStyle='#1a1d22';ctx.fillRect(x,y+5,PW,PH-7);/* body */
+      ctx.fillStyle='#2a2e34';ctx.fillRect(x+1,y,PW-2,6);/* head */
+      ctx.fillStyle='#e8eef3';ctx.fillRect(player.facing>0?x+PW-4:x+2,y+2,2,2);/* eye */
+      ctx.fillStyle='#1a1d22';ctx.fillRect(x,y+PH-2,4,2);ctx.fillRect(x+PW-4,y+PH-2,4,2);/* feet */
+    }
+    /* banner */
+    if(bannerT>0&&bannerText){_khPixelText(ctx,bannerText,CW/2,8,2,'#1a1d22','center');}
+  }
+
+  function drawOverlay(title,sub,btnLabel,btnFn){
+    if(!overlay)return;
+    overlay.innerHTML='';overlay.style.display='flex';
+    const oc=el('canvas',{width:CW,height:90});oc.style.cssText='width:100%;max-width:520px;image-rendering:pixelated;';
+    const octx=oc.getContext('2d');octx.fillStyle='rgba(232,238,243,0.0)';
+    _khPixelText(octx,title,CW/2,8,4,'#fff','center');
+    _khPixelText(octx,sub,CW/2,58,2,'#fff','center');
+    overlay.appendChild(oc);
+    const b=txt('button',btnLabel,{className:'btn primary kh-arcade',style:{marginTop:'12px',fontSize:'14px'}});
+    b.onclick=function(){overlay.style.display='none';btnFn();};
+    overlay.appendChild(b);
+    const back=txt('button','Quit to Arcade',{className:'btn small',style:{marginTop:'8px'}});
+    back.onclick=function(){if(typeof exitImmersive==='function')exitImmersive();};
+    overlay.appendChild(back);
+  }
+  function drawTitle(){
+    if(!overlay)return;
+    overlay.innerHTML='';overlay.style.display='flex';
+    const oc=el('canvas',{width:CW,height:80});oc.style.cssText='width:100%;max-width:520px;image-rendering:pixelated;';
+    const octx=oc.getContext('2d');
+    _khPixelText(octx,'PIXEL QUEST',CW/2,6,4,'#fff','center');
+    _khPixelText(octx,'AN ARCADE ADVENTURE',CW/2,52,2,'#fff','center');
+    overlay.appendChild(oc);
+    const b=txt('button','START',{className:'btn primary kh-arcade',style:{marginTop:'12px',fontSize:'16px',minWidth:'120px'}});
+    b.onclick=function(){overlay.style.display='none';beginLevel();};
+    overlay.appendChild(b);
+    overlay.appendChild(txt('div','Best score: '+gd().best,{className:'kh-arcade',style:{color:'#dfe6ec',fontSize:'12px',marginTop:'10px'}}));
+  }
+
+  function beginLevel(){
+    loadLevel(lvlIdx);
+    mode='play';
+    flashBanner(LEVELS[lvlIdx].name);
+    if(overlay)overlay.style.display='none';
+    updateHud();
+  }
+
+  /* ── input ── */
+  function onKey(e){
+    if(!running)return;const k=e.key;
+    if(k==='ArrowLeft'||k==='a'||k==='A'){input.left=true;e.preventDefault();}
+    else if(k==='ArrowRight'||k==='d'||k==='D'){input.right=true;e.preventDefault();}
+    else if(k==='ArrowUp'||k==='w'||k==='W'||k===' '||k==='z'||k==='Z'){if(!jumpHeld)jumpQueued=true;jumpHeld=true;e.preventDefault();}
+  }
+  function onKeyUp(e){
+    const k=e.key;
+    if(k==='ArrowLeft'||k==='a'||k==='A')input.left=false;
+    else if(k==='ArrowRight'||k==='d'||k==='D')input.right=false;
+    else if(k==='ArrowUp'||k==='w'||k==='W'||k===' '||k==='z'||k==='Z')jumpHeld=false;
+  }
+  function hold(b,dn,up){
+    b.addEventListener('touchstart',function(e){e.preventDefault();dn();},{passive:false});
+    b.addEventListener('touchend',function(e){e.preventDefault();if(up)up();},{passive:false});
+    b.addEventListener('touchcancel',function(){if(up)up();});
+    b.addEventListener('mousedown',function(e){e.preventDefault();dn();});b.addEventListener('mouseup',function(){if(up)up();});b.addEventListener('mouseleave',function(){if(up)up();});
+  }
+  function buildControls(){
+    const bar=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginTop:'10px',userSelect:'none'}});
+    function mk(label){return txt('button',label,{className:'btn kh-arcade',style:{fontSize:'18px',fontWeight:'800',minWidth:'58px',minHeight:'56px',padding:'0 10px',touchAction:'none'}});}
+    const lg=el('div',{style:{display:'flex',gap:'10px'}});const bL=mk('◄'),bR=mk('►');lg.append(bL,bR);
+    const bJ=mk('JUMP');bJ.style.minWidth='96px';
+    bar.append(lg,bJ);
+    hold(bL,function(){input.left=true;},function(){input.left=false;});
+    hold(bR,function(){input.right=true;},function(){input.right=false;});
+    hold(bJ,function(){jumpQueued=true;jumpHeld=true;},function(){jumpHeld=false;});
+    return bar;
+  }
+  function buildTools(){
+    const row=el('div',{style:{display:'flex',gap:'6px',justifyContent:'center',marginBottom:'6px',flexWrap:'wrap'}});
+    const ek=txt('button','',{className:'btn small'});
+    function lab(){ek.textContent='E-ink mode: '+(renderEveryMs>60?'On':'Off');}lab();
+    ek.onclick=function(){renderEveryMs=(renderEveryMs>60)?33:120;gd().chunky=(renderEveryMs>60);if(typeof save==='function')save();lab();};
+    const rs=txt('button','Restart level',{className:'btn small'});rs.onclick=function(){if(mode==='play'){loadLevel(lvlIdx);flashBanner(LEVELS[lvlIdx].name);}};
+    row.append(ek,rs);return row;
+  }
+  function build(){
+    enterImmersive('Pixel Quest','');
+    host=document.getElementById('immersiveContent');if(!host)return;
+    host.innerHTML='';
+    wrap=el('div',{style:{maxWidth:'640px',margin:'0 auto',padding:'8px'}});
+    hud=el('div',{className:'kh-arcade',style:{fontSize:'10px',fontWeight:'700',color:'var(--fg)',marginBottom:'6px',textAlign:'center',lineHeight:'1.5',letterSpacing:'1px'}});
+    cv=el('canvas',{width:CW,height:CH});ctx=cv.getContext('2d');
+    cv.style.cssText='display:block;width:100%;max-width:640px;margin:0 auto;border:2px solid var(--fg);border-radius:8px;background:#e8eef3;touch-action:none;image-rendering:pixelated;';
+    const canWrap=el('div',{style:{position:'relative'}});
+    canWrap.appendChild(cv);
+    overlay=el('div',{style:{position:'absolute',top:'0',right:'0',bottom:'0',left:'0',display:'none',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'14px',background:'rgba(16,20,28,0.82)',borderRadius:'8px',textAlign:'center'}});
+    canWrap.appendChild(overlay);
+    wrap.appendChild(hud);wrap.appendChild(buildTools());wrap.appendChild(canWrap);wrap.appendChild(buildControls());
+    host.appendChild(wrap);
+  }
+  function start(){
+    if(running)stop();
+    renderEveryMs=gd().chunky?120:33;
+    build();if(!cv)return;
+    running=true;mode='title';lvlIdx=0;score=0;coinCount=0;lives=3;
+    ctx.fillStyle='#e8eef3';ctx.fillRect(0,0,CW,CH);
+    document.addEventListener('keydown',onKey);document.addEventListener('keyup',onKeyUp);
+    const ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;
+    drawTitle();
+    last=0;lastRender=0;raf=requestAnimationFrame(loop);
+  }
+  function stop(){
+    running=false;
+    if(raf){cancelAnimationFrame(raf);raf=null;}
+    document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);
+    input={left:false,right:false,jump:false};jumpHeld=false;jumpQueued=false;
+  }
+  function loop(ts){
+    if(!running)return;
+    raf=requestAnimationFrame(loop);
+    if(!last)last=ts;let dt=(ts-last)/1000;last=ts;if(dt>0.1)dt=0.1;
+    if(mode==='play'){
+      acc+=dt;let n=0;while(acc>=1/120&&n<10){step(1/120);acc-=1/120;n++;}
+      if(ts-lastRender>=renderEveryMs){render();lastRender=ts;}
+    }
+  }
+  return{start:start,stop:stop};
+})();
+
+/* ════════════════════════════════════════════════════════════════════
+   DUNGEON 3D — a first-person raycaster dungeon crawler (original).
+   Genuine 3D rendering (Wolfenstein-style ray casting) tuned for e-ink:
+   low column count, flat distance-shaded walls, billboard sprites. Explore
+   four catacomb floors, grab the gold, find the key, reach the stairs —
+   and keep away from the wraiths that drain your life. Capped framerate.
+   ════════════════════════════════════════════════════════════════════ */
+const Dungeon3D=(function(){
+  'use strict';
+  const CW=240,CH=160,NR=80,COLW=CW/NR,FOV=Math.PI/3,T=Math.tan(FOV/2);
+  const MOVE=2.0,TURN=2.4,GSPEED=0.85,MAXH=5;
+
+  const MAPS=[
+    ["################",
+     "#P............G#",
+     "#.#.#.#.#.#.#..#",
+     "#..............#",
+     "#.#.#.#.#.#.#..#",
+     "#....K.........#",
+     "#.#.#.#.#.#.#..#",
+     "#......M.......#",
+     "#.#.#.#.#.#.#..#",
+     "#.G...........G#",
+     "#.#.#.#.#.#.#..#",
+     "#..............#",
+     "#.#.#.#.#.#.#..#",
+     "#............X.#",
+     "#..............#",
+     "################"],
+    ["################",
+     "#P...........M.#",
+     "#..#.#.#.#.#.#.#",
+     "#G............G#",
+     "#..#.#.#.#.#.#.#",
+     "#......K.......#",
+     "#..#.#.#.#.#.#.#",
+     "#.M...........M#",
+     "#..#.#.#.#.#.#.#",
+     "#G............G#",
+     "#..#.#.#.#.#.#.#",
+     "#......X.......#",
+     "#..#.#.#.#.#.#.#",
+     "#............G.#",
+     "#..............#",
+     "################"],
+    ["################",
+     "#P............G#",
+     "#.#.#.#.#.#.#..#",
+     "#..#.#.#.#.#.#.#",
+     "#......M.......#",
+     "#.#.#.#.#.#.#..#",
+     "#..#.#.#.#.#.#.#",
+     "#.G..........M#.",
+     "#.#.#.#.#.#.#..#",
+     "#..#.#.#.#.#.#.#",
+     "#......K.....M.#",
+     "#.#.#.#.#.#.#..#",
+     "#..#.#.#.#.#.#.#",
+     "#.G..........X.#",
+     "#..............#",
+     "################"],
+    ["################",
+     "#P..M.......G..#",
+     "#.#.#.#.#.#.#.#.",
+     "#..#.#.#.#.#.#.#",
+     "#.G....M.....G.#",
+     "#.#.#.#.#.#.#.#.",
+     "#..#.#.#.#.#.#.#",
+     "#......K....M..#",
+     "#.#.#.#.#.#.#.#.",
+     "#..#.#.#.#.#.#.#",
+     "#.M....G....M..#",
+     "#.#.#.#.#.#.#.#.",
+     "#..#.#.#.#.#.#.#",
+     "#.G.........X..#",
+     "#..M.......G...#",
+     "################"]
+  ];
+
+  let cv,ctx,host,hud,wrap,overlay,mini;
+  let running=false,raf=null,mode='title';
+  let map=[],MW=16,MH=16;
+  let px=2,py=2,ang=0;
+  let gold=[],ghosts=[],keyPos=null,exitPos=null,hasKey=false;
+  let score=0,health=5,depth=0,inv=0;
+  let zbuf=new Array(NR);
+  let input={fwd:false,back:false,left:false,right:false,sl:false,sr:false};
+  let showMap=true;
+  let last=0,lastRender=0,renderEveryMs=33;
+
+  function gd(){S.games=S.games||{};S.games.dungeon3d=S.games.dungeon3d||{};const d=S.games.dungeon3d;if(typeof d.best!=='number')d.best=0;return d;}
+  function isWall(x,y){const cx=Math.floor(x),cy=Math.floor(y);if(cy<0||cy>=MH||cx<0||cx>=MW)return true;return map[cy].charAt(cx)==='#';}
+
+  function loadFloor(i){
+    const raw=MAPS[i].slice();
+    let w=0;raw.forEach(r=>{if(r.length>w)w=r.length;});
+    MW=w;MH=raw.length;
+    map=raw.map((r,ri)=>{while(r.length<w)r+='#';r=r.split('');r[0]='#';r[w-1]='#';if(ri===0||ri===raw.length-1)for(let c=0;c<w;c++)r[c]='#';return r.join('');});
+    gold=[];ghosts=[];keyPos=null;exitPos=null;hasKey=false;
+    let start=null;
+    for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+      const ch=map[y].charAt(x),cx=x+0.5,cy=y+0.5;
+      if(ch==='P')start={x:cx,y:cy};
+      else if(ch==='G')gold.push({x:cx,y:cy,got:false});
+      else if(ch==='K')keyPos={x:cx,y:cy};
+      else if(ch==='X')exitPos={x:cx,y:cy};
+      else if(ch==='M')ghosts.push({x:cx,y:cy});
+      if('PGKXM'.indexOf(ch)>=0)map[y]=map[y].substring(0,x)+'.'+map[y].substring(x+1);
+    }
+    if(!start){outer:for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++)if(map[y].charAt(x)==='.'){start={x:x+0.5,y:y+0.5};break outer;}}
+    px=start.x;py=start.y;
+    ang=0;
+    if(isWall(px+0.6,py)){if(!isWall(px,py-0.6))ang=-Math.PI/2;else if(!isWall(px,py+0.6))ang=Math.PI/2;else ang=Math.PI;}
+  }
+
+  function castColumn(rayDirX,rayDirY){
+    let mapX=Math.floor(px),mapY=Math.floor(py);
+    const deltaX=rayDirX===0?1e30:Math.abs(1/rayDirX),deltaY=rayDirY===0?1e30:Math.abs(1/rayDirY);
+    let stepX,stepY,sideX,sideY;
+    if(rayDirX<0){stepX=-1;sideX=(px-mapX)*deltaX;}else{stepX=1;sideX=(mapX+1-px)*deltaX;}
+    if(rayDirY<0){stepY=-1;sideY=(py-mapY)*deltaY;}else{stepY=1;sideY=(mapY+1-py)*deltaY;}
+    let side=0,hit=false,guard=0;
+    while(!hit&&guard++<64){
+      if(sideX<sideY){sideX+=deltaX;mapX+=stepX;side=0;}
+      else{sideY+=deltaY;mapY+=stepY;side=1;}
+      if(mapX<0||mapY<0||mapX>=MW||mapY>=MH){hit=true;break;}
+      if(map[mapY].charAt(mapX)==='#')hit=true;
+    }
+    const perp=side===0?(sideX-deltaX):(sideY-deltaY);
+    return{dist:perp<0.01?0.01:perp,side:side};
+  }
+
+  function shade(dist,side){
+    let idx=Math.floor(dist/1.6);if(idx>3)idx=3;
+    const pal=side===1?['#2b2f35','#454b53','#5f666f','#79808a']:['#3a3f47','#555c65','#707880','#8a929b'];
+    return pal[idx];
+  }
+
+  function render(){
+    if(!ctx)return;
+    /* ceiling + floor */
+    ctx.fillStyle='#e6ecf1';ctx.fillRect(0,0,CW,CH/2);
+    ctx.fillStyle='#c2cbd2';ctx.fillRect(0,CH/2,CW,CH/2);
+    const dirX=Math.cos(ang),dirY=Math.sin(ang);
+    const planeX=-dirY*T,planeY=dirX*T;
+    /* walls */
+    for(let i=0;i<NR;i++){
+      const camX=2*i/NR-1;
+      const rx=dirX+planeX*camX,ry=dirY+planeY*camX;
+      const r=castColumn(rx,ry);
+      zbuf[i]=r.dist;
+      let h=Math.floor(CH/r.dist);if(h>CH*3)h=CH*3;
+      let y0=Math.floor((CH-h)/2);
+      ctx.fillStyle=shade(r.dist,r.side);
+      ctx.fillRect(Math.floor(i*COLW),y0<0?0:y0,Math.ceil(COLW)+1,y0<0?CH:h);
+    }
+    /* sprites (gold, key, exit, ghosts) back-to-front */
+    const sprites=[];
+    for(const g of gold)if(!g.got)sprites.push({x:g.x,y:g.y,kind:'gold'});
+    if(keyPos&&!hasKey)sprites.push({x:keyPos.x,y:keyPos.y,kind:'key'});
+    if(exitPos)sprites.push({x:exitPos.x,y:exitPos.y,kind:'exit'});
+    for(const g of ghosts)sprites.push({x:g.x,y:g.y,kind:'ghost'});
+    for(const s of sprites)s.d=(s.x-px)*(s.x-px)+(s.y-py)*(s.y-py);
+    sprites.sort((a,b)=>b.d-a.d);
+    const invDet=1/(planeX*dirY-dirX*planeY);
+    for(const s of sprites){
+      const dx=s.x-px,dy=s.y-py;
+      const tx=invDet*(dirY*dx-dirX*dy);
+      const ty=invDet*(-planeY*dx+planeX*dy);
+      if(ty<=0.2)continue;
+      const screenX=(CW/2)*(1+tx/ty);
+      const col=Math.floor(screenX/COLW);
+      if(col<0||col>=NR)continue;
+      if(ty>=zbuf[col])continue;
+      let sh=Math.floor(CH/ty);if(s.kind==='gold'||s.kind==='key')sh=Math.floor(sh*0.45);else if(s.kind==='exit')sh=Math.floor(sh*0.9);else sh=Math.floor(sh*0.8);
+      if(sh<4)continue;if(sh>CH*2)sh=CH*2;
+      const cy=CH/2+ (s.kind==='gold'?sh*0.7: 0);
+      drawSprite(s.kind,screenX,cy,sh,ty);
+    }
+    /* vignette frame for depth */
+    ctx.fillStyle='rgba(20,24,30,0.10)';ctx.fillRect(0,0,CW,4);ctx.fillRect(0,CH-4,CW,4);
+    if(showMap)drawMini();
+  }
+
+  function drawSprite(kind,sx,cy,h,dist){
+    const w=h;const x0=sx-w/2;
+    ctx.save();
+    if(kind==='gold'){
+      ctx.fillStyle='#b8860b';ctx.beginPath();ctx.moveTo(sx,cy-h/2);ctx.lineTo(sx+w/2,cy);ctx.lineTo(sx,cy+h/2);ctx.lineTo(sx-w/2,cy);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#e8eef3';ctx.fillRect(sx-1,cy-h/4,2,h/2);
+    }else if(kind==='key'){
+      ctx.fillStyle='#7a5b1e';ctx.beginPath();ctx.arc(sx,cy-h/4,h/4,0,Math.PI*2);ctx.fill();ctx.fillRect(sx-2,cy-h/4,4,h*0.7);ctx.fillRect(sx-2,cy+h/3,h/3,3);
+    }else if(kind==='exit'){
+      ctx.fillStyle='#2a2e34';ctx.fillRect(x0,cy-h/2,w,h);
+      ctx.fillStyle='#dfe6ec';ctx.fillRect(x0+w*0.18,cy-h*0.35,w*0.64,h*0.7);
+      ctx.fillStyle='#2a2e34';_khPixelText(ctx,'EXIT',sx,cy-h*0.18,Math.max(1,Math.floor(h/40)),'#2a2e34','center');
+    }else{ /* ghost */
+      const g=dist<3?'#1f2329':'#3c424b';
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(sx,cy-h*0.1,w*0.42,Math.PI,0);ctx.lineTo(sx+w*0.42,cy+h*0.4);ctx.lineTo(sx+w*0.2,cy+h*0.25);ctx.lineTo(sx,cy+h*0.4);ctx.lineTo(sx-w*0.2,cy+h*0.25);ctx.lineTo(sx-w*0.42,cy+h*0.4);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#e8eef3';ctx.fillRect(sx-w*0.2,cy-h*0.18,w*0.12,h*0.14);ctx.fillRect(sx+w*0.08,cy-h*0.18,w*0.12,h*0.14);
+    }
+    ctx.restore();
+  }
+
+  function drawMini(){
+    const cell=4,ox=CW-MW*cell-4,oy=4;
+    ctx.fillStyle='rgba(232,238,243,0.85)';ctx.fillRect(ox-1,oy-1,MW*cell+2,MH*cell+2);
+    for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+      if(map[y].charAt(x)==='#'){ctx.fillStyle='#3a3f47';ctx.fillRect(ox+x*cell,oy+y*cell,cell,cell);}
+    }
+    if(exitPos){ctx.fillStyle='#1f6f8b';ctx.fillRect(ox+Math.floor(exitPos.x)*cell,oy+Math.floor(exitPos.y)*cell,cell,cell);}
+    if(keyPos&&!hasKey){ctx.fillStyle='#b8860b';ctx.fillRect(ox+Math.floor(keyPos.x)*cell,oy+Math.floor(keyPos.y)*cell,cell,cell);}
+    ctx.fillStyle='#c0392b';ctx.fillRect(ox+Math.floor(px)*cell,oy+Math.floor(py)*cell,cell,cell);
+  }
+
+  function tryMove(nx,ny){
+    const r=0.18;
+    if(!isWall(nx+ (nx>px?r:-r),py))px=nx;
+    if(!isWall(px,ny+ (ny>py?r:-r)))py=ny;
+  }
+
+  function step(dt){
+    if(mode!=='play')return;
+    if(inv>0)inv-=dt;
+    if(input.left)ang-=TURN*dt;
+    if(input.right)ang+=TURN*dt;
+    const dirX=Math.cos(ang),dirY=Math.sin(ang);
+    let mvx=0,mvy=0;
+    if(input.fwd){mvx+=dirX;mvy+=dirY;}
+    if(input.back){mvx-=dirX;mvy-=dirY;}
+    if(input.sl){mvx+=dirY;mvy-=dirX;}
+    if(input.sr){mvx-=dirY;mvy+=dirX;}
+    const ml=Math.hypot(mvx,mvy);
+    if(ml>0){mvx/=ml;mvy/=ml;tryMove(px+mvx*MOVE*dt,py+mvy*MOVE*dt);}
+
+    /* pickups */
+    for(const g of gold)if(!g.got&&(g.x-px)*(g.x-px)+(g.y-py)*(g.y-py)<0.25){g.got=true;score+=10;flash('GOLD +10');}
+    if(keyPos&&!hasKey&&(keyPos.x-px)*(keyPos.x-px)+(keyPos.y-py)*(keyPos.y-py)<0.25){hasKey=true;flash('GOT THE KEY!');}
+    if(exitPos&&(exitPos.x-px)*(exitPos.x-px)+(exitPos.y-py)*(exitPos.y-py)<0.3){
+      if(hasKey)floorClear();else flash('LOCKED - FIND THE KEY');
+    }
+
+    /* ghosts */
+    for(const g of ghosts){
+      const dx=px-g.x,dy=py-g.y,dl=Math.hypot(dx,dy)||1;
+      const nx=g.x+(dx/dl)*GSPEED*dt,ny=g.y+(dy/dl)*GSPEED*dt;
+      if(!isWall(nx,g.y))g.x=nx;
+      if(!isWall(g.x,ny))g.y=ny;
+      if(inv<=0&&dl<0.45){
+        health--;inv=1.4;
+        g.x-=(dx/dl)*0.8;g.y-=(dy/dl)*0.8;
+        if(health<=0){gameOver();return;}
+        flash('HIT!  '+health+' HP');
+      }
+    }
+    if(bannerT>0)bannerT-=dt;
+    updateHud();
+  }
+
+  let bannerText='',bannerT=0;
+  function flash(t){bannerText=t;bannerT=1.4;}
+
+  function updateHud(){
+    if(!hud)return;
+    let hp='';for(let i=0;i<MAXH;i++)hp+=(i<health?'♥':'·');
+    const t='DEPTH '+(depth+1)+'/'+MAPS.length+'   GOLD '+score+'   KEY '+(hasKey?'✓':'✗')+'   '+hp;
+    if(hud.textContent!==t)hud.textContent=t;
+  }
+
+  function floorClear(){
+    score+=100;
+    const d=gd();if(score>d.best)d.best=score;if(typeof save==='function')save();
+    if(depth>=MAPS.length-1){
+      mode='over';
+      try{if(typeof _khSubmitScore==='function')_khSubmitScore('dungeon3d',score);}catch(_){}
+      drawOverlay('ESCAPED!','You cleared the catacombs - Score '+score,'Play Again',start);
+    }else{
+      mode='clear';
+      drawOverlay('FLOOR CLEAR','Descending...  Score '+score,'Go Deeper',function(){depth++;beginFloor();});
+    }
+  }
+  function gameOver(){
+    mode='over';
+    const d=gd();if(score>d.best)d.best=score;if(typeof save==='function')save();
+    try{if(typeof _khSubmitScore==='function')_khSubmitScore('dungeon3d',score);}catch(_){}
+    drawOverlay('YOU PERISHED','The wraiths took you - Score '+score,'Try Again',start);
+  }
+
+  function drawOverlay(title,sub,btnLabel,btnFn){
+    if(!overlay)return;
+    overlay.innerHTML='';overlay.style.display='flex';
+    const oc=el('canvas',{width:CW,height:84});oc.style.cssText='width:100%;max-width:480px;image-rendering:pixelated;';
+    const octx=oc.getContext('2d');
+    _khPixelText(octx,title,CW/2,6,3,'#fff','center');
+    _khPixelText(octx,sub,CW/2,46,1,'#fff','center');
+    overlay.appendChild(oc);
+    const b=txt('button',btnLabel,{className:'btn primary kh-arcade',style:{marginTop:'12px',fontSize:'14px'}});
+    b.onclick=function(){overlay.style.display='none';btnFn();};
+    overlay.appendChild(b);
+    const back=txt('button','Quit to Arcade',{className:'btn small',style:{marginTop:'8px'}});
+    back.onclick=function(){if(typeof exitImmersive==='function')exitImmersive();};
+    overlay.appendChild(back);
+  }
+  function drawTitle(){
+    if(!overlay)return;
+    overlay.innerHTML='';overlay.style.display='flex';
+    const oc=el('canvas',{width:CW,height:74});oc.style.cssText='width:100%;max-width:480px;image-rendering:pixelated;';
+    const octx=oc.getContext('2d');
+    _khPixelText(octx,'DUNGEON 3D',CW/2,6,3,'#fff','center');
+    _khPixelText(octx,'ENTER THE CATACOMBS',CW/2,44,1,'#fff','center');
+    overlay.appendChild(oc);
+    const b=txt('button','DESCEND',{className:'btn primary kh-arcade',style:{marginTop:'12px',fontSize:'16px',minWidth:'120px'}});
+    b.onclick=function(){overlay.style.display='none';beginFloor();};
+    overlay.appendChild(b);
+    overlay.appendChild(txt('div','Best score: '+gd().best,{className:'kh-arcade',style:{color:'#dfe6ec',fontSize:'12px',marginTop:'10px'}}));
+  }
+
+  function beginFloor(){loadFloor(depth);mode='play';flash('DEPTH '+(depth+1));if(overlay)overlay.style.display='none';updateHud();}
+
+  function onKey(e){
+    if(!running)return;const k=e.key;
+    if(k==='ArrowUp'||k==='w'||k==='W'){input.fwd=true;e.preventDefault();}
+    else if(k==='ArrowDown'||k==='s'||k==='S'){input.back=true;e.preventDefault();}
+    else if(k==='ArrowLeft'||k==='a'||k==='A'){input.left=true;e.preventDefault();}
+    else if(k==='ArrowRight'||k==='d'||k==='D'){input.right=true;e.preventDefault();}
+    else if(k==='q'||k==='Q'){input.sl=true;e.preventDefault();}
+    else if(k==='e'||k==='E'){input.sr=true;e.preventDefault();}
+    else if(k==='m'||k==='M'){showMap=!showMap;}
+  }
+  function onKeyUp(e){
+    const k=e.key;
+    if(k==='ArrowUp'||k==='w'||k==='W')input.fwd=false;
+    else if(k==='ArrowDown'||k==='s'||k==='S')input.back=false;
+    else if(k==='ArrowLeft'||k==='a'||k==='A')input.left=false;
+    else if(k==='ArrowRight'||k==='d'||k==='D')input.right=false;
+    else if(k==='q'||k==='Q')input.sl=false;
+    else if(k==='e'||k==='E')input.sr=false;
+  }
+  function hold(b,dn,up){
+    b.addEventListener('touchstart',function(e){e.preventDefault();dn();},{passive:false});
+    b.addEventListener('touchend',function(e){e.preventDefault();if(up)up();},{passive:false});
+    b.addEventListener('touchcancel',function(){if(up)up();});
+    b.addEventListener('mousedown',function(e){e.preventDefault();dn();});b.addEventListener('mouseup',function(){if(up)up();});b.addEventListener('mouseleave',function(){if(up)up();});
+  }
+  function buildControls(){
+    const bar=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',marginTop:'10px',userSelect:'none'}});
+    function mk(label){return txt('button',label,{className:'btn kh-arcade',style:{fontSize:'16px',fontWeight:'800',minWidth:'52px',minHeight:'54px',padding:'0 8px',touchAction:'none'}});}
+    const lg=el('div',{style:{display:'flex',gap:'8px'}});const tL=mk('↺'),tR=mk('↻');lg.append(tL,tR);
+    const rg=el('div',{style:{display:'flex',gap:'8px'}});const bF=mk('▲'),bB=mk('▼');rg.append(bB,bF);
+    bar.append(lg,rg);
+    hold(tL,function(){input.left=true;},function(){input.left=false;});
+    hold(tR,function(){input.right=true;},function(){input.right=false;});
+    hold(bF,function(){input.fwd=true;},function(){input.fwd=false;});
+    hold(bB,function(){input.back=true;},function(){input.back=false;});
+    return bar;
+  }
+  function buildTools(){
+    const row=el('div',{style:{display:'flex',gap:'6px',justifyContent:'center',marginBottom:'6px',flexWrap:'wrap'}});
+    const ek=txt('button','',{className:'btn small'});
+    function lab(){ek.textContent='E-ink mode: '+(renderEveryMs>60?'On':'Off');}lab();
+    ek.onclick=function(){renderEveryMs=(renderEveryMs>60)?33:120;gd().chunky=(renderEveryMs>60);if(typeof save==='function')save();lab();};
+    const mp=txt('button','Map: On',{className:'btn small'});mp.onclick=function(){showMap=!showMap;mp.textContent='Map: '+(showMap?'On':'Off');};
+    const rs=txt('button','Restart floor',{className:'btn small'});rs.onclick=function(){if(mode==='play'){loadFloor(depth);flash('DEPTH '+(depth+1));}};
+    row.append(ek,mp,rs);return row;
+  }
+  function build(){
+    enterImmersive('Dungeon 3D','');
+    host=document.getElementById('immersiveContent');if(!host)return;
+    host.innerHTML='';
+    wrap=el('div',{style:{maxWidth:'560px',margin:'0 auto',padding:'8px'}});
+    hud=el('div',{className:'kh-arcade',style:{fontSize:'11px',fontWeight:'700',color:'var(--fg)',marginBottom:'6px',textAlign:'center',lineHeight:'1.5',letterSpacing:'1px'}});
+    cv=el('canvas',{width:CW,height:CH});ctx=cv.getContext('2d');
+    cv.style.cssText='display:block;width:100%;max-width:560px;margin:0 auto;border:2px solid var(--fg);border-radius:8px;background:#c2cbd2;touch-action:none;image-rendering:pixelated;';
+    const canWrap=el('div',{style:{position:'relative'}});
+    canWrap.appendChild(cv);
+    overlay=el('div',{style:{position:'absolute',top:'0',right:'0',bottom:'0',left:'0',display:'none',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'14px',background:'rgba(12,14,20,0.86)',borderRadius:'8px',textAlign:'center'}});
+    canWrap.appendChild(overlay);
+    wrap.appendChild(hud);wrap.appendChild(buildTools());wrap.appendChild(canWrap);wrap.appendChild(buildControls());
+    host.appendChild(wrap);
+  }
+  function start(){
+    if(running)stop();
+    renderEveryMs=gd().chunky?120:33;
+    build();if(!cv)return;
+    running=true;mode='title';depth=0;score=0;health=MAXH;
+    ctx.fillStyle='#c2cbd2';ctx.fillRect(0,0,CW,CH);
+    document.addEventListener('keydown',onKey);document.addEventListener('keyup',onKeyUp);
+    const ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;
+    drawTitle();
+    last=0;lastRender=0;raf=requestAnimationFrame(loop);
+  }
+  function stop(){
+    running=false;
+    if(raf){cancelAnimationFrame(raf);raf=null;}
+    document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);
+    input={fwd:false,back:false,left:false,right:false,sl:false,sr:false};
+  }
+  function loop(ts){
+    if(!running)return;
+    raf=requestAnimationFrame(loop);
+    if(!last)last=ts;let dt=(ts-last)/1000;last=ts;if(dt>0.1)dt=0.1;
+    if(mode==='play'){
+      step(dt);
+      if(ts-lastRender>=renderEveryMs){render();if(bannerT>0&&bannerText)_khPixelText(ctx,bannerText,CW/2,CH-16,1,'#1a1d22','center');lastRender=ts;}
+    }
+  }
+  return{start:start,stop:stop};
+})();
 /* ── TOWER OF HANOI — classic peg/disk puzzle (turn-based, DOM) ── */
 const Hanoi=(function(){
   let pegs=[[],[],[]],disks=3,moves=0,selPeg=-1,statusEl=null;
@@ -12474,6 +13396,8 @@ function _doLaunch(g){
     case 'blockblast':    _initBlockBlast();BlockBlast.start();break;
     case 'racer':         _initRacer();Racer.start();break;
     case 'digquest':      DigQuest.start();break;
+    case 'platformer':    Platformer.start();break;
+    case 'dungeon3d':     Dungeon3D.start();break;
     case 'hanoi':         Hanoi.start();break;
     case 'blackjack':     Blackjack.start();break;
     case 'crazy8':        CrazyEights.start();break;
@@ -52507,6 +53431,8 @@ BUILDERS.games=()=>{
     ['Tower of Hanoi','The classic peg-and-disk puzzle — move the whole stack to the far peg, one disk at a time, never a bigger disk on a smaller one. 3 to 7 disks.',()=>launchGame('hanoi'),'hanoi'],
     ['Blackjack','Beat the dealer to 21 without busting. Hit, stand and grow your chip stack — a two-card Blackjack pays 3:2.',()=>launchGame('blackjack'),'blackjack'],
     ['Crazy Eights','An Uno-style colour-and-number card game vs the computer — match, skip, draw-twos and wilds. (Live multiplayer coming next.)',()=>launchGame('crazy8'),'crazy8'],
+    ['Pixel Quest ★','The ultimate arcade adventure platformer — run, jump and stomp across six hand-built worlds. Grab coins and gems, dodge spikes and pits, squash the goombas and raise the flag. Retro electronic font, lives, timer and a global best score.',()=>launchGame('platformer'),'platformer'],
+    ['Dungeon 3D ★','A genuine first-person 3D dungeon crawler built with ray casting (Wolfenstein-style) — explore four catacomb floors, grab the gold, find the key and reach the stairs while wraiths hunt you. Minimap, e-ink mode, leaderboard.',()=>launchGame('dungeon3d'),'dungeon3d'],
     ['Deep Dig','A 2.5D dig-and-smash story platformer — tunnel and smash terrain in any direction, stomp grubs, grab power-ups, beat the boss and free the Heartspring across 6 chapters.',()=>launchGame('digquest'),'digquest'],
     ['Live Quiz','Host a live, Kahoot-style quiz — players join on their own devices with a room code.',()=>showView('quizparty')],
     ['Adventure','An AI-narrated text adventure — you choose what happens next.',()=>showView('adventure')],
