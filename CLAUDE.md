@@ -58,6 +58,14 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `[USERNAME]` reports (which are user ban-requests, stored in kh_feedback) — both have Warn + Ban.
 - **Encryption**: `_encryptState/_decryptState` (user state), `_msgEncrypt/_msgDecrypt` (chat & mail).
 - **AI**: `khiCall(prompt,opts)` (user's Gemini/OpenRouter key), `khiEnabled()`. Shared-key proxy too.
+- **Tiers + header**: `_khTier()` = `creator` (admin = `window._isAdminCached===true`, via `_checkAdmin`),
+  `ultra` (earned/active), or `pro`. `_khUpdateHeaderBadge()` brands the logo **KindleHub Ultra** for
+  creator/ultra (else **Pro**) and shows a pill: **ADMIN** (creator) / **ULTRA**. Storage caps (`_storageLimit`):
+  creator 12 MB, ultra 3 MB, pro 1.5 MB. The over-budget storage banner (`_checkStorageHealth`) is gated on the
+  tier being RESOLVED (`typeof window._isAdminCached==='boolean'`) so it can't flash during the boot window
+  before `_checkAdmin` runs (that race was the admin "storage full" false-positive). Header buttons are compact
+  (Landscape=`⟳`, KindleOS=`OS`) + a `body.simple-mode .header-controls` override so the Recent/multitask button
+  always fits.
 
 ## Supabase storage/bandwidth (78+ users — keep this in mind)
 - **Egress** was the big cost; fixed by `_groupLatestId` probe before pulling chat bodies, and the
@@ -70,14 +78,27 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
 
 ## Deploy / "how do I get the changes"
 1. Merge the open PR for branch `claude/wonderful-clarke-6hm5ex` into `main` (GitHub → Merge).
-2. Download `index.html` from `main` and upload to the host.
+2. Download **`index.min.html`** from `main`, rename it to `index.html`, and upload to the host. (It's the
+   minified deploy build — ~22% smaller than the source, so it parses/loads faster on the Kindle. The
+   readable source you edit is still `index.html`.)
 3. Site is behind **Cloudflare** — if changes don't show, **Purge Everything** (cache).
 4. For real internet email: deploy `email-worker.js` (full setup guide in its header), paste its URL into
    Admin → Local Insights → Mail gateway (`localStorage['kh_mail_gateway']`).
 
+## ⚠ Minified deploy build (`index.min.html`)
+- **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
+- After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
+  `../index.min.html`). Commit both. The minifier (`tools/minify.mjs`) extracts each real `<script>`/`<style>`
+  block (a tiny scanner that skips `<!-- -->` comments — needed because `<script>` appears as text in HTML
+  comments AND in JS template literals, which breaks every off-the-shelf HTML minifier) and minifies bodies
+  with terser (`compress:false, mangle:false` — comments+whitespace ONLY, so cross-`<script>` globals + inline
+  `onclick` can't break) + clean-css L1. Validate after: load `index.min.html` headless, build all views,
+  check no pageerrors. NEVER hand-edit `index.min.html`.
+
+
 ## Feature status
 DONE: Mail (internal + external via worker, KHI summarise/draft/polish, folders, search, avatars),
-Gallery (screenshot viewer — pick image files, thumbnail grid, full view), Recent-activities switcher
+Recent-activities switcher
 (header "Recent" button = lightweight "minimise/jump between activities"), landscape mode v2,
 offline login + username prefill, website shortcuts (browser New-Tab), Contributors card, Ultra progress,
 admin Local Insights, Team Sudoku (share/load puzzle code), Flight Sim "How to fly", profile avatar+status,
@@ -101,7 +122,6 @@ PENDING / bigger jobs (each its own session):
   as a 2.5D dig-and-smash story platformer. A new cleaner Mario-style platformer was requested.
 - **Online real-time team games** (live shared board for 3–4 players). Team Sudoku is share-a-code only.
 - Non-UTC streak date-keys (habits/notes use UTC `toISOString().slice(0,10)` — wrong rollover off-UTC).
-- Screenshot viewer can't read the Kindle filesystem (web sandbox) — it's a file-picker viewer by necessity.
 
 ## Known gotchas
 - Editing `index.html` desyncs the editor's file-state after a `sed` write — Read again before Edit.
@@ -112,8 +132,8 @@ PENDING / bigger jobs (each its own session):
   flash + GC churn each second. Build the structure once, then tick ONLY the changing text (guarded). World
   Clock is the canonical example: `renderClocks()` builds cards into the in-scope `grid` ref (works while the
   view is still detached during build — using `document.getElementById` there silently no-ops and caused a 1s
-  empty-grid flash on entry); `tickClocks()` updates just the time/date text. Same anti-pattern still lives in
-  the home countdown widget (`renderCd`) — left alone for now (only 4 rows, shared widget area).
+  empty-grid flash on entry); `tickClocks()` updates just the time/date text. The home countdown widget
+  (`renderCd`/`tickCd`) now follows the same build-once + tick-text pattern.
 - Per-keystroke `oninput` that re-renders a list = laggy e-ink typing — wrap in `khDebounce(fn,~200)` (RSS
   headline search, science glossary `paint`, Sheets Find now do). Leave live single-cell edits / word-counters
   un-debounced (instant feedback, cheap).

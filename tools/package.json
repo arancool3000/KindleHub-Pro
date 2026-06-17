@@ -1,0 +1,8 @@
+{
+  "name": "kindlehub-tools",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Build tooling for KindleHub (minified deploy artifact)",
+  "devDependencies": { "html-minifier-terser": "^7.2.0" }
+}
