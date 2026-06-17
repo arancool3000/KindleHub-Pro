@@ -58,6 +58,14 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `[USERNAME]` reports (which are user ban-requests, stored in kh_feedback) — both have Warn + Ban.
 - **Encryption**: `_encryptState/_decryptState` (user state), `_msgEncrypt/_msgDecrypt` (chat & mail).
 - **AI**: `khiCall(prompt,opts)` (user's Gemini/OpenRouter key), `khiEnabled()`. Shared-key proxy too.
+- **Tiers + header**: `_khTier()` = `creator` (admin = `window._isAdminCached===true`, via `_checkAdmin`),
+  `ultra` (earned/active), or `pro`. `_khUpdateHeaderBadge()` brands the logo **KindleHub Ultra** for
+  creator/ultra (else **Pro**) and shows a pill: **ADMIN** (creator) / **ULTRA**. Storage caps (`_storageLimit`):
+  creator 12 MB, ultra 3 MB, pro 1.5 MB. The over-budget storage banner (`_checkStorageHealth`) is gated on the
+  tier being RESOLVED (`typeof window._isAdminCached==='boolean'`) so it can't flash during the boot window
+  before `_checkAdmin` runs (that race was the admin "storage full" false-positive). Header buttons are compact
+  (Landscape=`⟳`, KindleOS=`OS`) + a `body.simple-mode .header-controls` override so the Recent/multitask button
+  always fits.
 
 ## Supabase storage/bandwidth (78+ users — keep this in mind)
 - **Egress** was the big cost; fixed by `_groupLatestId` probe before pulling chat bodies, and the
