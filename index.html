@@ -1887,14 +1887,42 @@ function _khTrackDeletions(){
     _khGcTombstones();
   }catch(_){}
 }
+/* Fallback when the RAW state blob is too big for the browser's localStorage
+   quota (admin / large state on a ~5 MB Mac browser): store the COMPRESSED
+   form instead — which is what we'd upgrade to anyway and what the 12 MB cloud
+   cap proves fits — so we don't flash a bogus "storage is full". Only if the
+   compressed write ALSO fails is the device genuinely out of space. */
+function _persistCompressed(json){
+  try{
+    if(typeof _packState!=='function')return;
+    _packState(json).then(function(packed){
+      try{
+        localStorage.setItem(SK,packed);
+        _lastStorageTick=0;
+        if(typeof _storageTick==='function')_storageTick();
+        if(typeof _refreshStorageUI==='function')_refreshStorageUI();
+      }catch(e2){
+        if(_isQuotaError(e2)){try{if(typeof _checkStorageHealth==='function')_checkStorageHealth(true);}catch(_){}}
+      }
+    }).catch(function(){});
+  }catch(_){}
+}
 function _persistState(){
   try{_khTrackDeletions();}catch(_){}
   const json=JSON.stringify(S);          /* a throw here is a serialization bug, not quota */
-  localStorage.setItem(SK,json);          /* a throw here is the only real quota signal */
+  let rawOk=false;
+  try{ localStorage.setItem(SK,json); rawOk=true; }   /* fast path for normal-size states */
+  catch(e){
+    /* Raw blob exceeded localStorage quota — store the compressed form instead
+       of treating it as out-of-space (the common admin/large-state case). A
+       non-quota throw is a real bug, so re-throw it. */
+    if(typeof _isQuotaError==='function'&&_isQuotaError(e)){ _persistCompressed(json); }
+    else { throw e; }
+  }
   try{_writeBootHints();}catch(_){}
   try{scheduleCloudSync(false);}catch(_){}
   try{if(typeof _storageTick==='function')_storageTick();}catch(_){}
-  try{if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json);}catch(_){}
+  if(rawOk){ try{if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json);}catch(_){} }
   return true;
 }
 function _onSaveError(e){

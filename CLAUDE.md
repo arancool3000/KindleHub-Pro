@@ -148,3 +148,8 @@ PENDING / bigger jobs (each its own session):
   un-debounced (instant feedback, cheap).
 - Don't store non-serializable things in S (functions/DOM) — JSON.stringify in save() would throw and
   (previously) be misread as "storage full". `save()` now only treats real QuotaExceededError as full.
+- Storage-full false alarm (admin/large state): `_persistState` writes the RAW json to localStorage first
+  (fast path), which on a ~5 MB Mac browser threw QuotaExceededError on EVERY save and flashed "Storage is
+  full" even though the COMPRESSED blob fits. Fix: on a raw-write quota error, `_persistCompressed()` stores
+  the gzip-packed form instead; the banner (`_checkStorageHealth(true)`) now only fires if even the compressed
+  write fails (genuinely out of space).
