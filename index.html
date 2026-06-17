@@ -1839,7 +1839,56 @@ function _isQuotaError(e){
 /* Persist the main blob, then run ancillary work in isolation so a failure
    in any of it can never be mistaken for "out of space". Returns true iff
    the blob itself was written. */
+/* ── Deletion tombstones (git-style) ──────────────────────────────────
+   The cloud pull MERGES (unions) id-lists, so an item you delete locally
+   would be re-added from the cloud copy on the next pull/reload — the "I
+   deleted it and it came back" bug. We record every local deletion as a
+   tombstone (S.deletedItems, keyed "<list>:<id>", SYNCED with the cloud
+   state) so the merge skips it forever — even across devices — until it
+   ages out. Deletions are detected centrally by diffing the id-lists against
+   the previous snapshot on each save, so no per-delete-site wiring is needed.
+   Re-adding an id clears its tombstone (a deletion you took back). */
+var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories'];
+function _khItemKey(item){
+  if(!item||typeof item!=='object')return null;
+  var id=item.id||item.uid;
+  if(!id){
+    if(item.date)id=(item.title||'')+'@'+item.date;
+    else if(item.year!=null)id=(item.title||'')+'@'+item.year+'-'+item.month+'-'+item.day+'_'+(item.time||'');
+    else id=JSON.stringify(item).slice(0,80);
+  }
+  return String(id);
+}
+function _khGcTombstones(){
+  try{
+    var t=S.deletedItems;if(!t||typeof t!=='object')return;
+    var cutoff=Date.now()-180*86400000,k;
+    for(k in t){if(t.hasOwnProperty(k)&&(t[k]||0)<cutoff)delete t[k];}
+    var ks=Object.keys(t);
+    if(ks.length>2000){ks.sort(function(a,b){return (t[a]||0)-(t[b]||0);});while(Object.keys(t).length>2000)delete t[ks.shift()];}
+  }catch(_){}
+}
+function _khTrackDeletions(){
+  try{
+    if(typeof S==='undefined'||!S)return;
+    if(!S.deletedItems||typeof S.deletedItems!=='object')S.deletedItems={};
+    if(!window._khPrevIds)window._khPrevIds={};
+    var now=Date.now(),i,j;
+    for(i=0;i<_KH_TRACKED_LISTS.length;i++){
+      var key=_KH_TRACKED_LISTS[i];
+      var arr=Array.isArray(S[key])?S[key]:[];
+      var cur={};
+      for(j=0;j<arr.length;j++){var ik=_khItemKey(arr[j]);if(ik)cur[ik]=1;}
+      var prev=window._khPrevIds[key];
+      if(prev){var pid;for(pid in prev){if(prev.hasOwnProperty(pid)&&!cur[pid])S.deletedItems[key+':'+pid]=now;}}
+      var cid;for(cid in cur){if(cur.hasOwnProperty(cid)){var tk=key+':'+cid;if(S.deletedItems[tk])delete S.deletedItems[tk];}}
+      window._khPrevIds[key]=cur;
+    }
+    _khGcTombstones();
+  }catch(_){}
+}
 function _persistState(){
+  try{_khTrackDeletions();}catch(_){}
   const json=JSON.stringify(S);          /* a throw here is a serialization bug, not quota */
   localStorage.setItem(SK,json);          /* a throw here is the only real quota signal */
   try{_writeBootHints();}catch(_){}
@@ -9407,6 +9456,11 @@ function mergeCloudState(cloudState,opts){
   const localTombs=Array.isArray(S.leftGroups)?S.leftGroups:[];
   const cloudTombs=Array.isArray(cloudState.leftGroups)?cloudState.leftGroups:[];
   const tombSet=new Set([...localTombs,...cloudTombs]);
+  /* Deleted-item tombstones: union local + cloud so a delete on one device
+     stays deleted everywhere. The id-list merge below skips any tombstoned
+     item, so a pull/reload never resurrects something you deleted. */
+  const _delTombs=Object.assign({},(cloudState&&cloudState.deletedItems)||{},S.deletedItems||{});
+  const delTombSet=new Set(Object.keys(_delTombs));
   Object.keys(cloudState).forEach(key=>{
     /* SECURITY: never accept executable patch code from the cloud — see
        _trimStateForCloud. localFixes is run via new Function() at boot, so
@@ -9435,6 +9489,15 @@ function mergeCloudState(cloudState,opts){
     if(key==='leftGroups'){
       const union=new Set([...localTombs,...cloudTombs]);
       S.leftGroups=[...union].slice(-200);
+      return;
+    }
+    /* deletedItems tombstones: union local + cloud, newest timestamp wins,
+       so a deletion made on any device keeps the item gone everywhere. */
+    if(key==='deletedItems'){
+      if(cloudState[key]&&typeof cloudState[key]==='object'){
+        if(!S.deletedItems||typeof S.deletedItems!=='object')S.deletedItems={};
+        Object.keys(cloudState[key]).forEach(function(k){var v=cloudState[key][k];if(!S.deletedItems[k]||v>S.deletedItems[k])S.deletedItems[k]=v;});
+      }
       return;
     }
     /* msgSecrets / msgHistoryCaps / localReactions / localEdits —
@@ -9466,15 +9529,10 @@ function mergeCloudState(cloudState,opts){
          both sides carry the same ID. Local-only items (unique IDs) are
          still appended at the end, so nothing is lost. */
       [...(cloudState[key]||[]),...(S[key]||[])].forEach(item=>{
-        /* Build a stable dedup key. Prefer id, then uid, then a composite
-           of title + date OR year/month/day + time (calendar events use
-           year/month/day, not a date string), then a JSON hash. */
-        let id=item.id||item.uid;
-        if(!id){
-          if(item.date)id=item.title+'@'+item.date;
-          else if(item.year!=null)id=(item.title||'')+'@'+item.year+'-'+item.month+'-'+item.day+'_'+(item.time||'');
-          else id=JSON.stringify(item).slice(0,80);
-        }
+        /* Same stable id derivation as the tombstone tracker (_khItemKey):
+           id → uid → title@date / title@y-m-d_time → JSON hash. */
+        const id=_khItemKey(item);
+        if(delTombSet.has(key+':'+id))return;/* deleted here or on another device — never resurrect */
         if(!seen.has(id)){seen.add(id);merged.push(item);}
       });
       S[key]=merged;
@@ -34152,18 +34210,28 @@ settings:()=>{
      either client- or server-side, so the placeholder/label is now
      "Username" to stop confusing new users. */
   let _isRegMode=false,_pwConfirmWrap=null;
-  const _accForm=el('div',{style:{display:S.authToken?'none':'flex',flexDirection:'column',gap:'6px',marginBottom:'8px'}});
-  const _accEmail=el('input',{type:'text',placeholder:'Username',autocomplete:'username',style:{fontSize:'12px'}});
+  /* Real <form> + autocomplete attrs so the BROWSER password manager (e.g.
+     Safari/Chrome on a Mac) recognises this as a login and offers to SAVE +
+     AUTOFILL both username and password. The app itself never stores the
+     plaintext password (only its hash-derived encrypted blob), so the OS
+     keychain is the right — and secure — place for the credentials to live.
+     Enter in any field submits → onsubmit drives the current-mode button. */
+  const _accForm=el('form',{autocomplete:'on',onsubmit:function(e){try{e.preventDefault();}catch(_){}if(_isRegMode){if(_regBtn)_regBtn.click();}else{if(_loginBtn)_loginBtn.click();}return false;},style:{display:S.authToken?'none':'flex',flexDirection:'column',gap:'6px',marginBottom:'8px'}});
+  const _accEmail=el('input',{type:'text',placeholder:'Username',autocomplete:'username',name:'username',style:{fontSize:'12px'}});
   /* Remember the last account so signing back in (incl. offline) is one tap. */
   try{const _lu=localStorage.getItem('kh_last_user');if(_lu)_accEmail.value=_lu;}catch(_){}
-  const _accPw=el('input',{type:'password',placeholder:'Password',style:{fontSize:'12px'}});
-  const _accPwConfirm=el('input',{type:'password',placeholder:'Confirm password',style:{fontSize:'12px',display:'none'}});
+  const _accPw=el('input',{type:'password',placeholder:'Password',autocomplete:'current-password',name:'password',style:{fontSize:'12px'}});
+  const _accPwConfirm=el('input',{type:'password',placeholder:'Confirm password',autocomplete:'new-password',name:'confirm-password',style:{fontSize:'12px',display:'none'}});
   const _pwNote=txt('p','Use a unique password for KindleHub Pro only.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0',lineHeight:'1.5',padding:'6px 8px',background:'var(--highlight)',borderRadius:'7px'}});
   const _privacyNote=el('div',{style:{fontSize:'11px',lineHeight:'1.55',padding:'8px 10px',background:'rgba(192,57,43,0.10)',borderRadius:'7px',borderLeft:'3px solid var(--danger)',color:'var(--fg)',fontWeight:'600'}});
   _privacyNote.innerHTML='<strong style="color:var(--danger);">⚠ Do not save private or sensitive information.</strong><br>Do not store passwords, bank details, ID numbers, medical records, addresses, or anything you would not want a stranger to see. Sync is convenient but the cloud file is shared infrastructure — treat KindleHub Pro like a public notebook.';
   const _secNote=el('div',{style:{fontSize:'11px',lineHeight:'1.55',padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',borderLeft:'3px solid var(--danger)',color:'var(--fg)'}});
   _secNote.innerHTML='<strong>How sync works:</strong> Your data is encrypted with your password before upload, so only you can read it — but use a password you do not use elsewhere. Your email and password are never stored in plaintext.';
   _accForm.append(_accEmail,_accPw,_accPwConfirm,_pwNote,_privacyNote,_secNote);
+  /* Hidden submit: lets Enter submit the form (firing the password-manager
+     save prompt). The visible Sign In/Register buttons live in a separate
+     row and also drive _accForm.onsubmit via .click(). */
+  _accForm.appendChild(el('button',{type:'submit',tabindex:'-1','aria-hidden':'true',style:{position:'absolute',left:'-9999px',width:'1px',height:'1px',opacity:'0',pointerEvents:'none'}}));
   /* Eye toggles on the password fields */
   /* wrapEye wraps the input in a div AND rewrites its style to display:block,
      so toggling the INPUT's display no longer hides it — we must toggle the
@@ -34181,6 +34249,9 @@ settings:()=>{
   function _setRegMode(reg){
     _isRegMode=reg;
     (_pwConfirmWrap||_accPwConfirm).style.display=reg?'':'none';
+    /* Tell the password manager which kind of password field this is so it
+       offers "save new password" on register and autofill on sign-in. */
+    try{_accPw.setAttribute('autocomplete',reg?'new-password':'current-password');}catch(_){}
     if(_loginBtn)_loginBtn.classList.toggle('primary',!reg);
     if(_regBtn)_regBtn.classList.toggle('primary',reg);
   }

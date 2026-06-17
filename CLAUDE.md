@@ -49,6 +49,15 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   kh_presence, kh_shared_api_usage, kh_banned_usernames, kh_rate.
 - **Auth**: `authRegister/authLogin/authLogout`. Hash = SHA-256(username+password) = lookup key AND AES key.
   Offline login via `_cacheOfflineCred`/`_offlineCred` (encrypted blob cached on device, `kh_offline_cred`).
+  Login UI (`_accForm` in `settings`, built via `_defer`) is a real `<form>` with `autocomplete=username/
+  current-password` + a hidden submit, so the browser/OS keychain (e.g. Mac Safari) saves & autofills creds —
+  the app itself never stores the plaintext password. Username prefill via `kh_last_user`.
+- **Cloud sync merge** (`mergeCloudState`): id-lists (notes/books/flashDecks/mdJournals/calEvents/advStories)
+  are UNIONED by id, so deletions need git-style tombstones — `S.deletedItems` (`<list>:<id>`→ts, SYNCED &
+  unioned across devices like `leftGroups`) recorded by `_khTrackDeletions()` (a save-time diff of the lists
+  vs `window._khPrevIds`, so NO per-delete-site wiring) and skipped by the merge, so a pull/reload never
+  resurrects a deleted item. Re-adding an id clears its tombstone. GC: 180-day age + 2000-entry cap. Item id =
+  `_khItemKey()` (id→uid→title@date→json), used by BOTH the tracker and the merge so keys line up.
 - **Moderation**: profanity filter `_censorText`/`_hasProfanity` (DISPLAY-side only, used in chat, feedback
   AND notification toasts via `notifyMsg`) — two passes: exact word-boundary (`_PROFANITY_WORDS`) + embedded
   roots (`_PROFANITY_SUBSTR`, leet-normalised, guarded by the `_PROFANITY_SAFE` allow-list to dodge the
