@@ -1888,11 +1888,41 @@ function _khTrackDeletions(){
     _khGcTombstones();
   }catch(_){}
 }
+/* Reclaim localStorage space when a write genuinely won't fit. The biggest
+   easy win is `kh_offline_cred`, which caches whole encrypted state blobs for
+   recent accounts (each ~the size of the main blob) — drop all but the most
+   recent. Then drop regenerable caches + trim history from the live state.
+   Returns true if anything was freed. */
+function _emergencyFreeSpace(){
+  var freed=false;
+  try{
+    var raw=localStorage.getItem('kh_offline_cred');
+    if(raw){
+      var store={};try{store=JSON.parse(raw)||{};}catch(_){store={};}
+      var ks=Object.keys(store);
+      if(ks.length>1){
+        ks.sort(function(a,b){return (store[b]&&store[b].at||0)-(store[a]&&store[a].at||0);});
+        var keep={};keep[ks[0]]=store[ks[0]];
+        localStorage.setItem('kh_offline_cred',JSON.stringify(keep));
+        freed=true;
+      }
+    }
+  }catch(_){}
+  try{
+    if(typeof S!=='undefined'&&S){
+      ['rssCache','weatherCache','weatherData','discoverCache','wikiCache','_searchCache','starCache','nasaCache','_geoCache','quoteCache'].forEach(function(k){if(k in S){try{delete S[k];freed=true;}catch(_){}}});
+      if(Array.isArray(S.savedChatHistory)&&S.savedChatHistory.length>10){S.savedChatHistory=S.savedChatHistory.slice(-10);freed=true;}
+      if(Array.isArray(S.chatSessions)&&S.chatSessions.length>2){S.chatSessions=S.chatSessions.slice(-2);freed=true;}
+    }
+  }catch(_){}
+  return freed;
+}
 /* Fallback when the RAW state blob is too big for the browser's localStorage
    quota (admin / large state on a ~5 MB Mac browser): store the COMPRESSED
    form instead — which is what we'd upgrade to anyway and what the 12 MB cloud
    cap proves fits — so we don't flash a bogus "storage is full". Only if the
-   compressed write ALSO fails is the device genuinely out of space. */
+   compressed write ALSO fails (even after auto-freeing space) is the device
+   genuinely out of space. */
 function _persistCompressed(json){
   try{
     if(typeof _packState!=='function')return;
@@ -1903,7 +1933,15 @@ function _persistCompressed(json){
         if(typeof _storageTick==='function')_storageTick();
         if(typeof _refreshStorageUI==='function')_refreshStorageUI();
       }catch(e2){
-        if(_isQuotaError(e2)){try{if(typeof _checkStorageHealth==='function')_checkStorageHealth(true);}catch(_){}}
+        if(_isQuotaError(e2)){
+          /* Auto-recover ONCE: free space and retry before nagging. This is
+             what stopped the "Storage is full on every message" loop — the
+             offline-cred cache was hogging the quota. */
+          var recovered=false;
+          try{ if(_emergencyFreeSpace()){ localStorage.setItem(SK,packed); recovered=true; } }catch(_){}
+          if(recovered){ _lastStorageTick=0; if(typeof _storageTick==='function')_storageTick(); if(typeof _refreshStorageUI==='function')_refreshStorageUI(); }
+          else { try{if(typeof _checkStorageHealth==='function')_checkStorageHealth(true);}catch(_){} }
+        }
       }
     }).catch(function(){});
   }catch(_){}
@@ -8682,10 +8720,17 @@ function _cacheOfflineCred(key,email,packed){
     if(!key||typeof packed!=='string'||!packed)return;
     let store={};try{store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');}catch(_){store={};}
     store[key]={email:email||'',packed:packed,at:Date.now()};
+    /* Cap at the 2 most-recent accounts (was 3) — each entry is a whole
+       encrypted state blob, so 3 of them could blow a ~5 MB localStorage on
+       a heavy account and break the MAIN blob's write ("storage full"). */
     const ks=Object.keys(store);
-    if(ks.length>3){ks.sort((a,b)=>(store[a].at||0)-(store[b].at||0));while(Object.keys(store).length>3)delete store[ks.shift()];}
-    localStorage.setItem('kh_offline_cred',JSON.stringify(store));
-    if(email)localStorage.setItem('kh_last_user',email);
+    if(ks.length>2){ks.sort((a,b)=>(store[a].at||0)-(store[b].at||0));while(Object.keys(store).length>2)delete store[ks.shift()];}
+    try{localStorage.setItem('kh_offline_cred',JSON.stringify(store));}
+    catch(e){ /* No room for the others — keep just THIS account so offline
+                 login still works, and don't let it nag (swallowed). */
+      if(typeof _isQuotaError!=='function'||_isQuotaError(e)){try{const only={};only[key]=store[key];localStorage.setItem('kh_offline_cred',JSON.stringify(only));}catch(_){}}
+    }
+    if(email)try{localStorage.setItem('kh_last_user',email);}catch(_){}
   }catch(_){}
 }
 function _offlineCred(key){

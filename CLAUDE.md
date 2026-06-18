@@ -161,3 +161,10 @@ PENDING / bigger jobs (each its own session):
   full" even though the COMPRESSED blob fits. Fix: on a raw-write quota error, `_persistCompressed()` stores
   the gzip-packed form instead; the banner (`_checkStorageHealth(true)`) now only fires if even the compressed
   write fails (genuinely out of space).
+- Storage-full on EVERY chat message (real out-of-space): the hidden hog is `kh_offline_cred` — it cached up to
+  3 whole encrypted state blobs (each ~the main blob's size), so a heavy account overflowed the ~5 MB
+  localStorage and the MAIN blob's write failed every save. Fixes: cap offline-cred at 2 (and self-trim to 1
+  on its own quota error), and `_persistCompressed` now AUTO-RECOVERS once via `_emergencyFreeSpace()` (trim
+  offline-cred to the newest 1 + drop regenerable caches + trim chat history) and retries the write before
+  nagging. So the banner only shows if it's still full after auto-freeing. `_dataUsageBytes()` only measures
+  the SK blob, NOT total localStorage — that's why the over-budget meter looked fine while writes failed.
