@@ -60,7 +60,14 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   Login UI (`_accForm` in `settings`, built via `_defer`) is a real `<form>` with `autocomplete=username/
   current-password` + a hidden submit, so the browser/OS keychain (e.g. Mac Safari) saves & autofills creds —
   the app itself never stores the plaintext password. Username prefill via `kh_last_user`.
-- **Cloud sync merge** (`mergeCloudState`): id-lists (notes/books/flashDecks/mdJournals/calEvents/advStories)
+- **To-Do board**: cards are a FLAT id'd list `S.kanbanCards` (`{id,text,col,created}`, col=todo/doing/done)
+  so they sync via the normal state push AND get tombstones (in `_KH_TRACKED_LISTS` + the id-merge) — a
+  deleted task never resurrects on a pull. `saveKanban()` just calls `save()` (debounced cloud push). Legacy
+  `kh_kanban {todo,doing,done}` migrates once (`S._kanbanMigrated`).
+- **Remember me**: login form has an opt-in "Remember me on this device" → saves `kh_remember_login`
+  (`{u, p:base64}`) so BOTH fields prefill next time, independent of the browser keychain (which didn't
+  reliably save on some Macs). Cleared on Sign Out. base64 is convenience, not encryption.
+- **Cloud sync merge** (`mergeCloudState`): id-lists (notes/books/flashDecks/mdJournals/calEvents/advStories/kanbanCards)
   are UNIONED by id, so deletions need git-style tombstones — `S.deletedItems` (`<list>:<id>`→ts, SYNCED &
   unioned across devices like `leftGroups`) recorded by `_khTrackDeletions()` (a save-time diff of the lists
   vs `window._khPrevIds`, so NO per-delete-site wiring) and skipped by the merge, so a pull/reload never

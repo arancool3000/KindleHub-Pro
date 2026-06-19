@@ -1849,7 +1849,7 @@ function _isQuotaError(e){
    ages out. Deletions are detected centrally by diffing the id-lists against
    the previous snapshot on each save, so no per-delete-site wiring is needed.
    Re-adding an id clears its tombstone (a deletion you took back). */
-var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories'];
+var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories','kanbanCards'];
 function _khItemKey(item){
   if(!item||typeof item!=='object')return null;
   var id=item.id||item.uid;
@@ -9654,7 +9654,7 @@ function mergeCloudState(cloudState,opts){
     /* Lists where each item has a stable id — merge by id so offline
        additions on Device A aren't clobbered when Device B's stale
        cloud copy comes down. */
-    if(key==='notes'||key==='books'||key==='flashDecks'||key==='mdJournals'||key==='calEvents'||key==='advStories'){
+    if(key==='notes'||key==='books'||key==='flashDecks'||key==='mdJournals'||key==='calEvents'||key==='advStories'||key==='kanbanCards'){
       if(!S[key])S[key]=[];
       if(!cloudState[key])return;
       const merged=[];const seen=new Set();
@@ -34379,12 +34379,25 @@ settings:()=>{
   try{const _lu=localStorage.getItem('kh_last_user');if(_lu)_accEmail.value=_lu;}catch(_){}
   const _accPw=el('input',{type:'password',placeholder:'Password',autocomplete:'current-password',name:'password',style:{fontSize:'12px'}});
   const _accPwConfirm=el('input',{type:'password',placeholder:'Confirm password',autocomplete:'new-password',name:'confirm-password',style:{fontSize:'12px',display:'none'}});
+  /* "Remember me on this device" — saves your login to localStorage so BOTH
+     fields auto-fill next time, independent of the browser keychain (which
+     doesn't reliably offer to save for this app on some Macs). Opt-in; the
+     password is base64-stored (local convenience, not encryption). */
+  const _rememberCb=el('input',{type:'checkbox',style:{width:'16px',height:'16px',flexShrink:'0',margin:'0'}});
+  const _rememberWrap=el('label',{style:{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',color:'var(--fg)',cursor:'pointer',padding:'2px 0'}});
+  _rememberWrap.append(_rememberCb,txt('span','Remember me on this device (saves login here)'));
+  function _obfPw(s){try{return btoa(unescape(encodeURIComponent(String(s||''))));}catch(_){return '';}}
+  function _deobfPw(s){try{return decodeURIComponent(escape(atob(String(s||''))));}catch(_){return '';}}
+  try{const _rl=JSON.parse(localStorage.getItem('kh_remember_login')||'null');if(_rl&&_rl.u){_accEmail.value=_rl.u;_accPw.value=_deobfPw(_rl.p);_rememberCb.checked=true;}}catch(_){}
+  function _rememberSave(u,pw){
+    try{ if(_rememberCb.checked){localStorage.setItem('kh_remember_login',JSON.stringify({u:String(u||''),p:_obfPw(pw)}));} else {localStorage.removeItem('kh_remember_login');} }catch(_){}
+  }
   const _pwNote=txt('p','Use a unique password for KindleHub Pro only.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0',lineHeight:'1.5',padding:'6px 8px',background:'var(--highlight)',borderRadius:'7px'}});
   const _privacyNote=el('div',{style:{fontSize:'11px',lineHeight:'1.55',padding:'8px 10px',background:'rgba(192,57,43,0.10)',borderRadius:'7px',borderLeft:'3px solid var(--danger)',color:'var(--fg)',fontWeight:'600'}});
   _privacyNote.innerHTML='<strong style="color:var(--danger);">⚠ Do not save private or sensitive information.</strong><br>Do not store passwords, bank details, ID numbers, medical records, addresses, or anything you would not want a stranger to see. Sync is convenient but the cloud file is shared infrastructure — treat KindleHub Pro like a public notebook.';
   const _secNote=el('div',{style:{fontSize:'11px',lineHeight:'1.55',padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',borderLeft:'3px solid var(--danger)',color:'var(--fg)'}});
   _secNote.innerHTML='<strong>How sync works:</strong> Your data is encrypted with your password before upload, so only you can read it — but use a password you do not use elsewhere. Your email and password are never stored in plaintext.';
-  _accForm.append(_accEmail,_accPw,_accPwConfirm,_pwNote,_privacyNote,_secNote);
+  _accForm.append(_accEmail,_accPw,_accPwConfirm,_rememberWrap,_pwNote,_privacyNote,_secNote);
   /* Hidden submit: lets Enter submit the form (firing the password-manager
      save prompt). The visible Sign In/Register buttons live in a separate
      row and also drive _accForm.onsubmit via .click(). */
@@ -34427,6 +34440,7 @@ settings:()=>{
       try{
         const res=await authLogin(em,pw);
         if(res.success){
+          try{_rememberSave(em,pw);}catch(_){}
           _accForm.style.display='none';
           _updateAccStatus();
           _accBtnRow.innerHTML='';
@@ -34452,6 +34466,7 @@ settings:()=>{
       try{
         const res=await authRegister(em,pw);
         if(res.success){
+          try{_rememberSave(res.username||em,pw);}catch(_){}
           _accForm.style.display='none';_updateAccStatus();_accBtnRow.innerHTML='';_buildSignedInBtns();
           toast(res.adjusted?('That username was taken — you\'re registered as "'+res.username+'".'):'Account created and signed in! Your data has been saved to the cloud.',res.adjusted?6500:4000);
           setTimeout(()=>toast('Reminder: do not save private info (passwords, bank details, IDs) in KindleHub Pro.',5500),1200);
@@ -34613,6 +34628,8 @@ settings:()=>{
     const _signOutBtn=txt('button','Sign Out',{className:'btn small danger'});
     _signOutBtn.onclick=async()=>{
       _signOutBtn.disabled=true;
+      /* Forget the saved login on this device so the next person isn't auto-filled. */
+      try{localStorage.removeItem('kh_remember_login');if(_accPw)_accPw.value='';if(typeof _rememberCb!=='undefined'&&_rememberCb)_rememberCb.checked=false;}catch(_){}
       try{await authLogout();}catch(e){}
       _updateAccStatus();_accForm.style.display='flex';_accBtnRow.innerHTML='';
       _setRegMode(false);
@@ -42231,11 +42248,30 @@ notes:()=>{
 
 kanban:()=>{
   const v=el('section',{id:'view-kanban',className:'view'});
+  /* To-Do cards now live in S.kanbanCards — a FLAT, id'd list of
+     {id,text,col,created} — so they sync to the cloud on save (efficient,
+     debounced) AND get the deletion-tombstone treatment (kanbanCards is in
+     _KH_TRACKED_LISTS + the id-merge), so a task you delete never comes back
+     from a cloud pull. Legacy kh_kanban {todo,doing,done} is migrated once. */
   function loadKanban(){
-    try{const d=localStorage.getItem('kh_kanban');return d?JSON.parse(d):{todo:[],doing:[],done:[]};}catch(e){return{todo:[],doing:[],done:[]};}
+    if(!Array.isArray(S.kanbanCards))S.kanbanCards=[];
+    if(!S._kanbanMigrated){
+      let legacy=null;try{const d=localStorage.getItem('kh_kanban');if(d)legacy=JSON.parse(d);}catch(_){}
+      if(legacy&&typeof legacy==='object'){
+        const have={};S.kanbanCards.forEach(c=>{if(c&&c.id!=null)have[c.id]=1;});
+        ['todo','doing','done'].forEach(col=>{(Array.isArray(legacy[col])?legacy[col]:[]).forEach(t=>{
+          if(t&&typeof t==='object'){const id=t.id||(Date.now()+Math.floor(Math.random()*100000));if(!have[id]){S.kanbanCards.push({id:id,text:t.text||'',col:col,created:t.created||new Date().toISOString()});have[id]=1;}}
+        });});
+      }
+      S._kanbanMigrated=true;
+      try{if(typeof save==='function')save();}catch(_){}
+    }
+    return S.kanbanCards;
   }
-  function saveKanban(k){try{localStorage.setItem('kh_kanban',JSON.stringify(k));}catch(e){}}
+  /* Save = persist S, which schedules the efficient debounced cloud push. */
+  function saveKanban(){try{if(typeof save==='function')save();}catch(_){}}
   let kb=loadKanban();
+  function colCards(col){return kb.filter(c=>c&&c.col===col);}
   function render(){
     v.innerHTML='';
     /* Header row — uses display:block on the title so it sits on its own
@@ -42264,8 +42300,8 @@ kanban:()=>{
     const addBtn=txt('button','Add',{className:'btn primary',style:{padding:'0 22px',fontSize:'14px',fontWeight:'800',height:'42px',minWidth:'72px'}});
     addBtn.onclick=()=>{
       const t=inp.value.trim();if(!t){toast('Enter a task');inp.focus();return;}
-      kb[colSel.value].push({id:Date.now(),text:t,created:new Date().toISOString()});
-      saveKanban(kb);inp.value='';render();
+      kb.push({id:Date.now(),text:t,col:colSel.value,created:new Date().toISOString()});
+      saveKanban();inp.value='';render();
       /* Keep focus on the input so the user can keep adding tasks quickly */
       setTimeout(()=>{const fresh=v.querySelector('input[placeholder^="Add a new"]');if(fresh)fresh.focus();},20);
     };
@@ -42275,7 +42311,7 @@ kanban:()=>{
     /* KHI: rank the open tasks (To Do + Doing) into a suggested order. */
     if(typeof khiEnabled==='function'&&khiEnabled()){
       const prioBtn=khiBtn('Prioritise',async()=>{
-        const open=[].concat(kb.todo||[],kb.doing||[]).map(t=>t&&t.text).filter(Boolean);
+        const open=colCards('todo').concat(colCards('doing')).map(t=>t&&t.text).filter(Boolean);
         if(!open.length)return toast('No open tasks to prioritise.');
         const out=await khiCall('Here is my to-do list (To Do + Doing):\n- '+open.slice(0,40).join('\n- ')+'\n\nSuggest the order to tackle these today: a short ranked list, most important first, each with a few words on why. Be concise. No preamble.',{maxTokens:420});
         if(!out)return toast('KHI unavailable — check your Gemini key');
@@ -42297,20 +42333,20 @@ kanban:()=>{
       const colEl=el('div',{style:{flex:'1',minWidth:'200px',background:'var(--card)',border:'var(--thin)',borderRadius:'10px',padding:'10px',boxShadow:'var(--shadow)'}});
       const colHdr=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px',borderBottom:'var(--thin)',paddingBottom:'6px'}});
       colHdr.appendChild(txt('strong',label,{style:{fontSize:'12px',fontWeight:'800',textTransform:'uppercase',letterSpacing:'0.5px'}}));
-      colHdr.appendChild(txt('span',String(kb[col].length),{style:{fontSize:'11px',background:'var(--highlight)',padding:'2px 7px',borderRadius:'10px',fontWeight:'700'}}));
+      colHdr.appendChild(txt('span',String(colCards(col).length),{style:{fontSize:'11px',background:'var(--highlight)',padding:'2px 7px',borderRadius:'10px',fontWeight:'700'}}));
       colEl.appendChild(colHdr);
-      kb[col].forEach((task,i)=>{
+      colCards(col).forEach((task)=>{
         const card=el('div',{style:{background:'var(--bg)',border:'var(--thin)',borderRadius:'8px',padding:'8px 10px',marginBottom:'6px',cursor:'grab',fontSize:'13px',lineHeight:'1.4',position:'relative'}});
         card.textContent=task.text;
         const btns=el('div',{style:{display:'flex',gap:'4px',marginTop:'6px',flexWrap:'wrap'}});
         COL_DEFS.forEach(([dest,dl])=>{
           if(dest===col)return;
           const mv=txt('button','→'+dl,{className:'btn small',style:{fontSize:'10px',padding:'3px 6px',minHeight:'22px'}});
-          mv.onclick=()=>{kb[dest].push(task);kb[col].splice(i,1);saveKanban(kb);render();};
+          mv.onclick=()=>{task.col=dest;saveKanban();render();};
           btns.appendChild(mv);
         });
         const del=txt('button','X',{className:'btn small danger',style:{fontSize:'10px',padding:'3px 6px',minHeight:'22px'}});
-        del.onclick=()=>{kindleConfirm('Delete task?',ok=>{if(ok){kb[col].splice(i,1);saveKanban(kb);render();}});};
+        del.onclick=()=>{kindleConfirm('Delete task?',ok=>{if(ok){const ix=kb.indexOf(task);if(ix>=0)kb.splice(ix,1);saveKanban();render();}});};
         btns.appendChild(del);
         card.appendChild(btns);
         colEl.appendChild(card);
