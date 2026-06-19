@@ -170,3 +170,7 @@ PENDING / bigger jobs (each its own session):
   offline-cred to the newest 1 + drop regenerable caches + trim chat history) and retries the write before
   nagging. So the banner only shows if it's still full after auto-freeing. `_dataUsageBytes()` only measures
   the SK blob, NOT total localStorage — that's why the over-budget meter looked fine while writes failed.
+- Storage-full banner STILL nagging a heavy SIGNED-IN user: a localStorage write failure is NOT data loss when
+  synced+online — the state is in the cloud (12 MB cap >> ~5 MB localStorage). `_checkStorageHealth(fromError)`
+  now suppresses the banner entirely for `S.authToken && S.syncEnabled && navigator.onLine!==false` (and just
+  triggers `scheduleCloudSync(true)`); only LOCAL-ONLY or OFFLINE users — who'd really lose data — still see it.

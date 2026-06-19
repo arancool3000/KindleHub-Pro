@@ -8468,6 +8468,19 @@ function _checkStorageHealth(fromError){
        (saving to localStorage is effectively unlimited). A real quota error
        (fromError) still warns regardless. */
     const cloud=(typeof S!=='undefined'&&!!S.authToken&&!!S.syncEnabled);
+    /* A localStorage write failure (fromError) is NOT data loss for a synced,
+       ONLINE account: the state is saved to the cloud (12 MB cap — far bigger
+       than the ~5 MB browser localStorage). Nagging "storage full" on every
+       save is simply wrong for them, so suppress the banner and make sure the
+       state gets pushed. Only LOCAL-ONLY or OFFLINE users risk real loss and
+       still get warned. This is what finally stopped the every-save banner for
+       signed-in users whose data outgrew localStorage. */
+    if(fromError&&cloud&&(typeof navigator==='undefined'||navigator.onLine!==false)){
+      try{if(typeof scheduleCloudSync==='function')scheduleCloudSync(true);}catch(_){}
+      try{const _b=_storageBanner();if(_b)_b.style.display='none';}catch(_){}
+      _storageWarnDismissed=false;
+      return;
+    }
     const over=cloud&&used>=STORAGE_LIMIT_BYTES*STORAGE_WARN_RATIO;
     /* Don't fire the over-budget nag until the tier is RESOLVED. _checkAdmin
        runs a few seconds into boot; before it resolves, an admin (creator,
