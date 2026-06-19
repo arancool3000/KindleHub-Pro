@@ -31,6 +31,14 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   panes (`#kh-pane-primary-body` / `#kh-pane-secondary-body`); `showView` mounts the PRIMARY via `_viewHost()`
   and the bottom nav drives it. Safe only because inner element IDs are unique per view — NEVER allow the same
   view in both panes (navigating primary onto the secondary's view auto-swaps instead).
+- **Screenshot app**: `window.khCaptureScreen(target,name)` (defined right after the reader IIFE) lazy-loads
+  html2canvas (jsdelivr) on first use, renders the live DOM (default `#app`) to a PNG, and pushes
+  `{name,url,at}` onto `window._khShots` — session-only, NEVER in S (data URLs are huge, same rule as book
+  text). Entry points: the `_khOpenMultitask` panel's "📷 Screenshot this page" (captures the current page)
+  and `BUILDERS.screenshot` (gallery + Download PNG; "Capture last page" rebuilds the previous view off-screen).
+  App-mode only (captures `#app`; in KindleOS use the device screenshot). Replaced the old upload-files Gallery.
+- **Admin self-check**: Settings → Account (`_renderUltra`) states plainly "✓ You ARE an admin" (creator tier)
+  vs "not an admin", and calls `_checkAdmin()` so the tier resolves; re-renders on `kh-tier-changed`.
 - **Free Library / reader**: `window.khOpenBookReader(meta)` + `window.khGutenSearch(q)` (defined right after the
   `el()/txt()` helpers). Search = Gutendex JSON (CORS-open); book text via gutenberg.org through the
   allorigins/corsproxy fallbacks (no CORS header on gutenberg). Full-screen `#kh-reader` overlay paginates
@@ -49,6 +57,15 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   kh_presence, kh_shared_api_usage, kh_banned_usernames, kh_rate.
 - **Auth**: `authRegister/authLogin/authLogout`. Hash = SHA-256(username+password) = lookup key AND AES key.
   Offline login via `_cacheOfflineCred`/`_offlineCred` (encrypted blob cached on device, `kh_offline_cred`).
+  Login UI (`_accForm` in `settings`, built via `_defer`) is a real `<form>` with `autocomplete=username/
+  current-password` + a hidden submit, so the browser/OS keychain (e.g. Mac Safari) saves & autofills creds —
+  the app itself never stores the plaintext password. Username prefill via `kh_last_user`.
+- **Cloud sync merge** (`mergeCloudState`): id-lists (notes/books/flashDecks/mdJournals/calEvents/advStories)
+  are UNIONED by id, so deletions need git-style tombstones — `S.deletedItems` (`<list>:<id>`→ts, SYNCED &
+  unioned across devices like `leftGroups`) recorded by `_khTrackDeletions()` (a save-time diff of the lists
+  vs `window._khPrevIds`, so NO per-delete-site wiring) and skipped by the merge, so a pull/reload never
+  resurrects a deleted item. Re-adding an id clears its tombstone. GC: 180-day age + 2000-entry cap. Item id =
+  `_khItemKey()` (id→uid→title@date→json), used by BOTH the tracker and the merge so keys line up.
 - **Moderation**: profanity filter `_censorText`/`_hasProfanity` (DISPLAY-side only, used in chat, feedback
   AND notification toasts via `notifyMsg`) — two passes: exact word-boundary (`_PROFANITY_WORDS`) + embedded
   roots (`_PROFANITY_SUBSTR`, leet-normalised, guarded by the `_PROFANITY_SAFE` allow-list to dodge the
@@ -99,7 +116,9 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
 ## Feature status
 DONE: Mail (internal + external via worker, KHI summarise/draft/polish, folders, search, avatars),
 Recent-activities switcher
-(header "Recent" button = lightweight "minimise/jump between activities"), landscape mode v2,
+(header "Recent" button = lightweight "minimise/jump between activities"), landscape mode v2 (rotates
+`#rotateRoot` 90° — but ONLY when the viewport is portrait; on a wider-than-tall screen, e.g. a laptop,
+`toggleLandscape` skips the rotation instead of turning everything sideways),
 offline login + username prefill, website shortcuts (browser New-Tab), Contributors card, Ultra progress,
 admin Local Insights, Team Sudoku (share/load puzzle code), Flight Sim "How to fly", profile avatar+status,
 feedback 7-day auto-prune, app-maker double-install guard,
@@ -139,3 +158,19 @@ PENDING / bigger jobs (each its own session):
   un-debounced (instant feedback, cheap).
 - Don't store non-serializable things in S (functions/DOM) — JSON.stringify in save() would throw and
   (previously) be misread as "storage full". `save()` now only treats real QuotaExceededError as full.
+- Storage-full false alarm (admin/large state): `_persistState` writes the RAW json to localStorage first
+  (fast path), which on a ~5 MB Mac browser threw QuotaExceededError on EVERY save and flashed "Storage is
+  full" even though the COMPRESSED blob fits. Fix: on a raw-write quota error, `_persistCompressed()` stores
+  the gzip-packed form instead; the banner (`_checkStorageHealth(true)`) now only fires if even the compressed
+  write fails (genuinely out of space).
+- Storage-full on EVERY chat message (real out-of-space): the hidden hog is `kh_offline_cred` — it cached up to
+  3 whole encrypted state blobs (each ~the main blob's size), so a heavy account overflowed the ~5 MB
+  localStorage and the MAIN blob's write failed every save. Fixes: cap offline-cred at 2 (and self-trim to 1
+  on its own quota error), and `_persistCompressed` now AUTO-RECOVERS once via `_emergencyFreeSpace()` (trim
+  offline-cred to the newest 1 + drop regenerable caches + trim chat history) and retries the write before
+  nagging. So the banner only shows if it's still full after auto-freeing. `_dataUsageBytes()` only measures
+  the SK blob, NOT total localStorage — that's why the over-budget meter looked fine while writes failed.
+- Storage-full banner STILL nagging a heavy SIGNED-IN user: a localStorage write failure is NOT data loss when
+  synced+online — the state is in the cloud (12 MB cap >> ~5 MB localStorage). `_checkStorageHealth(fromError)`
+  now suppresses the banner entirely for `S.authToken && S.syncEnabled && navigator.onLine!==false` (and just
+  triggers `scheduleCloudSync(true)`); only LOCAL-ONLY or OFFLINE users — who'd really lose data — still see it.
