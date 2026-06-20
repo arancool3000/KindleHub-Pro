@@ -24921,6 +24921,7 @@ function mathEval(raw,vars){
   }catch(e){throw new Error('Eval: '+e.message);}
 }
 function fmt(n){
+  if(typeof n==='string')return n;
   if(n===null||n===undefined||isNaN(n))return 'Error';
   if(!isFinite(n))return n>0?'Infinity':'-Infinity';
   if(Number.isInteger(n)&&Math.abs(n)<1e15)return n.toString();
@@ -24936,7 +24937,7 @@ function render(){
   if(C.expr){
     try{
       const v=mathEval(C.expr);
-      if(typeof v==='number'&&isFinite(v)){
+      if(typeof v==='string'||(typeof v==='number'&&isFinite(v))){
         resEl.textContent=fmt(v);resEl.style.color='#aaa';
       }else{
         resEl.textContent='...';resEl.style.color='#ccc';
@@ -24960,7 +24961,7 @@ function execCalc(){
   try{
     const v=mathEval(C.expr);
     if(v===undefined||v===null)throw new Error('No result');
-    if(typeof v!=='number')throw new Error('Not a number');
+    if(typeof v!=='number'&&typeof v!=='string')throw new Error('Not a number');
     C.hist.push({e:C.expr,v});if(C.hist.length>50)C.hist.shift();
     C.ans=v;C.expr='';
     resEl.style.color='#000';resEl.textContent=fmt(v);exprEl.textContent='';renderHist();
