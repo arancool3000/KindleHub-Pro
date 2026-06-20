@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to AranOS</title>
+<style>
+  :root{ --bg:#0a0e21; --bg2:#05070f; --card:#121734; --ink:#eaf0ff; --muted:#9fb3d6;
+         --teal:#2ee6c8; --blue:#5f82ff; --violet:#aa5aff; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans','DejaVu Sans',sans-serif;color:var(--ink);
+       background:radial-gradient(1200px 700px at 50% -10%, #1a2150 0%, var(--bg) 45%, var(--bg2) 100%);
+       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px}
+  .wrap{max-width:880px;width:100%}
+  .hero{text-align:center;margin-bottom:28px}
+  .logo{width:96px;height:96px;border-radius:22px;margin:0 auto 14px;
+        background:linear-gradient(135deg,var(--teal),var(--violet));
+        display:flex;align-items:center;justify-content:center;
+        font-size:54px;font-weight:800;color:#fff;box-shadow:0 12px 40px rgba(95,130,255,.35)}
+  h1{font-size:40px;letter-spacing:.5px;margin-bottom:6px}
+  .tag{color:var(--muted);font-size:18px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+        border:1px solid rgba(120,150,255,.16);border-radius:16px;padding:20px}
+  .card h3{font-size:18px;margin-bottom:8px;display:flex;gap:10px;align-items:center}
+  .card p{color:var(--muted);font-size:14px;line-height:1.55}
+  .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--blue))}
+  ul{list-style:none;margin-top:8px}
+  ul li{color:var(--muted);font-size:14px;padding:3px 0 3px 20px;position:relative}
+  ul li::before{content:'›';position:absolute;left:4px;color:var(--teal);font-weight:700}
+  footer{margin-top:26px;text-align:center;color:var(--muted);font-size:13px}
+  .pill{display:inline-block;padding:4px 12px;border-radius:999px;font-size:12px;
+        background:rgba(46,230,200,.12);color:var(--teal);border:1px solid rgba(46,230,200,.3);margin-top:10px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="logo">A</div>
+      <h1>Welcome to AranOS</h1>
+      <div class="tag">Simple. Beautiful. Yours.</div>
+      <div class="pill">Version 1.0 &nbsp;·&nbsp; "Aurora"</div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3><span class="dot"></span> Get around</h3>
+        <p>Click the <b>menu</b> in the bottom-left to find every app, search, and shut down.
+           The panel at the bottom shows open windows and the system tray.</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot"></span> What's included</h3>
+        <ul>
+          <li>Web — GNOME Web browser</li>
+          <li>Office — LibreOffice Writer, Calc, Impress</li>
+          <li>Creative — GIMP image editor</li>
+          <li>Media — VLC plays anything</li>
+          <li>Files, Calculator, Screenshots &amp; more</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot"></span> Connect</h3>
+        <p>Click the network icon in the system tray (bottom-right) to join Wi-Fi.
+           Bluetooth, sound and display settings live in <b>System Settings</b>.</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot"></span> Make it yours</h3>
+        <p>Open <b>System Settings → Themes &amp; Backgrounds</b> to restyle everything.
+           This is a live session — changes reset on reboot unless you install AranOS.</p>
+      </div>
+    </div>
+    <footer>You're running the AranOS live session. Enjoy the tour — close this window any time.</footer>
+  </div>
+</body>
+</html>

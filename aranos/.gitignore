@@ -1,0 +1,8 @@
+# Build artifacts (never commit — multi-GB)
+*.iso
+chroot/
+image/
+shots-*/
+*.squashfs
+aranos-build/
+branding/assets/*.ppm
