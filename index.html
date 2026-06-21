@@ -1990,10 +1990,6 @@ function saveNow(){
 ────────────────────────────────────────────────────────────────────────── */
 function NOW(){return new Date(Date.now()+((typeof S!=='undefined'&&S.clockOffset)||0));}
 
-function isPro(){return true;}
-function showProModal(reason,onSuccess){if(onSuccess)onSuccess();}
-function checkTimeGate(gameKey,limitSecs,friendlyName,onAllowed){onAllowed();return true;}
-function gatedLaunch(gameKey,limitSecs,friendlyName,launchFn){launchFn();}
 function todayKey(){const d=NOW();return d.getFullYear()+'_'+(d.getMonth()+1)+'_'+d.getDate();}
 
 /* ── Global location city list (used by Settings, Onboarding, Stars, World Clock) ── */
@@ -3268,7 +3264,10 @@ function launchKindleDesktop(){
     if(_prebuilt){
       _doShow();
     } else {
-      requestAnimationFrame(()=>requestAnimationFrame(_doShow));
+      /* One frame so the launcher hide paints first, then build+show. Was a
+         DOUBLE rAF, which on e-ink (slow/throttled rAF) made opening an app
+         feel laggy — a single frame is noticeably snappier. */
+      requestAnimationFrame(_doShow);
     }
   }
   function closeApp(){
@@ -4098,8 +4097,6 @@ function launchKindleDesktop(){
       for(const b of buttons){if(b.textContent==='KindleOS'){b.click();break;}}
     }catch(_){}}, 140);
   }
-  function closeOSSettings(){/* legacy no-op — kept so older call sites don't crash */}
-  function openWallpaperPanel(){openOSSettings();}
 
   /* ── AI APP STORE ── */
   const kdStore=document.createElement('div');
@@ -7594,19 +7591,6 @@ function _masterId(){
   try{return localStorage.getItem('kh_master_override')||KH_REG;}catch(e){return KH_REG;}
 }
 
-async function _jsPatch(itemId,data){
-  const r=await fetch(_jsWriteUrl(itemId),{
-    method:'PATCH',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
-  });
-  if(!r.ok){
-    let body='';try{body=await r.text();}catch(e){}
-    throw new Error('PATCH '+itemId+' → HTTP '+r.status+(body?' '+body.slice(0,120):''));
-  }
-}
-
 /* ── Delete an orphan item (used by the cleanup tool only) ──────────── */
 async function _jsDelete(itemId){
   const r=await fetch(_jsWriteUrl(itemId),{
@@ -8926,16 +8910,6 @@ async function syncToCloud(){
    nothing bounces back); a no-op when signed out or sync is off. */
 function _pushCloudNow(){try{if(S.authToken&&S.syncEnabled&&typeof syncToCloud==='function')syncToCloud().catch(function(){});}catch(_){}}
 
-async function syncFromCloud(){
-  if(!S.authToken)return;
-  try{
-    const packed=await _loadUser(S.authToken);
-    if(!packed)return;
-    const cloudState=await _decryptState(S._encKey||S.authToken,packed);
-    if(cloudState&&Object.keys(cloudState).length>0)mergeCloudState(cloudState);
-  }catch(e){console.warn('Sync load failed',e);}
-}
-
 /* ── Global game leaderboard ─────────────────────────────────────────
    Cross-device, cross-account scores for any game. Backed by the
    kh_scores Supabase table (open read + insert for anon — no edit, no
@@ -9812,8 +9786,6 @@ function getQUOTES(){if(!_QT)_QT=[
 '"It is not the mountain we conquer, but ourselves." — Hillary',
 '"Champions keep playing until they get it right." — Navratilova'
 ];return _QT;}
-function getDailyQuote(){const d=NOW();const s=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();return getQUOTES()[Math.abs(Math.floor(Math.sin(s)*10000))%getQUOTES().length];}
-
 const WOTD_LIST=[
   {word:'EPHEMERAL',pos:'adj.',def:'Lasting for a very short time; transitory.',eg:'The ephemeral beauty of cherry blossoms makes them all the more precious.'},
   {word:'ELOQUENT',pos:'adj.',def:'Fluent and persuasive in speaking or writing.',eg:'Her eloquent speech moved the entire audience to tears.'},
@@ -11758,7 +11730,6 @@ function exitImmersive(){
 $('immersiveExit').onclick=exitImmersive;
 function updateImmersiveScore(s){const e=$('immersiveScore');if(e)e.textContent=s;}
 
-function getWeekKey(){const d=NOW();const jan1=new Date(d.getFullYear(),0,1);return d.getFullYear()+'W'+Math.ceil(((d-jan1)/86400000+jan1.getDay()+1)/7);}
 
 /* ════════════════════════════════════════════════════════════════════
    DEEP DIG — a 2.5D dig-and-smash STORY platformer (original).
@@ -31697,7 +31668,6 @@ body.sepia #view-weather{--muted:#4a3a26;}
     if(daily.sunrise&&daily.sunset){
       const ghCard=el('div',{className:'card',style:'margin-bottom:8px;'});
       ghCard.appendChild(txt('h2','Golden Hour & Twilight',{style:'font-size:13px;margin-bottom:8px;'}));
-      function srStr(iso){return iso.slice(-5);}
       const srRaw=daily.sunrise[0],ssRaw=daily.sunset[0];
       const srDate=new Date(srRaw),ssDate=new Date(ssRaw);
       // Golden hour = 0-60min after sunrise, 0-60min before sunset
@@ -35366,7 +35336,6 @@ feedback:()=>{
   }
 
   function getVoted(){try{return JSON.parse(localStorage.getItem('kh_voted')||'{}');}catch(e){return{};}}
-  function setVoted(id){const vd=getVoted();vd[id]=true;localStorage.setItem('kh_voted',JSON.stringify(vd));}
 
   v.appendChild(txt('h2','Community Board',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
   v.appendChild(txt('div','Submit and vote on features and bug reports. Shared across all KindleHub Pro users.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'10px'}}));
@@ -46428,12 +46397,6 @@ function defaultShapeElem(shape,x,y,w,h,fill){
 /* ══════════════════════════════════════════════
    RENDERING
 ══════════════════════════════════════════════ */
-function hexToRgb(hex){
-  hex=hex.replace('#','');
-  if(hex.length===3)hex=hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-  const n=parseInt(hex,16);
-  return{r:(n>>16)&255,g:(n>>8)&255,b:n&255};
-}
 function applyElemShadow(ctx2,elem){
   if(elem.shadow){ctx2.shadowColor='rgba(0,0,0,0.35)';ctx2.shadowBlur=8;ctx2.shadowOffsetX=3;ctx2.shadowOffsetY=3;}
   else{ctx2.shadowColor='transparent';ctx2.shadowBlur=0;ctx2.shadowOffsetX=0;ctx2.shadowOffsetY=0;}
@@ -53274,7 +53237,6 @@ window.CandyCrush=(()=>{
     return found?matched:null;
   }
 
-  function countMatched(matched){return matched.flat().filter(Boolean).length;}
 
   // Returns {cleared, specialsTriggered, spawnSpecial}
   function clearMatches(matched){
