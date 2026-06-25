@@ -1326,7 +1326,13 @@ let S=(()=>{try{
     r=new TextDecoder().decode(bytes);
   }
   return Object.assign(defaultState(),JSON.parse(r));
-}catch(e){return defaultState();}})();
+}catch(e){
+  /* An existing blob that we FAILED to read (inflate/parse error) — flag it so
+     _persistState won't clobber the still-on-disk data, letting a reload or
+     re-login recover instead of forcing a fresh logged-out state every time. */
+  try{if(localStorage.getItem(SK))window.__khStateLoadFailed=true;}catch(_){}
+  return defaultState();
+}})();
 /* PERF: keep a tiny pre-paint hints key in sync so the boot script can apply
    theme / uiMode / lite-mode WITHOUT parsing the whole state blob (saves one
    full JSON.parse before first paint on a loaded account). Written here once at
@@ -1520,9 +1526,13 @@ async function _doCloudSync(force){
    whether you actually read the chat). */
 function _khMarkGroupUnread(code){try{if(code)localStorage.setItem('kh_msg_unread_'+code,'1');}catch(_){}}
 function _khClearGroupUnread(code){try{if(code)localStorage.removeItem('kh_msg_unread_'+code);}catch(_){}}
+/* Advance the background notifier's "last seen" marker to a message the user has
+   actually read in-app. Without this the 45s notifier only advances on its own
+   poll, so it re-toasts messages you already opened and read. */
+function _khMarkGroupSeen(code,id){try{if(code&&id!=null)localStorage.setItem('kh_msg_lastseen_'+code,String(id));}catch(_){}}
 function _khGroupUnread(code){try{return localStorage.getItem('kh_msg_unread_'+code)==='1';}catch(_){return false;}}
 function _khAnyUnread(){try{if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&_khGroupUnread(KH_GLOBAL_GROUP_CODE))return true;const gs=(typeof S!=='undefined'&&S.msgGroups)||[];for(let i=0;i<gs.length;i++){if(gs[i]&&gs[i].code&&_khGroupUnread(gs[i].code))return true;}return false;}catch(_){return false;}}
-window._khMarkGroupUnread=_khMarkGroupUnread;window._khClearGroupUnread=_khClearGroupUnread;window._khGroupUnread=_khGroupUnread;window._khAnyUnread=_khAnyUnread;
+window._khMarkGroupUnread=_khMarkGroupUnread;window._khClearGroupUnread=_khClearGroupUnread;window._khGroupUnread=_khGroupUnread;window._khAnyUnread=_khAnyUnread;window._khMarkGroupSeen=_khMarkGroupSeen;
 
 let _msgNotifyTimer=null;
 function _startMessageNotifier(){
@@ -1964,6 +1974,12 @@ function _persistCompressed(json){
   }catch(_){}
 }
 function _persistState(){
+  /* SAFETY: if boot couldn't read an existing saved blob (e.g. a transient
+     gzip-inflate failure under memory pressure on a Kindle), do NOT overwrite
+     it with the reset/default state — that turns a recoverable hiccup into a
+     permanent logout + local data loss. Preserve the blob so a reload (or
+     re-login) recovers the session. Cleared once authLogin succeeds. */
+  if(window.__khStateLoadFailed)return false;
   try{_khTrackDeletions();}catch(_){}
   const json=JSON.stringify(S);          /* a throw here is a serialization bug, not quota */
   let rawOk=false;
@@ -8862,6 +8878,7 @@ async function authRegister(email,password){
     if(exists)return{success:false,error:'An account with this email already exists.'};
     S.userId=key.slice(0,16);S.authToken=key;S.email=email;S.syncEnabled=true;
     S._encKey=key; /* held in memory only, never persisted */
+    window.__khStateLoadFailed=false;/* authoritative new account — re-enable saves */
     await _saveUser(key,email,_buildSafeState());
     save();
     return{success:true,username:email,adjusted:(email!==_origName)};
@@ -8895,6 +8912,7 @@ async function authLogin(email,password){
           else if(meta.enc&&typeof meta.state==='string'){packed=meta.state;needsMigration=true;}
           else if(meta.state&&typeof meta.state==='object'){
             S.userId=key.slice(0,16);S.authToken=key;S.email=email;S.syncEnabled=true;S._encKey=key;
+            window.__khStateLoadFailed=false;
             if(Object.keys(meta.state).length>0)mergeCloudState(meta.state);
             await _saveUser(key,email,_buildSafeState());
             save();
@@ -8920,6 +8938,7 @@ async function authLogin(email,password){
     const cloudState=await _decryptState(key,packed);
     if(!cloudState)return{success:false,error:'Decryption failed — wrong password?'};
     S.userId=key.slice(0,16);S.authToken=key;S.email=email;S.syncEnabled=true;S._encKey=key;
+    window.__khStateLoadFailed=false;/* re-authenticated — new state is authoritative, re-enable saves */
     /* Refresh the offline cache for this device (and remember the username
        for the login form) even when we signed in from the server. */
     try{_cacheOfflineCred(key,email,packed);}catch(_){}
@@ -51391,6 +51410,9 @@ messages:()=>{
       try{
         _messages=await _groupFetchMessages(g.code);
         try{_khClearGroupUnread(g.code);}catch(_){}
+        /* Mark everything we just loaded as seen so the notifier won't re-toast
+           messages the user is reading right now. */
+        try{if(_messages&&_messages.length)_khMarkGroupSeen(g.code,_messages[_messages.length-1].id);}catch(_){}
         _loading=false;
         renderMessages(_messages);
         /* Update member count in header */
@@ -51525,6 +51547,9 @@ messages:()=>{
               const m={id:r.id,userId:r.user_id||'',displayName:r.display_name||'',text:decText,ts:r.ts,replyTo:r.reply_to||null,edited:!!r.edited,important:!!r.important,device:r.device_hint||'',location:r.location_hint||''};
               if(!_messages.find(x=>x.id===m.id)){
                 _messages.push(m);renderMessages(_messages);
+                /* The user is looking at this group — count it as seen so the
+                   background poller doesn't toast it again later. */
+                try{_khMarkGroupSeen(g.code,m.id);}catch(_){}
                 /* Push toast for incoming messages from other users.
                    Pass m.id as the dedup key so this realtime path
                    and the 45-second polling path share a single
@@ -54343,6 +54368,12 @@ window._showWelcome=function(){
       /* Still set currentView so nav bookkeeping doesn't get confused */
       try{currentView='home';}catch(_){}
     }
+    /* If boot couldn't read the saved blob this time (transient inflate failure),
+       tell the user — we did NOT overwrite their data, so a reload usually
+       recovers the session; otherwise a re-login restores everything from cloud. */
+    if(window.__khStateLoadFailed){
+      setTimeout(function(){try{if(typeof toast==='function')toast('Couldn’t read your saved session this time — reload the page to recover it, or log in again. Your data is safe.',9000);}catch(_){}},800);
+    }
     setTimeout(()=>{S.totalSessions=(S.totalSessions||0)+1;save(2000);},50);
     /* Kick off the 45 s cloud-sync heartbeat if the user has a session.
        Idempotent — skipped if no auth, exits if already running. */
@@ -54960,6 +54991,18 @@ function renderKbd(){
 
   /* Bottom row */
   var rb=document.createElement('div');rb.className='kh-row';
+
+  /* "✕ off" — turn the floating keyboard OFF for good (persisted). Without this
+     the only dismiss was tap-away, which is session-only, so it reappeared on
+     every input focus and users had to dig into Settings repeatedly. */
+  var offBtn=mk('✕','kh-key-wide kh-key-muted',function(){
+    if(typeof S!=='undefined'){S.kindleKeyboardMode='off';delete S.kindleKeyboardManual;delete S.kindleKeyboard;try{if(typeof save==='function')save();}catch(_){}}
+    try{disable();}catch(_){}
+    if(typeof toast==='function')toast('Floating keyboard off. Turn it back on in Settings → Keyboard.',5000);
+  });
+  offBtn.title='Turn off the floating keyboard (re-enable in Settings → Keyboard)';
+  offBtn.style.minWidth='44px';
+  rb.appendChild(offBtn);
 
   var numBtn=mk(_numMode?'ABC':'123','kh-key-wide kh-key-muted',function(){_numMode=!_numMode;renderKbd();});
   numBtn.style.minWidth='52px';
