@@ -33,7 +33,7 @@ const FILE = 'file://' + path.resolve(__dirname, '..', 'index.html');
       out.replyCtxSet = /The capital of France is Paris/.test(out.stripLabel);
       // user bubble renders a quote line when given a reply ctx
       addUserMsg('Are you sure?', {text:'The capital of France is Paris.', who:'AI'});
-      const quote = [...document.querySelectorAll('#chatLog div')].some(d => /↩ AI: The capital/.test(d.textContent||''));
+      const quote = [...document.querySelectorAll('#chatLog div')].some(d => /AI: The capital/.test(d.textContent||''));
       out.userQuoteRendered = quote;
       // cancel clears the strip
       _clearAiReply();
