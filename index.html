@@ -6629,6 +6629,18 @@ async function _loadAllAnnouncements(){
     return Array.isArray(rows)?rows:[];
   }catch(_){return [];}
 }
+/* Turn a raw PostgREST/Supabase error body into a short, human message —
+   never show users the raw {"code":...,"details":...} JSON ("supabase in
+   braces"). Recognises the common cases and otherwise strips the JSON noise. */
+function _sbFriendlyErr(t,status){
+  const s=String(t||'');
+  if(/23502/.test(s))return 'the database is out of date — re-run the latest KindleHub SQL (Admin → Diagnostics) to add the missing column default, then try again';
+  if(/PGRST(202|205)|Could not find/i.test(s))return 'that feature isn\'t set up yet — run the latest SQL, then reload the schema';
+  if(/rate limit/i.test(s))return 'you\'re doing that too fast — wait a moment and retry';
+  if(/duplicate key|23505/i.test(s))return 'that already exists';
+  try{const o=JSON.parse(s);const m=o.message||o.details||o.hint||o.error;if(m)return String(m).replace(/^Failing row contains.*/i,'a required field was missing').slice(0,120);}catch(_){}
+  return s?String(s).replace(/[{}"\[\]]/g,'').slice(0,120):('server error '+(status||'?'));
+}
 async function _announceRpc(fn,body){
   try{
     const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/'+fn;
@@ -6637,7 +6649,7 @@ async function _announceRpc(fn,body){
     let t='';try{t=await r.text();}catch(_){}
     if(/not authorized/i.test(t))toast('Wrong PIN — not authorised to post.',5000);
     else if(/PGRST202|PGRST205|Could not find/i.test(t))toast('Announcements aren\'t set up yet — run the kh_announcements SQL, then notify pgrst reload schema.',6500);
-    else toast('Failed: '+String(t||('HTTP '+r.status)).slice(0,120),6000);
+    else toast('Couldn\'t post — '+_sbFriendlyErr(t,r.status),6500);
     return false;
   }catch(e){toast('Network error posting announcement.',4000);return false;}
 }
@@ -31580,7 +31592,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
   const WX_ICONS={0:'[sun]',1:'[sun]',2:'[cloud]',3:'[cloud]',45:'[fog]',48:'[fog]',51:'[rain]',53:'[rain]',55:'[rain]',61:'[rain]',63:'[rain]',65:'[rain]',71:'[snow]',73:'[snow]',75:'[snow]',80:'[shower]',81:'[shower]',82:'[storm]',95:'[storm]',96:'[storm]',99:'[storm]'};
   const WX_DESC={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Icy fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',71:'Light snow',73:'Snow',75:'Heavy snow',80:'Showers',81:'Heavy showers',82:'Violent showers',95:'Thunderstorm',96:'Thunderstorm+hail',99:'Heavy thunderstorm'};
 
-  function wxRender(data,locName,aqData){
+  function wxRender(data,locName,aqData,isFresh){
     _lastWxData=data;_lastWxLocName=locName;_lastAqData=aqData;
     wxOut.innerHTML='';
     const cur=data.current,daily=data.daily,hourly=data.hourly;
@@ -32211,7 +32223,11 @@ body.sepia #view-weather{--muted:#4a3a26;}
           radarWrap.innerHTML='<div style="color:var(--muted);font-size:11px;padding:8px;">Could not load radar. Check connection.</div>';
         });
     };
-    S.weatherData={cur,daily,hourly,locName,aqData:aqData||null,ts:Date.now()};save();
+    /* Only stamp a NEW fetch-time when this is genuinely fresh network data.
+       Re-rendering the cache (paint-first / offline fallback) passed isFresh=false
+       and must NOT clobber ts — doing so reset the stored fetch-time to "now" on
+       every view, which is why the offline label always read "cached 0min ago". */
+    if(isFresh!==false){S.weatherData={cur,daily,hourly,locName,aqData:aqData||null,ts:Date.now()};save();}
   }
 
   async function wxFetch(lat,lon,locName){
@@ -32225,7 +32241,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
     const cache=S.weatherData;
     const cacheAgeMin=cache&&cache.ts?Math.round((Date.now()-cache.ts)/60000):Infinity;
     if(cache&&cache.cur&&cacheAgeMin<60){
-      wxRender({current:cache.cur,daily:cache.daily,hourly:cache.hourly},cache.locName||locName,cache.aqData||null);
+      wxRender({current:cache.cur,daily:cache.daily,hourly:cache.hourly},cache.locName||locName,cache.aqData||null,false);
       locLabel.textContent='Showing: '+(cache.locName||locName)+'  ·  updating…';
     } else {
       wxOut.innerHTML='<div style="color:var(--muted);padding:16px;text-align:center;font-style:italic;">Loading weather...</div>';
@@ -32243,9 +32259,11 @@ body.sepia #view-weather{--muted:#4a3a26;}
     }catch(e){
       /* Try offline cache */
       if(S.weatherData&&S.weatherData.cur){
-        wxRender({current:S.weatherData.cur,daily:S.weatherData.daily,hourly:S.weatherData.hourly},S.weatherData.locName||locName,S.weatherData.aqData||null);
-        const age=Math.round((Date.now()-S.weatherData.ts)/60000);
-        locLabel.textContent='Offline — cached '+age+'min ago · '+( S.weatherData.locName||locName);
+        wxRender({current:S.weatherData.cur,daily:S.weatherData.daily,hourly:S.weatherData.hourly},S.weatherData.locName||locName,S.weatherData.aqData||null,false);
+        const ms=Date.now()-(S.weatherData.ts||Date.now());
+        const mins=Math.max(0,Math.round(ms/60000));
+        const agoTxt=mins<1?'just now':mins<60?(mins+'min ago'):mins<1440?(Math.round(mins/60)+'h ago'):(Math.round(mins/1440)+'d ago');
+        locLabel.textContent='Offline — cached '+agoTxt+' · '+(S.weatherData.locName||locName);
       } else {
         wxOut.innerHTML='<div style="color:var(--muted);padding:16px;text-align:center;">No internet and no cached data available.<br><small style="color:var(--muted)">'+e.message+'</small></div>';
       }
