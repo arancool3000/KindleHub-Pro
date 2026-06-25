@@ -163,6 +163,13 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
 #view-browser{padding:0!important;overflow:hidden!important;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);height:100%;min-height:0;}
 .grid{display:grid;gap:var(--gap);grid-template-columns:1fr}
 @media(min-width:760px){.grid{grid-template-columns:1fr 1fr}}
+/* Adaptive: on a wide desktop the Kindle-width UI stretched edge-to-edge and
+   looked sparse. Centre app-mode in a comfortable reading column. KindleOS
+   (#kd-root, a fixed full-screen overlay) is unaffected; a KindleOS app open
+   in the shell (body.kdos-fullapp) keeps full width. */
+@media(min-width:1000px){
+  body:not(.kdos-fullapp) #app{max-width:980px;margin-left:auto;margin-right:auto;border-left:var(--thin);border-right:var(--thin);}
+}
 
 /* ── Cards — better mobile padding & spacing ── */
 .card{
@@ -1368,8 +1375,8 @@ let _syncTimer=null;
 let _periodicTimer=null;
 let _stateDirty=false;          /* true while local state differs from last cloud sync */
 let _lastSyncedHash='';         /* fingerprint of last successfully synced state */
-const _CLOUD_DEBOUNCE_MS=10000; /* 10s after last edit before upload — quota-friendly (settings & stories sync 10s after the last change) */
-const _PERIODIC_SYNC_MS=30000;  /* background pull every 30s */
+const _CLOUD_DEBOUNCE_MS=20000; /* 20s after the LAST edit before upload — coalesces bursts of edits into one upload (was 10s; doubling halves active-editing egress) */
+const _PERIODIC_SYNC_MS=60000;  /* background pull every 60s (was 30s) — chat has its own realtime socket, so 60s cross-device latency is invisible and idle egress halves */
 
 /* Quick non-cryptographic fingerprint so we can tell "did anything change?"
    without re-encrypting the whole state.
@@ -1418,7 +1425,7 @@ function scheduleCloudSync(force=false){
        The _stateDirty flag stays true so the next online tick (or
        a manual Sync Now) will eventually push the queued edits. */
     if(!navigator.onLine)return;
-    _doCloudSync();
+    _doCloudSync(force);
   },force?0:_CLOUD_DEBOUNCE_MS);
 }
 
@@ -1461,9 +1468,19 @@ function scheduleCloudSync(force=false){
   /* Mark as wrapped so a second BUILDER pass can't double-wrap */
   try{Object.defineProperty(localStorage,'__khAutoSyncWrapped',{value:true,enumerable:false,configurable:false});}catch(_){}
 })();
-async function _doCloudSync(){
+async function _doCloudSync(force){
   if(!S.authToken||!S.syncEnabled)return;
   if(!navigator.onLine)return;/* offline → no upload (saves quota & avoids errors) */
+  /* ── EGRESS short-circuit ──
+     If nothing that would be uploaded has changed since our last successful
+     push (same fingerprint), skip the ENTIRE pull+push round-trip. Remote
+     edits from other devices still arrive via the 60s periodic pull, so we
+     lose nothing. This is the big win: the auto-sync wrapper fires on EVERY
+     kh_* localStorage write (caches, UI prefs, no-op re-saves), and most of
+     those don't change the cloud payload — they used to each cost a meta GET
+     + a full-blob PUT. Now they cost zero network. A real edit changes the
+     fingerprint and falls through to the normal merge-and-push below. */
+  if(!force && _lastSyncedHash!==null && _stateFingerprint()===_lastSyncedHash){_stateDirty=false;return;}
   /* ── Pull-before-push ──
      Previously this just blindly pushed local state. When 3 tabs /
      devices edit concurrently, last-push wins and 999/1000 events
@@ -6025,6 +6042,42 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
       create trigger kh_errors_cap
         after insert on kh_errors
         for each row execute function kh_errors_cap_trigger();
+
+      -- v5 STORAGE GUARD: cap kh_scores to the top 100 per game (was UNBOUNDED —
+      -- the single biggest DB-size leak; every score from every user stayed forever)
+      create or replace function kh_scores_cap_trigger()
+        returns trigger language plpgsql security definer as $body$
+      begin
+        delete from kh_scores
+          where game = new.game
+            and id not in (
+              select id from kh_scores
+              where game = new.game
+              order by score desc, date desc
+              limit 100
+            );
+        return null;
+      end;
+      $body$;
+      drop trigger if exists kh_scores_cap on kh_scores;
+      create trigger kh_scores_cap
+        after insert on kh_scores
+        for each row execute function kh_scores_cap_trigger();
+
+      -- v5 STORAGE GUARD: GC presence rows idle > 3 days (sampled on write)
+      create or replace function kh_presence_gc_trigger()
+        returns trigger language plpgsql security definer as $body$
+      begin
+        if (random() < 0.05) then
+          delete from kh_presence where last_seen < now() - interval '3 days';
+        end if;
+        return new;
+      end;
+      $body$;
+      drop trigger if exists kh_presence_gc on kh_presence;
+      create trigger kh_presence_gc
+        before insert or update on kh_presence
+        for each row execute function kh_presence_gc_trigger();
 
       -- Also rate-limit feedback submissions globally (anti-spam)
       create or replace function kh_feedback_rate_trigger()
@@ -11886,7 +11939,7 @@ const DigQuest=(function(){
 
   function digDir(){if(input.down)return 'down';if(input.left&&!input.right)return 'left';if(input.right&&!input.left)return 'right';return player.facing>0?'right':'left';}
   function collect(c,tx,ty){
-    if(c==='*'){crystals++;score+=10;}
+    if(c==='*'){crystals++;bank++;score+=10;}/* crystals (the ◆ the HUD/shop name) now bank for upgrades — previously only coins did, so dug crystals never grew your spendable bank */
     else if(c==='K'){keysHave++;score+=50;}
     else if(c==='o'){coins++;bank++;score+=5;}
     else if(c==='D'){drillT=drillSeconds();score+=15;if(typeof toast==='function')toast('Drilling-charm! Stone breaks for '+Math.round(drillT)+'s.');}
@@ -12294,7 +12347,7 @@ const Blackjack=(function(){
     const wrap=el('div',{style:{maxWidth:'460px',margin:'0 auto',padding:'12px',textAlign:'center'}});
     wrap.appendChild(txt('div','Chips: '+chips,{style:{fontWeight:'900',fontSize:'16px',marginBottom:'10px'}}));
     const hideHole=(phase==='player');
-    wrap.appendChild(txt('div','Dealer'+((phand.length&&!hideHole)?' · '+val(dhand):''),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px',letterSpacing:'.5px',textTransform:'uppercase'}}));
+    wrap.appendChild(txt('div','Dealer'+((dhand.length&&!hideHole)?' · '+val(dhand):''),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px',letterSpacing:'.5px',textTransform:'uppercase'}}));
     wrap.appendChild(handRow(dhand,hideHole));
     wrap.appendChild(txt('div','You'+(phand.length?' · '+val(phand):''),{style:{fontSize:'11px',color:'var(--muted)',margin:'12px 0 4px',letterSpacing:'.5px',textTransform:'uppercase'}}));
     wrap.appendChild(handRow(phand,false));
@@ -12906,7 +12959,9 @@ const Mastermind=(()=>{
         G.lost=true;
         recordStat('mastermind',false,{turns:G.turns});
       }
-      S.games.mastermind={best:(S.games.mastermind&&S.games.mastermind.best)||null,current:G};
+      /* Drop `current` once the game is over so it isn't resumed as an
+         already-finished board next time; keep persisting it mid-game. */
+      S.games.mastermind={best:(S.games.mastermind&&S.games.mastermind.best)||null,...((G.won||G.lost)?{}:{current:G})};
       save();
       render();
     };
@@ -12976,7 +13031,7 @@ const Memory=(()=>{
       C.first=C.second=null;C.busy=false;save();render();
       if(C.matched.every(Boolean)){toast('All matched!');recordStat('memory',true,{time:Date.now()-C.startTime});}
     }else{
-      setTimeout(()=>{C.revealed[C.first]=C.revealed[C.second]=false;C.first=C.second=null;C.busy=false;save();render();},900);
+      {const _a=C.first,_b=C.second,_g=C;setTimeout(()=>{if(_g!==C)return;/* a "New" game during the flip-back delay reassigned C — don't stomp the fresh board */_g.revealed[_a]=_g.revealed[_b]=false;_g.first=_g.second=null;_g.busy=false;save();render();},900);}
     }
   }
   function restore(){const g=S.games.memory&&S.games.memory.current;if(g){C=JSON.parse(JSON.stringify(g));enterImmersive('Memory');render();}else toast('No saved game');}
@@ -13117,7 +13172,7 @@ const TTT=(()=>{
         else if(mode==='2p'){label='Player '+(winner==='X'?'1':'2')+' wins!';}
         else {const isHuman=winner===humanPiece;label=isHuman?'You win!':'AI wins!';}
         toast(label);
-        if(mode==='2p')recordStat('ttt',false,{time:Date.now()-startTime});
+        if(mode==='2p')recordStat('ttt',null,{time:Date.now()-startTime});
         else if(mode==='online')recordStat('ttt',winner===myOnlinePiece,{time:Date.now()-startTime});
         else recordStat('ttt',winner===humanPiece,{time:Date.now()-startTime});
         return true;
@@ -14557,6 +14612,15 @@ const Chess=(()=>{
     const opp=t==='white'?'black':'white';
     for(let r=0;r<8;r++) for(let c=0;c<8;c++){
       if(!b[r][c]||!enemy(b[r][c],t)) continue;  // only opponent pieces
+      // Pawns attack diagonally even onto EMPTY squares — rawMoves only emits a
+      // pawn capture when the diagonal is occupied, so a pawn covering an empty
+      // square (e.g. the king's castling transit square) would be missed. Handle
+      // pawns explicitly so castling-through-check and empty-square control work.
+      if(b[r][c].toLowerCase()==='p'){
+        const pdir=opp==='white'?-1:1;
+        if(r+pdir===sr&&(c-1===sc||c+1===sc)) return true;
+        continue;
+      }
       // Use rawMoves with no ep/cas to avoid infinite castling recursion
       const ms=rawMoves(b,r,c,opp,null,'-');
       if(ms.some(m=>m.r===sr&&m.c===sc)) return true;
@@ -15839,7 +15903,7 @@ const Minesweeper=(()=>{
       ms.firstClick=false;
       if(ms.cells[i]===9){
         for(let j=0;j<ms.cells.length;j++){
-          if(j!==i&&ms.cells[j]===0){
+          if(j!==i&&ms.cells[j]!==9){
             ms.cells[j]=9;ms.cells[i]=0;
             const size=ms.size;
             for(let r=0;r<size;r++)for(let c=0;c<size;c++){
@@ -15892,10 +15956,11 @@ const Wordle=(()=>{
   function getLetterState(letter){
     let best=null;
     for(const attempt of C.attempts){
+      const sc=scoreRow(attempt);/* duplicate-aware, same as the board tiles */
       for(let i=0;i<attempt.length;i++){
         if(attempt[i]!==letter)continue;
-        if(C.answer[i]===letter)return 'correct';
-        if(C.answer.includes(letter))best='present';
+        if(sc[i]==='correct')return 'correct';
+        if(sc[i]==='present')best='present';
         else if(!best)best='absent';
       }
     }return best;
@@ -16072,8 +16137,12 @@ const Sudoku=(()=>{
         let complete=true;
         for(let r=0;r<9&&complete;r++)for(let c=0;c<9&&complete;c++){
           const v=G.fixed[r][c]?G.puzzle[r][c]:G.user[r][c];
-          if(v!==G.solution[r][c])complete=false;
+          if(!v)complete=false;
         }
+        /* Win on ANY valid full grid (no row/col/box conflicts), not only an
+           exact match to one stored solution — puzzles aren't guaranteed unique,
+           so a correct alternate fill must also count as solved. */
+        if(complete&&getConflicts().size>0)complete=false;
         if(complete){render();toast('Sudoku solved!');recordStat('sudoku',true,{time:Date.now()-G.startTime});}else render();
       };
       numpad.appendChild(btn);
@@ -16412,10 +16481,10 @@ const G2048=(()=>{
     const sb=document.getElementById('g2048sb');
     if(sb)sb.textContent=`Score: ${G.score}   Best: ${G.best}`;
     updateImmersiveScore(`Score: ${G.score}`);
-    if(G.won&&G.active){
+    if(G.won&&G.active&&G.wonShown){
       ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(0,0,BOARD_PX,BOARD_PX);
       ctx.fillStyle=dark?'#fff':'#000';ctx.font='bold 22px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillText('2048!',BOARD_PX/2,BOARD_PX/2);
+      ctx.fillText('2048! Keep going',BOARD_PX/2,BOARD_PX/2);
     }
     if(!G.active){
       ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,0,BOARD_PX,BOARD_PX);
@@ -16447,9 +16516,10 @@ const G2048=(()=>{
       }
     }
     if(!moved)return;
+    if(G.wonShown)G.wonShown=false;/* dismiss the win banner on the next move so it doesn't obscure the board forever */
     G.board=b;addTile();
     if(G.score>G.best){G.best=G.score;S.games['2048']={best:G.best};save();}
-    if(G.board.includes(2048)&&!G.won){G.won=true;toast('You reached 2048!');}
+    if(G.board.includes(2048)&&!G.won){G.won=true;G.wonShown=true;toast('You reached 2048!');}
     if(!G.board.includes(0)){
       let canMove=false;
       for(let r=0;r<4&&!canMove;r++)for(let c=0;c<4&&!canMove;c++){
@@ -16494,7 +16564,7 @@ const Tetris=(()=>{
     nextP=np;
     piece={shape:src.shape.map(r=>[...r]),color:src.color,border:src.border};
     px=Math.floor((COLS-piece.shape[0].length)/2);py=0;
-    if(collide(px,py,piece.shape)){gameOver();}
+    if(collide(px,py,piece.shape)){gameOver();return;}
     drawNextPiece();
   }
   function drawNextPiece(){
@@ -16753,7 +16823,7 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
     const alive=SI.enemies.filter(e=>e.alive);
     if(!alive.length){
       SI.level++;
-      SI.enemies.forEach(e=>{e.alive=true;e.y=28;});
+      SI.enemies.forEach(e=>{e.alive=true;e.y=28+(e.row||0)*26;});
       SI.espeed=Math.min(4,1.2+SI.level*0.25);
       for(const sh of SI.shields)sh.cells.forEach(c=>{
         c.alive=!(c.row>=2&&c.col>=2&&c.col<=5);
@@ -17178,7 +17248,7 @@ function _initTowerDef(){if(TowerDef)return;TowerDef=(()=>{
       if(e.slow>0)e.slow-=dt;
       if(e.burn>0){
         e.burnTimer-=dt;
-        if(e.burnTimer<=0){e.hp-=e.burn;e.burnTimer=0.5;burst(e._wx,e._wy,'#ff6020',2);}
+        if(e.burnTimer<=0){e.hp-=e.burn;e.burnTimer=0.5;burst(e._wx,e._wy,'#ff6020',2);if(e.hp<=0){killEnemy(e,null);return;}}
       }
       if(e.dist>=pathLen){
         e.dead=true;
@@ -17882,7 +17952,10 @@ function _initCheckers(){if(Checkers)return;Checkers=(()=>{
 
     /* If we are in a chain jump, only allow jumping with the same piece */
     if(chainPiece){
-      if(r===chainPiece[0]&&c===chainPiece[1]){sel=null;chainPiece=null;render();return;}
+      /* Mid multi-jump the piece is LOCKED — tapping it just re-selects it (so its
+         remaining jumps stay highlighted) instead of letting the player abandon a
+         mandatory capture chain, which standard checkers requires you to finish. */
+      if(r===chainPiece[0]&&c===chainPiece[1]){sel=[chainPiece[0],chainPiece[1]];render();return;}
       const jump=avail.find(m=>m.r===chainPiece[0]&&m.c===chainPiece[1]&&m.tr===r&&m.tc===c);
       if(jump){executeMove(jump,playerColor);return;}
       return;
@@ -18173,6 +18246,7 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
   let turn=1;          /* 1 or 2 */
   let scores={1:0,2:0};
   let gameOver=false;
+  let _dbCounted=false;/* end-of-game stats recorded once per game, not per render */
   let L=null;          /* container */
   /* Online session — host=player 1, guest=player 2. Pre-game grid size
      is sent as part of the room handshake so both sides match. */
@@ -18250,7 +18324,7 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
     for(let r=0;r<B;r++){const row=[];for(let c=0;c<B-1;c++)row.push(false);hLines.push(row);}
     for(let r=0;r<B-1;r++){const row=[];for(let c=0;c<B;c++)row.push(false);vLines.push(row);}
     for(let r=0;r<B-1;r++){const row=[];for(let c=0;c<B-1;c++)row.push(0);boxes.push(row);}
-    turn=1;scores={1:0,2:0};gameOver=false;
+    turn=1;scores={1:0,2:0};gameOver=false;_dbCounted=false;
   }
 
   /* Try drawing line; returns {claimed:int} where claimed is the number
@@ -18460,12 +18534,16 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
       const winner=scores[1]>scores[2]?'P1':(scores[2]>scores[1]?(mode==='ai'?'AI':'P2'):'Draw');
       msgDiv.textContent=winner==='Draw'?'Draw — '+scores[1]+' to '+scores[2]:winner+' wins — '+scores[1]+' to '+scores[2];
       L.appendChild(msgDiv);
-      /* Stats */
-      if(!S.stats.dotsboxes)S.stats.dotsboxes={played:0};
-      S.stats.dotsboxes.played++;
-      if(!S.games.dotsboxes)S.games.dotsboxes={wins:0};
-      if(winner==='P1')S.games.dotsboxes.wins=(S.games.dotsboxes.wins||0)+1;
-      save();
+      /* Stats — record once per finished game, not on every re-render of the
+         finished board (online re-renders were inflating played/wins). */
+      if(!_dbCounted){
+        _dbCounted=true;
+        if(!S.stats.dotsboxes)S.stats.dotsboxes={played:0};
+        S.stats.dotsboxes.played++;
+        if(!S.games.dotsboxes)S.games.dotsboxes={wins:0};
+        if(winner==='P1')S.games.dotsboxes.wins=(S.games.dotsboxes.wins||0)+1;
+        save();
+      }
       const ng=document.createElement('button');ng.className='btn primary';ng.textContent='New Game';
       ng.style.marginTop='10px';
       ng.onclick=()=>showSetup();
@@ -18904,7 +18982,7 @@ function _initSolitaire(){if(Solitaire)return;Solitaire=(()=>{
 
   function cardAt(x,y){
     for(let i=0;i<4;i++){
-      const fx=4+COL_X(3+i), fy=TOP_Y;
+      const fx=COL_X(3+i), fy=TOP_Y;
       if(x>=fx&&x<=fx+CX&&y>=fy&&y<=fy+CY){return{zone:'foundation',idx:i};}
     }
     const sx=COL_X(0), sy=TOP_Y;
@@ -19309,6 +19387,9 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
     if(timer)clearInterval(timer);
     lastT=Date.now();
     timer=setInterval(tick,1000/20);
+    /* Stop the race loop on ANY immersive exit (Recent switcher, swipe, etc.) —
+       not just the in-game Exit button — so the 20fps timer can't leak. */
+    try{immersiveRoot._trackStop=function(){if(timer){clearInterval(timer);timer=null;}};}catch(_){}
     draw();
   }
 
@@ -19669,15 +19750,15 @@ function _initFlightSim(){
     mapCan.addEventListener('touchmove',e=>{
       if(!_mapDrag)return;
       const dx=e.touches[0].clientX-_mapDrag.x,dy=e.touches[0].clientY-_mapDrag.y;
-      const scale=(CW/0.5)*_mapZoom;
+      const scale=(CW/0.55)*_mapZoom;
       F.wx=_mapDrag.wx-dx/scale;F.wy=_mapDrag.wy-dy/scale;
     },{passive:true});
     mapCan.addEventListener('touchend',e=>{
       if(_mapDrag&&Date.now()-_mapDrag.t<220){
         const rect=mapCan.getBoundingClientRect();
         const mx=e.changedTouches[0].clientX-rect.left,my=e.changedTouches[0].clientY-rect.top;
-        const scale=(CW/0.5)*_mapZoom;
-        const wp_wx=F.wx+(mx-CW/2)/scale,wp_wy=F.wy+(my-(CH+80)/2)/scale;
+        const scale=(CW/0.55)*_mapZoom;
+        const wp_wx=F.wx+(mx-CW/2)/scale,wp_wy=F.wy+(my-(CH+80-30)/2)/scale;
         /* tap existing WP to remove it */
         const tapR=14/scale;
         const hit=_fpPlan.findIndex(wp=>Math.hypot(wp.wx-wp_wx,wp.wy-wp_wy)<tapR);
@@ -23005,11 +23086,30 @@ function offlineAI(raw){
   return hasAnyKey()?`Thinking… (if you see this, the AI call failed — check your key/model and try again.)`:`I can answer any question with an AI key — go to Settings → AI to add a Gemini key (aistudio.google.com, free) or OpenRouter key (openrouter.ai, has free models).\n\nOffline commands: 'help', 'play snake', 'calc 15*7', 'convert 10km to miles', 'recommend mystery', 'note pick up milk'.`;
 }
 
+/* ── Reply-to-a-message (AI assistant chat) ──────────────────────────
+   Tap "↩ Reply" under any AI (or your own) message to quote/acknowledge
+   it. The quoted snippet shows on your bubble AND rides along to the
+   model as context so it knows exactly which message you mean. */
+let _aiReplyCtx=null;
+function _aiEsc(s){return String(s==null?'':s).replace(/[<>&]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;'}[c];});}
+function _setAiReply(text,who){
+  _aiReplyCtx={text:String(text||'').replace(/\s+/g,' ').trim().slice(0,400),who:who||'AI'};
+  const strip=document.getElementById('aiReplyStrip'),lbl=document.getElementById('aiReplyStripLabel');
+  if(lbl)lbl.innerHTML='↩ Replying to <b>'+_aiEsc(_aiReplyCtx.who)+'</b>: '+_aiEsc(_aiReplyCtx.text.slice(0,80));
+  if(strip)strip.style.display='flex';
+  const inp=document.getElementById('chatIn');if(inp)inp.focus();
+}
+function _clearAiReply(){_aiReplyCtx=null;const strip=document.getElementById('aiReplyStrip');if(strip)strip.style.display='none';}
+window._setAiReply=_setAiReply;
 async function sendChat(){
   const inp=$('chatIn');if(!inp)return;
   const t=inp.value.trim();if(!t)return;
-  addUserMsg(t);inp.value='';
-  chatHistory.push({role:'user',text:t});
+  const replyCtx=_aiReplyCtx;_clearAiReply();
+  addUserMsg(t,replyCtx);inp.value='';
+  /* Thread the quoted message to the model (not just visually) so it can
+     answer in context; keep the raw text for the local-command parser. */
+  const histText=replyCtx?('[Replying to '+(replyCtx.who||'your')+' message: "'+replyCtx.text.slice(0,240)+'"]\n\n'+t):t;
+  chatHistory.push({role:'user',text:histText});
   saveChatHistory();
   const localResult=tryLocalCommand(t);
   if(localResult!==null){addBotMsg(localResult);chatHistory.push({role:'bot',text:localResult});updateAIMsgCounter();saveChatHistory();return;}
@@ -23483,9 +23583,18 @@ function tryLocalCommand(raw){
   return null;
 }
 
-function addUserMsg(t){
+function addUserMsg(t,replyCtx){
   const l=$('chatLog');if(!l)return;
-  const d=el('div',{className:'msg user'});d.textContent=t;l.appendChild(d);l.scrollTop=l.scrollHeight;
+  if(!replyCtx){
+    const d=el('div',{className:'msg user'});d.textContent=t;l.appendChild(d);l.scrollTop=l.scrollHeight;return;
+  }
+  /* Right-aligned column so the quote line sits above the bubble. */
+  const wrap=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'2px',alignSelf:'flex-end',maxWidth:'88%'}});
+  const q=el('div',{style:{fontSize:'10px',color:'var(--muted)',borderLeft:'3px solid var(--muted)',padding:'2px 8px',background:'var(--highlight)',borderRadius:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'100%'}});
+  q.textContent='↩ '+(replyCtx.who||'AI')+': '+String(replyCtx.text).slice(0,70);
+  wrap.appendChild(q);
+  const d=el('div',{className:'msg user'});d.textContent=t;wrap.appendChild(d);
+  l.appendChild(wrap);l.scrollTop=l.scrollHeight;
 }
 
 function parseQuizBlock(text){
@@ -23871,6 +23980,17 @@ function addBotMsg(t,isTemp){
     wrap.appendChild(btnRow);
   }
 
+  /* "↩ Reply" — quote this AI message in your next prompt. */
+  if(!isTemp&&displayText){
+    const act=document.createElement('div');
+    act.style.cssText='display:flex;gap:6px;margin:1px 0 2px 4px;';
+    const rb=document.createElement('button');
+    rb.textContent='↩ Reply';rb.className='btn small';
+    rb.style.cssText='font-size:10px;padding:3px 9px;min-height:28px;opacity:.7;';
+    rb.onclick=function(){_setAiReply(displayText,'AI');};
+    act.appendChild(rb);
+    wrap.appendChild(act);
+  }
   l.appendChild(wrap);
   if(quiz&&!isTemp){renderQuizSaveCard(quiz,l);}
   l.scrollTop=l.scrollHeight;
@@ -25401,6 +25521,7 @@ const LightsOut=(()=>{
       margin:'0 auto',
     }});
 
+    const cellEls=[];
     grid.forEach((on,idx)=>{
       const cell=el('div',{style:{
         width:cellSize+'px',height:cellSize+'px',
@@ -25434,6 +25555,7 @@ const LightsOut=(()=>{
           }
         };
       }
+      cellEls[idx]=cell;
       board.appendChild(cell);
     });
     immersiveContent.appendChild(board);
@@ -25445,7 +25567,7 @@ const LightsOut=(()=>{
       const lit=grid.reduce((a,v,i)=>v?[...a,i]:a,[]);
       if(!lit.length)return;
       const idx=lit[Math.floor(Math.random()*lit.length)];
-      const cells=immersiveContent.querySelectorAll('div[style*="border-radius: 6px"]');
+      const cells=cellEls;/* held references — robust vs. fragile style-substring matching */
       if(cells[idx]){cells[idx].style.outline='3px solid #e44';setTimeout(()=>{if(cells[idx])cells[idx].style.outline='';},800);}
     };
     ctrl.appendChild(newBtn);
@@ -25767,7 +25889,7 @@ const WordSearch=(()=>{
     const all=[...pack.words].sort(()=>Math.random()-0.5);
     /* Prefer mix of lengths — drop very long words that won't fit */
     const fit=all.filter(w=>w.length<=pack.size-1);
-    return fit.slice(0,12);
+    return fit.slice(0,14);
   }
 
   /* ── Render ── */
@@ -29318,6 +29440,14 @@ chat:()=>{
   chatInput.style.flex='1';
   inp.appendChild(chatInput);
   inp.appendChild(txt('button','Send',{className:'btn primary',id:'sendChat'}));
+  /* Reply strip — shows the message you're replying to, above the composer. */
+  _aiReplyCtx=null;
+  const aiReplyStrip=el('div',{id:'aiReplyStrip',style:{display:'none',alignItems:'center',gap:'8px',padding:'6px 10px',borderTop:'var(--thin)',background:'var(--highlight)',fontSize:'11px',flexShrink:'0'}});
+  aiReplyStrip.appendChild(el('div',{id:'aiReplyStripLabel',style:{flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--muted)'}}));
+  const aiReplyCancel=txt('button','✕',{className:'btn small',style:{flexShrink:'0',minHeight:'30px',padding:'2px 10px'}});
+  aiReplyCancel.onclick=()=>_clearAiReply();
+  aiReplyStrip.appendChild(aiReplyCancel);
+  chatPanel.appendChild(aiReplyStrip);
   chatPanel.appendChild(inp);
 
   /* Chat footer: kept compact intentionally. The dozens of "skill"
@@ -53167,6 +53297,17 @@ window.CandyCrush=(()=>{
 
   function getLevelDef(lv){return LEVELS[Math.min(lv-1,LEVELS.length-1)];}
   function getGems(lv){return BASE_GEMS.slice(0,getLevelDef(lv).gemCount);}
+  /* Pick the colour a WILD should clear: the MOST COMMON colour actually on the
+     board (restricted to the level's active palette). Picking from all 6 base
+     gems — as the old code did — frequently chose a colour not in play on early
+     levels, so the WILD cleared nothing yet still consumed a move/explosion. */
+  function _wildTarget(){
+    const active=getGems(level).map(g=>g.id);
+    const counts={};
+    for(const rw of board)for(const x of rw){if(x&&active.indexOf(x.id)>=0)counts[x.id]=(counts[x.id]||0)+1;}
+    const ids=Object.keys(counts);
+    return ids.length?ids.reduce((a,b)=>counts[b]>counts[a]?b:a):active[0];
+  }
 
   function rndBaseGem(lv){
     const gems=getGems(lv);
@@ -53292,7 +53433,7 @@ window.CandyCrush=(()=>{
       } else if(sid==='WILD'){
         // Clear all of a random colour
         const gem=board[sr][sc]||BASE_GEMS[0];
-        const targetId=BASE_GEMS[Math.floor(Math.random()*BASE_GEMS.length)].id;
+        const targetId=_wildTarget();
         for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){if(board[r][c]&&board[r][c].id===targetId){board[r][c]=null;cleared++;}}
       }
     });
@@ -53456,7 +53597,7 @@ window.CandyCrush=(()=>{
     // Activate WILD by tapping it directly
     if(gem&&gem.id==='WILD'&&!selected){
       board[r][c]=null;
-      const targetId=BASE_GEMS[Math.floor(Math.random()*BASE_GEMS.length)].id;
+      const targetId=_wildTarget();
       let cleared=0;
       for(let rr=0;rr<ROWS;rr++)for(let cc=0;cc<COLS;cc++){if(board[rr][cc]&&board[rr][cc].id===targetId){board[rr][cc]=null;cleared++;}}
       moves--;

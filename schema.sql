@@ -1,4 +1,8 @@
--- ── KindleHub schema v4 — complete, ordered, idempotent ────────────────
+-- ── KindleHub schema v5 — complete, ordered, idempotent ────────────────
+-- v5 adds two storage guards to stay under the Supabase DB-size cap:
+--   • kh_scores capped to the top 100 per game (was UNBOUNDED — the biggest leak)
+--   • kh_presence rows GC'd after 3 days idle
+-- (Re-run this whole block after upgrading to apply the new triggers.)
 -- Paste this WHOLE block into Supabase SQL Editor → RUN. Safe to re-run any
 -- number of times: it drops functions first (so return-type changes never
 -- collide), never drops tables, and re-creates everything else in order.
@@ -515,6 +519,46 @@ drop   trigger if exists kh_feedback_rate on kh_feedback;
 create trigger kh_feedback_rate
   before insert on kh_feedback
   for each row execute function kh_feedback_rate_trigger();
+
+-- v5 STORAGE GUARD: cap kh_scores so the leaderboard table can't grow forever.
+-- This table had NO cap — every score from every user stayed permanently, the
+-- single biggest unbounded contributor to DB size. Keep only the top 100 per
+-- game (more than any leaderboard view shows); lower/older rows are pruned.
+create or replace function kh_scores_cap_trigger()
+  returns trigger language plpgsql security definer as $body$
+begin
+  delete from kh_scores
+    where game = new.game
+      and id not in (
+        select id from kh_scores
+        where game = new.game
+        order by score desc, date desc
+        limit 100
+      );
+  return null;
+end;
+$body$;
+drop   trigger if exists kh_scores_cap on kh_scores;
+create trigger kh_scores_cap
+  after insert on kh_scores
+  for each row execute function kh_scores_cap_trigger();
+
+-- v5 STORAGE GUARD: garbage-collect presence rows idle for >3 days. Sampled on
+-- write so it self-cleans with no cron job. Presence is upserted on user_id, so
+-- this only ever removes accounts that haven't been seen in days.
+create or replace function kh_presence_gc_trigger()
+  returns trigger language plpgsql security definer as $body$
+begin
+  if (random() < 0.05) then
+    delete from kh_presence where last_seen < now() - interval '3 days';
+  end if;
+  return new;
+end;
+$body$;
+drop   trigger if exists kh_presence_gc on kh_presence;
+create trigger kh_presence_gc
+  before insert or update on kh_presence
+  for each row execute function kh_presence_gc_trigger();
 
 -- ══════════════════════════════════════════════════════════════════════
 -- 6. REALTIME — broadcast new messages over WebSockets
