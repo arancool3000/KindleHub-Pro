@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const path = require('path');
 
 const GAMES = ['hangman','memory','ttt','connect4','wordle','minesweeper','sudoku',
-  'snake','g2048','tetris','spaceinv','solitaire','towerdef','chess','checkers',
+  'snake','slither','g2048','tetris','spaceinv','solitaire','towerdef','chess','checkers',
   'battleship','lightsout','snakesladders','wordsearch','candycrush','mastermind',
   'dotsboxes','blockblast','racer','digquest','hanoi','blackjack','crazy8'];
 

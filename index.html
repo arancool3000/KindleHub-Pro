@@ -11660,6 +11660,7 @@ const GAME_HELP={
   blackjack:{name:'Blackjack',how:'Get closer to 21 than the dealer without going over. Hit for another card, Stand to hold. Face cards are 10; an Ace counts as 1 or 11. The dealer draws to 17. A two-card 21 (Blackjack) pays 3:2. Adjust your bet, then Deal — build the biggest chip stack you can.'},
   crazy8:{name:'Crazy Eights',how:'An Uno-style card game — play the computer or a friend online. Empty your hand first. Play a card that matches the discard by COLOUR (shown by the letter R/Y/G/B and the coloured border) or by NUMBER/symbol. Action cards: Skip and Reverse skip the other player, Draw Two makes them draw 2 and miss a turn. Wild lets you pick the colour; Wild Draw Four also makes them draw 4. Can’t play? Tap the deck to Draw, then play it or Pass. From the start menu choose “Play vs Computer” or “Play Online — 2 players”; online, the host runs the game so each player only ever sees their own hand, and there’s a chat panel to talk.'},
   snake:{name:'Snake',how:'Steer with the arrow keys (or swipe). Eat the food to grow longer and score — but don\'t hit the walls or your own tail.'},
+  slither:{name:'Slither',how:'Drag on the board (or move the mouse / arrow keys) to steer your snake toward where you want to go. Eat the glowing dots to grow longer. Hold Boost for a burst of speed at the cost of a little length. You die if your head hits another snake\'s body or the world edge — but if another snake rams YOU, it dies and drops food. Score = dots eaten.'},
   g2048:{name:'2048',how:'Slide all tiles with arrow keys or swipes. Matching numbers merge and double. Reach 2048 — then keep going for a high score.'},
   tetris:{name:'Tetris',how:'Move and rotate the falling pieces to complete full horizontal lines, which clear and score. It ends if the stack reaches the top.'},
   wordle:{name:'Wordle',how:'Guess the 5-letter word in 6 tries. Green = correct spot, yellow = wrong spot, grey = not in the word.'},
@@ -12742,6 +12743,7 @@ function _doLaunch(g){
     case 'minesweeper':Minesweeper.start();break;
     case 'sudoku':     Sudoku.start();break;
     case 'snake':      Snake.start();break;
+    case 'slither':    Slither.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -16395,6 +16397,103 @@ const Snake=(()=>{
   });
   $('immersiveExit').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;}});
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  return{start,stop};
+})();
+
+/* ── Slither — a slither.io-style snake ───────────────────────────────
+   Real-time canvas game: drag (or move the mouse) to steer, eat dots to
+   grow, dodge the AI snakes and the world edge, hold Boost for speed.
+   Same conventions as the other canvas games (setInterval tick, stop(),
+   _khSubmitScore, immersiveRoot._trackStop for clean teardown). */
+const Slither=(()=>{
+  const VW=360,VH=520,WORLD=1500,SPEED=3.0,BOOST=5.2,TURN=0.26,SEG_GAP=6,FOOD_N=46;
+  let cv,ctx,timer,G,submitted=false,_keyH=null;
+  const me=()=>G&&G.snakes[0];
+  function newSnake(x,y,ai){return {x,y,angle:Math.random()*6.283,target:Math.random()*6.283,path:[{x,y}],len:14,ai:!!ai,boost:false,dead:false};}
+  function spawnFood(n){for(let i=0;i<n;i++)G.food.push({x:Math.random()*WORLD,y:Math.random()*WORLD,r:3+Math.random()*2});}
+  function init(){G={food:[],snakes:[],score:0,active:true};G.snakes.push(newSnake(WORLD/2,WORLD/2,false));for(let i=0;i<3;i++)G.snakes.push(newSnake(Math.random()*WORLD,Math.random()*WORLD,true));spawnFood(FOOD_N);submitted=false;}
+  function aiThink(s){
+    let best=null,bd=1e9;for(const f of G.food){const d=Math.hypot(s.x-f.x,s.y-f.y);if(d<bd){bd=d;best=f;}}
+    if(best&&Math.random()<0.85)s.target=Math.atan2(best.y-s.y,best.x-s.x);else if(Math.random()<0.05)s.target=Math.random()*6.283;
+    const m=90;if(s.x<m)s.target=0;else if(s.x>WORLD-m)s.target=Math.PI;if(s.y<m)s.target=1.571;else if(s.y>WORLD-m)s.target=-1.571;
+    s.boost=false;
+  }
+  function killSnake(s){if(s.dead)return;s.dead=true;for(let i=0;i<s.path.length;i+=2)G.food.push({x:s.path[i].x+(Math.random()*8-4),y:s.path[i].y+(Math.random()*8-4),r:3+Math.random()*2});}
+  function step(){
+    if(!G||!G.active)return;const p=me();
+    G.snakes.forEach(s=>{
+      if(s.dead)return;
+      if(s.ai)aiThink(s);
+      let d=s.target-s.angle;while(d>Math.PI)d-=6.283;while(d<-Math.PI)d+=6.283;
+      s.angle+=Math.max(-TURN,Math.min(TURN,d));
+      const sp=(s.boost&&s.len>16)?BOOST:SPEED;
+      s.x+=Math.cos(s.angle)*sp;s.y+=Math.sin(s.angle)*sp;
+      if(s.boost&&s.len>16){s.len-=0.06;if(Math.random()<0.12)G.food.push({x:s.x-Math.cos(s.angle)*10,y:s.y-Math.sin(s.angle)*10,r:3});}
+      if(s.x<0||s.y<0||s.x>WORLD||s.y>WORLD){killSnake(s);return;}
+      const h=s.path[0];if(!h||Math.hypot(s.x-h.x,s.y-h.y)>=SEG_GAP)s.path.unshift({x:s.x,y:s.y});
+      const maxPts=Math.ceil(s.len)+2;if(s.path.length>maxPts)s.path.length=maxPts;
+      for(let i=G.food.length-1;i>=0;i--){const f=G.food[i];if(Math.hypot(s.x-f.x,s.y-f.y)<11){G.food.splice(i,1);s.len+=1.2;if(!s.ai)G.score++;}}
+    });
+    while(G.food.length<FOOD_N)spawnFood(1);
+    /* head-vs-other-body collisions */
+    G.snakes.forEach(s=>{if(s.dead)return;G.snakes.forEach(o=>{if(o===s||o.dead)return;for(let i=2;i<o.path.length;i++){if(Math.hypot(s.x-o.path[i].x,s.y-o.path[i].y)<6){killSnake(s);return;}}});});
+    if(me().dead){endGame();return;}
+    if(p)updateImmersiveScore('Length '+Math.round(p.len));
+    G.snakes.forEach((s,idx)=>{if(idx>0&&s.dead&&Math.random()<0.02)G.snakes[idx]=newSnake(Math.random()*WORLD,Math.random()*WORLD,true);});
+    draw();
+  }
+  function draw(){
+    if(!ctx||!G)return;const dark=document.body.classList.contains('dark');
+    ctx.fillStyle=dark?'#0b0b0b':'#f4f4f4';ctx.fillRect(0,0,VW,VH);
+    const p=me();const camX=p.x-VW/2,camY=p.y-VH/2;
+    ctx.save();ctx.translate(-camX,-camY);
+    ctx.strokeStyle=dark?'#444':'#bbb';ctx.lineWidth=3;ctx.strokeRect(0,0,WORLD,WORLD);
+    ctx.fillStyle=dark?'#9ad':'#39c';
+    for(const f of G.food){if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,6.283);ctx.fill();}
+    G.snakes.forEach(s=>{
+      if(s.dead)return;const r=Math.max(4,3+s.len*0.05);
+      ctx.fillStyle=s.ai?(dark?'#777':'#999'):(dark?'#eee':'#111');
+      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i];if(pt.x<camX-20||pt.x>camX+VW+20||pt.y<camY-20||pt.y>camY+VH+20)continue;ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,6.283);ctx.fill();}
+      ctx.beginPath();ctx.arc(s.x,s.y,r+1,0,6.283);ctx.fill();
+      if(!s.ai){ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(s.x+Math.cos(s.angle+0.5)*r,s.y+Math.sin(s.angle+0.5)*r,1.7,0,6.283);ctx.arc(s.x+Math.cos(s.angle-0.5)*r,s.y+Math.sin(s.angle-0.5)*r,1.7,0,6.283);ctx.fill();}
+    });
+    ctx.restore();
+    ctx.fillStyle=dark?'#888':'#666';ctx.font='12px monospace';ctx.textAlign='left';ctx.fillText('Length '+Math.round(p.len)+'   Food '+G.score,8,18);
+  }
+  function start(){
+    enterImmersive('Slither','');immersiveContent.innerHTML='';
+    cv=document.createElement('canvas');cv.width=VW;cv.height=VH;
+    cv.style.cssText='display:block;max-width:100%;width:100%;border:2px solid var(--fg);touch-action:none;border-radius:8px;background:var(--bg);';
+    immersiveContent.appendChild(cv);ctx=cv.getContext('2d');init();
+    function aim(cx,cy){const rect=cv.getBoundingClientRect();const mx=(cx-rect.left)*(VW/rect.width),my=(cy-rect.top)*(VH/rect.height);if(me())me().target=Math.atan2(my-VH/2,mx-VW/2);}
+    cv.addEventListener('touchmove',e=>{if(e.touches[0]){aim(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();}},{passive:false});
+    cv.addEventListener('touchstart',e=>{if(e.touches[0])aim(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
+    cv.addEventListener('mousemove',e=>aim(e.clientX,e.clientY));
+    const ctrl=el('div',{className:'card-row',style:{display:'flex',gap:'8px',justifyContent:'center',marginTop:'10px',flexWrap:'wrap'}});
+    const boostBtn=txt('button','⚡ Boost (hold)',{className:'btn'});
+    const setB=v=>{if(me())me().boost=v;};
+    boostBtn.addEventListener('touchstart',e=>{e.preventDefault();setB(true);},{passive:false});
+    boostBtn.addEventListener('touchend',()=>setB(false));
+    boostBtn.addEventListener('mousedown',()=>setB(true));boostBtn.addEventListener('mouseup',()=>setB(false));boostBtn.addEventListener('mouseleave',()=>setB(false));
+    const newBtn=txt('button','New Game',{className:'btn'});newBtn.onclick=()=>{init();draw();};
+    ctrl.appendChild(boostBtn);ctrl.appendChild(newBtn);immersiveContent.appendChild(ctrl);
+    immersiveContent.appendChild(txt('div','Drag on the board to steer. Eat dots to grow; don\'t ram another snake or the wall. Hold Boost for speed (costs length).',{style:{textAlign:'center',color:'var(--muted)',fontSize:'11px',marginTop:'8px',lineHeight:'1.5'}}));
+    if(_keyH)document.removeEventListener('keydown',_keyH);
+    _keyH=e=>{if(!G||!G.active||!me())return;const m={ArrowLeft:Math.PI,ArrowRight:0,ArrowUp:-1.571,ArrowDown:1.571};if(m[e.key]!==undefined){me().target=m[e.key];e.preventDefault();}};
+    document.addEventListener('keydown',_keyH);
+    if(timer)clearInterval(timer);timer=setInterval(step,1000/18);
+    immersiveRoot._trackStop=()=>stop();draw();
+  }
+  function endGame(){
+    if(!G||!G.active)return;G.active=false;if(timer){clearInterval(timer);timer=null;}
+    if(submitted)return;submitted=true;const sc=G.score;
+    if(!S.games.slither)S.games.slither={best:0};S.games.slither.best=Math.max(S.games.slither.best||0,sc);saveNow();
+    try{_khSubmitScore('slither',sc);}catch(_){}recordStat('slither',false);draw();
+    const msg=txt('div','Game Over! Food eaten: '+sc+'  ·  Length '+Math.round(me().len),{style:{textAlign:'center',fontWeight:'bold',fontSize:'15px',color:'var(--danger)',margin:'8px'}});
+    const ctrl=immersiveContent.querySelector('.card-row');if(ctrl)immersiveContent.insertBefore(msg,ctrl);else immersiveContent.appendChild(msg);
+    toast('Game Over! Food eaten: '+sc);
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;}if(_keyH){document.removeEventListener('keydown',_keyH);_keyH=null;}}
   return{start,stop};
 })();
 
@@ -27358,6 +27457,11 @@ games:()=>{
        height instead of Snake ballooning to 2× the others). */
     if(best)c.appendChild(txt('p','Best: '+best,{style:'font-size:11px;color:var(--muted);margin-top:3px;'}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'snake',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('Slither',null,c=>{
+    c.appendChild(txt('p','Grow by eating dots, dodge other snakes — slither.io style.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.slither&&S.games.slither.best||0),{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'slither',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('Tetris',null,c=>{
     c.appendChild(txt('p','Stack falling pieces. Clear lines to score.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
