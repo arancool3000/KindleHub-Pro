@@ -2458,7 +2458,7 @@ window.khOpenBookReader=(function(){
    lazy-loaded on first use so it never costs boot time. Shots are kept in
    memory for the session only — data URLs are big, so (like the Free Library
    book text) they are NEVER written to S/localStorage. Entry points: the
-   "📷 Screenshot this page" button in the Recent/multitask panel, and the
+   "Screenshot this page" button in the Recent/multitask panel, and the
    Screenshot view. Captures #app, so it's an App-mode feature (in KindleOS,
    use the device's built-in screenshot). */
 window._khShots=window._khShots||[];
@@ -3255,8 +3255,14 @@ function launchKindleDesktop(){
       fr.style.cssText='flex:1;width:100%;border:none;background:#fff;display:block;min-height:0;';
       fr.srcdoc=app.customHTML;
       frWrap.appendChild(fr);
-      /* Hide the launcher, show the back FAB */
+      /* Hide the launcher AND the main #app shell behind the overlay. On old
+         Silk, position:fixed coverage of #kd-customapp can leave gaps that let
+         #app's current view (home / messages / global chat) show THROUGH the
+         custom app — that's the "open one made app, see three apps" report.
+         Hiding everything behind the overlay guarantees only the custom app is
+         visible regardless of position:fixed quirks; closeApp restores it. */
       kd.style.display='none';
+      try{var _appEl=document.getElementById('app');if(_appEl){_appEl.dataset.kdAppHidden='1';_appEl.style.display='none';}}catch(_){}
       kdBackFab.style.display='flex';
       return;
     }
@@ -3314,6 +3320,8 @@ function launchKindleDesktop(){
     /* Tear down custom-HTML overlay if present */
     const frWrap=document.getElementById('kd-customapp');
     if(frWrap){frWrap.innerHTML='';frWrap.style.display='none';}
+    /* Restore the #app shell if a custom app had hidden it behind the overlay. */
+    try{var _appEl=document.getElementById('app');if(_appEl&&_appEl.dataset.kdAppHidden){_appEl.style.display='';delete _appEl.dataset.kdAppHidden;}}catch(_){}
     /* Restore launcher chrome */
     document.body.classList.remove('kdos-fullapp');
     kdBackFab.style.display='none';
@@ -4086,6 +4094,9 @@ function launchKindleDesktop(){
     try{document.body.classList.remove('kdos-fullapp');}catch(_){}
     try{if(kdBackFab&&kdBackFab.parentNode)kdBackFab.parentNode.removeChild(kdBackFab);}catch(_){}
     try{const _cu=document.getElementById('kd-customapp');if(_cu&&_cu.parentNode)_cu.parentNode.removeChild(_cu);}catch(_){}
+    /* Safety: make sure the #app shell is visible again when leaving KindleOS,
+       in case a custom app had hidden it and we exited without closeApp. */
+    try{var _appEl2=document.getElementById('app');if(_appEl2){_appEl2.style.display='';delete _appEl2.dataset.kdAppHidden;}}catch(_){}
     kd.remove();if(kdSizer&&kdSizer.parentNode)kdSizer.parentNode.removeChild(kdSizer);
     S.desktopMode=false;save();
     try{localStorage.setItem('kh_desktop_mode','0');}catch(e){}
@@ -4654,9 +4665,9 @@ WEB SEARCH & LIVE DATA:
       {sel:null,title:'Welcome to KindleOS',body:'A focused launcher layered on top of KindleHub. Every page, all in one place. Let\'s take a quick tour.'},
       {sel:'.kd-tour-sb',pos:'top',title:'The status bar',body:'Time, signal, search. Tap the time any time to open the Control Centre.',swipe:'down'},
       {sel:'.kd-tour-pages',pos:'center',title:'Your apps',body:'Tap any tile to launch a KindleHub page — Notes, Cookbook, Stars, anything.\\n\\nSwipe left or right to flip between pages of apps.'},
-      {sel:'.kd-tour-dock',pos:'bottom',title:'The dock',body:'Your most-used apps live here. Hold-tap to rearrange.'},
+      {sel:'.kd-tour-dock',pos:'bottom',title:'The dock',body:'Your most-used apps live here — Chat, Notes, Games and the AI Builder. Tap one to jump straight in.'},
       {sel:'.kd-tour-sb',pos:'top',title:'Control Centre',body:'Swipe down on the status bar (or tap the clock) to open Control Centre — quick toggles for dark mode, wallpaper, font size, widgets, and more.',swipe:'down'},
-      {sel:null,title:'You\'re set',body:'Tap-and-hold an app to remove it, swipe up on the dock to add more, and the OS Settings button takes you to wallpapers and widgets.\\n\\nExit KindleOS any time from Control Centre.'},
+      {sel:null,title:'You\'re set',body:'Add new apps — or build your own with AI — from the AI Builder in the dock, and remove any of them from there too.\\n\\nOpen Control Centre (tap the clock, or swipe down on the status bar) for wallpaper, widgets, font size and dark mode — and to exit KindleOS.'},
     ];
     let idx=0;
     const ov=document.createElement('div');
@@ -9378,7 +9389,7 @@ async function _mailSend(toUser,subject,body,replyTo){
     /* Real internet email — relayed through the Cloudflare Worker gateway,
        which sends from username@kindlehub.pro via the email API. */
     const gw=_mailGatewayUrl();
-    if(!gw)throw new Error('Sending to outside addresses isn\'t switched on yet for this KindleHub — the admin needs to deploy the mail gateway (email-worker.js).');
+    if(!gw)throw new Error('Sending to outside addresses isn\'t switched on yet for this KindleHub — the mail gateway (email-worker.js) needs to be deployed first.');
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to))throw new Error('"'+to+'" doesn\'t look like a valid email address.');
     const r=await fetch(gw+'/send',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({to:to,from_user:_myMailUser(),subject:String(subject||'(no subject)').slice(0,160),body:String(body||'').slice(0,8000)})});
@@ -11539,7 +11550,7 @@ function _khOpenMultitask(){
   box.appendChild(txt('p','Tap a name to open it. Tap ⊞ Split to show it beside the current page — two pages at once.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 10px',lineHeight:'1.5'}}));
   /* Screenshot the page you're currently on (closes this panel first so it
      isn't in the shot). Saved to the Screenshot page to view/download. */
-  const _shotBtn=txt('button','📷 Screenshot this page',{className:'btn small',style:{width:'100%',marginBottom:'10px'}});
+  const _shotBtn=txt('button','Screenshot this page',{className:'btn small',style:{width:'100%',marginBottom:'10px'}});
   _shotBtn.onclick=()=>{
     ov.remove();
     if(typeof toast==='function')toast('Capturing…',1500);
@@ -16489,7 +16500,7 @@ const Slither=(()=>{
     cv.addEventListener('touchstart',e=>{if(e.touches[0])aim(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
     cv.addEventListener('mousemove',e=>aim(e.clientX,e.clientY));
     const ctrl=el('div',{className:'card-row',style:{display:'flex',gap:'8px',justifyContent:'center',marginTop:'10px',flexWrap:'wrap'}});
-    const boostBtn=txt('button','⚡ Boost (hold)',{className:'btn'});
+    const boostBtn=txt('button','Boost (hold)',{className:'btn'});
     const setB=v=>{if(me())me().boost=v;};
     boostBtn.addEventListener('touchstart',e=>{e.preventDefault();setB(true);},{passive:false});
     boostBtn.addEventListener('touchend',()=>setB(false));
@@ -19705,10 +19716,10 @@ function _initRacer(){ if(Racer)return; Racer=(()=>{
       ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 26px monospace';
       ctx.fillText(dnf?'DNF':(_ordinal(place)),CW/2,CH/2-6);
       ctx.font='13px monospace';ctx.fillText(dnf?'Out of time':(place===1?'YOU WON!':'of '+(FIELD+1)+' racers'),CW/2,CH/2+18);}
-    const headline=dnf?'Did not finish':place===1?'🏆 1st — YOU WON!':place<=3?_ordinal(place)+' — Podium!':_ordinal(place)+' place';
+    const headline=dnf?'Did not finish':place===1?'1st — YOU WON!':place<=3?_ordinal(place)+' — Podium!':_ordinal(place)+' place';
     const isBest=score>=(G.best||0)&&score>0;
     const banner=el('div',{style:{marginTop:'8px',padding:'12px',border:'2px solid var(--fg)',borderRadius:'8px',textAlign:'center',maxWidth:'300px',width:'100%'}});
-    banner.appendChild(txt('div',headline.replace('🏆 ',''),{style:{fontSize:'18px',fontWeight:'900',letterSpacing:'1px'}}));
+    banner.appendChild(txt('div',headline.replace('',''),{style:{fontSize:'18px',fontWeight:'900',letterSpacing:'1px'}}));
     banner.appendChild(txt('div','Score '+score+(isBest?'   ★ NEW BEST':'   (best '+(G.best||0)+')'),{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px'}}));
     if(!dnf)banner.appendChild(txt('div','Finished P'+place+' of '+(FIELD+1)+' · '+Math.ceil(G.timeLeft)+'s to spare',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
     immersiveContent.insertBefore(banner,immersiveContent.querySelector('.card-row'));
@@ -23217,7 +23228,7 @@ function offlineAI(raw){
 }
 
 /* ── Reply-to-a-message (AI assistant chat) ──────────────────────────
-   Tap "↩ Reply" under any AI (or your own) message to quote/acknowledge
+   Tap "Reply" under any AI (or your own) message to quote/acknowledge
    it. The quoted snippet shows on your bubble AND rides along to the
    model as context so it knows exactly which message you mean. */
 let _aiReplyCtx=null;
@@ -23225,7 +23236,7 @@ function _aiEsc(s){return String(s==null?'':s).replace(/[<>&]/g,function(c){retu
 function _setAiReply(text,who){
   _aiReplyCtx={text:String(text||'').replace(/\s+/g,' ').trim().slice(0,400),who:who||'AI'};
   const strip=document.getElementById('aiReplyStrip'),lbl=document.getElementById('aiReplyStripLabel');
-  if(lbl)lbl.innerHTML='↩ Replying to <b>'+_aiEsc(_aiReplyCtx.who)+'</b>: '+_aiEsc(_aiReplyCtx.text.slice(0,80));
+  if(lbl)lbl.innerHTML='Replying to <b>'+_aiEsc(_aiReplyCtx.who)+'</b>: '+_aiEsc(_aiReplyCtx.text.slice(0,80));
   if(strip)strip.style.display='flex';
   const inp=document.getElementById('chatIn');if(inp)inp.focus();
 }
@@ -23398,12 +23409,12 @@ function tryLocalCommand(raw){
     n=Math.max(1,Math.min(20,n));sides=Math.max(2,Math.min(1000,sides));
     const rolls=[];let sum=0;
     for(let i=0;i<n;i++){const r=Math.floor(Math.random()*sides)+1;rolls.push(r);sum+=r;}
-    return '🎲 Rolled '+n+'d'+sides+': '+rolls.join(' + ')+(n>1?(' = '+sum):'');
+    return 'Rolled '+n+'d'+sides+': '+rolls.join(' + ')+(n>1?(' = '+sum):'');
   }
 
   /* Coin flip */
   if(/^(?:flip(?:\s+a)?\s+coin|coin\s+flip|coin|heads\s+or\s+tails)$/.test(low)){
-    return '🪙 Coin: '+(Math.random()<0.5?'HEADS':'TAILS');
+    return 'Coin: '+(Math.random()<0.5?'HEADS':'TAILS');
   }
 
   /* Random number: "random", "random 1-100", "pick a number 1 to 50" */
@@ -23414,7 +23425,7 @@ function tryLocalCommand(raw){
     const lo=rnd[1]?parseInt(rnd[1],10):1;
     const hi=rnd[2]?parseInt(rnd[2],10):100;
     const a=Math.min(lo,hi),b=Math.max(lo,hi);
-    return '🔢 Random ('+a+'–'+b+'): '+(Math.floor(Math.random()*(b-a+1))+a);
+    return 'Random ('+a+'–'+b+'): '+(Math.floor(Math.random()*(b-a+1))+a);
   }
 
   /* Password generator: "password", "password 24" */
@@ -23427,13 +23438,13 @@ function tryLocalCommand(raw){
     if(crypto.getRandomValues)crypto.getRandomValues(buf);
     else for(let i=0;i<len;i++)buf[i]=Math.floor(Math.random()*0xffffffff);
     let pw='';for(let i=0;i<len;i++)pw+=chars[buf[i]%chars.length];
-    return '🔑 Password ('+len+' chars):\n\n`'+pw+'`';
+    return 'Password ('+len+' chars):\n\n`'+pw+'`';
   }
 
   /* Random colour */
   if(/^(?:random\s+)?colou?r$/.test(low)){
     const h='#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0').toUpperCase();
-    return '🎨 Colour: `'+h+'`\nRGB: '+parseInt(h.slice(1,3),16)+', '+parseInt(h.slice(3,5),16)+', '+parseInt(h.slice(5,7),16);
+    return 'Colour: `'+h+'`\nRGB: '+parseInt(h.slice(1,3),16)+', '+parseInt(h.slice(3,5),16)+', '+parseInt(h.slice(5,7),16);
   }
 
   /* Joke */
@@ -23455,7 +23466,7 @@ function tryLocalCommand(raw){
       'I used to play piano by ear. Now I use my hands.',
       'Two fish in a tank. One says "do you know how to drive this thing?"',
     ];
-    return '😄 '+JOKES[Math.floor(Math.random()*JOKES.length)];
+    return ''+JOKES[Math.floor(Math.random()*JOKES.length)];
   }
 
   /* Lorem ipsum: "lorem", "lorem 50", "lorem 30 words" */
@@ -23468,7 +23479,7 @@ function tryLocalCommand(raw){
     for(let i=0;i<n;i++)out.push(WORDS[Math.floor(Math.random()*WORDS.length)]);
     /* Sentence-case the first word, period at end */
     if(out.length)out[0]=out[0][0].toUpperCase()+out[0].slice(1);
-    return '📄 Lorem ipsum ('+n+' words):\n\n'+out.join(' ')+'.';
+    return 'Lorem ipsum ('+n+' words):\n\n'+out.join(' ')+'.';
   }
 
   /* Word/char count: "count words in", "wordcount" */
@@ -23478,23 +23489,23 @@ function tryLocalCommand(raw){
     const words=(text.match(/\S+/g)||[]).length;
     const chars=text.length;
     const lines=(text.match(/\n/g)||[]).length+1;
-    return '📊 Word count: '+words+'\nCharacters: '+chars+'\nLines: '+lines;
+    return 'Word count: '+words+'\nCharacters: '+chars+'\nLines: '+lines;
   }
 
   /* Reverse text */
   const revMatch=raw.match(/^reverse(?:\s*:\s*|\s+)(.+)$/i);
   if(revMatch){
-    return '↩ '+revMatch[1].split('').reverse().join('');
+    return ''+revMatch[1].split('').reverse().join('');
   }
 
   /* Base64 encode / decode */
   const b64eMatch=raw.match(/^(?:base64|b64)\s+encode(?:\s*:\s*|\s+)(.+)$/i);
   if(b64eMatch){
-    try{return '🔡 Base64: '+btoa(unescape(encodeURIComponent(b64eMatch[1])));}catch(_){return 'Couldn\'t encode that.';}
+    try{return 'Base64: '+btoa(unescape(encodeURIComponent(b64eMatch[1])));}catch(_){return 'Couldn\'t encode that.';}
   }
   const b64dMatch=raw.match(/^(?:base64|b64)\s+decode(?:\s*:\s*|\s+)(.+)$/i);
   if(b64dMatch){
-    try{return '🔡 Decoded: '+decodeURIComponent(escape(atob(b64dMatch[1].trim())));}catch(_){return 'That isn\'t valid base64.';}
+    try{return 'Decoded: '+decodeURIComponent(escape(atob(b64dMatch[1].trim())));}catch(_){return 'That isn\'t valid base64.';}
   }
 
   /* Stopwatch shortcut — opens Tools tab */
@@ -23512,7 +23523,7 @@ function tryLocalCommand(raw){
     const split=tipMatch[3]?parseInt(tipMatch[3],10):1;
     const tip=bill*pct/100;
     const total=bill+tip;
-    let out='💵 Tip calculator:\n'+
+    let out='Tip calculator:\n'+
       '  Bill: '+bill.toFixed(2)+'\n'+
       '  Tip ('+pct+'%): '+tip.toFixed(2)+'\n'+
       '  Total: '+total.toFixed(2);
@@ -23565,7 +23576,7 @@ function tryLocalCommand(raw){
     if(days<0){months--;days+=new Date(now.getFullYear(),now.getMonth(),0).getDate();}
     if(months<0){years--;months+=12;}
     const totalDays=Math.floor((now-birth)/86400000);
-    return '🎂 Age: '+years+' years, '+months+' months, '+days+' days\n  Total: '+totalDays.toLocaleString()+' days (~'+Math.round(totalDays/7).toLocaleString()+' weeks, '+Math.round(totalDays*24).toLocaleString()+' hours).';
+    return 'Age: '+years+' years, '+months+' months, '+days+' days\n  Total: '+totalDays.toLocaleString()+' days (~'+Math.round(totalDays/7).toLocaleString()+' weeks, '+Math.round(totalDays*24).toLocaleString()+' hours).';
   }
 
   /* ─── Roman numerals ─── */
@@ -23592,11 +23603,11 @@ function tryLocalCommand(raw){
   if(romanNumMatch){
     const n=parseInt(romanNumMatch[1],10);
     const r=toRoman(n);
-    return r?('🏛 '+n+' → '+r):'Roman numerals only go from 1 to 3999.';
+    return r?(''+n+' → '+r):'Roman numerals only go from 1 to 3999.';
   }
   if(romanLetMatch){
     const n=fromRoman(romanLetMatch[1]);
-    return n!=null?('🏛 '+romanLetMatch[1].toUpperCase()+' → '+n):'That doesn\'t look like a valid Roman numeral.';
+    return n!=null?(''+romanLetMatch[1].toUpperCase()+' → '+n):'That doesn\'t look like a valid Roman numeral.';
   }
 
   /* ─── Number base converter ─── */
@@ -23615,10 +23626,10 @@ function tryLocalCommand(raw){
     if(isNaN(decimal))return 'Couldn\'t parse "'+input+'" as '+baseMatch[1]+'.';
     if(baseMatch[3]){
       const to=baseMap[baseMatch[3]];
-      return '🔢 '+input+' ('+baseMatch[1]+') → '+decimal.toString(to).toUpperCase()+' ('+baseMatch[3]+')';
+      return ''+input+' ('+baseMatch[1]+') → '+decimal.toString(to).toUpperCase()+' ('+baseMatch[3]+')';
     }
     /* Default: show all three other bases */
-    return '🔢 '+input+' ('+baseMatch[1]+') =\n'+
+    return ''+input+' ('+baseMatch[1]+') =\n'+
       '  Decimal: '+decimal+'\n'+
       '  Binary:  '+decimal.toString(2)+'\n'+
       '  Hex:     '+decimal.toString(16).toUpperCase()+'\n'+
@@ -23634,14 +23645,14 @@ function tryLocalCommand(raw){
     const out=morseDec[1].trim().split(/\s*\/\s*|\s{2,}/).map(word=>
       word.trim().split(/\s+/).map(c=>MORSE_REVERSE[c]||'?').join('')
     ).join(' ');
-    return '📡 Morse decode: '+out;
+    return 'Morse decode: '+out;
   }
   if(morseEnc&&!low.startsWith('morse decode')){
     const out=morseEnc[1].toUpperCase().split('').map(c=>{
       if(c===' ')return '/';
       return MORSE_MAP[c]||'';
     }).filter(Boolean).join(' ');
-    return '📡 Morse encode: '+out;
+    return 'Morse encode: '+out;
   }
 
   /* ─── ROT13 (its own inverse) ─── */
@@ -23651,7 +23662,7 @@ function tryLocalCommand(raw){
       const base=c<='Z'?65:97;
       return String.fromCharCode((c.charCodeAt(0)-base+13)%26+base);
     });
-    return '🔁 ROT13: '+out;
+    return 'ROT13: '+out;
   }
 
   /* ─── Caesar shift cipher: "caesar shift 3 hello" ─── */
@@ -23662,7 +23673,7 @@ function tryLocalCommand(raw){
       const base=c<='Z'?65:97;
       return String.fromCharCode((c.charCodeAt(0)-base+shift)%26+base);
     });
-    return '🔁 Caesar (+'+caesarMatch[1]+'): '+out;
+    return 'Caesar (+'+caesarMatch[1]+'): '+out;
   }
 
   /* ─── Palindrome checker ─── */
@@ -23705,7 +23716,7 @@ function tryLocalCommand(raw){
       const days=Math.ceil(ms/86400000);
       if(days<0)return 'That date is '+(-days)+' days in the past.';
       if(days===0)return 'That\'s today!';
-      return '📅 '+days+' day'+(days===1?'':'s')+' until '+d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+      return ''+days+' day'+(days===1?'':'s')+' until '+d.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     }
     return 'Couldn\'t parse that date. Try "days until 2026-12-25" or "days until christmas".';
   }
@@ -23721,7 +23732,7 @@ function addUserMsg(t,replyCtx){
   /* Right-aligned column so the quote line sits above the bubble. */
   const wrap=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'2px',alignSelf:'flex-end',maxWidth:'88%'}});
   const q=el('div',{style:{fontSize:'10px',color:'var(--muted)',borderLeft:'3px solid var(--muted)',padding:'2px 8px',background:'var(--highlight)',borderRadius:'4px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'100%'}});
-  q.textContent='↩ '+(replyCtx.who||'AI')+': '+String(replyCtx.text).slice(0,70);
+  q.textContent=''+(replyCtx.who||'AI')+': '+String(replyCtx.text).slice(0,70);
   wrap.appendChild(q);
   const d=el('div',{className:'msg user'});d.textContent=t;wrap.appendChild(d);
   l.appendChild(wrap);l.scrollTop=l.scrollHeight;
@@ -24110,12 +24121,12 @@ function addBotMsg(t,isTemp){
     wrap.appendChild(btnRow);
   }
 
-  /* "↩ Reply" — quote this AI message in your next prompt. */
+  /* "Reply" — quote this AI message in your next prompt. */
   if(!isTemp&&displayText){
     const act=document.createElement('div');
     act.style.cssText='display:flex;gap:6px;margin:1px 0 2px 4px;';
     const rb=document.createElement('button');
-    rb.textContent='↩ Reply';rb.className='btn small';
+    rb.textContent='Reply';rb.className='btn small';
     rb.style.cssText='font-size:10px;padding:3px 9px;min-height:28px;opacity:.7;';
     rb.onclick=function(){_setAiReply(displayText,'AI');};
     act.appendChild(rb);
@@ -24304,14 +24315,14 @@ document.addEventListener('click',e=>{
     const sides=6,n=2;
     const rolls=[];let sum=0;
     for(let i=0;i<n;i++){const r=Math.floor(Math.random()*sides)+1;rolls.push(r);sum+=r;}
-    addBotMsg('🎲 Rolled '+n+'d'+sides+': '+rolls.join(' + ')+' = '+sum+'\n\nFor custom rolls, type "roll 3d20" or "roll 1d100".');
+    addBotMsg('Rolled '+n+'d'+sides+': '+rolls.join(' + ')+' = '+sum+'\n\nFor custom rolls, type "roll 3d20" or "roll 1d100".');
   }
   if(id==='quickCoin'){
-    addBotMsg('🪙 Coin: '+(Math.random()<0.5?'HEADS':'TAILS'));
+    addBotMsg('Coin: '+(Math.random()<0.5?'HEADS':'TAILS'));
   }
   if(id==='quickRandom'){
     const n=Math.floor(Math.random()*100)+1;
-    addBotMsg('🔢 Random number (1–100): '+n+'\n\nFor a custom range, type "random 1-500".');
+    addBotMsg('Random number (1–100): '+n+'\n\nFor a custom range, type "random 1-500".');
   }
   if(id==='quickPassword'){
     /* 16-char password with mixed case, digits, and symbols */
@@ -24320,11 +24331,11 @@ document.addEventListener('click',e=>{
     if(crypto.getRandomValues)crypto.getRandomValues(buf);
     else for(let i=0;i<16;i++)buf[i]=Math.floor(Math.random()*0xffffffff);
     let pw='';for(let i=0;i<16;i++)pw+=chars[buf[i]%chars.length];
-    addBotMsg('🔑 Generated password (16 chars):\n\n`'+pw+'`\n\nFor a different length, type "password 24".');
+    addBotMsg('Generated password (16 chars):\n\n`'+pw+'`\n\nFor a different length, type "password 24".');
   }
   if(id==='quickColor'){
     const h='#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0');
-    addBotMsg('🎨 Random colour: `'+h.toUpperCase()+'`\n\nRGB: '+parseInt(h.slice(1,3),16)+', '+parseInt(h.slice(3,5),16)+', '+parseInt(h.slice(5,7),16));
+    addBotMsg('Random colour: `'+h.toUpperCase()+'`\n\nRGB: '+parseInt(h.slice(1,3),16)+', '+parseInt(h.slice(3,5),16)+', '+parseInt(h.slice(5,7),16));
   }
   if(id==='quickJoke'){
     const JOKES=[
@@ -24342,7 +24353,7 @@ document.addEventListener('click',e=>{
       'I tried to catch fog yesterday. Mist.',
       'Why did the scarecrow win an award? Because he was outstanding in his field.',
     ];
-    addBotMsg('😄 '+JOKES[Math.floor(Math.random()*JOKES.length)]);
+    addBotMsg(''+JOKES[Math.floor(Math.random()*JOKES.length)]);
   }
 
   /* ── Offline calculator skill buttons (v7.9.55) ──
@@ -26535,7 +26546,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "## KindleHub Mail — your @kindlehub.pro address",
 "",
-"Every signed-in user automatically has a mail address: their username followed by @kindlehub.pro. Open the Mail tab to use it like a normal inbox — Inbox, Sent, Archive and Trash folders, Compose, Reply, Forward, and Unsend for mail you sent. To write to someone you only need their KindleHub username. Mail is encrypted in transit and at rest, read/archive state syncs across your devices, and a dot appears on the Mail tab when something new arrives. It delivers between KindleHub accounts out of the box, and once the admin deploys the mail gateway (email-worker.js) it becomes a full internet address: outside mail sent to username@kindlehub.pro lands in your inbox, and Compose accepts any address (e.g. name@gmail.com) — the suffix disappears as you type a full address. Sent internet mail shows in Sent with a Delete-copy option (a delivered email can't be recalled).",
+"Every signed-in user automatically has a mail address: their username followed by @kindlehub.pro. Open the Mail tab to use it like a normal inbox — Inbox, Sent, Archive and Trash folders, Compose, Reply, Forward, and Unsend for mail you sent. To write to someone you only need their KindleHub username. Mail is encrypted in transit and at rest, read/archive state syncs across your devices, and a dot appears on the Mail tab when something new arrives. It delivers between KindleHub accounts out of the box, and once the mail gateway (email-worker.js) is deployed it becomes a full internet address: outside mail sent to username@kindlehub.pro lands in your inbox, and Compose accepts any address (e.g. name@gmail.com) — the suffix disappears as you type a full address. Sent internet mail shows in Sent with a Delete-copy option (a delivered email can't be recalled).",
 "",
 "## Messages — chat groups and history caps",
 "",
@@ -45468,17 +45479,17 @@ screenshot:()=>{
   v.appendChild(txt('h2','Screenshot',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
   v.appendChild(txt('p','Capture any KindleHub page as an image — no file upload. Captures are kept for this session; tap one to view full-size and download. (First capture downloads a small helper, so it needs internet once.)',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.55',marginBottom:'10px'}}));
   const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'6px'}});
-  const capPrev=txt('button','📷 Capture last page',{className:'btn primary small'});
-  const capApp=txt('button','📷 Capture this screen',{className:'btn small'});
+  const capPrev=txt('button','Capture last page',{className:'btn primary small'});
+  const capApp=txt('button','Capture this screen',{className:'btn small'});
   row.append(capPrev,capApp);
   v.appendChild(row);
-  v.appendChild(txt('p','Tip: from any page, tap Recent (top-right) → “📷 Screenshot this page”.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}}));
+  v.appendChild(txt('p','Tip: from any page, tap Recent (top-right) → “Screenshot this page”.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}}));
   const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:'8px'}});
   v.appendChild(grid);
   function renderShots(){
     grid.innerHTML='';
     const shots=window._khShots||[];
-    if(!shots.length){grid.appendChild(txt('div','No screenshots yet. Capture one above, or from any page tap Recent → 📷.',{style:{gridColumn:'1/-1',fontSize:'12px',color:'var(--muted)',padding:'14px',textAlign:'center'}}));return;}
+    if(!shots.length){grid.appendChild(txt('div','No screenshots yet. Capture one above, or from any page tap Recent → Screenshot this page.',{style:{gridColumn:'1/-1',fontSize:'12px',color:'var(--muted)',padding:'14px',textAlign:'center'}}));return;}
     shots.forEach(shot=>{
       const cell=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',overflow:'hidden',background:'var(--card)',cursor:'pointer'}});
       const im=el('img',{src:shot.url,style:{width:'100%',display:'block'}});
@@ -46119,7 +46130,7 @@ habits:()=>{
       info.appendChild(txt('div',h.name,{style:{fontWeight:'700',fontSize:'13px',textDecoration:done?'line-through':'none',color:done?'var(--muted)':'var(--fg)'}}));
       /* Stats line: current streak · longest · 30-day rate · total */
       const statsLine=el('div',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'3px',display:'flex',gap:'10px',flexWrap:'wrap'}});
-      statsLine.appendChild(txt('span',(streak>0?'🔥 ':'')+streak+'-day streak'+(streak>0?'':''),{style:{color:streak>0?'#f08000':'var(--muted)',fontWeight:streak>0?'700':'400'}}));
+      statsLine.appendChild(txt('span',(streak>0?'':'')+streak+'-day streak'+(streak>0?'':''),{style:{color:streak>0?'#f08000':'var(--muted)',fontWeight:streak>0?'700':'400'}}));
       if(longest>streak)statsLine.appendChild(txt('span','best: '+longest));
       statsLine.appendChild(txt('span','30-day: '+rate+'%'));
       statsLine.appendChild(txt('span','total: '+tot));
