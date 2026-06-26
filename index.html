@@ -51618,6 +51618,14 @@ messages:()=>{
         const log2=document.getElementById('msgChatLog');
         if(!log2){stopPoll();cleanup();return;}
         try{
+          /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
+             group this matches our current tail and we SKIP the full ~50-message
+             body download entirely — the no-realtime poll used to re-fetch the
+             whole list every 15s regardless. Only pull bodies when something new
+             arrived (mirrors the background notifier). */
+          const _latestId=await _groupLatestId(g.code);
+          const _curTail=_messages.length?_messages[_messages.length-1].id:'';
+          if(_latestId!==null&&_latestId===_curTail)return;
           const msgs=await _groupFetchMessages(g.code);
           /* Guard: a transient lookup failure surfaces as an empty array.
              Never replace a populated chat with nothing on one bad poll —
