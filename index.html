@@ -8613,15 +8613,17 @@ async function _saveUser(key,email,stateObj){
      account stays usable with no network. Runs on every save/sync, so the
      cached copy is always current. */
   try{_cacheOfflineCred(key,email,packed);}catch(_){}
+  const _ua=new Date().toISOString();
   if(_sbActive()){
     /* Upsert on hash; if email/state changed we update; otherwise insert */
-    await _sbUpsert('kh_users',{hash:key,email,state:packed,updated_at:new Date().toISOString()},'hash');
-    return;
+    await _sbUpsert('kh_users',{hash:key,email,state:packed,updated_at:_ua},'hash');
+    return _ua;
   }
   /* Legacy path */
   await _masterWrite(d=>{
-    d.users[key]={e:email,s:packed,u:new Date().toISOString()};
+    d.users[key]={e:email,s:packed,u:_ua};
   });
+  return _ua;
 }
 
 async function _loadUser(key){
@@ -8992,7 +8994,12 @@ async function syncToCloud(){
   if(_syncInFlight){_syncQueued=true;return;}
   _syncInFlight=true;
   try{
-    await _saveUser(S.authToken,S.email,_buildSafeState());
+    const _ua=await _saveUser(S.authToken,S.email,_buildSafeState());
+    /* EGRESS: we just wrote this exact state, so mark it as already-pulled —
+       otherwise the next pull's updated_at probe sees "changed" and re-downloads
+       our OWN push (the blob can be 100KB–1MB), roughly doubling state egress for
+       active users. Other devices' newer writes still bump updated_at and pull. */
+    if(_ua)_lastPulledAt=_ua;
     S.lastSync=Date.now();
     _lastSyncedHash=_stateFingerprint();
     _stateDirty=false;
@@ -34814,11 +34821,13 @@ settings:()=>{
           if(S.authToken&&S.syncEnabled){
             const packed=await _encryptState(S._encKey||S.authToken,_trimStateForCloud(_buildSafeState()));
             pushSize=packed?packed.length:0;
+            const _muaPush=new Date().toISOString();
             if(typeof _sbActive==='function'&&_sbActive()){
-              await _sbUpsert('kh_users',{hash:S.authToken,email:S.email,state:packed,updated_at:new Date().toISOString()},'hash');
+              await _sbUpsert('kh_users',{hash:S.authToken,email:S.email,state:packed,updated_at:_muaPush},'hash');
             } else {
-              await _masterWrite(d=>{d.users[S.authToken]={e:S.email,s:packed,u:new Date().toISOString()};});
+              await _masterWrite(d=>{d.users[S.authToken]={e:S.email,s:packed,u:_muaPush};});
             }
+            try{_lastPulledAt=_muaPush;}catch(_){}/* EGRESS: we just wrote this — don't let the periodic pull re-download our own push */
             S.lastSync=Date.now();
             _lastSyncedHash=_stateFingerprint();
             _stateDirty=false;
