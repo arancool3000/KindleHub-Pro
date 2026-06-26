@@ -1662,7 +1662,19 @@ async function _maybePullFromCloud(){
      paths (focus, visibility, online events) are safe to run regardless. */
   let packed=null,cloudAt='';
   try{
-    if(typeof _sbActive==='function'&&_sbActive()){
+    const _gw=_stateGatewayUrl();
+    if(_gw){
+      /* R2 gateway: cheap meta probe (HEAD) first, then the blob ONLY if it
+         changed — same egress discipline as the Supabase path, but the download
+         is on Cloudflare R2 where egress is free. */
+      const meta=await _r2GetState(_gw,S.authToken,true);
+      const upAt=(meta&&meta.updated_at)||'';
+      if(!upAt)return;/* nothing in R2 yet (account not migrated) — local state stays; pushed on next save */
+      if(upAt===_lastPulledAt)return;/* unchanged — skip the big download */
+      const full=await _r2GetState(_gw,S.authToken,false);
+      cloudAt=full.updated_at||'';
+      packed=full.state||null;
+    } else if(typeof _sbActive==='function'&&_sbActive()){
       /* EGRESS FIX: read the tiny updated_at FIRST and bail if it hasn't changed
          since our last pull — only THEN download the large encrypted state. This
          used to fetch state+updated_at together, re-downloading the full state on
@@ -8606,6 +8618,27 @@ function _refreshStorageUI(){
    Fallback: legacy jsonstorage master doc (doc.users[hash]) used when
    Supabase isn't configured AND for one-time migration of pre-existing
    accounts. State is dictionary-compressed → AES-GCM encrypted → base64. */
+/* ── Cloudflare R2 state gateway (free-egress state storage) ─────────────────
+   OPT-IN via Admin → Local Insights → "State gateway (Cloudflare R2)". When the
+   URL is set, the big encrypted state blob is read/written from R2 (which has
+   ZERO egress fees) instead of Supabase; a tiny registry row (hash+email, state
+   cleared) is still kept in Supabase so username-uniqueness keeps working. When
+   the URL is BLANK, every branch below is skipped and sync behaves exactly as
+   before — so this is safe to ship and migrate to whenever you're ready. The
+   Worker + full setup live in state-worker.js. */
+function _stateGatewayUrl(){try{return (localStorage.getItem('kh_state_gateway')||'').trim().replace(/\/+$/,'');}catch(_){return '';}}
+async function _r2PutState(gw,hash,email,packed){
+  const r=await fetch(gw+'/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({hash:hash,email:email||'',state:packed||''})});
+  if(!r.ok)throw new Error('state gateway PUT '+r.status);
+  const d=await r.json().catch(function(){return {};});
+  return (d&&d.updated_at)||'';
+}
+async function _r2GetState(gw,hash,metaOnly){
+  const u=gw+'/state?hash='+encodeURIComponent(hash)+(metaOnly?'&meta=1':'');
+  const r=await fetch(u);
+  if(!r.ok)throw new Error('state gateway GET '+r.status);
+  return await r.json();/* {state,updated_at} (full) or {updated_at} (meta) */
+}
 async function _saveUser(key,email,stateObj){
   const encKey=S._encKey||key;
   const packed=await _encryptState(encKey,_trimStateForCloud(stateObj));
@@ -8614,6 +8647,16 @@ async function _saveUser(key,email,stateObj){
      cached copy is always current. */
   try{_cacheOfflineCred(key,email,packed);}catch(_){}
   const _ua=new Date().toISOString();
+  const _gw=_stateGatewayUrl();
+  if(_gw){
+    /* Big blob → R2 (free egress). Then keep a TINY Supabase registry row
+       (email kept, state cleared) so username-uniqueness still works — but only
+       AFTER R2 confirms the write, so a failed R2 push never clears the fallback.
+       Local state is always the backstop, so clearing the Supabase blob is safe. */
+    const r2ua=await _r2PutState(_gw,key,email,packed);
+    if(typeof _sbActive==='function'&&_sbActive()){try{await _sbUpsert('kh_users',{hash:key,email,state:null,updated_at:r2ua||_ua},'hash');}catch(_){}}
+    return r2ua||_ua;
+  }
   if(_sbActive()){
     /* Upsert on hash; if email/state changed we update; otherwise insert */
     await _sbUpsert('kh_users',{hash:key,email,state:packed,updated_at:_ua},'hash');
@@ -8627,6 +8670,13 @@ async function _saveUser(key,email,stateObj){
 }
 
 async function _loadUser(key){
+  const _gw=_stateGatewayUrl();
+  if(_gw){
+    /* R2 is the source of truth when the gateway is set. If it has nothing yet
+       (account not migrated) or is unreachable, fall through to Supabase so no
+       one loses access during the transition. */
+    try{const d=await _r2GetState(_gw,key,false);if(d&&d.state)return d.state;}catch(e){console.warn('R2 load failed',e);}
+  }
   if(_sbActive()){
     try{
       const rows=await _sbSelect('kh_users','hash=eq.'+encodeURIComponent(key)+'&select=state,email');
@@ -34758,6 +34808,22 @@ settings:()=>{
     _syncNowBtn.onclick=async()=>{
       if(!navigator.onLine)return toast('Sync requires internet.');
       _syncNowBtn.disabled=true;_syncNowBtn.textContent='Pulling…';
+      /* When the R2 state gateway is on, the Supabase-specific inline diagnostics
+         below don't apply. Route through the standard R2-aware pull+push so a
+         manual sync can never clobber another device's R2 state. */
+      if(typeof _stateGatewayUrl==='function'&&_stateGatewayUrl()){
+        try{
+          const _be=Array.isArray(S.calEvents)?S.calEvents.length:0;
+          try{window._khLastPullAt=0;}catch(_){}
+          await _maybePullFromCloud();
+          _syncNowBtn.textContent='Pushing…';
+          await syncToCloud();
+          const _ae=Array.isArray(S.calEvents)?S.calEvents.length:0;
+          toast('Synced to R2 ✓'+(_ae!==_be?(' · now '+_ae+' events'):''),3500);
+        }catch(e){toast('Sync failed: '+String((e&&e.message)||e).slice(0,80),5000);}
+        _syncNowBtn.disabled=false;_syncNowBtn.textContent='Sync Now ⟳';
+        return;
+      }
       /* Diagnostic: capture before/after counts so the toast can tell
          the user EXACTLY what happened — was the pull empty? did
          decryption fail? did the merge run? Previously the button
@@ -37013,6 +37079,16 @@ Deno.serve(async (req)=>{
       gwSave.onclick=()=>{try{const v=gwIn.value.trim();if(v)localStorage.setItem('kh_mail_gateway',v);else localStorage.removeItem('kh_mail_gateway');toast(v?'Gateway saved — external email is ON for this device.':'Gateway cleared.');}catch(_){}};
       gwRow.append(gwIn,gwSave);c.appendChild(gwRow);
       c.appendChild(txt('div','Deploy email-worker.js (in the repo) to Cloudflare, then paste its URL. Inbound mail needs no URL — it flows via Email Routing once the worker is live.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      /* State gateway — paste the deployed state-worker.js (Cloudflare R2) URL to
+         move the big per-user state blob off Supabase. R2 has ZERO egress fees, so
+         this is the permanent fix for the egress quota. Blank = stay on Supabase. */
+      c.appendChild(txt('div','State gateway (Cloudflare R2 — free egress)',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
+      const sgRow=el('div',{style:{display:'flex',gap:'5px'}});
+      const sgIn=el('input',{type:'text',placeholder:'https://kindlehub-state.workers.dev',value:(localStorage.getItem('kh_state_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
+      const sgSave=txt('button','Save',{className:'btn small'});
+      sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to Supabase.',4500);}catch(_){}};
+      sgRow.append(sgIn,sgSave);c.appendChild(sgRow);
+      c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on Supabase. Leave blank to keep everything on Supabase. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       return c;
     }
     async function renderErrPanel(){
