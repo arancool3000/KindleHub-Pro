@@ -9005,6 +9005,14 @@ function _loginClearFailures(name){try{localStorage.removeItem(_loginFailKey(nam
    The blob is the same AES-GCM ciphertext the cloud holds — useless without
    the password (which alone derives the key), so it's safe at rest. Kept to
    the 3 most-recent accounts. */
+/* Saved sign-in credentials for automatic re-login. The user asked for the
+   username + password to be remembered on the device so nobody gets logged out,
+   so we store them in plaintext here (a deliberate convenience-over-secrecy
+   choice, on top of the encrypted offline-cred blob) and auto-login from them at
+   boot. Cleared on explicit logout. */
+function _saveCreds(u,p){try{if(u&&p)localStorage.setItem('kh_creds',JSON.stringify({u:u,p:p,at:Date.now()}));}catch(_){}}
+function _readCreds(){try{const o=JSON.parse(localStorage.getItem('kh_creds')||'null');return (o&&o.u&&o.p)?o:null;}catch(_){return null;}}
+function _clearCreds(){try{localStorage.removeItem('kh_creds');}catch(_){}}
 function _cacheOfflineCred(key,email,packed){
   try{
     if(!key||typeof packed!=='string'||!packed)return;
@@ -9069,6 +9077,7 @@ async function authRegister(email,password){
     window.__khStateLoadFailed=false;/* authoritative new account — re-enable saves */
     await _saveUser(key,email,_buildSafeState());
     save();
+    try{_saveCreds(email,password);}catch(_){}
     return{success:true,username:email,adjusted:(email!==_origName)};
   }catch(e){console.error('Register error',e);return{success:false,error:e.message};}
 }
@@ -9155,6 +9164,7 @@ async function authLogin(email,password){
        boot left you stuck on the Pro tier ("no longer Ultra"). */
     try{if(typeof _resetAdminCache==='function')_resetAdminCache();}catch(_){}
     try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}}).catch(function(){});}catch(_){}
+    try{_saveCreds(email,password);}catch(_){}
     return{success:true};
   }catch(e){console.error('Login error',e);return{success:false,error:e.message};}
 }
@@ -9162,6 +9172,7 @@ async function authLogin(email,password){
 async function authLogout(){
   if(S.authToken)try{await syncToCloud();}catch(e){}
   S.userId=null;S.authToken=null;S.email=null;S.syncEnabled=false;S._encKey=null;
+  try{_clearCreds();}catch(_){}
   if(typeof _resetAdminCache==='function')_resetAdminCache();
   try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}
   save();
@@ -54473,6 +54484,25 @@ window._showWelcome=function(){
       setTimeout(function(){try{if(typeof toast==='function')toast('Couldn’t read your saved session this time — reload the page to recover it, or log in again. Your data is safe.',9000);}catch(_){}},800);
     }
     setTimeout(()=>{S.totalSessions=(S.totalSessions||0)+1;save(2000);},50);
+    /* Auto re-login from saved credentials: if there's no live session but the
+       device has remembered creds, sign in silently and refresh the UI + start
+       syncing. Belt-and-suspenders so a wiped/evicted session restores itself
+       without a manual re-login. authLogin handles the offline path itself. */
+    setTimeout(async function(){
+      try{
+        if(!S.authToken){
+          const c=_readCreds();
+          if(c){
+            const r=await authLogin(c.u,c.p);
+            if(r&&r.success){
+              try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}
+              try{_lastSyncedHash=_stateFingerprint();_startPeriodicSync();}catch(_){}
+              try{var act=document.querySelector('nav .tab.active');if(act&&act.dataset)showView(act.dataset.view);}catch(_){}
+            }
+          }
+        }
+      }catch(_){}
+    },150);
     /* Kick off the 45 s cloud-sync heartbeat if the user has a session.
        Idempotent — skipped if no auth, exits if already running. */
     if(S.authToken&&S.syncEnabled){
