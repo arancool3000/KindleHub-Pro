@@ -73,8 +73,19 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   auto-expiring `until` date). `authLogin`/`authRegister` block non-admins (admin username exempt via
   `_isAdminUsername`); already-signed-in users are unaffected. Both gateway fields + the capacity controls live
   in `buildLocalInsightsCard` (Admin → Local Insights). Filter `[[KH_CAP]]` records out of any announcement
-  DISPLAY. (Next backend step: full move to **Cloudflare D1 + Workers** — `api-worker.js`, PostgREST-subset over
-  D1, behind a `kh_api_gateway` toggle — to drop Supabase entirely; $0 egress.)
+  DISPLAY.
+- **Cloudflare D1 backend (`api-worker.js` + `schema-d1.sql`)**: full Supabase replacement for chat/mail/
+  scores/announcements/presence/feedback/errors/bans/visits — $0 egress. `_apiGatewayUrl()`
+  (`localStorage['kh_api_gateway']`) + `_sbBase()` (gateway || SUPABASE_URL); ALL REST/RPC funnels through
+  `_sbBase()+'/rest/v1'` (one `_sbFetch` chokepoint + `_sbCount` + the 3 rpc callers + 4 admin-diagnostic
+  fetches). `_sbActive()` true when gateway OR Supabase set. The Worker is a PostgREST subset over D1/SQLite
+  (operators eq/ilike/like/gte/lt/in/not.like; upsert via `on_conflict`; owner_secret gating via X-KH-Secret;
+  the 7 RPCs + cap/rate triggers ported to code; JSON/bool columns marshaled). Blank gateway = Supabase,
+  unchanged. **Realtime is Supabase-only** — gated off when the gateway is set (`subscribeRealtime` + the game
+  multiplayer ws both bail), so chat uses its 15s polling fallback; instant realtime via Durable Objects is a
+  Phase 2. STILL on Supabase even with the gateway set: the shared-key **Gemini Edge Function**
+  (`/functions/v1/kh-gemini-proxy`, line ~23004) — port separately if fully decommissioning Supabase. Tested
+  via a node:sqlite D1 shim (`--experimental-sqlite`): worker unit + full client↔worker↔SQLite integration.
 - **Cloud sync merge** (`mergeCloudState`): id-lists (notes/books/flashDecks/mdJournals/calEvents/advStories)
   are UNIONED by id, so deletions need git-style tombstones — `S.deletedItems` (`<list>:<id>`→ts, SYNCED &
   unioned across devices like `leftGroups`) recorded by `_khTrackDeletions()` (a save-time diff of the lists

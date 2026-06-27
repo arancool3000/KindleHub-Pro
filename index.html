@@ -6236,7 +6236,15 @@ const KH_REG='9a40d7cc-4373-40eb-8c09-33a2a0d50516';
 const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
 
 /* ── Supabase REST helpers (PostgREST) ──────────────────────────────── */
+/* API gateway (Cloudflare D1 + Workers). When set, ALL REST/RPC traffic routes
+   here instead of Supabase — zero egress. Blank = Supabase, behaves as before.
+   The Worker (api-worker.js) speaks the same PostgREST subset, so only the base
+   URL changes. Realtime (chat websockets) is Supabase-only, so it's gated off
+   here and chat uses its existing 15s polling fallback. */
+function _apiGatewayUrl(){try{return (localStorage.getItem('kh_api_gateway')||'').trim().replace(/\/+$/,'');}catch(_){return '';}}
+function _sbBase(){const gw=_apiGatewayUrl();return gw||(SUPABASE_URL||'').replace(/\/$/,'');}
 function _sbActive(){
+  if(_apiGatewayUrl())return true;
   return SUPABASE_URL&&SUPABASE_URL.indexOf('supabase.co')>0
        &&SUPABASE_ANON_KEY&&SUPABASE_ANON_KEY.length>20
        &&SUPABASE_URL.indexOf('YOUR_')<0;
@@ -6252,7 +6260,7 @@ function _sbHeaders(extra){
 }
 async function _sbFetch(path,opts){
   opts=opts||{};
-  const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1'+path;
+  const url=_sbBase()+'/rest/v1'+path;
   const ac=typeof AbortController!=='undefined'?new AbortController():null;
   const tid=setTimeout(()=>{if(ac)ac.abort();},12000);
   let r;
@@ -6352,7 +6360,7 @@ async function _sbDelete(table,query,secret){
    PostgREST returns it in the Content-Range header when Prefer:count=exact
    is sent. Bypasses _sbFetch so we can read the header. */
 async function _sbCount(table,query){
-  const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/'+table+(query?'?'+query:'?select=*');
+  const url=_sbBase()+'/rest/v1/'+table+(query?'?'+query:'?select=*');
   const ac=typeof AbortController!=='undefined'?new AbortController():null;
   const tid=setTimeout(()=>{if(ac)ac.abort();},10000);
   try{
@@ -6682,7 +6690,7 @@ function _sbFriendlyErr(t,status){
 }
 async function _announceRpc(fn,body){
   try{
-    const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/'+fn;
+    const url=_sbBase()+'/rest/v1/rpc/'+fn;
     const r=await fetch(url,{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify(body||{})});
     if(r.ok||r.status===204)return true;
     let t='';try{t=await r.text();}catch(_){}
@@ -6815,7 +6823,7 @@ async function _khIsBanned(name){
    parsed text so callers can surface specific errors). */
 async function _adminRpc(fn,body){
   try{
-    const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/'+fn;
+    const url=_sbBase()+'/rest/v1/rpc/'+fn;
     const r=await fetch(url,{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify(body||{})});
     if(r.ok||r.status===204)return{ok:true};
     let t='';try{t=await r.text();}catch(_){}
@@ -9697,7 +9705,7 @@ async function _groupToggleReaction(code,msgId,key){
      reloaded its schema cache to see it. */
   let rpcOk=false;
   try{
-    const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/kh_set_reaction';
+    const url=_sbBase()+'/rest/v1/rpc/kh_set_reaction';
     const r=await fetch(url,{
       method:'POST',
       headers:Object.assign(_sbHeaders(),{'Prefer':'return=minimal'}),
@@ -13857,7 +13865,7 @@ window.KH_MP=(function(){
     }
     /* Realtime websocket — mirrors the messages BUILDER pattern */
     let wsOpen=false;
-    if(typeof SUPABASE_URL!=='undefined'&&typeof SUPABASE_ANON_KEY!=='undefined'){
+    if(typeof SUPABASE_URL!=='undefined'&&typeof SUPABASE_ANON_KEY!=='undefined'&&!(typeof _apiGatewayUrl==='function'&&_apiGatewayUrl())){
       try{
         const url=SUPABASE_URL.replace(/^https?:/,'wss:').replace(/\/$/,'')+'/realtime/v1/websocket?apikey='+encodeURIComponent(SUPABASE_ANON_KEY)+'&vsn=1.0.0';
         ws=new WebSocket(url);
@@ -36079,7 +36087,7 @@ feedback:()=>{
         c.appendChild(sbStatus);
         async function _countRows(table,filter){
           try{
-            const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/'+table+(filter?'?'+filter:'');
+            const url=_sbBase()+'/rest/v1/'+table+(filter?'?'+filter:'');
             const r=await fetch(url,{method:'HEAD',headers:Object.assign(_sbHeaders(),{'Prefer':'count=exact','Range':'0-0'})});
             const cr=r.headers.get('content-range')||'';
             const m=cr.match(/\/(\d+)$/);
@@ -36087,7 +36095,7 @@ feedback:()=>{
           }catch(_){return null;}
         }
         async function _deleteRows(table,filter){
-          const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/'+table+'?'+filter;
+          const url=_sbBase()+'/rest/v1/'+table+'?'+filter;
           const r=await fetch(url,{method:'DELETE',headers:Object.assign(_sbHeaders(),{'Prefer':'return=minimal'})});
           if(!r.ok&&r.status!==204)throw new Error('HTTP '+r.status+' — '+(await r.text().catch(()=>'')).slice(0,160));
         }
@@ -36759,7 +36767,7 @@ feedback:()=>{
       }
       async function _tryRpc(name,body){
         try{
-          const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/rpc/'+name;
+          const url=_sbBase()+'/rest/v1/rpc/'+name;
           const r=await fetch(url,{method:'POST',headers:Object.assign(_sbHeaders(),{'Prefer':'return=minimal'}),body:JSON.stringify(body||{})});
           const tx=await r.text().catch(()=>'');
           if(r.status===404&&tx.indexOf('PGRST202')>=0)return 'PGRST202';
@@ -36769,7 +36777,7 @@ feedback:()=>{
       }
       async function _count(table,filter){
         try{
-          const url=SUPABASE_URL.replace(/\/$/,'')+'/rest/v1/'+table+(filter?'?'+filter:'');
+          const url=_sbBase()+'/rest/v1/'+table+(filter?'?'+filter:'');
           const r=await fetch(url,{method:'HEAD',headers:Object.assign(_sbHeaders(),{'Prefer':'count=exact','Range':'0-0'})});
           const cr=r.headers.get('content-range')||'';
           const m=cr.match(/\/(\d+)$/);return m?parseInt(m[1],10):null;
@@ -37367,7 +37375,16 @@ Deno.serve(async (req)=>{
       const sgSave=txt('button','Save',{className:'btn small'});
       sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to Supabase.',4500);}catch(_){}};
       sgRow.append(sgIn,sgSave);c.appendChild(sgRow);
-      c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on Supabase. Leave blank to keep everything on Supabase. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on Supabase unless you also set the API gateway below. Leave blank to keep state on Supabase. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      /* API gateway — paste the deployed api-worker.js (Cloudflare D1) URL to move
+         chat/mail/scores/announcements/presence/bans OFF Supabase too. Blank = Supabase. */
+      c.appendChild(txt('div','API gateway (Cloudflare D1 — free egress)',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
+      const agRow=el('div',{style:{display:'flex',gap:'5px'}});
+      const agIn=el('input',{type:'text',placeholder:'https://kindlehub-api.workers.dev',value:(localStorage.getItem('kh_api_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
+      const agSave=txt('button','Save',{className:'btn small'});
+      agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to Supabase.',5000);}catch(_){}};
+      agRow.append(agIn,agSave);c.appendChild(agRow);
+      c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list off Supabase — zero egress. Blank = Supabase. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* ── Capacity guard ── close NEW sign-ins during a quota emergency, with
          an auto-expiring "back on <date>" message, so the project throttles
          itself instead of getting suspended/stuck. */
@@ -51919,6 +51936,9 @@ messages:()=>{
     /* ── Realtime subscription (Supabase) — falls back to polling ── */
     function subscribeRealtime(){
       if(!_sbActive())return false;
+      /* Realtime is Supabase-only; on the Cloudflare API gateway, fall back to
+         polling (Durable-Objects realtime is a separate Phase 2). */
+      if(typeof _apiGatewayUrl==='function'&&_apiGatewayUrl())return false;
       try{
         const url=SUPABASE_URL.replace(/^https?:/,'wss:').replace(/\/$/,'')
           +'/realtime/v1/websocket?apikey='+encodeURIComponent(SUPABASE_ANON_KEY)+'&vsn=1.0.0';
