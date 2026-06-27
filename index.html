@@ -9065,8 +9065,15 @@ async function authLogin(email,password){
     const key=await _userKey(email,password);
     let packed=null;
     let needsMigration=false; /* true if found in legacy jsonstorage but not Supabase */
-    /* Try Supabase first */
-    if(_sbActive()){
+    /* State gateway (Cloudflare R2): when set, the encrypted blob lives in R2
+       and the kh_users registry row's state is null — so load it from R2 first,
+       or a fresh device (no offline cache) would read null and fail to sign in. */
+    try{
+      const _sgw=(typeof _stateGatewayUrl==='function')?_stateGatewayUrl():'';
+      if(_sgw){ const d=await _r2GetState(_sgw,key,false); if(d&&d.state)packed=d.state; }
+    }catch(e){console.warn('R2 login lookup failed',e);}
+    /* Try Supabase (or the D1 gateway) next */
+    if(!packed&&_sbActive()){
       try{
         const rows=await _sbSelect('kh_users','hash=eq.'+encodeURIComponent(key)+'&select=state');
         if(Array.isArray(rows)&&rows.length&&rows[0].state)packed=rows[0].state;
