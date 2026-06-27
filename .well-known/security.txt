@@ -1,0 +1,6 @@
+# KindleHub Pro — security contact (RFC 9116)
+# Served at https://kindlehub.pro/.well-known/security.txt
+Contact: mailto:security@kindlehub.pro
+Expires: 2027-06-27T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://kindlehub.pro/.well-known/security.txt

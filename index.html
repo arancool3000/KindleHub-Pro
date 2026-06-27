@@ -6240,8 +6240,18 @@ const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
    here instead of Supabase — zero egress. Blank = Supabase, behaves as before.
    The Worker (api-worker.js) speaks the same PostgREST subset, so only the base
    URL changes. Realtime (chat websockets) is Supabase-only, so it's gated off
-   here and chat uses its existing 15s polling fallback. */
-function _apiGatewayUrl(){try{return (localStorage.getItem('kh_api_gateway')||'').trim().replace(/\/+$/,'');}catch(_){return '';}}
+   here and chat uses its existing 15s polling fallback.
+
+   ── FLEET ROLLOUT ──────────────────────────────────────────────────────────
+   localStorage is PER-DEVICE (great for the admin to test first). To switch
+   ALL users at once, paste your Worker URLs into the two KH_DEFAULT_* constants
+   below and redeploy index.min.html — every device then uses Cloudflare on next
+   load. A per-device localStorage value still overrides the default; set it to
+   the literal 'off' to force that one device back onto Supabase. Empty both =
+   Supabase, exactly as today. */
+const KH_DEFAULT_STATE_GATEWAY='';   /* e.g. 'https://kindlehub-state.you.workers.dev' */
+const KH_DEFAULT_API_GATEWAY='';     /* e.g. 'https://kindlehub-api.you.workers.dev'   */
+function _apiGatewayUrl(){try{const v=(localStorage.getItem('kh_api_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_API_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');}}
 function _sbBase(){const gw=_apiGatewayUrl();return gw||(SUPABASE_URL||'').replace(/\/$/,'');}
 function _sbActive(){
   if(_apiGatewayUrl())return true;
@@ -8726,7 +8736,7 @@ function _refreshStorageUI(){
    the URL is BLANK, every branch below is skipped and sync behaves exactly as
    before — so this is safe to ship and migrate to whenever you're ready. The
    Worker + full setup live in state-worker.js. */
-function _stateGatewayUrl(){try{return (localStorage.getItem('kh_state_gateway')||'').trim().replace(/\/+$/,'');}catch(_){return '';}}
+function _stateGatewayUrl(){try{const v=(localStorage.getItem('kh_state_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_STATE_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_STATE_GATEWAY||'').replace(/\/+$/,'');}}
 async function _r2PutState(gw,hash,email,packed){
   const r=await fetch(gw+'/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({hash:hash,email:email||'',state:packed||''})});
   if(!r.ok)throw new Error('state gateway PUT '+r.status);
