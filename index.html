@@ -54111,40 +54111,62 @@ window._showWelcome=function(){
   const STEPS=[
     {
       id:'login',
-      heading:'Already have an account?',
-      sub:'Sign in to restore your data. Or skip to set up as new.',
+      heading:'Sign in or create an account',
+      sub:'Create an account to save your library, notes and progress across devices — or sign in to restore them.',
       build(wrap){
         /* Language picker up top so non-English users can choose it first thing. */
         const langRow=el('div',{style:{marginBottom:'14px'}});
         langRow.appendChild(txt('label','Language',{style:{fontSize:'12px',fontWeight:'700',marginBottom:'6px',display:'block',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.5px'}}));
         langRow.appendChild(_langSelectEl());
         wrap.appendChild(langRow);
+        /* Mandatory auth up front: Sign In (default) vs Create Account. No skip —
+           every new user makes an account here so their data is saved + synced. */
+        let mode='signin';
+        const tabs=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}});
+        const tSignin=txt('button','Sign In',{className:'btn small primary',style:{flex:'1'}});
+        const tSignup=txt('button','Create Account',{className:'btn small',style:{flex:'1'}});
+        tabs.append(tSignin,tSignup);wrap.appendChild(tabs);
         const em=el('input',{id:'ob-login-email',type:'text',autocomplete:'username',placeholder:'Username',style:{fontSize:'15px',marginBottom:'6px'}});
-        const pw=el('input',{id:'ob-login-pw',type:'password',placeholder:'Password',style:{fontSize:'15px',marginBottom:'8px'}});
+        const pw=el('input',{id:'ob-login-pw',type:'password',autocomplete:'current-password',placeholder:'Password',style:{fontSize:'15px',marginBottom:'6px'}});
+        const pw2=el('input',{type:'password',autocomplete:'new-password',placeholder:'Confirm password',style:{fontSize:'15px',marginBottom:'8px',display:'none'}});
         const status=txt('p','',{style:{fontSize:'12px',color:'var(--danger)',minHeight:'18px',margin:'0 0 4px'}});
-        const loginBtn=txt('button','Sign In & Restore Data',{className:'btn primary',style:{width:'100%',fontSize:'14px',minHeight:'44px'}});
-        loginBtn.onclick=async()=>{
+        const goBtn=txt('button','Sign In',{className:'btn primary',style:{width:'100%',fontSize:'14px',minHeight:'44px'}});
+        function setMode(m){
+          mode=m;
+          tSignin.className='btn small'+(m==='signin'?' primary':'');
+          tSignup.className='btn small'+(m==='signup'?' primary':'');
+          pw2.style.display=m==='signup'?'':'none';
+          try{pw.setAttribute('autocomplete',m==='signup'?'new-password':'current-password');}catch(_){}
+          goBtn.textContent=m==='signup'?'Create Account':'Sign In';
+          status.textContent='';status.style.color='var(--danger)';
+        }
+        tSignin.onclick=()=>setMode('signin');
+        tSignup.onclick=()=>setMode('signup');
+        goBtn.onclick=async()=>{
           const e2=em.value.trim(),p2=pw.value;
-          if(!e2||!p2){status.textContent='Enter username and password.';return;}
-          loginBtn.disabled=true;loginBtn.textContent='Signing in...';status.textContent='';
-          const res=await authLogin(e2,p2);
-          if(res.success){
-            S.onboardingDone=true;saveNow();
-            if(typeof syncNavVisibility==='function')syncNavVisibility();
-            if(typeof applyTheme==='function')applyTheme(S.theme||'light');
-            ov.remove();
-            showView('home');
+          if(!e2||!p2){status.textContent='Enter a username and password.';return;}
+          if(mode==='signup'&&p2!==pw2.value){status.textContent='Passwords don\'t match.';return;}
+          goBtn.disabled=true;goBtn.textContent=mode==='signup'?'Creating…':'Signing in…';status.textContent='';
+          const res=mode==='signup'?await authRegister(e2,p2):await authLogin(e2,p2);
+          if(res&&res.success){
+            if(mode==='signup'){
+              /* New account — keep going through the rest of the setup (name, age…). */
+              if(res.adjusted&&res.username){status.style.color='var(--muted)';status.textContent='That name was taken — you\'re "'+res.username+'".';}
+              advance();
+            }else{
+              /* Existing user — they already have their setup; jump straight in. */
+              S.onboardingDone=true;saveNow();
+              if(typeof syncNavVisibility==='function')syncNavVisibility();
+              if(typeof applyTheme==='function')applyTheme(S.theme||'light');
+              ov.remove();showView('home');
+            }
           }else{
-            status.textContent=res.error||'Login failed.';
-            loginBtn.disabled=false;loginBtn.textContent='Sign In & Restore Data';
+            status.textContent=(res&&res.error)||(mode==='signup'?'Could not create account.':'Login failed.');
+            goBtn.disabled=false;goBtn.textContent=mode==='signup'?'Create Account':'Sign In';
           }
         };
-        /* Make skipping obvious on this first page — the footer Skip button
-           is hidden on step 0, so without this a new user can be unsure how
-           to get past the sign-in screen. */
-        const skipNew=txt('button','New here? Skip and set up as new →',{className:'btn',style:{width:'100%',marginTop:'10px',fontSize:'13px'}});
-        skipNew.onclick=()=>advance();
-        wrap.append(em,pw,status,loginBtn,skipNew);
+        wrap.append(em,pw,pw2,status,goBtn);
+        setMode('signin');
       },
       save(){}
     },
