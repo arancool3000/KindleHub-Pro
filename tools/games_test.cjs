@@ -7,7 +7,7 @@ const path = require('path');
 const GAMES = ['hangman','memory','ttt','connect4','wordle','minesweeper','sudoku',
   'snake','slither','g2048','tetris','spaceinv','solitaire','towerdef','chess','checkers',
   'battleship','lightsout','snakesladders','wordsearch','candycrush','mastermind',
-  'dotsboxes','blockblast','racer','digquest','hanoi','blackjack','crazy8','geometrydash'];
+  'dotsboxes','blockblast','digquest','hanoi','blackjack','crazy8','geometrydash'];
 
 const FILE = 'file://' + path.resolve(__dirname, '..', 'index.html');
 

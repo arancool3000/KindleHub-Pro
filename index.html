@@ -11895,7 +11895,6 @@ const GAME_HELP={
   towerdef:{name:'Tower Defence',how:'Place and upgrade towers along the path to stop waves of enemies reaching your castle. 8 towers, 8 enemy types, 40 waves.'},
   candycrush:{name:'Match 3',how:'Swap adjacent pieces to line up three or more of a kind. Matches clear and score — set up chains for big combos.'},
   blockblast:{name:'Block Blast',how:'Drag the block shapes onto the grid. Fill a full row or column to clear it. It ends when no piece can fit.'},
-  racer:{name:'Turbo Racer',how:'A 3D road RACE against 5 rivals over 2 laps. ▲ accelerates, ▼ brakes, ◄ ► steer (or arrow keys / swipe; tap top half = gas, bottom half = brake). Pass the red cars and cross the finish line first — finishing position is your result (1st wins, top 3 is a podium). Keep off the grass or you slow right down, and beat the clock or it\'s a DNF. Win bigger by finishing higher with time to spare.'},
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
 };
 function _showGameHelp(g){
@@ -11993,15 +11992,15 @@ function exitImmersive(){
   document.body.style.webkitOverflowScrolling='';
   document.documentElement.style.overflowY='';
 
-  /* Restore app chrome — kdRoot's original inline cssText sets display:flex.
-     setting style.display='' would fall back to the element's default
-     (block), which collapses the launcher (no flex → kdMain has no height
-     → home layer invisible, dock crammed against the status bar). So we
-     restore the flex display explicitly. */
+  /* Always restore the MAIN APP shell and land on the GAMES menu. Per product
+     decision the in-game Back button NEVER returns to KindleOS — whether or not
+     the OS launcher was mounted, exiting a game goes straight to the games view.
+     So we hide kd-root (instead of restoring it to flex) and force the games
+     view, syncing the nav active tab so the chrome matches. */
   var kdRoot=document.getElementById('kd-root');
   var kdSizer=document.getElementById('kd-sizer');
-  if(kdRoot)kdRoot.style.display='flex';
-  if(kdSizer)kdSizer.style.display='';
+  if(kdRoot)kdRoot.style.display='none';   /* keep the OS launcher hidden */
+  if(kdSizer)kdSizer.style.display='none';
   if(appNode)appNode.style.display='';
 
   /* Re-attach app shell if needed */
@@ -12011,27 +12010,14 @@ function exitImmersive(){
 
   window.scrollTo(0,0);
 
-  /* If KindleOS is active, drop the user back at its home rather than
-     trying to re-render the main app's view (which would create a phantom
-     duplicate view-games element and break the OS chrome). */
-  if(kdRoot&&typeof window._kdCloseApp==='function'){
-    try{window._kdCloseApp();}catch(e){}
-    return;
-  }
-
-  /* Re-attach the active view from cache — regular (non-OS) path.
-     Previously this also force-deleted VIEWS[vid] before re-showing,
-     which paid the full rebuild cost (hundreds of ms for big views)
-     even though the underlying view DOM was completely untouched
-     by the immersive game. showView() correctly handles the cached
-     case so we just call it. */
+  /* Clear the host and show the games menu, syncing the nav active tab. */
   var mh=document.getElementById('mainHost');
   if(mh){while(mh.firstChild)mh.removeChild(mh.firstChild);}
-  var active=document.querySelector('nav .tab.active');
-  if(active){
-    var vid=active.dataset.view;
-    showView(vid);
-  }
+  try{
+    var gt=document.querySelector('nav .tab[data-view="games"]');
+    if(gt){document.querySelectorAll('nav .tab.active').forEach(function(t){t.classList.remove('active');});gt.classList.add('active');gt.style.display='';}
+  }catch(_){}
+  showView('games');
 }
 $('immersiveExit').onclick=exitImmersive;
 function updateImmersiveScore(s){const e=$('immersiveScore');if(e)e.textContent=s;}
@@ -12977,7 +12963,6 @@ function _doLaunch(g){
     case 'mastermind':    Mastermind.start();break;
     case 'dotsboxes':     _initDotsBoxes();DotsBoxes.start();break;
     case 'blockblast':    _initBlockBlast();BlockBlast.start();break;
-    case 'racer':         _initRacer();Racer.start();break;
     case 'digquest':      DigQuest.start();break;
     case 'hanoi':         Hanoi.start();break;
     case 'blackjack':     Blackjack.start();break;
@@ -16618,22 +16603,32 @@ const Snake=(()=>{
    hand-authored level. Tap / Space / ▲ to jump; clear the spikes, ride the
    blocks, reach 100%. One learnable layout so it's beatable with practice
    (instant retry, GD-style). Canvas + flat fills + a modest framerate, kept
-   e-ink friendly like Snake/Racer (no audio — Kindle speakers are unreliable;
+   e-ink friendly like Snake (no audio — Kindle speakers are unreliable;
    the scrolling grid carries the "to the beat" feel). */
 const GeometryDash=(()=>{
   const W=360,H=240,GY=196,SZ=18,HALF=9,PX=58;
   const G=0.92,JV=-11.2,SPD=4.2,FR=38;
   const SPK_W=22,SPK_H=18,BLK_W=26,BLK_H=22;
-  /* Fixed level: [type,x] where x = left edge in world px, ascending. Generous
-     gaps so every spike/cluster is clearable in a single forgiving jump. */
+  /* Fixed level: [type,x] where x = left edge in world px, ascending. Paced to
+     mirror the real "Stereo Madness" sections (gentle intro -> block hops ->
+     busy mixed middle -> calm run -> finish). Blocks are jump-OVER obstacles in
+     this engine (the arc clears a 22px block), not platforms to ride. Every gap
+     is >=278px so each obstacle is an independent, forgiving single jump. ~81s
+     at SPD=4.2. Beatability re-verified by the pure-physics sim mirror. */
   const LEVEL=[
-    ['spike',460],['spike',720],['spike',1000],['spike2',1300],
-    ['block',1640],['spike',1960],['spike',2230],['spike2',2520],
-    ['spike',2840],['block',3160],['spike',3480],['spike2',3780],
-    ['spike',4140],['block',4460],['spike',4790],['spike2',5080],
-    ['spike',5400]
+    /* INTRO — gentle single spikes, learn the one-tap (0%–~22%) */
+    ['spike',520],['spike',820],['spike',1120],['spike',1440],
+    /* BLOCK HOPS — taller jump-over blocks + a spike after each (~22%–38%) */
+    ['block',1820],['spike',2160],['block',2520],['spike',2860],
+    /* MIXED MIDDLE — double spikes + block→spike combos, the busy part (~38%–68%) */
+    ['spike2',3240],['spike',3620],['block',3980],['spike2',4320],
+    ['spike',4700],['block',5060],['spike2',5420],['spike',5820],
+    /* CALM RUN — breathe, spaced singles (~68%–82%) */
+    ['spike',6260],['spike',6620],['spike',7000],
+    /* FINISH — short build to the last double, then home (~82%–100%) */
+    ['block',7380],['spike',7720],['spike2',8060],['spike',8460]
   ].map(o=>({t:o[0],x:o[1]}));
-  const LEVEL_LEN=5400+SPK_W+440; /* finish line a little past the last obstacle */
+  const LEVEL_LEN=8460+SPK_W+440; /* finish line a little past the last obstacle */
   let game=null,timer=null,attempts=0,_submitted=false;
 
   function _best(){return (S.games&&S.games.geometrydash&&S.games.geometrydash.best)||0;}
@@ -16831,18 +16826,21 @@ const Slither=(()=>{
     if(!ctx||!G)return;const dark=document.body.classList.contains('dark');
     ctx.fillStyle=dark?'#0b0b0b':'#f4f4f4';ctx.fillRect(0,0,VW,VH);
     const p=me();const camX=p.x-VW/2,camY=p.y-VH/2;
-    ctx.save();ctx.translate(-camX,-camY);
-    ctx.strokeStyle=dark?'#444':'#bbb';ctx.lineWidth=3;ctx.strokeRect(0,0,WORLD,WORLD);
+    /* Manual camera offset (world→screen = coord-cam) instead of a whole-scene
+       ctx.translate(): old Kindle Silk/WebKit silently DROPS a large fractional
+       translate, which blanked the snake/food/border (drawn at world coords
+       ~750) while the untransformed HUD still showed. Mirrors GeometryDash's
+       proven e-ink camera; pixel-identical on capable browsers. */
+    ctx.strokeStyle=dark?'#444':'#bbb';ctx.lineWidth=3;ctx.strokeRect(-camX,-camY,WORLD,WORLD);
     ctx.fillStyle=dark?'#9ad':'#39c';
-    for(const f of G.food){if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,6.283);ctx.fill();}
+    for(const f of G.food){if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x-camX,f.y-camY,f.r,0,6.283);ctx.fill();}
     G.snakes.forEach(s=>{
       if(s.dead)return;const r=Math.max(4,3+s.len*0.05);
       ctx.fillStyle=s.ai?(dark?'#777':'#999'):(dark?'#eee':'#111');
-      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i];if(pt.x<camX-20||pt.x>camX+VW+20||pt.y<camY-20||pt.y>camY+VH+20)continue;ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,6.283);ctx.fill();}
-      ctx.beginPath();ctx.arc(s.x,s.y,r+1,0,6.283);ctx.fill();
-      if(!s.ai){ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(s.x+Math.cos(s.angle+0.5)*r,s.y+Math.sin(s.angle+0.5)*r,1.7,0,6.283);ctx.arc(s.x+Math.cos(s.angle-0.5)*r,s.y+Math.sin(s.angle-0.5)*r,1.7,0,6.283);ctx.fill();}
+      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i];if(pt.x<camX-20||pt.x>camX+VW+20||pt.y<camY-20||pt.y>camY+VH+20)continue;ctx.beginPath();ctx.arc(pt.x-camX,pt.y-camY,r,0,6.283);ctx.fill();}
+      ctx.beginPath();ctx.arc(s.x-camX,s.y-camY,r+1,0,6.283);ctx.fill();
+      if(!s.ai){ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(s.x-camX+Math.cos(s.angle+0.5)*r,s.y-camY+Math.sin(s.angle+0.5)*r,1.7,0,6.283);ctx.arc(s.x-camX+Math.cos(s.angle-0.5)*r,s.y-camY+Math.sin(s.angle-0.5)*r,1.7,0,6.283);ctx.fill();}
     });
-    ctx.restore();
     ctx.fillStyle=dark?'#888':'#666';ctx.font='12px monospace';ctx.textAlign='left';ctx.fillText('Length '+Math.round(p.len)+'   Food '+G.score,8,18);
   }
   function start(){
@@ -19752,358 +19750,6 @@ function _initSolitaire(){if(Solitaire)return;Solitaire=(()=>{
   return{start,restore};
 })();}
 
-/* ── Turbo Racer ─────────────────────────────────────────────────────
-   Behind-the-wheel pseudo-3D road racer. The projection below was
-   verified numerically (road covers the screen from horizon to bottom,
-   widths shrink with distance) BEFORE shipping — the previous version's
-   maths projected the road off-screen, which is why nothing showed.
-
-   project(worldX, dz, hillY): dz = depth ahead (segments). Returns screen
-   x/y + half-width. Drawn far→near as filled trapezoids. Cheap enough for
-   e-ink (flat fills, ~20fps), same family as the Flight Sim's projection. */
-let Racer=null;
-function _initRacer(){ if(Racer)return; Racer=(()=>{
-  const CW=300, CH=420, HORIZON=160;
-  const camH=1.5, camD=2.2, ROADW=1.6;   /* verified constants */
-  const DRAW=160;                          /* segments rendered ahead */
-  const LAPS=2;                  /* a race = this many laps of the circuit */
-  const CFG={
-    /* rivalAvg = how fast the AI field averages (your max is 1.0-ish via
-       accel); slower rival field on easy so a clean lap wins. */
-    easy:  {max:0.62, accel:0.26, time:70, rival:0.34},
-    normal:{max:0.76, accel:0.30, time:62, rival:0.42},
-    hard:  {max:0.92, accel:0.34, time:55, rival:0.52},
-  };
-  const FIELD=5;                 /* number of rival cars you race */
-  let G=null, timer=null, submitted=false, lastT=0;
-  /* Held state of the on-screen steer buttons, sampled by tick() every
-     frame. The old design re-armed a 160 ms watchdog from a 90 ms
-     setInterval; on a busy Kindle those callbacks arrive late, the
-     watchdog expired mid-hold and steering kept cutting out — the
-     "turning doesn't work" bug. A plain flag has no timer to miss. */
-  let steerHeld=0;
-
-  /* Track = array of segments, each with a curve amount and a hill height.
-     curve bends the road left/right; hillY raises/lowers it. */
-  function buildTrack(){
-    const t=[];
-    const push=(n,curve,hill)=>{for(let i=0;i<n;i++)t.push({curve:curve,hill:hill});};
-    const hillRamp=(n,curve,from,to)=>{for(let i=0;i<n;i++){const k=(1-Math.cos(i/n*Math.PI))/2;t.push({curve:curve,hill:from+(to-from)*k});}};
-    push(60,0,0);
-    push(40,-0.6,0);          /* gentle left */
-    hillRamp(50,0,0,0.5);     /* climb */
-    push(40,0.9,0.5);         /* right on the crest */
-    hillRamp(50,0.2,0.5,0);   /* descend */
-    push(30,0,0);
-    push(50,1.3,0);           /* hard right */
-    push(40,-1.3,0);          /* hard left */
-    hillRamp(60,0,0,0.8);
-    push(40,-0.7,0.8);
-    hillRamp(60,0,0.8,0);
-    push(60,0,0);
-    return t;
-  }
-
-  function start(){
-    if(timer){clearInterval(timer);timer=null;}
-    submitted=false;steerHeld=0;
-    const diff=(($('racerDiff')||{}).value)||'normal';
-    const cfg=CFG[diff]||CFG.normal;
-    const track=buildTrack();
-    const trackLen=track.length*LAPS;     /* finish line distance (in segments) */
-    G={diff,cfg,track,trackLen,
-       prog:0,                            /* YOUR race progress 0..trackLen */
-       playerX:0, speed:0,
-       throttle:false, brake:false, steer:0, steerUntil:0, auto:false,
-       timeLeft:cfg.time, lap:1,
-       rivals:_mkRivals(cfg,trackLen),
-       place:1, active:true, over:false, won:false, dnf:false,
-       best:(S.games&&S.games.racer&&S.games.racer.best)||0};
-    enterImmersive('Turbo Racer','Lap 1/'+LAPS);
-    buildUI();
-  }
-  /* Rivals are real competitors: each has its own race progress + a lane,
-     and a slightly varied pace around the difficulty's rival average. They
-     start spread out just ahead of and behind you on the grid. */
-  function _mkRivals(cfg,trackLen){
-    const r=[];
-    for(let i=0;i<FIELD;i++){
-      r.push({
-        prog:(i-2)*6,                                  /* small grid spread */
-        x:(i%2?1:-1)*(0.35+0.18*Math.floor(i/2)),      /* staggered lanes */
-        pace:cfg.rival*(0.86+Math.random()*0.30),      /* per-rival speed */
-        name:'CPU'+(i+1)
-      });
-    }
-    return r;
-  }
-
-  function buildUI(){
-    immersiveContent.innerHTML='';
-    immersiveContent.style.cssText='display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px;';
-    immersiveContent.appendChild(txt('div','',{id:'racerBar',style:{fontSize:'12px',fontWeight:'700',fontFamily:'monospace'}}));
-    const cv=el('canvas',{id:'racerCanvas',width:CW,height:CH});
-    cv.style.cssText='display:block;border:2px solid var(--fg);border-radius:6px;background:#000;touch-action:none;max-width:100%;';
-    immersiveContent.appendChild(cv);
-    /* tap top half = gas, bottom half = brake; swipe L/R steers */
-    let _sx=null;
-    cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];_sx=t.clientX;const r=cv.getBoundingClientRect();if((t.clientY-r.top)<r.height*0.5)G.throttle=true;else G.brake=true;},{passive:false});
-    cv.addEventListener('touchmove',e=>{e.preventDefault();if(_sx==null)return;const dx=e.touches[0].clientX-_sx;_steer(dx<-12?-1:dx>12?1:0);},{passive:false});
-    cv.addEventListener('touchend',e=>{e.preventDefault();_sx=null;G.steer=0;G.throttle=false;G.brake=false;},{passive:false});
-    /* Swipe steering arms a 160ms auto-expiry so it can never get stuck on
-       (touchmove keeps re-arming it while the finger is actually moving). */
-    function _steer(d){G.steer=d;G.steerUntil=Date.now()+160;}
-    const row=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',width:'100%',maxWidth:'300px',marginTop:'8px'}});
-    /* Steer buttons set a plain held flag that tick() samples every frame —
-       no repeat timer, no expiry to miss on a throttled Kindle. Release is
-       covered by touchend, touchcancel, mouseup and mouseleave. */
-    const mkHold=(lbl,dir)=>{const b=txt('button',lbl,{className:'btn',style:{fontSize:'22px',minHeight:'56px',padding:'0'}});
-      const startHold=()=>{steerHeld=dir;};
-      const endHold=()=>{if(steerHeld===dir){steerHeld=0;if(G)G.steer=0;}};
-      b.ontouchstart=e=>{e.preventDefault();startHold();};b.ontouchend=e=>{e.preventDefault();endHold();};b.ontouchcancel=e=>{endHold();};
-      b.onmousedown=startHold;b.onmouseup=endHold;b.onmouseleave=endHold;
-      return b;};
-    const mk=(lbl,on,off)=>{const b=txt('button',lbl,{className:'btn',style:{fontSize:'22px',minHeight:'56px',padding:'0'}});
-      b.ontouchstart=e=>{e.preventDefault();on();};b.ontouchend=e=>{e.preventDefault();off&&off();};
-      b.onmousedown=on;b.onmouseup=off||(()=>{});b.onmouseleave=off||(()=>{});
-      b.onclick=()=>{on();setTimeout(()=>off&&off(),200);};return b;};
-    row.appendChild(mkHold('◄',-1));
-    row.appendChild(mk('▲',()=>G.throttle=true,()=>G.throttle=false));
-    row.appendChild(mk('▼',()=>G.brake=true,()=>G.brake=false));
-    row.appendChild(mkHold('►',1));
-    immersiveContent.appendChild(row);
-    const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center',gap:'6px'}});
-    /* Auto-accelerate: hold full throttle automatically so you only steer.
-       Toggle on/off; button shows state. */
-    const autoBtn=txt('button',G.auto?'Auto: ON':'Auto-accelerate',{className:'btn small'+(G.auto?' primary':'')});
-    autoBtn.onclick=()=>{G.auto=!G.auto;autoBtn.textContent=G.auto?'Auto: ON':'Auto-accelerate';autoBtn.classList.toggle('primary',G.auto);toast(G.auto?'Auto-accelerate on — just steer!':'Auto-accelerate off',1600);};
-    ctrl.appendChild(autoBtn);
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>G&&G.active,start)}));
-    immersiveContent.appendChild(ctrl);
-    if(timer)clearInterval(timer);
-    lastT=Date.now();
-    timer=setInterval(tick,1000/20);
-    /* Stop the race loop on ANY immersive exit (Recent switcher, swipe, etc.) —
-       not just the in-game Exit button — so the 20fps timer can't leak. */
-    try{immersiveRoot._trackStop=function(){if(timer){clearInterval(timer);timer=null;}};}catch(_){}
-    draw();
-  }
-
-  function seg(i){const t=G.track;return t[((i%t.length)+t.length)%t.length];}
-
-  function project(worldX,dz,hillY){
-    const scale=camD/dz;
-    return{scale,
-      sx:Math.round(CW/2+scale*worldX*CW/2),
-      sy:Math.round(HORIZON+scale*(camH-hillY)*(CH-HORIZON)),
-      sw:Math.max(1,Math.round(scale*ROADW*CW/2))};
-  }
-
-  function tick(){
-    if(!G||!G.active)return;
-    if(typeof document!=='undefined'&&document.hidden)return;
-    const now=Date.now();let dt=(now-lastT)/1000;lastT=now;if(dt>0.12)dt=0.12;
-    /* Auto-accelerate keeps the throttle pinned unless you're braking. */
-    if(G.brake)G.speed-=G.cfg.accel*1.8*dt;
-    else if(G.throttle||G.auto)G.speed+=G.cfg.accel*dt;
-    else G.speed-=G.cfg.accel*0.4*dt;
-    const off=Math.abs(G.playerX)>1.0;
-    if(off&&G.speed>G.cfg.max*0.4)G.speed-=G.cfg.accel*2.2*dt;
-    G.speed=Math.max(0,Math.min(G.cfg.max,G.speed));
-    /* advance YOUR race progress (segments) */
-    const adv=G.speed*dt*90;
-    G.prog+=adv;
-    G.lap=Math.min(LAPS,1+Math.floor(G.prog/G.track.length));
-    /* Steer sources, in priority order:
-       1. On-screen buttons — steerHeld flag, sampled here every tick, so
-          holding always turns regardless of how throttled timers are.
-       2. Canvas swipe / keyboard — G.steer armed with steerUntil; the
-          expiry auto-releases if a touchend was missed (the old Kindle
-          "turns forever" bug). */
-    if(steerHeld!==0){G.steer=steerHeld;G.steerUntil=0;}
-    else if(G.steerUntil&&now>G.steerUntil)G.steer=0;
-    if(G.steer!==0&&G.speed>0.02){
-      G.playerX+=G.steer*dt*1.4*Math.min(1,0.3+G.speed/G.cfg.max);
-      G.playerX=Math.max(-2,Math.min(2,G.playerX));
-    }
-    G.leanFade=G.steer; /* for the car sprite lean */
-    /* rivals race their own progress; bump if you're side-by-side near them */
-    for(const rv of G.rivals){
-      rv.prog+=rv.pace*dt*90;
-      const gap=rv.prog-G.prog;                      /* >0 = ahead of you */
-      if(gap>0&&gap<6&&Math.abs(rv.x-G.playerX)<0.5&&G.speed>0.2){
-        G.speed*=0.55;                                /* rear-ended a rival */
-        try{navigator.vibrate&&navigator.vibrate(70);}catch(_){}
-      }
-    }
-    /* Live placing: 1 + number of rivals ahead of you */
-    G.place=1+G.rivals.filter(rv=>rv.prog>G.prog).length;
-    /* WIN: you crossed the finish line */
-    if(G.prog>=G.trackLen){G.prog=G.trackLen;endGame(false);return;}
-    /* DNF: time ran out before finishing */
-    G.timeLeft-=dt;
-    if(G.timeLeft<=0){G.timeLeft=0;endGame(true);return;}
-    const bar=$('racerBar');
-    const pctRace=Math.floor(G.prog/G.trackLen*100);
-    if(bar)bar.textContent='Lap '+G.lap+'/'+LAPS+'  ·  P'+G.place+'/'+(FIELD+1)+'  ·  '+pctRace+'%  ·  '+Math.ceil(G.timeLeft)+'s';
-    updateImmersiveScore('Lap '+G.lap+'/'+LAPS+' · P'+G.place);
-    draw();
-  }
-  function _ordinal(n){return n+(['th','st','nd','rd'][(n%100>10&&n%100<14)?0:(n%10<4?n%10:0)]||'th');}
-
-  function draw(){
-    const cv=$('racerCanvas');if(!cv)return;
-    const ctx=cv.getContext('2d');
-    const dark=document.body.classList.contains('dark');
-    ctx.fillStyle=dark?'#0a0a18':'#a9ccff';ctx.fillRect(0,0,CW,HORIZON);
-    ctx.fillStyle=dark?'#102016':'#2f6b2b';ctx.fillRect(0,HORIZON,CW,CH-HORIZON);
-
-    const base=Math.floor(G.prog);
-    const frac=G.prog-base;
-    /* accumulate curve + hill across the drawn segments */
-    let x=0, dxv=0;          /* lateral road centre offset + its velocity */
-    let camHill=seg(base).hill;
-    /* Pre-compute projected centre points + widths, far portion first */
-    const P=[];
-    /* Curve accumulation (Jake Gordon road model): each segment's curve
-       feeds a horizontal VELOCITY (dx), which integrates into the road
-       centre offset (cx). cx is what bends the road across the screen.
-       CURVE_SCALE=0.02 was tuned numerically so a hard corner visibly
-       sweeps the road sideways while a straight stays centred — the old
-       0.0008 was ~25x too weak, so the road never appeared to turn. */
-    const CURVE_SCALE=0.02;
-    let cx=0, cdx=0;
-    for(let n=0;n<DRAW;n++){
-      const s=seg(base+n);
-      const dz=n-frac+1;                       /* depth ahead (>0) */
-      const worldX=cx - G.playerX;
-      const p=project(worldX,dz, s.hill-camHill);
-      P.push({sx:p.sx,sy:p.sy,sw:p.sw,seg:base+n,hill:s.hill});
-      /* integrate AFTER projecting this segment so n=0 is at the player */
-      cx+=cdx;
-      cdx+=s.curve*CURVE_SCALE;
-    }
-    /* Draw far→near so nearer trapezoids overpaint */
-    for(let n=DRAW-1;n>0;n--){
-      const a=P[n], b=P[n-1];            /* a = farther, b = nearer */
-      if(b.sy<=a.sy)continue;
-      const band=Math.floor(a.seg/3)%2===0;
-      /* grass */
-      ctx.fillStyle=band?(dark?'#102016':'#2f6b2b'):(dark?'#0c180f':'#276022');
-      ctx.fillRect(0,a.sy,CW,b.sy-a.sy+1);
-      /* road */
-      ctx.fillStyle=band?(dark?'#3a3a3a':'#787878'):(dark?'#323232':'#6a6a6a');
-      ctx.beginPath();
-      ctx.moveTo(a.sx-a.sw,a.sy);ctx.lineTo(a.sx+a.sw,a.sy);
-      ctx.lineTo(b.sx+b.sw,b.sy);ctx.lineTo(b.sx-b.sw,b.sy);
-      ctx.closePath();ctx.fill();
-      /* white rumble edges + dashed centre on alternate bands */
-      if(band){
-        ctx.fillStyle=dark?'#ddd':'#fff';
-        const er=Math.max(1,a.sw*0.10);
-        ctx.beginPath();ctx.moveTo(a.sx-a.sw,a.sy);ctx.lineTo(a.sx-a.sw+er,a.sy);ctx.lineTo(b.sx-b.sw+er,b.sy);ctx.lineTo(b.sx-b.sw,b.sy);ctx.closePath();ctx.fill();
-        ctx.beginPath();ctx.moveTo(a.sx+a.sw,a.sy);ctx.lineTo(a.sx+a.sw-er,a.sy);ctx.lineTo(b.sx+b.sw-er,b.sy);ctx.lineTo(b.sx+b.sw,b.sy);ctx.closePath();ctx.fill();
-        const cwd=Math.max(0.5,a.sw*0.04);
-        ctx.fillRect(a.sx-cwd,a.sy,cwd*2,Math.max(1,(b.sy-a.sy)*0.6));
-      }
-    }
-    /* Finish line — drawn as a checkered band when it's within view ahead. */
-    const finAhead=G.trackLen-G.prog;
-    if(finAhead>0&&finAhead<DRAW){
-      const fp=P[Math.max(0,Math.min(DRAW-1,Math.round(finAhead)))];
-      if(fp){
-        const sq=Math.max(2,fp.sw/5);
-        for(let i=-2;i<=2;i++){
-          ctx.fillStyle=(i%2===0)?'#fff':'#111';
-          ctx.fillRect(fp.sx+i*sq-sq/2, fp.sy-sq, sq, sq);
-        }
-        ctx.fillStyle='#fff';ctx.font='bold 9px monospace';ctx.textAlign='center';
-        ctx.fillText('FINISH',fp.sx,fp.sy-sq-2);
-      }
-    }
-    /* Rivals — position by race progress RELATIVE to you (gap>0 = ahead and
-       visible up the road). Sort far→near so nearer cars overpaint. */
-    G.rivals.map(rv=>({rv,gap:rv.prog-G.prog})).filter(o=>o.gap>0.3&&o.gap<DRAW)
-      .sort((p,q)=>q.gap-p.gap).forEach(({rv,gap})=>{
-      const p=P[Math.max(0,Math.min(DRAW-1,Math.round(gap)))];
-      if(!p)return;
-      const w=Math.max(6,p.sw*0.9), h=w*0.7;
-      const rx=p.sx + (rv.x*p.sw);
-      ctx.fillStyle='#d33';ctx.fillRect(rx-w/2,p.sy-h,w,h);
-      ctx.fillStyle='#911';ctx.fillRect(rx-w/2,p.sy-h*0.35,w,h*0.35);
-      ctx.fillStyle='#fdd';ctx.fillRect(rx-w/2+w*0.15,p.sy-h*0.75,w*0.7,h*0.3);
-    });
-    /* player car */
-    const pcx=CW/2+G.steer*7, pcy=CH-44, pw=52, ph=30;
-    ctx.fillStyle=dark?'#4af':'#06c';ctx.fillRect(pcx-pw/2,pcy,pw,ph);
-    ctx.fillStyle='#bcd';ctx.fillRect(pcx-pw/2+8,pcy+5,pw-16,9);
-    ctx.fillStyle='#111';ctx.fillRect(pcx-pw/2-3,pcy+ph-10,7,11);ctx.fillRect(pcx+pw/2-4,pcy+ph-10,7,11);
-    if(Math.abs(G.playerX)>1){ctx.fillStyle='rgba(170,130,40,0.22)';ctx.fillRect(0,HORIZON,CW,CH-HORIZON);}
-  }
-
-  /* dnf = ran out of time before finishing. Otherwise you crossed the line
-     and G.place is your finishing position among (FIELD+1) cars. The POINT:
-     beat the field. Win = 1st. Podium = top 3. */
-  function endGame(dnf){
-    if(!G||!G.active)return;
-    G.active=false;G.over=true;G.dnf=!!dnf;
-    if(timer){clearInterval(timer);timer=null;}
-    /* Final placing: if you finished, rivals still short of the line are
-       behind you; rivals already past it are ahead. */
-    const finishedAhead=G.rivals.filter(rv=>rv.prog>=G.trackLen).length;
-    const place=dnf?(FIELD+1):(1+G.rivals.filter(rv=>rv.prog>G.prog).length);
-    G.place=place;
-    G.won=(!dnf&&place===1);
-    /* Score rewards finishing position + speed bonus for time left.
-       1st≈600 base, each place down -90, +up to ~time bonus. DNF scores
-       only the distance fraction so a near-miss still beats a standstill. */
-    let score;
-    if(dnf){ score=Math.floor((G.prog/G.trackLen)*200); }
-    else { score=Math.max(50,(FIELD+1-place)*90+100)+Math.floor(G.timeLeft*4); }
-    if(!submitted){submitted=true;
-      try{if(!S.games)S.games={};const prev=(S.games.racer&&S.games.racer.best)||0;S.games.racer={best:Math.max(prev,score)};if(typeof saveNow==='function')saveNow();}catch(_){}
-      try{if(typeof _khSubmitScore==='function')_khSubmitScore('racer',score);}catch(_){}
-      try{if(typeof recordStat==='function')recordStat('racer',!dnf&&place<=3);}catch(_){}
-    }
-    /* Result overlay on the canvas */
-    const cv=$('racerCanvas');
-    if(cv){const ctx=cv.getContext('2d');ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,CW,CH);
-      ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 26px monospace';
-      ctx.fillText(dnf?'DNF':(_ordinal(place)),CW/2,CH/2-6);
-      ctx.font='13px monospace';ctx.fillText(dnf?'Out of time':(place===1?'YOU WON!':'of '+(FIELD+1)+' racers'),CW/2,CH/2+18);}
-    const headline=dnf?'Did not finish':place===1?'1st — YOU WON!':place<=3?_ordinal(place)+' — Podium!':_ordinal(place)+' place';
-    const isBest=score>=(G.best||0)&&score>0;
-    const banner=el('div',{style:{marginTop:'8px',padding:'12px',border:'2px solid var(--fg)',borderRadius:'8px',textAlign:'center',maxWidth:'300px',width:'100%'}});
-    banner.appendChild(txt('div',headline.replace('',''),{style:{fontSize:'18px',fontWeight:'900',letterSpacing:'1px'}}));
-    banner.appendChild(txt('div','Score '+score+(isBest?'   ★ NEW BEST':'   (best '+(G.best||0)+')'),{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px'}}));
-    if(!dnf)banner.appendChild(txt('div','Finished P'+place+' of '+(FIELD+1)+' · '+Math.ceil(G.timeLeft)+'s to spare',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
-    immersiveContent.insertBefore(banner,immersiveContent.querySelector('.card-row'));
-    toast(dnf?'Out of time — DNF':(place===1?'You won the race!':'Finished '+_ordinal(place)),2800);
-  }
-
-  document.addEventListener('keydown',e=>{
-    if(immersiveRoot.style.display!=='block'||!G||!G.active)return;
-    /* racerCanvas check pins this to the Racer UI so a stale game can't
-       hijack arrow keys while another game is on screen. */
-    if(!document.getElementById('racerCanvas'))return;
-    /* Keyboard: hold steer with a long expiry; keyup clears it. */
-    if(e.key==='ArrowLeft'){G.steer=-1;G.steerUntil=Date.now()+99999;e.preventDefault();}
-    else if(e.key==='ArrowRight'){G.steer=1;G.steerUntil=Date.now()+99999;e.preventDefault();}
-    else if(e.key==='ArrowUp'){G.throttle=true;e.preventDefault();}
-    else if(e.key==='ArrowDown'){G.brake=true;e.preventDefault();}
-  });
-  document.addEventListener('keyup',e=>{
-    if(!G||!G.active)return;
-    if(e.key==='ArrowLeft'&&G.steer===-1)G.steer=0;
-    else if(e.key==='ArrowRight'&&G.steer===1)G.steer=0;
-    else if(e.key==='ArrowUp')G.throttle=false;
-    else if(e.key==='ArrowDown')G.brake=false;
-  });
-  try{$('immersiveExit').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;}});}catch(_){}
-
-  return{start};
-})();}
-
 let FlightSim=null;
 function _initFlightSim(){
   if(FlightSim)return;
@@ -22628,8 +22274,7 @@ const GAME_NAMES={
   g2048:'2048',tetris:'Tetris',spaceinv:'Space Invaders',flightsim:'Flight Sim',
   solitaire:'Solitaire',towerdef:'Tower Defence',chess:'Chess',
   battleship:'Battleship',lightsout:'Lights Out',snakesladders:'Snakes & Ladders',
-  wordsearch:'Word Search',candycrush:'Gem Blast',mastermind:'Mastermind',
-  racer:'Turbo Racer'
+  wordsearch:'Word Search',candycrush:'Gem Blast',mastermind:'Mastermind'
 };
 function gameDisplayName(key){return GAME_NAMES[key]||key;}
 
@@ -27879,13 +27524,6 @@ games:()=>{
     const ccBest=S.games&&S.games.candycrush&&S.games.candycrush.best||0;
     if(ccBest)c.appendChild(txt('p','Best: '+ccBest,{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'candycrush',style:{marginTop:'6px',width:'100%'}}));
-  }));
-  rowArc.appendChild(gc('Turbo Racer',null,c=>{
-    c.appendChild(txt('p','3D road race vs 5 rivals over 2 laps. Pass them, cross the line first, don\'t get timed out. Finish on the podium!',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
-    c.appendChild(sel('racerDiff',[['easy','Easy'],['normal','Normal'],['hard','Hard']],'normal'));
-    const rBest=S.games&&S.games.racer&&S.games.racer.best;
-    if(rBest)c.appendChild(txt('p','Best: '+rBest+' m',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'4px'}}));
-    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'racer',style:{marginTop:'6px',width:'100%'}}));
   }));
   v.appendChild(rowArc);
 
