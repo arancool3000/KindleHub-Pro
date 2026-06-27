@@ -1305,6 +1305,39 @@ function defaultState(){
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
+/* Declared HERE, not ~6000 lines down, so it is initialized BEFORE the boot
+   state loader below decodes a KHZ2 blob (_decompStr -> _COMP_DICT). A const sits
+   in the temporal dead zone until its own line runs, so the original late
+   placement threw at boot and silently reset all settings AND the login. */
+const _COMP_DICT=[
+  /* Most common JSON structural tokens first (longer == more savings) */
+  '"strInstructions":"','"strMealThumb":"','"strCategory":"',
+  '"displayName":"','"savedChatHistory":[','"chatSessions":[',
+  '"savedRecipes":[','"strYoutube":"','"strSource":"','"strArea":"',
+  '"mdJournals":[','"flashDecks":[','"calEvents":[','"updatedAt":"',
+  '"createdAt":"','"createdBy":"','"strMeal":"','"messages":[',
+  '"rssFeeds":[','"rssCache":{','"rssRead":{','"rssSaved":[',
+  '"focusLog":[','"idMeal":"','"sleepLog":[','"avgCost":',
+  '"shares":','"notes":[','"books":[','"badges":[','"games":{',
+  '"stats":{','"srData":{','"status":"','"author":"','"genre":"',
+  '"title":"','"color":"','"time":"','"note":"','"text":"',
+  '"year":','"month":','"day":','"uid":"','"id":"','"date":"',
+  '"userId":"','"icon":"','"label":"','"https://','"http://',
+  '.com/','.jpg"','.png"','.org/','/api/',
+  /* Common JSON glue */
+  '","','"},{"','":[{"','":{"','"}],','":{}','":[]','":null',
+  '":true','":false','":0,','":1,','":[',
+  /* Common values */
+  'reading','finished','suggestion','unread',
+  /* Appended: more KindleHub-specific keys to squeeze the cloud blob (and
+     localStorage) harder. Index-stable, so old blobs still decode; an older app
+     build that lacks these tokens just fails a single merge gracefully
+     (decrypt returns null → no data loss). */
+  '"savedDiscover":{','"homeWidgets":{','"msgGroups":[','"savedWords":[',
+  '"savedPlaces":[','"savedQuizzes":[','"weatherData":{','"nextReview":',
+  '"description":"','"location":"','"pinned":','"tags":[','"front":"',
+  '"answer":"','"recurring":','"allDay":','"activity":"','"box":',
+];
 let S=(()=>{try{
   let r=localStorage.getItem(SK);
   if(!r)return defaultState();
@@ -7295,35 +7328,10 @@ function _startPresence(){
    ASCII + \uXXXX escapes), so the markers are unambiguous and reversible.
    Yields ~35-55% size reduction on typical KindleHub state, on top of
    AES base64 overhead. */
-const _COMP_DICT=[
-  /* Most common JSON structural tokens first (longer == more savings) */
-  '"strInstructions":"','"strMealThumb":"','"strCategory":"',
-  '"displayName":"','"savedChatHistory":[','"chatSessions":[',
-  '"savedRecipes":[','"strYoutube":"','"strSource":"','"strArea":"',
-  '"mdJournals":[','"flashDecks":[','"calEvents":[','"updatedAt":"',
-  '"createdAt":"','"createdBy":"','"strMeal":"','"messages":[',
-  '"rssFeeds":[','"rssCache":{','"rssRead":{','"rssSaved":[',
-  '"focusLog":[','"idMeal":"','"sleepLog":[','"avgCost":',
-  '"shares":','"notes":[','"books":[','"badges":[','"games":{',
-  '"stats":{','"srData":{','"status":"','"author":"','"genre":"',
-  '"title":"','"color":"','"time":"','"note":"','"text":"',
-  '"year":','"month":','"day":','"uid":"','"id":"','"date":"',
-  '"userId":"','"icon":"','"label":"','"https://','"http://',
-  '.com/','.jpg"','.png"','.org/','/api/',
-  /* Common JSON glue */
-  '","','"},{"','":[{"','":{"','"}],','":{}','":[]','":null',
-  '":true','":false','":0,','":1,','":[',
-  /* Common values */
-  'reading','finished','suggestion','unread',
-  /* Appended: more KindleHub-specific keys to squeeze the cloud blob (and
-     localStorage) harder. Index-stable, so old blobs still decode; an older app
-     build that lacks these tokens just fails a single merge gracefully
-     (decrypt returns null → no data loss). */
-  '"savedDiscover":{','"homeWidgets":{','"msgGroups":[','"savedWords":[',
-  '"savedPlaces":[','"savedQuizzes":[','"weatherData":{','"nextReview":',
-  '"description":"','"location":"','"pinned":','"tags":[','"front":"',
-  '"answer":"','"recurring":','"allDay":','"activity":"','"box":',
-];
+/* _COMP_DICT is declared up by the boot state loader (it MUST initialize
+   before that loader's KHZ2 decode calls _decompStr, else the const is in the
+   temporal dead zone and EVERY saved blob fails to load -> full state reset).
+   _compStr/_decompStr below use it. */
 /* For decompression we only need a quick index→token lookup. */
 function _compStr(json){
   if(typeof json!=='string')json=JSON.stringify(json);
