@@ -2941,6 +2941,7 @@ function launchKindleDesktop(){
      inline (no refactor) while making the actual allocation lazy. */
   const BUILTIN_APPS=window._kh_builtin_apps||(window._kh_builtin_apps=[
     {id:'chat',      label:'Assistant',   nav:'chat',      color:'#2563eb',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M12 34 L8 42 L26 34" fill="#fff"/><circle cx="16" cy="20" r="3" fill="#2563eb"/><circle cx="24" cy="20" r="3" fill="#2563eb"/><circle cx="32" cy="20" r="3" fill="#2563eb"/></svg>'},
+    {id:'messages',  label:'Messages',    nav:'messages',  color:'#0f766e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M4 34 L4 42 L14 34" fill="#fff"/><circle cx="16" cy="20" r="2.5" fill="#0f766e"/><circle cx="24" cy="20" r="2.5" fill="#0f766e"/><circle cx="32" cy="20" r="2.5" fill="#0f766e"/></svg>'},
     {id:'notes',     label:'Notes',       nav:'notes',     color:'#f59e0b',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="4" width="32" height="40" rx="5" fill="#fff"/><line x1="15" y1="16" x2="33" y2="16" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="23" x2="33" y2="23" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="30" x2="25" y2="30" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/></svg>'},
     {id:'maps',      label:'Maps',        nav:'maps',      color:'#10b981',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="20" r="15" fill="#fff"/><circle cx="24" cy="20" r="6" fill="#10b981"/><path d="M24 35 L24 44" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>'},
     {id:'weather',   label:'Weather',     nav:'weather',   color:'#0ea5e9',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="18" cy="15" r="8" fill="#fbbf24"/><rect x="6" y="22" width="36" height="14" rx="7" fill="#fff"/><line x1="14" y1="40" x2="12" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/><line x1="24" y1="40" x2="22" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/><line x1="34" y1="40" x2="32" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/></svg>'},
@@ -2973,7 +2974,6 @@ function launchKindleDesktop(){
     {id:'formulas',  label:'Formulas',    nav:'formulas',  color:'#1d4ed8',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><text x="12" y="26" font-size="16" font-weight="900" fill="#1d4ed8" font-family="serif">E=</text><text x="28" y="26" font-size="14" font-weight="900" fill="#1d4ed8" font-family="serif">mc</text><text x="40" y="20" font-size="9" font-weight="900" fill="#1d4ed8" font-family="serif">2</text></svg>'},
     {id:'slides',    label:'Slides',      nav:'slides',    color:'#be185d',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="8" width="40" height="32" rx="6" fill="#fff"/><rect x="4" y="8" width="40" height="10" rx="6" fill="#be185d" opacity=".15"/><rect x="10" y="14" width="28" height="18" rx="3" fill="#be185d" opacity=".12" stroke="#be185d" stroke-width="1.5"/><line x1="14" y1="20" x2="34" y2="20" stroke="#be185d" stroke-width="2" stroke-linecap="round"/><line x1="14" y1="26" x2="26" y2="26" stroke="#be185d" stroke-width="1.5" stroke-linecap="round"/><circle cx="40" cy="40" r="5" fill="#be185d"/><path d="M38 40 L43 40" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><path d="M40.5 37.5 L40.5 42.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>'},
     {id:'sheets',    label:'Sheets',      nav:'sheets',    color:'#15803d',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="6" fill="#fff"/><rect x="4" y="4" width="40" height="10" rx="6" fill="#15803d"/><line x1="4" y1="22" x2="44" y2="22" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="30" x2="44" y2="30" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="38" x2="44" y2="38" stroke="#15803d" stroke-width="1.5"/><line x1="18" y1="14" x2="18" y2="44" stroke="#15803d" stroke-width="1.5"/><line x1="32" y1="14" x2="32" y2="44" stroke="#15803d" stroke-width="1.5"/></svg>'},
-    {id:'messages',  label:'Messages',    nav:'messages',  color:'#0f766e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M4 34 L4 42 L14 34" fill="#fff"/><circle cx="16" cy="20" r="2.5" fill="#0f766e"/><circle cx="24" cy="20" r="2.5" fill="#0f766e"/><circle cx="32" cy="20" r="2.5" fill="#0f766e"/></svg>'},
     {id:'cookbook',  label:'Cookbook',    nav:'cookbook',  color:'#b91c1c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" fill="#fff"/><rect x="6" y="6" width="36" height="8" rx="6" fill="#b91c1c"/><circle cx="24" cy="28" r="9" fill="none" stroke="#b91c1c" stroke-width="2.5"/><path d="M15 28 Q24 18 33 28" stroke="#b91c1c" stroke-width="2" fill="none"/><line x1="20" y1="28" x2="28" y2="28" stroke="#b91c1c" stroke-width="2"/><circle cx="22" cy="26" r="1.5" fill="#b91c1c"/><circle cx="26" cy="26" r="1.5" fill="#b91c1c"/></svg>'},
     {id:'files',     label:'Files',       nav:'files',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="32" rx="4" fill="#fff"/><path d="M6 14 L20 14 L24 18 L42 18 L42 42 L6 42 Z" fill="#475569" opacity=".15" stroke="#475569" stroke-width="2"/><line x1="6" y1="22" x2="42" y2="22" stroke="#475569" stroke-width="1.5"/><rect x="11" y="27" width="26" height="3" rx="1" fill="#475569" opacity=".4"/><rect x="11" y="32" width="18" height="3" rx="1" fill="#475569" opacity=".3"/></svg>'},
   ]);
@@ -3300,6 +3300,20 @@ function launchKindleDesktop(){
       fr.style.cssText='flex:1;width:100%;border:none;background:#fff;display:block;min-height:0;';
       fr.srcdoc=app.customHTML;
       frWrap.appendChild(fr);
+      /* Back control in the FOOTER (not a top-left floating pill). The custom-app
+         iframe overlay covers the whole viewport — including the real footer back
+         button — so we add our own footer bar at the BOTTOM of the overlay, below
+         the iframe (frWrap is a flex column, iframe is flex:1). Matches built-in
+         apps, which use the footer "‹ KindleOS" button rather than a header FAB. */
+      const _cbar=document.createElement('div');
+      _cbar.style.cssText='flex-shrink:0;display:flex;align-items:center;justify-content:flex-start;padding:7px 12px;background:var(--card,#fff);border-top:1px solid rgba(0,0,0,0.14);';
+      const _cbtn=document.createElement('button');
+      _cbtn.type='button';
+      _cbtn.innerHTML='&#8249;&nbsp;KindleOS';
+      _cbtn.style.cssText='display:inline-flex;align-items:center;gap:5px;padding:8px 16px;background:var(--fg,#111);color:var(--bg,#fff);border:none;border-radius:16px;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent;min-height:40px;';
+      _cbtn.onclick=closeApp;
+      _cbar.appendChild(_cbtn);
+      frWrap.appendChild(_cbar);
       /* Hide the launcher AND the main #app shell behind the overlay. On old
          Silk, position:fixed coverage of #kd-customapp can leave gaps that let
          #app's current view (home / messages / global chat) show THROUGH the
@@ -3308,7 +3322,9 @@ function launchKindleDesktop(){
          visible regardless of position:fixed quirks; closeApp restores it. */
       kd.style.display='none';
       try{var _appEl=document.getElementById('app');if(_appEl){_appEl.dataset.kdAppHidden='1';_appEl.style.display='none';}}catch(_){}
-      kdBackFab.style.display='flex';
+      /* Back control now lives in the overlay FOOTER (_cbar above), not the
+         top-left floating pill — keep the FAB hidden for custom apps. */
+      kdBackFab.style.display='none';
       return;
     }
 
@@ -3979,6 +3995,7 @@ function launchKindleDesktop(){
   const SVG_FONT ='<svg '+ICON_22+' fill="currentColor"><text x="1" y="18" font-size="16" font-weight="900" font-family="sans-serif">A</text><text x="13" y="20" font-size="10" font-weight="700" font-family="sans-serif">A</text></svg>';
   const SVG_SIMPLE='<svg '+ICON_22+' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
   const SVG_LITE ='<svg '+ICON_22+' fill="currentColor"><polygon points="13,2 3,14 11,14 9,22 21,9 13,9"/></svg>';
+  const SVG_KBD ='<svg '+ICON_22+' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h0M10 10h0M14 10h0M18 10h0M8 14h8"/></svg>';
   const WALL_MODES =['white','gradient','dark','photo'];
   const WALL_LABELS=['Plain White','Gradient','Dark','Photos'];
   const FONT_SIZES=['small','medium','large'];
@@ -4039,6 +4056,21 @@ function launchKindleDesktop(){
         setLb('Font: '+osState.fontSize);
         document.documentElement.style.setProperty('--font-size',FONT_PX[osState.fontSize]);
         persistOS();
+      }},
+    /* KindleHub on-screen keyboard — surfaced here (Control Center) as well as in
+       Settings → App Settings → KindleHub Keyboard, since KindleOS users live on
+       the launcher and couldn't easily find the App-Settings card. Cycles the
+       same S.kindleKeyboardMode the settings card writes. */
+    {kind:'cycle',label:'Keyboard: '+((typeof S!=='undefined'&&S.kindleKeyboardMode)||'auto'),svg:SVG_KBD,
+      build:setLb=>{
+        const KMODES=['auto','always','landscape','off'];
+        const cur=KMODES.indexOf((S.kindleKeyboardMode)||'auto');
+        const nx=KMODES[(cur+1)%KMODES.length];
+        S.kindleKeyboardMode=nx;delete S.kindleKeyboardManual;delete S.kindleKeyboard;
+        try{if(typeof save==='function')save();}catch(_){}
+        setLb('Keyboard: '+nx);
+        try{if(window._khKeyboard&&window._khKeyboard.refresh)window._khKeyboard.refresh();}catch(_){}
+        toast('Keyboard: '+nx+(nx==='auto'?' (on for Kindle)':''),1600);
       }},
   ];
   /* Tile state must reflect the LIVE value (read get() on click + on CC open),
@@ -4439,15 +4471,71 @@ function launchKindleDesktop(){
   stPreview.style.cssText+='display:none;flex-direction:column;gap:10px;';
   stBody.appendChild(stPreview);
 
-  /* Installed apps */
+  /* Installed apps — with an Import control so a shared/downloaded app code
+     installs straight onto the home screen. */
+  const stInstalledHd=document.createElement('div');
+  stInstalledHd.style.cssText='display:flex;align-items:center;gap:8px;margin:4px 0 0;';
   const stInstalledTitle=document.createElement('h2');
   stInstalledTitle.textContent='Installed Apps';
-  stInstalledTitle.style.cssText='margin:4px 0 0;color:var(--muted,#888);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;';
-  stBody.appendChild(stInstalledTitle);
+  stInstalledTitle.style.cssText='margin:0;color:var(--muted,#888);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;flex:1;';
+  const stImportBtn=document.createElement('button');
+  stImportBtn.textContent='⤓ Import';stImportBtn.className='btn small';
+  stImportBtn.onclick=()=>_khAppShareDialog('import',null);
+  stInstalledHd.appendChild(stInstalledTitle);stInstalledHd.appendChild(stImportBtn);
+  stBody.appendChild(stInstalledHd);
   const stInstalledList=document.createElement('div');
   stInstalledList.style.cssText='display:flex;flex-direction:column;gap:8px;';
   stBody.appendChild(stInstalledList);
 
+  /* Share / Import custom apps. Export packs an app into a "KHAPP1:" code the
+     user can copy and send; Import decodes a pasted code and installs it STRAIGHT
+     to the home screen (push → persistOS → buildPages), so a downloaded app shows
+     up alongside the rest. No backend — pure copy/paste, Kindle-safe. */
+  function _khAppShareDialog(mode,app){
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:600002;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+    const card=document.createElement('div');
+    card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);max-width:460px;width:100%;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:var(--ui-font);display:flex;flex-direction:column;gap:10px;';
+    const ttl=document.createElement('div');ttl.style.cssText='font-size:15px;font-weight:800;';
+    const hint=document.createElement('div');hint.style.cssText='font-size:11px;color:var(--muted);line-height:1.5;';
+    const ta=document.createElement('textarea');
+    ta.style.cssText='width:100%;height:110px;font-family:monospace;font-size:11px;padding:8px;border:var(--thin);border-radius:8px;background:var(--bg,#f0f0f0);color:var(--fg,#111);box-sizing:border-box;resize:none;word-break:break-all;';
+    const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;justify-content:flex-end;';
+    const closeBtn=document.createElement('button');closeBtn.textContent='Close';closeBtn.className='btn small';
+    closeBtn.onclick=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
+    if(mode==='export'&&app){
+      ttl.textContent='Share "'+app.label+'"';
+      hint.textContent='Copy this code and send it to anyone. They tap Import in their KindleOS app store and paste it — it installs straight onto their home screen.';
+      let code='';try{code='KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:app.label,color:app.color,icon:app.icon,html:app.customHTML}))));}catch(e){code='(encode failed)';}
+      ta.value=code;ta.readOnly=true;
+      const copyBtn=document.createElement('button');copyBtn.textContent='Copy';copyBtn.className='btn small primary';
+      copyBtn.onclick=()=>{try{ta.select();}catch(_){}try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(code);else document.execCommand('copy');}catch(_){}if(typeof toast==='function')toast('App code copied');};
+      btnRow.appendChild(copyBtn);btnRow.appendChild(closeBtn);
+    } else {
+      ttl.textContent='Import an app';
+      hint.textContent='Paste an app code (starts with KHAPP1:) below. It will be added to your home screen.';
+      ta.placeholder='KHAPP1:…';
+      const instBtn=document.createElement('button');instBtn.textContent='Install';instBtn.className='btn small primary';
+      instBtn.onclick=()=>{
+        const v=(ta.value||'').trim();
+        if(v.indexOf('KHAPP1:')!==0){if(typeof toast==='function')toast('That doesn\'t look like an app code');return;}
+        let obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
+        if(!obj||!obj.html){if(typeof toast==='function')toast('Could not read that app code');return;}
+        const ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
+        const color=obj.color||ACCS[Math.floor(Math.random()*ACCS.length)];
+        const label=String(obj.label||'App').slice(0,40);
+        const icon=obj.icon||('<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+label.substring(0,3).toUpperCase()+'</text></svg>');
+        const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:String(obj.html),builtWith:'Imported'};
+        osState.customApps.push(newApp);persistOS();buildPages();renderInstalled();
+        if(ov.parentNode)ov.parentNode.removeChild(ov);
+        if(typeof toast==='function')toast('"'+label+'" added to your home screen');
+      };
+      btnRow.appendChild(instBtn);btnRow.appendChild(closeBtn);
+    }
+    card.appendChild(ttl);card.appendChild(hint);card.appendChild(ta);card.appendChild(btnRow);
+    ov.appendChild(card);ov.onclick=function(ev){if(ev.target===ov)closeBtn.onclick();};
+    document.body.appendChild(ov);
+  }
   function renderInstalled(){
     stInstalledList.innerHTML='';
     if(!osState.customApps.length){
@@ -4518,7 +4606,9 @@ function launchKindleDesktop(){
         };
         document.body.appendChild(ov);
       };
-      actRow.appendChild(launchBtn);actRow.appendChild(editBtn);
+      const shareBtn=document.createElement('button');shareBtn.textContent='Share';shareBtn.className='btn small';
+      shareBtn.onclick=()=>_khAppShareDialog('export',app);
+      actRow.appendChild(launchBtn);actRow.appendChild(editBtn);actRow.appendChild(shareBtn);
       row.appendChild(actRow);
       stInstalledList.appendChild(row);
     });
@@ -7322,13 +7412,20 @@ async function _getGeo(){
 
 async function _logVisit(){
   if(!_sbActive())return;
-  if(!navigator.onLine)return;
+  /* Kindle Silk reports navigator.onLine===undefined even when online, so a
+     strict !navigator.onLine stopped visits being logged at all on Kindle. */
+  if(navigator.onLine===false)return;
   const today=new Date().toISOString().slice(0,10);/* YYYY-MM-DD */
   /* Skip if we already logged today */
   let last='';try{last=localStorage.getItem('kh_visit_last_day')||'';}catch(e){}
   if(last===today)return;
   const id=_getDeviceId();
-  const ua=(navigator.userAgent||'').slice(0,160);
+  /* Flag whether this visit is by a signed-OUT (guest) user, packed into the
+     front of ua_hint — 'g|' guest, 'u|' signed-in — so admin stats can count
+     "not-logged-in users per day" with NO schema change. Stripped on display
+     via _visitUaClean(). */
+  const _guest=!(typeof S!=='undefined'&&S&&S.authToken);
+  const ua=(_guest?'g|':'u|')+(navigator.userAgent||'').slice(0,158);
   const geo=await _getGeo();
   const row={device_id:id,day:today,last_seen:new Date().toISOString(),ua_hint:ua};
   if(geo){
@@ -7340,6 +7437,11 @@ async function _logVisit(){
     try{localStorage.setItem('kh_visit_last_day',today);}catch(e){}
   }catch(e){/* silent — analytics is best-effort */}
 }
+/* ua_hint now carries a leading 'g|'/'u|' guest flag (see _logVisit). Helpers to
+   read it and to strip it for display. Older rows without a flag → treated as
+   not-guest (unknown) so they don't inflate the guest count. */
+function _visitUaClean(ua){return String(ua||'').replace(/^[gu]\|/,'');}
+function _visitIsGuest(ua){return /^g\|/.test(String(ua||''));}
 
 /* ── Live presence heartbeat ──────────────────────────────────────────
    Each open client upserts ONE row into kh_presence (keyed on a stable
@@ -9294,7 +9396,10 @@ async function syncFromCloud(){
    game falls back to its local-only score list. */
 async function _khSubmitScore(game,score){
   if(typeof _sbActive!=='function'||!_sbActive())return false;
-  if(!navigator.onLine)return false;
+  /* Kindle Silk reports navigator.onLine===undefined (or a stale false) even when
+     Wi-Fi is up, so a strict !navigator.onLine wrongly blocked EVERY score submit.
+     Only bail on an explicit false (the proven pattern used by cloud sync/Slither). */
+  if(navigator.onLine===false)return false;
   const n=parseInt(score,10);
   if(!isFinite(n)||n<=0||n>1e9)return false;
   /* Dedup safety: never submit the same (game,score) twice within 30 s
@@ -9325,7 +9430,9 @@ async function _khSubmitScore(game,score){
 }
 async function _khFetchScores(game,limit){
   if(typeof _sbActive!=='function'||!_sbActive())return[];
-  if(!navigator.onLine)return[];
+  /* Same Silk navigator.onLine quirk as _khSubmitScore — a strict !onLine made
+     the leaderboard read return [] on Kindle, so scores never displayed. */
+  if(navigator.onLine===false)return[];
   limit=limit||10;
   try{
     /* Make sure the ban list is loaded so banned names get masked below.
@@ -12055,7 +12162,13 @@ function enterImmersive(title,scoreLabel){
 }
 function exitImmersive(){
   if(immersiveRoot._trackStop){try{immersiveRoot._trackStop();}catch(e){}immersiveRoot._trackStop=null;}
-  try{[Snake,G2048,Tetris,SpaceInvaders,FlightSim,TowerDef].forEach(function(g){if(g&&g.stop)g.stop();});}catch(e){}
+  /* Belt-and-braces: stop EVERY game loop on exit, not just the running one.
+     A game that used setInterval/RAF but neither set _trackStop nor was listed
+     here used to keep ticking after you left it — every launch then stacked
+     another live loop, so the site got slower and Silk eventually crashed.
+     stop() is a no-op for games that aren't running (each guards its own
+     handle), so calling them all is safe. */
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -16871,68 +16984,236 @@ const GeometryDash=(()=>{
    Same conventions as the other canvas games (setInterval tick, stop(),
    _khSubmitScore, immersiveRoot._trackStop for clean teardown). */
 const Slither=(()=>{
-  const VW=360,VH=520,WORLD=1500,SPEED=3.0,BOOST=5.2,TURN=0.26,SEG_GAP=6,FOOD_N=46;
-  let cv,ctx,timer,G,submitted=false,_keyH=null;
+  /* Busy slither.io-style arena, rebuilt for Kindle Silk: LIGHT per-frame (small
+     fixed snake/food counts, hard path caps, cheap AI, aggressive off-screen
+     culling) so it doesn't freeze or crash. You + smart-but-cheap AI snakes; when
+     other people are online in Slither they take over bot slots and appear under
+     their REAL username (a ~1.8s beacon over the existing kh_presence table — no
+     schema/worker change). Degrades to a pure-AI arena when offline / no backend. */
+  const VW=360,VH=520,WORLD=1600,SPEED=3.2,BOOST=5.4,TURN=0.28,SEG_GAP=6;
+  const FOOD_N=42,MAXPTS=60,START_LEN=5;
+  const TARGET_OPP=5,MIN_AI=2;          // arena fills to ~TARGET_OPP rivals; humans replace bots
+  const PUB_MS=1800,TTL_MS=7000,FRAME_MS=1000/15;
+  const BOT_NAMES=['Viper','Coil','Zigzag','Slinky','Noodle','Pixel','Twist','Fang','Mamba','Loop','Dash','Hiss','Wriggle','Cobra','Boa','Echo','Glide','Rattle','Quark','Jet'];
+  let cv,ctx,timer,netTimer,G,submitted=false,_keyH=null,_lb=null,_pub=false;
+
   const me=()=>G&&G.snakes[0];
-  function newSnake(x,y,ai){return {x,y,angle:Math.random()*6.283,target:Math.random()*6.283,path:[{x,y}],len:14,ai:!!ai,boost:false,dead:false};}
-  function spawnFood(n){for(let i=0;i<n;i++)G.food.push({x:Math.random()*WORLD,y:Math.random()*WORLD,r:3+Math.random()*2});}
-  function init(){G={food:[],snakes:[],score:0,active:true};G.snakes.push(newSnake(WORLD/2,WORLD/2,false));for(let i=0;i<3;i++)G.snakes.push(newSnake(Math.random()*WORLD,Math.random()*WORLD,true));spawnFood(FOOD_N);submitted=false;}
-  function aiThink(s){
-    let best=null,bd=1e9;for(const f of G.food){const d=Math.hypot(s.x-f.x,s.y-f.y);if(d<bd){bd=d;best=f;}}
-    if(best&&Math.random()<0.85)s.target=Math.atan2(best.y-s.y,best.x-s.x);else if(Math.random()<0.05)s.target=Math.random()*6.283;
-    const m=90;if(s.x<m)s.target=0;else if(s.x>WORLD-m)s.target=Math.PI;if(s.y<m)s.target=1.571;else if(s.y>WORLD-m)s.target=-1.571;
-    s.boost=false;
+  const _netOk=()=>{try{return typeof _sbActive==='function'&&_sbActive()&&navigator.onLine!==false;}catch(_){return false;}};
+  function _myName(){let n='';try{n=(S.user||'').trim()||((S.email||'').split('@')[0]||'').trim();}catch(_){}n=n||'Player';try{if(typeof _censorText==='function')n=_censorText(n);}catch(_){}return n.slice(0,14);}
+  function _myId(){try{if(typeof _presenceIdentity==='function')return 'sl_'+_presenceIdentity().user_id;}catch(_){}try{return 'sl_'+(S.userId||(S.authToken&&S.authToken.slice(0,16))||'anon');}catch(_){}return 'sl_anon';}
+  const _disp=n=>{try{return typeof _dispName==='function'?_dispName(n):n;}catch(_){return n;}};
+
+  function pickName(){const used={};G.snakes.forEach(s=>used[s.name]=1);G.remotes.forEach(r=>used[r.name]=1);const free=BOT_NAMES.filter(n=>!used[n]);const pool=free.length?free:BOT_NAMES;return pool[Math.floor(Math.random()*pool.length)];}
+
+  /* Body is laid out BEHIND the head immediately (no growing-out-of-the-head on
+     spawn/teleport). Starts at length 5 like the real game. */
+  function buildBody(x,y,ang,len){
+    const n=Math.min(MAXPTS,Math.max(4,Math.ceil(len)+2));
+    const dx=-Math.cos(ang)*SEG_GAP,dy=-Math.sin(ang)*SEG_GAP,path=[];
+    for(let i=0;i<n;i++)path.push({x:x+dx*i,y:y+dy*i});
+    return path;
   }
-  function killSnake(s){if(s.dead)return;s.dead=true;for(let i=0;i<s.path.length;i+=2)G.food.push({x:s.path[i].x+(Math.random()*8-4),y:s.path[i].y+(Math.random()*8-4),r:3+Math.random()*2});}
+  function newSnake(x,y,ai,name,skill){
+    const ang=Math.random()*6.283;
+    return {x,y,angle:ang,target:ang,path:buildBody(x,y,ang,START_LEN),
+      len:START_LEN,r:Math.max(4,3+START_LEN*0.05),ai:!!ai,boost:false,dead:false,
+      kind:ai?'ai':'me',name:name||'',skill:skill==null?(0.3+Math.random()*0.65):skill,decide:Math.floor(Math.random()*3)};
+  }
+  function spawnAI(){
+    let x,y,t=0;do{x=140+Math.random()*(WORLD-280);y=140+Math.random()*(WORLD-280);t++;}
+    while(t<8&&me()&&Math.hypot(x-me().x,y-me().y)<280);
+    G.snakes.push(newSnake(x,y,true,pickName()));
+  }
+  function spawnFood(n){for(let i=0;i<n;i++)G.food.push({x:Math.random()*WORLD,y:Math.random()*WORLD,r:3+Math.random()*2});}
+  function init(){
+    G={food:[],snakes:[],remotes:new Map(),score:0,active:true,frame:0};
+    G.snakes.push(newSnake(WORLD/2,WORLD/2,false,_myName(),1));
+    for(let i=0;i<MIN_AI+1;i++)spawnAI();
+    spawnFood(FOOD_N);submitted=false;
+  }
+
+  /* ── cheap "smart" AI: chase food, but don't ram walls/snakes; flee bigger,
+        hunt smaller. One short look-ahead + a few veer candidates — no costly
+        multi-ray scan, so a full arena stays smooth on e-ink. ─────────────── */
+  function nearestFood(s){let b=null,bd=1e9;for(let i=0;i<G.food.length;i++){const f=G.food[i],dx=s.x-f.x,dy=s.y-f.y,d=dx*dx+dy*dy;if(d<bd){bd=d;b=f;}}return b;}
+  function nearestSnake(s){let b=null,bd=1e9;const scan=o=>{if(o===s||o.dead)return;const dx=s.x-o.x,dy=s.y-o.y,d=dx*dx+dy*dy;if(d<bd){bd=d;b=o;}};G.snakes.forEach(scan);G.remotes.forEach(scan);return b?{o:b,d:Math.sqrt(bd)}:null;}
+  function blockedAt(s,x,y){
+    if(x<8||y<8||x>WORLD-8||y>WORLD-8)return true;
+    const rr=(s.r||5)+7,rsq=rr*rr;
+    const chk=o=>{if(o.dead)return false;if(Math.abs(o.x-s.x)>210||Math.abs(o.y-s.y)>210)return false;const skip=(o===s)?6:0;for(let i=skip;i<o.path.length;i+=2){const dx=x-o.path[i].x,dy=y-o.path[i].y;if(dx*dx+dy*dy<rsq)return true;}return false;};
+    for(let i=0;i<G.snakes.length;i++)if(chk(G.snakes[i]))return true;
+    let hit=false;G.remotes.forEach(r=>{if(!hit&&chk(r))hit=true;});
+    return hit;
+  }
+  function aiThink(s){
+    const f=nearestFood(s);
+    let goal=f?Math.atan2(f.y-s.y,f.x-s.x):s.angle;
+    const m=120;
+    if(s.x<m)goal=0;else if(s.x>WORLD-m)goal=Math.PI;
+    if(s.y<m)goal=1.571;else if(s.y>WORLD-m)goal=-1.571;
+    const ns=nearestSnake(s);let aggro=0;
+    if(ns){const o=ns.o,d=ns.d;
+      if(d<75&&o.len>s.len*1.15){goal=Math.atan2(s.y-o.y,s.x-o.x);aggro=-1;}
+      else if(d<150&&s.len>o.len*1.25&&s.skill>0.5){const lead=Math.min(50,d*0.6);goal=Math.atan2((o.y+Math.sin(o.angle)*lead)-s.y,(o.x+Math.cos(o.angle)*lead)-s.x);aggro=1;}
+    }
+    const ahead=26+s.skill*18;
+    if(blockedAt(s,s.x+Math.cos(goal)*ahead,s.y+Math.sin(goal)*ahead)){
+      let found=false;
+      const offs=[0.6,-0.6,1.1,-1.1,1.7,-1.7,2.4,-2.4];
+      for(let i=0;i<offs.length;i++){const a=goal+offs[i];if(!blockedAt(s,s.x+Math.cos(a)*ahead,s.y+Math.sin(a)*ahead)){goal=a;found=true;break;}}
+      if(!found)goal=s.angle+1.5;
+      aggro=0;
+    }
+    if(s.skill<0.4&&Math.random()<0.08)return; // clumsy bots occasionally hesitate
+    s.target=goal;
+    s.boost=(s.len>22&&s.skill>0.55&&((aggro>0&&Math.random()<0.4)||Math.random()<0.03));
+  }
+
+  function killSnake(s){if(s.dead)return;s.dead=true;for(let i=0;i<s.path.length;i+=2)G.food.push({x:s.path[i].x+(Math.random()*8-4),y:s.path[i].y+(Math.random()*8-4),r:3+Math.random()*2});if(G.food.length>FOOD_N+60)G.food.length=FOOD_N+60;}
+
+  function reconcileBots(){
+    let remoteN=0;G.remotes.forEach(r=>{if(!r.dead)remoteN++;});
+    const targetAI=Math.max(MIN_AI,Math.min(TARGET_OPP,TARGET_OPP-remoteN));
+    let ai=G.snakes.length-1;
+    while(ai>targetAI){let idx=-1,fd=-1;for(let i=1;i<G.snakes.length;i++){const s=G.snakes[i];if(s.dead){idx=i;break;}const d=Math.hypot(s.x-me().x,s.y-me().y);if(d>fd){fd=d;idx=i;}}if(idx<0)break;G.snakes.splice(idx,1);ai--;}
+    while(ai<targetAI){spawnAI();ai++;}
+  }
+
   function step(){
-    if(!G||!G.active)return;const p=me();
+    if(!G||!G.active)return;G.frame++;
+    const nowMs=Date.now();G.remotes.forEach((r,id)=>{if(nowMs-r.recvAt>TTL_MS)G.remotes.delete(id);});
+    if(G.frame%15===0)reconcileBots();
     G.snakes.forEach(s=>{
       if(s.dead)return;
-      if(s.ai)aiThink(s);
+      if(s.ai&&((s.decide=(s.decide+1)%3)===0))aiThink(s);
       let d=s.target-s.angle;while(d>Math.PI)d-=6.283;while(d<-Math.PI)d+=6.283;
       s.angle+=Math.max(-TURN,Math.min(TURN,d));
       const sp=(s.boost&&s.len>16)?BOOST:SPEED;
       s.x+=Math.cos(s.angle)*sp;s.y+=Math.sin(s.angle)*sp;
-      if(s.boost&&s.len>16){s.len-=0.06;if(Math.random()<0.12)G.food.push({x:s.x-Math.cos(s.angle)*10,y:s.y-Math.sin(s.angle)*10,r:3});}
+      if(s.boost&&s.len>16){s.len-=0.05;if(Math.random()<0.1)G.food.push({x:s.x-Math.cos(s.angle)*10,y:s.y-Math.sin(s.angle)*10,r:3});}
       if(s.x<0||s.y<0||s.x>WORLD||s.y>WORLD){killSnake(s);return;}
       const h=s.path[0];if(!h||Math.hypot(s.x-h.x,s.y-h.y)>=SEG_GAP)s.path.unshift({x:s.x,y:s.y});
-      const maxPts=Math.ceil(s.len)+2;if(s.path.length>maxPts)s.path.length=maxPts;
-      for(let i=G.food.length-1;i>=0;i--){const f=G.food[i];if(Math.hypot(s.x-f.x,s.y-f.y)<11){G.food.splice(i,1);s.len+=1.2;if(!s.ai)G.score++;}}
+      const maxPts=Math.min(MAXPTS,Math.ceil(s.len)+2);if(s.path.length>maxPts)s.path.length=maxPts;
+      s.r=Math.max(4,3+s.len*0.05);
+      for(let i=G.food.length-1;i>=0;i--){const f=G.food[i];const dx=s.x-f.x,dy=s.y-f.y;if(dx*dx+dy*dy<121){G.food.splice(i,1);s.len+=1;if(!s.ai)G.score++;}}
     });
+    G.remotes.forEach(r=>{if(r.dead)return;r.x+=(r._tx-r.x)*0.25;r.y+=(r._ty-r.y)*0.25;r.r=Math.max(4,3+r.len*0.05);});
     while(G.food.length<FOOD_N)spawnFood(1);
-    /* head-vs-other-body collisions */
-    G.snakes.forEach(s=>{if(s.dead)return;G.snakes.forEach(o=>{if(o===s||o.dead)return;for(let i=2;i<o.path.length;i++){if(Math.hypot(s.x-o.path[i].x,s.y-o.path[i].y)<6){killSnake(s);return;}}});});
+    /* collisions: each LOCAL head vs every other body (local + remote) */
+    const bodies=[];G.snakes.forEach(s=>{if(!s.dead)bodies.push(s);});G.remotes.forEach(s=>{if(!s.dead)bodies.push(s);});
+    G.snakes.forEach(s=>{if(s.dead)return;for(let bi=0;bi<bodies.length;bi++){const o=bodies[bi];if(o===s)continue;const start=(o.kind==='remote')?0:2,lim=(o.kind==='remote')?64:36;for(let i=start;i<o.path.length;i++){const dx=s.x-o.path[i].x,dy=s.y-o.path[i].y;if(dx*dx+dy*dy<lim){killSnake(s);return;}}}});
     if(me().dead){endGame();return;}
-    if(p)updateImmersiveScore('Length '+Math.round(p.len));
-    G.snakes.forEach((s,idx)=>{if(idx>0&&s.dead&&Math.random()<0.02)G.snakes[idx]=newSnake(Math.random()*WORLD,Math.random()*WORLD,true);});
+    updateImmersiveScore('Length '+Math.round(me().len));
+    for(let i=1;i<G.snakes.length;i++){if(G.snakes[i].dead&&Math.random()<0.03){let x,t=0,y;do{x=140+Math.random()*(WORLD-280);y=140+Math.random()*(WORLD-280);t++;}while(t<6&&Math.hypot(x-me().x,y-me().y)<240);G.snakes[i]=newSnake(x,y,true,pickName());}}
+    if(G.frame%15===0)updateBoard();
     draw();
   }
+
   function draw(){
     if(!ctx||!G)return;const dark=document.body.classList.contains('dark');
     ctx.fillStyle=dark?'#0b0b0b':'#f4f4f4';ctx.fillRect(0,0,VW,VH);
-    const p=me();const camX=p.x-VW/2,camY=p.y-VH/2;
-    /* Manual camera offset (world→screen = coord-cam) instead of a whole-scene
-       ctx.translate(): old Kindle Silk/WebKit silently DROPS a large fractional
-       translate, which blanked the snake/food/border (drawn at world coords
-       ~750) while the untransformed HUD still showed. Mirrors GeometryDash's
-       proven e-ink camera; pixel-identical on capable browsers. */
+    const p=me();if(!p)return;const camX=p.x-VW/2,camY=p.y-VH/2;
+    /* per-object camera offset (NOT ctx.translate — old Silk drops a big translate) */
     ctx.strokeStyle=dark?'#444':'#bbb';ctx.lineWidth=3;ctx.strokeRect(-camX,-camY,WORLD,WORLD);
     ctx.fillStyle=dark?'#9ad':'#39c';
-    for(const f of G.food){if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x-camX,f.y-camY,f.r,0,6.283);ctx.fill();}
-    G.snakes.forEach(s=>{
-      if(s.dead)return;const r=Math.max(4,3+s.len*0.05);
-      ctx.fillStyle=s.ai?(dark?'#777':'#999'):(dark?'#eee':'#111');
-      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i];if(pt.x<camX-20||pt.x>camX+VW+20||pt.y<camY-20||pt.y>camY+VH+20)continue;ctx.beginPath();ctx.arc(pt.x-camX,pt.y-camY,r,0,6.283);ctx.fill();}
-      ctx.beginPath();ctx.arc(s.x-camX,s.y-camY,r+1,0,6.283);ctx.fill();
-      if(!s.ai){ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(s.x-camX+Math.cos(s.angle+0.5)*r,s.y-camY+Math.sin(s.angle+0.5)*r,1.7,0,6.283);ctx.arc(s.x-camX+Math.cos(s.angle-0.5)*r,s.y-camY+Math.sin(s.angle-0.5)*r,1.7,0,6.283);ctx.fill();}
-    });
+    for(let i=0;i<G.food.length;i++){const f=G.food[i];if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x-camX,f.y-camY,f.r,0,6.283);ctx.fill();}
+    const drawSnake=(s,fill,ring,labelCol)=>{
+      if(s.dead)return;const r=s.r||5,hx=s.x-camX,hy=s.y-camY;
+      if(hx<-40||hx>VW+40||hy<-40||hy>VH+40)return; // fully off-screen — skip entirely
+      ctx.fillStyle=fill;
+      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i],x=pt.x-camX,y=pt.y-camY;if(x<-20||x>VW+20||y<-20||y>VH+20)continue;ctx.beginPath();ctx.arc(x,y,r,0,6.283);ctx.fill();}
+      ctx.beginPath();ctx.arc(hx,hy,r+1,0,6.283);ctx.fill();
+      if(ring){ctx.strokeStyle=fill;ctx.lineWidth=2;ctx.beginPath();ctx.arc(hx,hy,r+4,0,6.283);ctx.stroke();}
+      if(s.name&&labelCol){ctx.fillStyle=labelCol;ctx.font='10px monospace';ctx.textAlign='center';ctx.fillText(_disp(s.name).slice(0,12),hx,hy-r-5);}
+    };
+    /* humans (remote) — distinct shade + ring + always labelled */
+    G.remotes.forEach(s=>drawSnake(s,dark?'#cde':'#36a',true,dark?'#cde':'#36a'));
+    /* AI bots */
+    for(let i=1;i<G.snakes.length;i++)drawSnake(G.snakes[i],dark?'#777':'#999',false,dark?'#888':'#888');
+    /* you, on top, with eyes */
+    const mr=p.r||5;ctx.fillStyle=dark?'#eee':'#111';
+    for(let i=p.path.length-1;i>=0;i--){const pt=p.path[i],x=pt.x-camX,y=pt.y-camY;if(x<-20||x>VW+20||y<-20||y>VH+20)continue;ctx.beginPath();ctx.arc(x,y,mr,0,6.283);ctx.fill();}
+    ctx.beginPath();ctx.arc(p.x-camX,p.y-camY,mr+1,0,6.283);ctx.fill();
+    ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(p.x-camX+Math.cos(p.angle+0.5)*mr,p.y-camY+Math.sin(p.angle+0.5)*mr,1.7,0,6.283);ctx.arc(p.x-camX+Math.cos(p.angle-0.5)*mr,p.y-camY+Math.sin(p.angle-0.5)*mr,1.7,0,6.283);ctx.fill();
+    /* minimap (top-right) */
+    const MM=58,mmx=VW-MM-6,mmy=6,sc=MM/WORLD;
+    ctx.fillStyle=dark?'rgba(255,255,255,0.07)':'rgba(0,0,0,0.05)';ctx.fillRect(mmx,mmy,MM,MM);
+    ctx.strokeStyle=dark?'#555':'#aaa';ctx.lineWidth=1;ctx.strokeRect(mmx,mmy,MM,MM);
+    const dot=(wx,wy,col,rr)=>{ctx.fillStyle=col;ctx.beginPath();ctx.arc(mmx+wx*sc,mmy+wy*sc,rr,0,6.283);ctx.fill();};
+    for(let i=1;i<G.snakes.length;i++){const s=G.snakes[i];if(!s.dead)dot(s.x,s.y,dark?'#888':'#999',1.3);}
+    G.remotes.forEach(s=>{if(!s.dead)dot(s.x,s.y,dark?'#cde':'#36a',1.7);});
+    dot(p.x,p.y,dark?'#fff':'#111',2.1);
     ctx.fillStyle=dark?'#888':'#666';ctx.font='12px monospace';ctx.textAlign='left';ctx.fillText('Length '+Math.round(p.len)+'   Food '+G.score,8,18);
   }
+
+  function updateBoard(){
+    if(!_lb||!_lb._status||!document.body.contains(_lb._status))return;
+    const all=[],p=me();
+    if(p&&!p.dead)all.push({name:'You',len:p.len,you:true});
+    for(let i=1;i<G.snakes.length;i++){const s=G.snakes[i];if(!s.dead)all.push({name:s.name,len:s.len});}
+    G.remotes.forEach(s=>{if(!s.dead)all.push({name:s.name,len:s.len,human:true});});
+    all.sort((a,b)=>b.len-a.len);
+    let remoteN=0;G.remotes.forEach(r=>{if(!r.dead)remoteN++;});
+    const status=_netOk()?('● Online arena — '+(remoteN?remoteN+' '+(remoteN===1?'real player':'real players')+' here now':'waiting for others')):'Practice arena (offline — AI only)';
+    if(_lb._status.textContent!==status)_lb._status.textContent=status;
+    for(let i=0;i<_lb._rows.length;i++){
+      const row=_lb._rows[i],e=all[i];
+      const t=e?((i+1)+'. '+(e.you?'You':_disp(e.name))+(e.human?' ◆':'')+'  '+Math.round(e.len)):'';
+      if(row.textContent!==t)row.textContent=t;
+      const col=e&&e.you?(document.body.classList.contains('dark')?'#fff':'#111'):(e&&e.human?'var(--fg)':'var(--muted)');
+      if(row.style.color!==col)row.style.color=col;
+      const fw=e&&e.you?'800':'500';if(row.style.fontWeight!==fw)row.style.fontWeight=fw;
+    }
+  }
+
+  /* ── online beacons over kh_presence (best-effort; off when no backend) ── */
+  async function _publish(){
+    if(!_netOk()||!G||!G.active)return;const p=me();if(!p||p.dead)return;
+    const pts=[],stepN=Math.max(1,Math.floor(p.path.length/8));
+    for(let i=0;i<p.path.length&&pts.length<8;i+=stepN)pts.push([Math.round(p.path[i].x),Math.round(p.path[i].y)]);
+    _pub=true;
+    const beacon={n:_myName(),x:Math.round(p.x),y:Math.round(p.y),a:+p.angle.toFixed(2),l:Math.round(p.len),b:p.boost?1:0,d:0,p:pts,t:Date.now()};
+    try{await _sbUpsert('kh_presence',{user_id:_myId(),display_name:JSON.stringify(beacon),last_seen:new Date().toISOString()},'user_id');}catch(_){}
+  }
+  async function _poll(){
+    if(!_netOk()||!G||!G.active)return;
+    const cut=new Date(Date.now()-TTL_MS).toISOString();let rows;
+    try{rows=await _sbSelect('kh_presence','select=user_id,display_name,last_seen&user_id=like.sl_*&last_seen=gte.'+encodeURIComponent(cut)+'&limit=24');}catch(_){return;}
+    if(!Array.isArray(rows)||!G||!G.active)return;
+    const myId=_myId(),now=Date.now();
+    for(let k=0;k<rows.length;k++){
+      const row=rows[k];if(!row||row.user_id===myId)continue;
+      let b;try{b=JSON.parse(row.display_name);}catch(_){continue;}
+      if(!b||typeof b.x!=='number')continue;
+      const path=Array.isArray(b.p)?b.p.map(a=>({x:a[0],y:a[1]})):[];
+      let r=G.remotes.get(row.user_id);
+      if(!r){r={x:b.x,y:b.y,_tx:b.x,_ty:b.y,angle:b.a||0,len:b.l||START_LEN,boost:!!b.b,dead:!!b.d,name:String(b.n||'Player').slice(0,14),path:path,kind:'remote',r:5,recvAt:now};G.remotes.set(row.user_id,r);}
+      else{r._tx=b.x;r._ty=b.y;r.angle=b.a||0;r.len=b.l||r.len;r.boost=!!b.b;r.dead=!!b.d;r.name=String(b.n||'Player').slice(0,14);if(path.length)r.path=path;r.recvAt=now;}
+    }
+  }
+  function _netTick(){try{_publish();_poll();}catch(_){}}
+  async function _removeBeacon(){if(!_pub)return;_pub=false;try{if(_netOk())await _sbUpsert('kh_presence',{user_id:_myId(),display_name:JSON.stringify({n:_myName(),d:1,t:Date.now()}),last_seen:new Date().toISOString()},'user_id');}catch(_){}}
+
+  function _startTimers(){
+    if(timer)clearInterval(timer);timer=setInterval(step,FRAME_MS);
+    if(netTimer)clearInterval(netTimer);
+    if(_netOk()){netTimer=setInterval(_netTick,PUB_MS);_netTick();}
+  }
+  function reset(){
+    const m=immersiveContent.querySelector('.kh-sl-gameover');if(m&&m.parentNode)m.parentNode.removeChild(m);
+    init();_startTimers();updateBoard();draw();
+  }
+
   function start(){
     enterImmersive('Slither','');immersiveContent.innerHTML='';
     cv=document.createElement('canvas');cv.width=VW;cv.height=VH;
     cv.style.cssText='display:block;width:100%;max-width:420px;margin:8px auto;border:2px solid var(--fg);touch-action:none;border-radius:8px;background:var(--bg);';
     immersiveContent.appendChild(cv);ctx=cv.getContext('2d');init();
+    _lb=el('div',{style:{maxWidth:'420px',margin:'8px auto 0',background:'var(--highlight)',borderRadius:'8px',padding:'8px 12px'}});
+    _lb._status=txt('div','…',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'4px'}});
+    _lb.appendChild(_lb._status);_lb._rows=[];
+    for(let i=0;i<5;i++){const r=txt('div','',{style:{fontSize:'12px',fontFamily:'monospace',lineHeight:'1.5',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}});_lb._rows.push(r);_lb.appendChild(r);}
+    immersiveContent.appendChild(_lb);
     function aim(cx,cy){const rect=cv.getBoundingClientRect();const mx=(cx-rect.left)*(VW/rect.width),my=(cy-rect.top)*(VH/rect.height);if(me())me().target=Math.atan2(my-VH/2,mx-VW/2);}
     cv.addEventListener('touchmove',e=>{if(e.touches[0]){aim(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();}},{passive:false});
     cv.addEventListener('touchstart',e=>{if(e.touches[0])aim(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});
@@ -16943,28 +17224,36 @@ const Slither=(()=>{
     boostBtn.addEventListener('touchstart',e=>{e.preventDefault();setB(true);},{passive:false});
     boostBtn.addEventListener('touchend',()=>setB(false));
     boostBtn.addEventListener('mousedown',()=>setB(true));boostBtn.addEventListener('mouseup',()=>setB(false));boostBtn.addEventListener('mouseleave',()=>setB(false));
-    const newBtn=txt('button','New Game',{className:'btn'});newBtn.onclick=()=>{init();draw();};
+    const newBtn=txt('button','New Game',{className:'btn'});newBtn.onclick=reset;
     ctrl.appendChild(boostBtn);ctrl.appendChild(newBtn);immersiveContent.appendChild(ctrl);
-    immersiveContent.appendChild(txt('div','Drag on the board to steer. Eat dots to grow; don\'t ram another snake or the wall. Hold Boost for speed (costs length).',{style:{textAlign:'center',color:'var(--muted)',fontSize:'11px',marginTop:'8px',lineHeight:'1.5'}}));
+    immersiveContent.appendChild(txt('div','Drag on the board to steer. Eat dots to grow; don\'t ram another snake or the wall. Hold Boost for speed (costs length). ◆ = a real player online right now.',{style:{textAlign:'center',color:'var(--muted)',fontSize:'11px',marginTop:'8px',lineHeight:'1.5'}}));
     if(_keyH)document.removeEventListener('keydown',_keyH);
     _keyH=e=>{if(!G||!G.active||!me())return;const m={ArrowLeft:Math.PI,ArrowRight:0,ArrowUp:-1.571,ArrowDown:1.571};if(m[e.key]!==undefined){me().target=m[e.key];e.preventDefault();}};
     document.addEventListener('keydown',_keyH);
-    if(timer)clearInterval(timer);timer=setInterval(step,1000/18);
-    immersiveRoot._trackStop=()=>stop();draw();
+    _startTimers();
+    immersiveRoot._trackStop=()=>stop();updateBoard();draw();
   }
   function endGame(){
-    if(!G||!G.active)return;G.active=false;if(timer){clearInterval(timer);timer=null;}
+    if(!G||!G.active)return;G.active=false;
+    if(timer){clearInterval(timer);timer=null;}
+    if(netTimer){clearInterval(netTimer);netTimer=null;}
+    _removeBeacon();
     if(submitted)return;submitted=true;const sc=G.score;
     if(!S.games.slither)S.games.slither={best:0};S.games.slither.best=Math.max(S.games.slither.best||0,sc);saveNow();
     try{_khSubmitScore('slither',sc);}catch(_){}recordStat('slither',false);draw();
-    const msg=txt('div','Game Over! Food eaten: '+sc+'  ·  Length '+Math.round(me().len),{style:{textAlign:'center',fontWeight:'bold',fontSize:'15px',color:'var(--danger)',margin:'8px'}});
+    const msg=txt('div','Game Over! Food eaten: '+sc+'  ·  Length '+Math.round(me().len),{className:'kh-sl-gameover',style:{textAlign:'center',fontWeight:'bold',fontSize:'15px',color:'var(--danger)',margin:'8px'}});
     const ctrl=immersiveContent.querySelector('.card-row');if(ctrl)immersiveContent.insertBefore(msg,ctrl);else immersiveContent.appendChild(msg);
     toast('Game Over! Food eaten: '+sc);
   }
-  function stop(){if(timer){clearInterval(timer);timer=null;}if(_keyH){document.removeEventListener('keydown',_keyH);_keyH=null;}}
+  function stop(){
+    if(timer){clearInterval(timer);timer=null;}
+    if(netTimer){clearInterval(netTimer);netTimer=null;}
+    _removeBeacon();
+    if(_keyH){document.removeEventListener('keydown',_keyH);_keyH=null;}
+    _lb=null;G=null;
+  }
   return{start,stop};
 })();
-
 const G2048=(()=>{
   let G=null,saveTimer2048=null;
   const SZ=72, GAP=8, PAD=8; // tile size, gap, board padding
@@ -23240,6 +23529,7 @@ function offlineAI(raw){
     'WEATHER: "weather" opens the live forecast',
     'NEWS: "news" or "headlines" opens live feeds',
     'STOCKS: "stocks" opens live market data',
+    'FUN: "tell me a fact", "joke", "advice", "what year is it"',
     '',
     'With an AI key (open Settings → AI Provider), I can answer any question, write essays, explain concepts, translate languages, debug code, create quizzes, and much more.'
   ].join('\n');
@@ -23310,7 +23600,39 @@ function offlineAI(raw){
   if(/\b(my books|library|reading list)\b/.test(low)){const t=document.querySelector('nav .tab[data-view="reading"]');if(t)t.click();return 'Opening Reading tracker...';}
   if(/\b(study|flashcard|quiz|deck)\b/.test(low)){const t=document.querySelector('nav .tab[data-view="reading"]');if(t)t.click();return 'Opening Study...';}
   if(/\b(api key|gemini|set key)\b/.test(low)){$('apiKeyBar').style.display='flex';return 'Showing the API key bar above. Paste your Gemini key to enable AI chat.';}
-  return hasAnyKey()?`Thinking… (if you see this, the AI call failed — check your key/model and try again.)`:`I can answer any question with an AI key — go to Settings → AI to add a Gemini key (aistudio.google.com, free) or OpenRouter key (openrouter.ai, has free models).\n\nOffline commands: 'help', 'play snake', 'calc 15*7', 'convert 10km to miles', 'recommend mystery', 'note pick up milk'.`;
+  /* ── Conversational + evergreen knowledge layer (offline, no key) ──────────
+     Makes the offline assistant feel smarter and current: identity, small talk,
+     a year-aware clock, facts/jokes/quotes, and a fallback that recognises a
+     real question instead of always deflecting to "add a key". */
+  if(/\b(who are you|what are you|your name|are you (an? )?(ai|robot|human|chatgpt|gpt|claude|gemini|siri|alexa|bot))\b/.test(low))
+    return "I'm KindleHub AI — the assistant built into KindleHub. Offline I handle maths, conversions, notes, book picks, games and quick questions. Add a free key in Settings → AI Provider and I can answer anything, write, translate and explain in depth.";
+  if(/\b(who (made|created|built) you|your creator|who owns you)\b/.test(low))
+    return "I'm built into KindleHub by its creator. The deeper answers run on Google Gemini or OpenRouter once you add a key (both have free tiers).";
+  if(/\b(how are you|how'?s it going|how do you do|you ok|you good|hru)\b/.test(low))
+    return "Running smoothly, thanks for asking! What can I help with? Type 'help' for offline commands.";
+  if(/\b(what year is it|what year|current year|this year)\b/.test(low))
+    return 'It is '+NOW().getFullYear()+'.';
+  if(/\b(tell me (a )?(fun |cool |random )?fact|random fact|did you know|interesting fact)\b/.test(low)){
+    const facts=['Honey never spoils — edible pots thousands of years old have turned up in Egyptian tombs.','Octopuses have three hearts and blue, copper-based blood.','A day on Venus is longer than its year.','Bananas are berries, but strawberries are not.','Sharks are older than trees.','There are more possible chess games than atoms in the observable universe.','Wombat droppings are cube-shaped.','The shortest war in history lasted about 38 minutes.','A group of flamingos is called a "flamboyance".','Sunlight takes about 8 minutes to reach Earth.','Your body has more bacterial cells than human ones.','Hot water can freeze faster than cold under the right conditions (the Mpemba effect).'];
+    return facts[Math.abs(Date.now())%facts.length];
+  }
+  if(/\b(joke|make me laugh|something funny|pun)\b/.test(low)){
+    const jokes=['Why did the scarecrow win an award? He was outstanding in his field.','Why do programmers prefer dark mode? Light attracts bugs.','I would tell you a chemistry joke, but I know I would not get a reaction.','Why was the maths book sad? It had too many problems.','What do you call a fish with no eyes? A fsh.','I told my Kindle a Wi-Fi joke — it got a poor reception.'];
+    return jokes[Math.abs(Date.now()>>3)%jokes.length];
+  }
+  if(/\b(advice|motivat|inspir|quote|encourage|pep talk)\b/.test(low)){
+    const quotes=['"The secret of getting ahead is getting started." — Mark Twain','"It always seems impossible until it is done." — Nelson Mandela','"Done is better than perfect."','"Small steps every day add up to big results."','"You do not have to be great to start, but you have to start to be great."'];
+    return quotes[Math.abs(Date.now()>>5)%quotes.length];
+  }
+  /* Smarter fallback: if it reads like a genuine question, acknowledge it and
+     point at the AI key (which actually answers it) rather than a generic blurb. */
+  const looksLikeQuestion=/\?\s*$/.test(raw)||/^(who|what|whats|why|when|where|which|how|is|are|can|could|does|do|did|will|should|would|tell me|explain|define)\b/.test(low);
+  if(!hasAnyKey()){
+    if(looksLikeQuestion)
+      return "Good question — to answer it in full I need an AI key (free): Settings → AI Provider, add Gemini (aistudio.google.com) or OpenRouter (openrouter.ai). Offline I can still do maths, conversions, notes, book picks, games and quick facts — type 'help'.";
+    return "Add a free AI key (Settings → AI Provider — Gemini or OpenRouter) and I can answer anything. Offline, try: 'help', 'play snake', 'calc 15*7', 'convert 10km to miles', 'recommend mystery', 'note milk', 'tell me a fact', or 'joke'.";
+  }
+  return 'Thinking… (if you see this, the AI call failed — check your key/model and try again.)';
 }
 
 /* ── Reply-to-a-message (AI assistant chat) ──────────────────────────
@@ -24617,8 +24939,14 @@ ON_SHOW.draw=()=>{
   function drawStroke(stroke){
     if(!stroke||!stroke.pts||!stroke.pts.length)return;
     ctx.save();
-    ctx.globalCompositeOperation=stroke.mode==='erase'?'destination-out':'source-over';
-    ctx.strokeStyle=stroke.color||'#000';ctx.fillStyle=stroke.color||'#000';
+    /* Eraser = paint the CURRENT background colour with normal source-over — NOT
+       'destination-out'. Old Kindle Silk WebKit ignores destination-out, so the
+       eraser was drawing solid marks instead of rubbing out. On a solid-background
+       canvas, painting the bg colour is visually identical and works everywhere. */
+    const _eraseCol=document.body.classList.contains('dark')?'#1a1a1a':'#fff';
+    ctx.globalCompositeOperation='source-over';
+    if(stroke.mode==='erase'){ctx.strokeStyle=_eraseCol;ctx.fillStyle=_eraseCol;}
+    else{ctx.strokeStyle=stroke.color||'#000';ctx.fillStyle=stroke.color||'#000';}
     ctx.lineWidth=stroke.size||3;ctx.lineCap='round';ctx.lineJoin='round';
     if(stroke.shape==='line'&&stroke.pts.length>=2){
       const p0=stroke.pts[0],p1=stroke.pts[stroke.pts.length-1];
@@ -24663,8 +24991,8 @@ ON_SHOW.draw=()=>{
     isDown=true;
     if(!ds.shape){
       ctx.save();
-      ctx.globalCompositeOperation=ds.mode==='erase'?'destination-out':'source-over';
-      ctx.strokeStyle=ds.color;ctx.lineWidth=ds.size;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.globalCompositeOperation='source-over';
+      ctx.strokeStyle=ds.mode==='erase'?(document.body.classList.contains('dark')?'#1a1a1a':'#fff'):ds.color;ctx.lineWidth=ds.size;ctx.lineCap='round';ctx.lineJoin='round';
       ctx.beginPath();ctx.moveTo(pt.x,pt.y);ctx.restore();
     }
   }
@@ -24674,8 +25002,8 @@ ON_SHOW.draw=()=>{
     cur.pts.push(pt);
     if(!ds.shape){
       ctx.save();
-      ctx.globalCompositeOperation=cur.mode==='erase'?'destination-out':'source-over';
-      ctx.strokeStyle=cur.color;ctx.lineWidth=cur.size;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.globalCompositeOperation='source-over';
+      ctx.strokeStyle=cur.mode==='erase'?(document.body.classList.contains('dark')?'#1a1a1a':'#fff'):cur.color;ctx.lineWidth=cur.size;ctx.lineCap='round';ctx.lineJoin='round';
       const prev=cur.pts[cur.pts.length-2];
       ctx.beginPath();ctx.moveTo(prev.x,prev.y);ctx.lineTo(pt.x,pt.y);ctx.stroke();ctx.restore();
     }else{redrawAll();drawStroke(cur);}
@@ -35893,7 +36221,7 @@ feedback:()=>{
       hd.appendChild(refreshBtn);
       c.appendChild(hd);
       if(!_sbActive()){
-        c.appendChild(txt('p','Set up Supabase to see usage stats.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0'}}));
+        c.appendChild(txt('p','Connect the cloud backend to see usage stats.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0'}}));
         return c;
       }
 
@@ -35915,7 +36243,9 @@ feedback:()=>{
       const s30=stat('LAST 30 DAYS','…','unique devices');
       const sLifetime=stat('LIFETIME','…','unique devices');
       const sFirstSeen=stat('TRACKED FROM','…');
-      visGrid.append(sToday,s7,s30,sLifetime,sFirstSeen);
+      const sGuestToday=stat('GUESTS TODAY','…','signed-out devices');
+      const sGuest7=stat('GUESTS 7D','…','signed-out devices');
+      visGrid.append(sToday,s7,s30,sGuestToday,sGuest7,sLifetime,sFirstSeen);
 
       /* Database stats grid */
       c.appendChild(txt('div','DATABASE',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
@@ -35974,6 +36304,10 @@ feedback:()=>{
           return false;
         }
         rows=Array.isArray(rows)?rows:[];
+        /* Slither arena beacons live in kh_presence under an 'sl_' key with a
+           JSON body in display_name — they're transient game state, not people.
+           Keep them out of the ONLINE NOW list. */
+        rows=rows.filter(r=>!String(r.user_id||'').startsWith('sl_'));
         const users=rows.filter(r=>!String(r.user_id||'').startsWith('anon-'));
         const guests=rows.length-users.length;
         const now=Date.now();
@@ -36233,15 +36567,22 @@ feedback:()=>{
           }else{throw colErr;}
         }
         const byDay={};const u7=new Set();const u30=new Set();const uToday=new Set();
+        const gToday=new Set();const g7=new Set();/* signed-out (guest) devices, from the ua_hint 'g|' flag */
         (rows30||[]).forEach(r=>{
           byDay[r.day]=(byDay[r.day]||new Set());byDay[r.day].add(r.device_id);
           if(r.day>=d30)u30.add(r.device_id);
           if(r.day>=d7)u7.add(r.device_id);
           if(r.day===today)uToday.add(r.device_id);
+          if(typeof _visitIsGuest==='function'&&_visitIsGuest(r.ua_hint)){
+            if(r.day===today)gToday.add(r.device_id);
+            if(r.day>=d7)g7.add(r.device_id);
+          }
         });
         sToday.querySelectorAll('div')[1].textContent=String(uToday.size);
         s7.querySelectorAll('div')[1].textContent=String(u7.size);
         s30.querySelectorAll('div')[1].textContent=String(u30.size);
+        sGuestToday.querySelectorAll('div')[1].textContent=String(gToday.size);
+        sGuest7.querySelectorAll('div')[1].textContent=String(g7.size);
 
         /* Lifetime unique devices + country aggregation (graceful fallback).
            Paginated so server-side max-rows doesn't clip the result.
@@ -36327,7 +36668,7 @@ feedback:()=>{
         }
         const famDevices={};
         (allDev||[]).forEach(r=>{
-          const fam=_famOf(r.ua_hint||'');
+          const fam=_famOf((typeof _visitUaClean==='function'?_visitUaClean(r.ua_hint):r.ua_hint)||'');
           if(!famDevices[fam])famDevices[fam]=new Set();
           famDevices[fam].add(r.device_id);
         });
@@ -36414,7 +36755,7 @@ feedback:()=>{
 
       /* Note about Supabase dashboard vs panel */
       const note=el('div',{style:{padding:'10px 12px',background:'var(--highlight)',borderRadius:'7px',fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',marginTop:'8px'}});
-      note.innerHTML='<b>Why these numbers may differ from Supabase\'s dashboard:</b> the panel above counts <i>unique devices per day</i> (one row per device per day in kh_visits). Supabase\'s API/Realtime dashboards show <i>raw HTTP requests</i> — every sync, every realtime poll, every read. A single user generates dozens of requests per session. Visit tracking only started when the kh_visits table was created, so visits before that aren\'t included.';
+      note.innerHTML='<b>Why these numbers may differ from your backend dashboard:</b> the panel above counts <i>unique devices per day</i> (one row per device per day in kh_visits). Backend API dashboards show <i>raw HTTP requests</i> — every sync, every poll, every read. A single user generates dozens of requests per session. Visit tracking only started when the kh_visits table was created, so visits before that aren\'t included. GUESTS = devices whose visit that day was while signed out.';
       c.appendChild(note);
       return c;
     }
@@ -37174,12 +37515,12 @@ Deno.serve(async (req)=>{
          don't hand out backend info or control to everyone. */
       var _isAdm=window._isAdminCached===true;
       if(_isAdm)errPanel.appendChild(buildCleanupCard());
-      if(_isAdm)errPanel.appendChild(buildDiagnosticsCard());
-      /* BACKEND (Supabase project) re-added for the 2nd-backend swap UI, plus
-         the weekly user-table backup control. Both admin-only. The SHARED API
-         KEY card stays unrendered (buildSharedApiCard remains defined). */
-      if(_isAdm)errPanel.appendChild(buildBackendCard());
-      if(_isAdm)errPanel.appendChild(buildUserBackupCard());
+      /* Supabase-specific admin cards REMOVED now the backend is Cloudflare D1:
+         the "SUPABASE DIAGNOSTICS" probe, the "BACKEND (Supabase project)" swap,
+         and the weekly user-table backup to a 2nd Supabase project. The builder
+         functions stay DEFINED (harmless dead code) so nothing else that may
+         reference them breaks — they're just no longer rendered in the panel.
+         Cloudflare gateways + the capacity guard live on in buildLocalInsightsCard. */
       errPanel.appendChild(buildLocalFixesCard());
       if(_isAdm)errPanel.appendChild(await buildVisitsCard());
       if(_isAdm)errPanel.appendChild(buildLocalInsightsCard());
@@ -54674,6 +55015,7 @@ window._showWelcome=function(){
 <div id="kh-cp-toolbar" style="display:none;position:fixed;z-index:600000;background:var(--card);border:var(--border);border-radius:10px;box-shadow:var(--shadow-md);padding:4px;gap:4px;flex-direction:row;align-items:center;">
   <button id="kh-cp-copy" style="padding:6px 14px;background:var(--fg);color:var(--bg);border:var(--border);border-radius:7px;font-size:12px;font-weight:700;font-family:var(--ui-font);cursor:pointer;">Copy</button>
   <button id="kh-cp-paste" style="padding:6px 14px;background:var(--card);color:var(--fg);border:var(--border);border-radius:7px;font-size:12px;font-weight:700;font-family:var(--ui-font);cursor:pointer;">Paste</button>
+  <button id="kh-cp-ai" style="display:none;padding:6px 12px;background:var(--card);color:var(--fg);border:var(--border);border-radius:7px;font-size:12px;font-weight:700;font-family:var(--ui-font);cursor:pointer;">&#10022;&nbsp;Ask AI</button>
   <button id="kh-cp-close" style="padding:6px 10px;background:none;border:none;font-size:14px;color:var(--muted);cursor:pointer;">x</button>
 </div>
 <script>
@@ -54696,6 +55038,7 @@ window._showWelcome=function(){
   const cpCopy=document.getElementById('kh-cp-copy');
   const cpPaste=document.getElementById('kh-cp-paste');
   const cpClose=document.getElementById('kh-cp-close');
+  const cpAi=document.getElementById('kh-cp-ai');
   if(!toolbar)return;
 
   let _lastTap=0;
@@ -54716,7 +55059,11 @@ window._showWelcome=function(){
 
   function showToolbar(x,y){
     toolbar.style.display='flex';
-    const tw=150,th=46;
+    /* "Ask AI" appears only when KindleHub Intelligence is on (a key + the
+       feature toggle). It acts on the selected / copied text. */
+    const aiOn=cpAi&&typeof khiEnabled==='function'&&khiEnabled();
+    if(cpAi)cpAi.style.display=aiOn?'':'none';
+    const tw=aiOn?225:150,th=46;
     let tx=Math.max(4,Math.min(window.innerWidth-tw-4,x-tw/2));
     let ty=Math.max(4,y-th-12);
     toolbar.style.left=tx+'px';
@@ -54880,12 +55227,23 @@ window._showWelcome=function(){
       _lastTapX=t.clientX;
       _lastTapY=t.clientY;
       _lastTarget=target;
-      /* Single tap elsewhere — hide toolbar */
-      if(!toolbar.contains(target)&&toolbar.style.display==='flex'){
-        setTimeout(()=>{
-          const sel=window.getSelection();
-          if(!sel||sel.isCollapsed)hideToolbar();
-        },200);
+      /* Single tap while the toolbar is open. If it landed on a text field,
+         treat that field as the paste target and KEEP the toolbar open — you
+         need it to stay so you can hit Paste WITHOUT first selecting text. The
+         old code hid the toolbar ~200ms after the selection collapsed, which is
+         exactly why it "vanished after half a second when you tried to paste".
+         Only dismiss on a tap that is neither the toolbar nor a text field. */
+      if(!toolbar.contains(target)&&toolbar.style.display!=='none'){
+        if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA')){
+          _activeInput=target;refreshToolbarState();
+        } else {
+          setTimeout(()=>{
+            const a=document.activeElement;
+            if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return;/* still in a field — keep for paste */
+            const sel=window.getSelection();
+            if(!sel||sel.isCollapsed)hideToolbar();
+          },200);
+        }
       }
     }
   },false);
@@ -54908,7 +55266,11 @@ window._showWelcome=function(){
           }
         }catch(e){}
       } else {
-        hideToolbar();
+        /* Selection collapsed. Keep the toolbar open if it's showing for a
+           focused input (paste target) so Paste stays reachable; only hide when
+           there's no paste target. */
+        if(toolbar.style.display!=='none'&&_activeInput)refreshToolbarState();
+        else hideToolbar();
       }
     },120);
   });
@@ -54988,6 +55350,45 @@ window._showWelcome=function(){
     e.stopPropagation();
     hideToolbar();
     try{window.getSelection&&window.getSelection().removeAllRanges();}catch(x){}
+  };
+
+  /* "Ask AI" — sends the selected (or copied) text to KindleHub Intelligence and
+     shows the answer in a small dismissible card. Only wired when khiEnabled(). */
+  function _khAskAI(text){
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:600001;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:16px;';
+    const card=document.createElement('div');
+    card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);max-width:460px;width:100%;max-height:80%;overflow:auto;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:var(--ui-font);';
+    const q=document.createElement('div');
+    q.style.cssText='font-size:11px;color:var(--muted);margin-bottom:8px;white-space:pre-wrap;word-break:break-word;';
+    q.textContent='Ask AI about: '+(text.length>200?text.slice(0,200)+'…':text);
+    const body=document.createElement('div');
+    body.style.cssText='font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word;min-height:40px;';
+    body.textContent='Thinking…';
+    const close=document.createElement('button');
+    close.textContent='Close';close.className='btn small';close.style.cssText='margin-top:12px;';
+    const shut=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
+    close.onclick=shut;
+    ov.onclick=function(ev){if(ev.target===ov)shut();};
+    card.appendChild(q);card.appendChild(body);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    (async function(){
+      try{
+        const prompt='You are a concise, helpful assistant. The user selected the text below. If it is a question, answer it; if it is a word/term, define it; otherwise summarise or explain it. Keep it short and clear.\n\nTEXT:\n'+text;
+        const ans=(typeof khiCall==='function')?await khiCall(prompt,{maxTokens:400,temperature:0.5}):'';
+        body.textContent=ans||'No response — check Settings → AI Features.';
+      }catch(err){body.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
+    })();
+  }
+  if(cpAi)cpAi.onclick=function(e){
+    e.stopPropagation();
+    let text='';
+    try{const sel=window.getSelection();if(sel&&!sel.isCollapsed)text=sel.toString();}catch(_){}
+    if(!text&&_activeInput){const el=_activeInput;text=(typeof el.selectionStart!=='undefined'&&el.selectionStart!==el.selectionEnd)?el.value.substring(el.selectionStart,el.selectionEnd):(el.value||'');}
+    if(!text)text=_clipboard;
+    text=(text||'').trim();
+    if(!text){if(typeof toast==='function')toast('Select or copy some text first, then Ask AI');return;}
+    hideToolbar();
+    _khAskAI(text);
   };
 
 })(); /* ── end Copy/Paste IIFE ── */

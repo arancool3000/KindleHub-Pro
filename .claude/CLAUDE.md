@@ -53,6 +53,58 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `GeometryDash` (`const GeometryDash`) is a one-button auto-runner ("Stereo Madness"): fixed hand-authored
   `LEVEL` array, canvas + flat fills, ~26fps `setInterval`; level is provably beatable (verified by a pure-
   physics sim mirror — keep them in sync if you retune `G`/`JV`/`SPD`/`LEVEL`).
+  **⚠ LEAK FIX — exitImmersive stops EVERY game**: `exitImmersive()` now calls `stop()` on the FULL list of
+  game modules (not just the running one + a 6-module subset), each guarded `try{if(g&&g.stop)g.stop()}`. A
+  game that used `setInterval`/RAF but neither set `immersiveRoot._trackStop` NOR was in the old list kept
+  ticking after you left it — every launch stacked another live loop → site got slower → Silk crashed. NB:
+  `CandyCrush` is `window.CandyCrush` (lazy), so it's referenced as `window.CandyCrush` in that array (a bare
+  ref throws ReferenceError before first launch and would abort the whole sweep). Every game's `stop()` must be
+  a safe no-op when not running (guard its own timer/RAF handle).
+  **Slither** (`const Slither`) is a slither.io-style **hybrid arena**: cheap-but-smart AI (chase food, but
+  look-ahead `blockedAt()` veer so bots don't ram walls/snakes; light hunt/flee) + an **online overlay** — each
+  player publishes a ~1.8s beacon (pos/angle/len/sparse-path/username) as a `kh_presence` row keyed `sl_<id>`
+  with the beacon JSON packed into `display_name` (NO schema/worker change; `user_id=like.sl_*` + `last_seen`
+  TTL to read peers). Real online players replace AI slots (`reconcileBots`, `TARGET_OPP`) and show their REAL
+  username (◆); degrades to pure-AI when offline/no backend (`_netOk`). Snakes **spawn with a pre-built body at
+  length 5** (`buildBody`, no growing-from-head); **New Game** = `reset()` (clears the `.kh-sl-gameover` msg +
+  restarts both timers — the old handler left the game-over text up and never restarted the loop = "infinite
+  game over"). `_pub` flag gates the dead-beacon on stop so the global exit-sweep can't emit a spurious beacon.
+  Filter `sl_` rows out of any kh_presence DISPLAY (done in the admin "ONLINE NOW" list).
+- **Copy/Paste toolbar** (`#kh-cp-toolbar` + its IIFE): now STICKY — tapping an input sets it as the
+  paste target and KEEPS the toolbar open (a collapsed selection no longer auto-hides it while an input is
+  focused), so you can paste WITHOUT first selecting text. Fixes "menu vanishes after 0.5s when pasting" +
+  "needs to highlight to paste". Adds an **Ask AI** button (`#kh-cp-ai`, shown only when `khiEnabled()`) →
+  `_khAskAI(text)` overlay calling `khiCall`.
+- **Silk `navigator.onLine` fix**: `_khSubmitScore`/`_khFetchScores`/`_logVisit` used `!navigator.onLine`,
+  which is `undefined`→truthy on Kindle Silk → scores never submitted/shown and visits never logged. All now
+  use `navigator.onLine===false` (the lenient pattern Slither/cloud-sync already use). This was "global
+  leaderboard shows nothing on Kindle".
+- **Guest visitor stats**: `_logVisit` packs a `g|`/`u|` (guest/signed-in) flag into `kh_visits.ua_hint`
+  (NO schema change); `_visitUaClean`/`_visitIsGuest` read/strip it; the admin USAGE STATS card shows
+  GUESTS TODAY / 7D. Strip the flag wherever ua_hint is shown (`_famOf` device-family).
+- **Admin Supabase cards removed**: `buildDiagnosticsCard`/`buildBackendCard`/`buildUserBackupCard` are no
+  longer appended in the admin panel (functions kept as dead code). Cloudflare gateways + capacity guard stay
+  in `buildLocalInsightsCard`.
+- **KindleOS custom-app back = FOOTER**: the `#kd-customapp` iframe overlay now has its own footer back bar
+  (`_cbar`) inside the overlay; the top-left `kdBackFab` is kept HIDDEN for custom apps (was "button in the
+  header"). **App Share/Import** (`_khAppShareDialog('export'|'import')`): export packs an app into a
+  `KHAPP1:`+base64 code; import decodes it and `customApps.push`+`persistOS`+`buildPages` → installs straight
+  onto the home grid. Per-app **Share** button + an **Import** button by the Installed Apps title.
+- **Keyboard quick-toggle in Control Center** (`ccTileSpecs`, a `cycle` tile over `S.kindleKeyboardMode` →
+  `_khKeyboard.refresh()`): the Settings → App Settings → "KindleHub Keyboard" card already exists but is hard
+  to find from the launcher, so the same config is surfaced in the CC.
+- **Offline AI** (`offlineAI`): added identity/small-talk/fact/joke/advice handlers, year-awareness via
+  `NOW()`, and a question-aware fallback (was a flat "add a key" blurb).
+- **Worker schema self-bootstrap** (`api-worker.js` `ensureSchema`/`SCHEMA_DDL`): the Worker now runs all
+  `CREATE TABLE/INDEX IF NOT EXISTS` once per isolate (guarded by `_schemaReady`) before handling a request,
+  so the D1 backend works the moment the Worker is deployed + a DB is bound — no separate "run schema-d1.sql"
+  step. This was the `D1_ERROR: no such table` flood (schema never applied). `SCHEMA_DDL` is kept in sync with
+  `schema-d1.sql` (still the canonical copy). Tested via the node:sqlite shim (worker_test.mjs). The user must
+  REDEPLOY the worker for it to self-heal (or run schema-d1.sql once in the D1 console).
+- **Draw eraser** (`BUILDERS.draw` `drawStroke`/`startStroke`/`addPoint`): the eraser now PAINTS the current
+  background colour (`#fff`/`#1a1a1a`) with `source-over`, NOT `globalCompositeOperation='destination-out'` —
+  old Kindle Silk WebKit ignores destination-out, so the eraser drew solid marks. Painting the bg colour is
+  visually identical on the solid-background canvas and works on every engine.
 - **KindleOS launcher**: `launchKindleDesktop()`, `openApp(app)` (built-in nav OR `customHTML` iframe overlay
   `#kd-customapp`), `closeApp()`. Custom AI-built apps in `osState.customApps`. KindleOS has its OWN tour
   (`startKindleOSTour`); the App-mode guided tour (`_showTutorial`) is suppressed while KindleOS is mounted.
