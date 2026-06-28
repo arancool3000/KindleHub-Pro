@@ -44308,6 +44308,10 @@ files:()=>{
       if(openFolder===fi){
         const list=el('div',{style:{padding:'0 0 8px'}});
         const knownNames=Object.fromEntries((f.keys||[]).map(([k,desc])=>[k,desc]));
+        /* App-critical storage that must never be deleted (deleting it would
+           brick or sign out the app). These are shown LOCKED — a 🔒 marker and
+           NO delete button (previously the delete button showed but disabled). */
+        const PROTECTED=new Set(['kindlehub_v5','kh_device_id']);
         keys.forEach(k=>{
           const raw=localStorage.getItem(k)||'';
           const sz=(raw.length+k.length);
@@ -44316,7 +44320,7 @@ files:()=>{
           const headRow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 14px',cursor:'pointer',background:expanded?'var(--card)':'transparent'}});
           const left=el('div',{style:{flex:'1',minWidth:'0'}});
           const nameEl=el('div',{style:{fontFamily:'monospace',fontSize:'11px',fontWeight:'700',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}});
-          nameEl.textContent=k;
+          nameEl.textContent=(PROTECTED.has(k)?'🔒 ':'')+k;
           left.appendChild(nameEl);
           if(knownNames[k])left.appendChild(txt('div',knownNames[k],{style:{fontSize:'10px',color:'var(--muted)',marginTop:'1px',lineHeight:'1.3'}}));
           headRow.appendChild(left);
@@ -44334,19 +44338,19 @@ files:()=>{
             detail.appendChild(pre);
             /* Action row */
             const actions=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
-            /* Protected keys can't be deleted from here — they'd brick the app */
-            const PROTECTED=new Set(['kindlehub_v5','kh_device_id']);
-            const delBtn=txt('button','Delete',{className:'btn small danger'});
-            if(PROTECTED.has(k))delBtn.disabled=true;
-            delBtn.onclick=()=>{
-              if(PROTECTED.has(k)){toast('Protected — would break the app');return;}
-              kindleConfirm('Permanently delete "'+k+'"? This can\'t be undone.',ok=>{
-                if(!ok)return;
-                try{localStorage.removeItem(k);}catch(e){toast('Delete failed: '+e.message);return;}
-                toast('Deleted '+k);openKey=null;render();
-              });
-            };
-            actions.appendChild(delBtn);
+            /* Locked (protected) files get NO delete button at all — deleting
+               them would brick or sign out the app. Non-locked files keep it. */
+            if(!PROTECTED.has(k)){
+              const delBtn=txt('button','Delete',{className:'btn small danger'});
+              delBtn.onclick=()=>{
+                kindleConfirm('Permanently delete "'+k+'"? This can\'t be undone.',ok=>{
+                  if(!ok)return;
+                  try{localStorage.removeItem(k);}catch(e){toast('Delete failed: '+e.message);return;}
+                  toast('Deleted '+k);openKey=null;render();
+                });
+              };
+              actions.appendChild(delBtn);
+            }
             const copyBtn=txt('button','Copy raw',{className:'btn small'});
             copyBtn.onclick=()=>{
               try{navigator.clipboard.writeText(raw).then(()=>toast('Copied to clipboard'),()=>toast('Copy failed'));}
@@ -44354,7 +44358,7 @@ files:()=>{
             };
             actions.appendChild(copyBtn);
             if(PROTECTED.has(k)){
-              actions.appendChild(txt('div','Protected — deleting this would corrupt the app',{style:{fontSize:'10px',color:'var(--muted)',fontStyle:'italic',padding:'4px 8px'}}));
+              actions.appendChild(txt('span','🔒 Locked — protected system file, can\'t be deleted',{style:{fontSize:'10px',color:'var(--muted)',fontStyle:'italic',padding:'6px 8px',display:'inline-flex',alignItems:'center'}}));
             }
             detail.appendChild(actions);
             row.appendChild(detail);

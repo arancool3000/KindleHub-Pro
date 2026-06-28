@@ -105,6 +105,10 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   background colour (`#fff`/`#1a1a1a`) with `source-over`, NOT `globalCompositeOperation='destination-out'` —
   old Kindle Silk WebKit ignores destination-out, so the eraser drew solid marks. Painting the bg colour is
   visually identical on the solid-background canvas and works on every engine.
+- **Files app (`BUILDERS.files`, a localStorage browser)**: PROTECTED keys (`kindlehub_v5`, `kh_device_id`)
+  are shown LOCKED — a 🔒 prefix on the row and NO Delete button (was a disabled-but-visible button). The
+  `PROTECTED` set is defined once per folder render and used both for the row marker and to gate the Delete
+  button; normal files keep Delete + Copy.
 - **KindleOS launcher**: `launchKindleDesktop()`, `openApp(app)` (built-in nav OR `customHTML` iframe overlay
   `#kd-customapp`), `closeApp()`. Custom AI-built apps in `osState.customApps`. KindleOS has its OWN tour
   (`startKindleOSTour`); the App-mode guided tour (`_showTutorial`) is suppressed while KindleOS is mounted.
