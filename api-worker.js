@@ -53,6 +53,14 @@
    workers.dev) into KindleHub → Admin → Local Insights → "API gateway (Cloudflare
    D1)". Leave BLANK to keep using Supabase exactly as before.
 
+   ENV VARS (Worker → Settings → Variables and Secrets)
+   • GEMINI_KEY  — (optional) a Google AI Studio key. Set this and the Worker also
+     hosts the shared-key AI proxy at /functions/v1/kh-gemini-proxy (ported off the
+     Supabase Edge Function), so the WHOLE backend is Cloudflare — no Edge Function
+     needed. The key never reaches the client.
+   • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
+   • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
+
    SECURITY (mirrors the Supabase RLS model it replaces)
    • Reads + most inserts are open — same as the public anon key + permissive
      RLS. The data that matters is end-to-end encrypted on the device first.
@@ -103,7 +111,7 @@ function cors(env){
     'Access-Control-Allow-Origin': (env && env.ALLOW_ORIGIN) || '*',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'apikey, authorization, content-type, prefer, x-kh-secret, x-kh-admin, range, range-unit, accept',
-    'Access-Control-Expose-Headers': 'Content-Range',  // so _sbCount can read the total cross-origin
+    'Access-Control-Expose-Headers': 'Content-Range, x-kh-count, x-kh-cap',  // _sbCount total + shared-AI cap headers
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -210,7 +218,7 @@ function whereSql(table, filters){
 async function applyCaps(DB, table, row){
   try{
     if(table==='kh_messages' && row && row.group_code){
-      await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT 50)').bind(row.group_code,row.group_code).run();
+      await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT 30)').bind(row.group_code,row.group_code).run();
     } else if(table==='kh_mail' && row && row.to_user){
       await DB.prepare('DELETE FROM kh_mail WHERE to_user=? AND id NOT IN (SELECT id FROM kh_mail WHERE to_user=? ORDER BY ts DESC LIMIT 60)').bind(row.to_user,row.to_user).run();
     } else if(table==='kh_scores' && row && row.game){
@@ -462,6 +470,39 @@ async function ensureSchema(DB){
   catch(_){ /* leave _schemaReady=false so the next request retries */ }
 }
 
+/* ── Shared-key Gemini proxy (ported from the Supabase Edge Function) ─────────
+   Same contract the client already speaks: POST {model, payload}. Holds the key
+   in env.GEMINI_KEY, enforces a first-come/first-served daily cap via the same
+   kh_shared_api_usage counter, and streams Gemini's SSE back. Env vars on the
+   Worker: GEMINI_KEY (required), DAILY_CAP (optional, default 3580). */
+const PROXY_MODELS = new Set([
+  'gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash',
+  'gemini-3-flash','gemini-3.5-flash','gemma-4-26b-it','gemma-4-31b-it',
+]);
+async function handleGeminiProxy(request, env, DB){
+  if(request.method!=='POST') return err('method not allowed',405,env);
+  const KEY = env && env.GEMINI_KEY;
+  if(!KEY) return json({error:'GEMINI_KEY not set on this Worker.'},500,env);
+  let body; try{ body = await request.json(); }catch(_){ return json({error:'Bad JSON'},400,env); }
+  const model = body && body.model;
+  if(!model || !PROXY_MODELS.has(model)) return json({error:'Model not allowed',code:'BAD_MODEL'},400,env);
+  const cap = parseInt((env && env.DAILY_CAP)||'',10) || 3580;
+  const today = nowIso().slice(0,10);
+  let newCount=0, capActive=false;
+  try{
+    await DB.prepare('INSERT INTO kh_shared_api_usage(date,count) VALUES(?,1) ON CONFLICT(date) DO UPDATE SET count=count+1').bind(today).run();
+    const r = await DB.prepare('SELECT count FROM kh_shared_api_usage WHERE date=?').bind(today).first();
+    newCount = (r&&r.count)||0; capActive=true;
+  }catch(_){ /* counter unavailable — serve without the cap */ }
+  if(capActive && newCount>cap){
+    return json({error:'Shared key tapped out today ('+newCount+'/'+cap+'). Resets midnight UTC, or add your own Gemini key.',code:'CAP_REACHED',count:newCount,cap:cap},429,env);
+  }
+  const up = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':streamGenerateContent?alt=sse&key='+KEY,{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify((body&&body.payload)||{}),
+  });
+  return new Response(up.body, {status:up.status, headers:Object.assign({}, cors(env), {'Content-Type':'text/event-stream','x-kh-count':String(newCount),'x-kh-cap':String(cap)})});
+}
+
 export default {
   async fetch(request, env){
     if(request.method==='OPTIONS') return new Response(null,{status:204,headers:cors(env)});
@@ -470,6 +511,13 @@ export default {
     await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
+
+    /* Shared-key AI proxy — ports the kh-gemini-proxy Supabase Edge Function onto
+       this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */
+    if(url.pathname==='/functions/v1/kh-gemini-proxy'){
+      try{ return await handleGeminiProxy(request, env, DB); }
+      catch(e){ return json({error:String((e&&e.message)||e).slice(0,160)},500,env); }
+    }
 
     const m = url.pathname.match(/^\/rest\/v1\/(rpc\/)?([A-Za-z0-9_]+)\/?$/);
     if(!m) return err('not found: '+url.pathname, 404, env);

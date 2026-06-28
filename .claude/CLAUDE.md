@@ -113,6 +113,22 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   are shown LOCKED — a 🔒 prefix on the row and NO Delete button (was a disabled-but-visible button). The
   `PROTECTED` set is defined once per folder render and used both for the row marker and to gate the Delete
   button; normal files keep Delete + Copy.
+- **Migration admin-bypass** (`api-worker.js` `handlePost`): an `X-KH-Admin` token (SHA-256 ∈ ADMIN_HASHES,
+  same as the RPCs) lets the bulk-copy insert otherwise-gated tables (announcements, bans) AND skip the
+  per-group/feedback rate limits. `_migrateToCloudflare` sends it + retries 429 with backoff. This fixed the
+  migration's `messages 429` / `announcements 403` / `bans 403`. Needs the worker REDEPLOYED + the app
+  redeployed (the client must send the header).
+- **Shared-key AI proxy ported to Cloudflare** (`api-worker.js` `handleGeminiProxy` + `PROXY_MODELS`, route
+  `/functions/v1/kh-gemini-proxy`): same `{model,payload}` contract as the old Supabase Edge Function, daily
+  cap via the kh_shared_api_usage counter, streams Gemini SSE back. Key in the Worker's `GEMINI_KEY` env
+  (optional `DAILY_CAP`). Client `sharedKeyProxyUrl()` now uses `_sbBase()` so it routes to the gateway when
+  set (else Supabase). This is the LAST piece needed to run fully on Cloudflare.
+- **Chat message cap = 30/group** (worker `applyCaps`, was 50) + **device message cache & self-heal**:
+  `_groupLookup` caches the latest 30 RAW (still-encrypted) rows per room to `localStorage['kh_mc_<code>']`
+  (device-local, NOT in S). `_recoverGroupMessages(code)` re-uploads them (idempotent upsert by id) ONLY when
+  `_groupLatestId(code)==='__empty__'`; `loadMessages` calls it once/group/session when a room loads empty —
+  so a server-wiped room rebuilds from whoever still holds a local copy. NB: chat messages are otherwise NOT
+  persisted locally (only `S.msgGroups` metadata); the live `_messages` array is session-only.
 - **KindleOS launcher**: `launchKindleDesktop()`, `openApp(app)` (built-in nav OR `customHTML` iframe overlay
   `#kd-customapp`), `closeApp()`. Custom AI-built apps in `osState.customApps`. KindleOS has its OWN tour
   (`startKindleOSTour`); the App-mode guided tour (`_showTutorial`) is suppressed while KindleOS is mounted.

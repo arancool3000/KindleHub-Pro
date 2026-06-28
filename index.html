@@ -9612,6 +9612,15 @@ async function _groupLookup(code){
         reactions:(r.reactions&&typeof r.reactions==='object')?r.reactions:{},
         pinned:!!r.pinned
       })));
+      /* Cache the latest 30 RAW (still-encrypted) rows on THIS device, so a room
+         that gets wiped on the server can be rebuilt from whoever still holds a
+         local copy (see _recoverGroupMessages). Device-local, NOT synced into S
+         (keeps the state blob small); cipher kept as-is so re-upload needs no
+         re-encryption. */
+      try{
+        const _mc=raw.slice(-30).map(function(r){return {id:r.id,user_id:r.user_id||'',display_name:r.display_name||'',text:r.text,ts:r.ts,reply_to:r.reply_to||null,edited:r.edited?1:0,important:r.important?1:0};});
+        if(_mc.length)localStorage.setItem('kh_mc_'+code,JSON.stringify(_mc));
+      }catch(_){}
       return{name:g.name,creator:g.creator||'',createdAt:g.created_at||'',messages};
     }catch(e){console.warn('SB group lookup failed',e);return null;}
   }
@@ -9704,6 +9713,28 @@ async function _groupLatestId(code){
     }
   }catch(_){}
   return null;
+}
+/* Rebuild an EMPTY cloud room from THIS device's local cache (kh_mc_<code>, written
+   by _groupLookup). If the room is empty on the server but we still hold cached
+   (already-encrypted) rows, push them back — idempotent upsert by id, server cap
+   keeps the latest 30. Across users, a wiped room self-heals from whoever still has
+   a copy. Best-effort; the caller throttles it. */
+async function _recoverGroupMessages(code){
+  try{
+    if(typeof _sbActive!=='function'||!_sbActive()||navigator.onLine===false)return 0;
+    let cached=null;try{cached=JSON.parse(localStorage.getItem('kh_mc_'+code)||'null');}catch(_){}
+    if(!Array.isArray(cached)||!cached.length)return 0;
+    const latest=await _groupLatestId(code);
+    if(latest!=='__empty__')return 0;/* only rebuild rooms that are genuinely empty */
+    let n=0;
+    for(const row of cached){
+      try{
+        await _sbInsert('kh_messages',{id:row.id,group_code:code,user_id:row.user_id||'',display_name:row.display_name||'',text:row.text,ts:row.ts,reply_to:row.reply_to||null,edited:!!row.edited,important:!!row.important});
+        n++;
+      }catch(_){/* rate-limited or duplicate — fine, another device/next load fills the gap */}
+    }
+    return n;
+  }catch(_){return 0;}
 }
 async function _groupFetchMessages(code){
   const looked=await _groupLookup(code);
@@ -23047,8 +23078,13 @@ async function callOpenRouterStream(messages, onChunk){
    Override via the DAILY_CAP env on the Edge Function. */
 const SHARED_KEY_DAILY_CAP=500+4*20+2*1500;/* 3580 — sum of every free model's daily quota: flash-lite 500 + 4 flash @20 + 2 Gemma @1500 */
 function sharedKeyProxyUrl(){
-  if(typeof SUPABASE_URL!=='string'||!SUPABASE_URL)return null;
-  return SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/kh-gemini-proxy';
+  /* Route to the Cloudflare API gateway when one is set — its Worker now hosts the
+     SAME /functions/v1/kh-gemini-proxy endpoint (ported off the Supabase Edge
+     Function), so the whole backend can be Cloudflare. Falls back to Supabase when
+     no gateway is configured. */
+  const base=((typeof _sbBase==='function'?_sbBase():SUPABASE_URL)||'');
+  if(!base)return null;
+  return base.replace(/\/$/,'')+'/functions/v1/kh-gemini-proxy';
 }
 /* Reads today\'s global usage from the counter table. Returns
    {used, cap, remaining} or null on any error so the caller can
@@ -51939,6 +51975,19 @@ messages:()=>{
     async function loadMessages(){
       try{
         _messages=await _groupFetchMessages(g.code);
+        /* Self-heal: if the room came back EMPTY but this device cached its last
+           messages, push them back and re-fetch (once per group per session) — so a
+           room wiped on the server rebuilds from whoever still holds a local copy. */
+        if(!_messages||!_messages.length){
+          try{
+            window._khRecoverTried=window._khRecoverTried||{};
+            if(!window._khRecoverTried[g.code]){
+              window._khRecoverTried[g.code]=1;
+              const _rn=await _recoverGroupMessages(g.code);
+              if(_rn>0)_messages=await _groupFetchMessages(g.code);
+            }
+          }catch(_){}
+        }
         try{_khClearGroupUnread(g.code);}catch(_){}
         /* Mark everything we just loaded as seen so the notifier won't re-toast
            messages the user is reading right now. */
