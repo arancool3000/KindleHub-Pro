@@ -37845,7 +37845,7 @@ Deno.serve(async (req)=>{
   async function _setItemStatus(id,status){
     if(!_sbActive()){toast('Status changes require the cloud backend');return false;}
     if(_schemaHasStatus===false){
-      toast('Your Supabase deployment doesn\'t have the status column on kh_feedback. Re-run the schema SQL (Admin → Diagnostics) to add it.',6500);
+      toast('This backend\'s kh_feedback has no status column. Switch to the Cloudflare gateway (its schema has it) or re-run the schema SQL.',6500);
       return false;
     }
     try{
@@ -37859,10 +37859,15 @@ Deno.serve(async (req)=>{
       const it=items.find(x=>x.id===id);if(it){it.status=status;it.status_at=_resolved?new Date().toISOString():null;}
       return true;
     }catch(e){
-      console.error('[Status change failed]',e);
       if(_isMissingColumnError(e,'status')){
-        toast('Run the schema SQL (status column missing on kh_feedback)',6000);
+        /* Stop retrying this doomed update for the session, and DON'T console.error
+           — that would cascade through the global hook into a kh_errors upload (which
+           itself RLS-fails on a drifted Supabase, spamming the console). The Cloudflare
+           D1 backend has the column, so switching the gateway fixes it for good. */
+        _schemaHasStatus=false;
+        toast('This backend\'s kh_feedback has no status column. Switch to the Cloudflare gateway (its schema has it) or re-run the schema SQL.',6500);
       } else {
+        console.warn('[Status change failed]',e&&e.message);/* warn, not error → no bug-report cascade */
         toast('Status update failed: '+String(e&&e.message||e).slice(0,140),6000);
       }
       return false;
