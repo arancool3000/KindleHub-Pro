@@ -95,6 +95,16 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   to find from the launcher, so the same config is surfaced in the CC.
 - **Offline AI** (`offlineAI`): added identity/small-talk/fact/joke/advice handlers, year-awareness via
   `NOW()`, and a question-aware fallback (was a flat "add a key" blurb).
+- **Worker schema self-bootstrap** (`api-worker.js` `ensureSchema`/`SCHEMA_DDL`): the Worker now runs all
+  `CREATE TABLE/INDEX IF NOT EXISTS` once per isolate (guarded by `_schemaReady`) before handling a request,
+  so the D1 backend works the moment the Worker is deployed + a DB is bound — no separate "run schema-d1.sql"
+  step. This was the `D1_ERROR: no such table` flood (schema never applied). `SCHEMA_DDL` is kept in sync with
+  `schema-d1.sql` (still the canonical copy). Tested via the node:sqlite shim (worker_test.mjs). The user must
+  REDEPLOY the worker for it to self-heal (or run schema-d1.sql once in the D1 console).
+- **Draw eraser** (`BUILDERS.draw` `drawStroke`/`startStroke`/`addPoint`): the eraser now PAINTS the current
+  background colour (`#fff`/`#1a1a1a`) with `source-over`, NOT `globalCompositeOperation='destination-out'` —
+  old Kindle Silk WebKit ignores destination-out, so the eraser drew solid marks. Painting the bg colour is
+  visually identical on the solid-background canvas and works on every engine.
 - **KindleOS launcher**: `launchKindleDesktop()`, `openApp(app)` (built-in nav OR `customHTML` iframe overlay
   `#kd-customapp`), `closeApp()`. Custom AI-built apps in `osState.customApps`. KindleOS has its OWN tour
   (`startKindleOSTour`); the App-mode guided tour (`_showTutorial`) is suppressed while KindleOS is mounted.

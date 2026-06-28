@@ -397,11 +397,49 @@ async function handleDelete(table, url, request, env, DB){
   return new Response(null,{status:204,headers:cors(env)});
 }
 
+/* ── Schema self-bootstrap ───────────────────────────────────────────────────
+   Creates every table/index on first use so the backend works the moment the
+   Worker is deployed + a D1 database is bound — no separate "run schema-d1.sql"
+   step. All statements are CREATE … IF NOT EXISTS (idempotent), so it's a safe
+   no-op once the tables exist. Kept in sync with schema-d1.sql (still the canonical
+   copy for manual/wrangler setup). Runs once per isolate (guarded by _schemaReady);
+   on failure the flag stays false so the next request retries. This is the fix for
+   the "D1_ERROR: no such table" flood when the schema was never applied. */
+const SCHEMA_DDL = [
+  "CREATE TABLE IF NOT EXISTS kh_users (hash TEXT PRIMARY KEY, email TEXT NOT NULL, state TEXT, updated_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_groups (code TEXT PRIMARY KEY, name TEXT NOT NULL, creator TEXT DEFAULT '', created_at TEXT, updated_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_messages (id TEXT PRIMARY KEY, group_code TEXT NOT NULL, user_id TEXT DEFAULT '', display_name TEXT DEFAULT '', text TEXT NOT NULL, ts TEXT, reply_to TEXT, edited INTEGER DEFAULT 0, important INTEGER DEFAULT 0, pinned INTEGER DEFAULT 0, reactions TEXT DEFAULT '{}', device_hint TEXT DEFAULT '', location_hint TEXT DEFAULT '', owner_secret TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_messages_group_ts ON kh_messages(group_code, ts)",
+  "CREATE TABLE IF NOT EXISTS kh_mail (id TEXT PRIMARY KEY, to_user TEXT NOT NULL, from_user TEXT DEFAULT '', from_id TEXT DEFAULT '', subject TEXT DEFAULT '', body TEXT DEFAULT '', ts TEXT, reply_to TEXT DEFAULT '', owner_secret TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_mail_to_ts ON kh_mail(to_user, ts)",
+  "CREATE INDEX IF NOT EXISTS kh_mail_from_ts ON kh_mail(from_id, ts)",
+  "CREATE TABLE IF NOT EXISTS kh_feedback (id TEXT PRIMARY KEY, type TEXT NOT NULL, text TEXT NOT NULL, votes INTEGER DEFAULT 0, status TEXT DEFAULT 'open', author TEXT DEFAULT '', comments TEXT DEFAULT '[]', status_at TEXT, date TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_errors (id TEXT PRIMARY KEY, text TEXT NOT NULL, kind TEXT DEFAULT 'error', date TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_scores (id TEXT PRIMARY KEY, game TEXT NOT NULL, score INTEGER NOT NULL, display_name TEXT DEFAULT '', user_id TEXT DEFAULT '', date TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_scores_game_score ON kh_scores(game, score DESC)",
+  "CREATE TABLE IF NOT EXISTS kh_announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, active INTEGER DEFAULT 1, targets TEXT DEFAULT '[]', created_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_presence (user_id TEXT PRIMARY KEY, display_name TEXT DEFAULT '', last_seen TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC)",
+  "CREATE TABLE IF NOT EXISTS kh_shared_api_usage (date TEXT PRIMARY KEY, count INTEGER DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS kh_banned_usernames (name TEXT PRIMARY KEY, reason TEXT DEFAULT '', created_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_visits (device_id TEXT NOT NULL, day TEXT NOT NULL, last_seen TEXT, ua_hint TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '', PRIMARY KEY (device_id, day))",
+  "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
+];
+let _schemaReady = false;
+async function ensureSchema(DB){
+  if(_schemaReady) return;
+  try{ await DB.batch(SCHEMA_DDL.map(s=>DB.prepare(s))); _schemaReady=true; return; }
+  catch(_){ /* some D1 versions reject DDL inside batch() — fall back to sequential */ }
+  try{ for(const s of SCHEMA_DDL){ await DB.prepare(s).run(); } _schemaReady=true; }
+  catch(_){ /* leave _schemaReady=false so the next request retries */ }
+}
+
 export default {
   async fetch(request, env){
     if(request.method==='OPTIONS') return new Response(null,{status:204,headers:cors(env)});
     const DB = env && env.DB;
     if(!DB) return err('DB binding missing — see setup step 3', 500, env);
+    await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
 
