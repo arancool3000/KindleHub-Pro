@@ -6392,8 +6392,11 @@ async function _migrateToCloudflare(onProgress){
   const TABLES=[
     {t:'kh_users',pk:'hash',page:50},          /* the big state blobs */
     {t:'kh_groups',pk:'code',page:500},
-    {t:'kh_messages',pk:'id',page:400},
-    {t:'kh_mail',pk:'id',page:300},
+    /* Messages/mail: read NEWEST-FIRST and stop after `max`. The Worker keeps only
+       the latest 30 per group anyway, so paging through (potentially a million) old
+       messages is pure wasted egress — we just pull the recent ones the cap keeps. */
+    {t:'kh_messages',pk:'id',page:200,order:'ts.desc',max:3000},
+    {t:'kh_mail',pk:'id',page:200,order:'ts.desc',max:2000},
     {t:'kh_scores',pk:'id',page:500},
     {t:'kh_announcements',pk:'id',page:500},
     {t:'kh_presence',pk:'user_id',page:500},
@@ -6406,7 +6409,7 @@ async function _migrateToCloudflare(onProgress){
     let copied=0,offset=0,err=null;
     try{
       for(;;){
-        const rurl=sb+'/rest/v1/'+c.t+'?select=*&limit='+c.page+'&offset='+offset;
+        const rurl=sb+'/rest/v1/'+c.t+'?select=*&limit='+c.page+(c.order?'&order='+c.order:'')+'&offset='+offset;
         const rr=await fetch(rurl,{headers:_sbHeaders()});
         if(!rr.ok){ if(rr.status===404){break;} err='read HTTP '+rr.status; break; }
         const rows=await rr.json();
@@ -6428,6 +6431,7 @@ async function _migrateToCloudflare(onProgress){
         copied+=rows.length; out.total+=rows.length;
         if(typeof onProgress==='function')onProgress(c.t,copied,out.total);
         if(rows.length<c.page)break;
+        if(c.max&&copied>=c.max)break;/* enough recent rows — don't pull the long tail */
         offset+=c.page;
       }
     }catch(e){err=String((e&&e.message)||e).slice(0,120);}
