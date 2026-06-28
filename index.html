@@ -16931,7 +16931,7 @@ const Slither=(()=>{
   function start(){
     enterImmersive('Slither','');immersiveContent.innerHTML='';
     cv=document.createElement('canvas');cv.width=VW;cv.height=VH;
-    cv.style.cssText='display:block;max-width:100%;width:100%;border:2px solid var(--fg);touch-action:none;border-radius:8px;background:var(--bg);';
+    cv.style.cssText='display:block;width:100%;max-width:420px;margin:8px auto;border:2px solid var(--fg);touch-action:none;border-radius:8px;background:var(--bg);';
     immersiveContent.appendChild(cv);ctx=cv.getContext('2d');init();
     function aim(cx,cy){const rect=cv.getBoundingClientRect();const mx=(cx-rect.left)*(VW/rect.width),my=(cy-rect.top)*(VH/rect.height);if(me())me().target=Math.atan2(my-VH/2,mx-VW/2);}
     cv.addEventListener('touchmove',e=>{if(e.touches[0]){aim(e.touches[0].clientX,e.touches[0].clientY);e.preventDefault();}},{passive:false});
