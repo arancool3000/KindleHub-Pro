@@ -70,6 +70,31 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   restarts both timers — the old handler left the game-over text up and never restarted the loop = "infinite
   game over"). `_pub` flag gates the dead-beacon on stop so the global exit-sweep can't emit a spurious beacon.
   Filter `sl_` rows out of any kh_presence DISPLAY (done in the admin "ONLINE NOW" list).
+- **Copy/Paste toolbar** (`#kh-cp-toolbar` + its IIFE): now STICKY — tapping an input sets it as the
+  paste target and KEEPS the toolbar open (a collapsed selection no longer auto-hides it while an input is
+  focused), so you can paste WITHOUT first selecting text. Fixes "menu vanishes after 0.5s when pasting" +
+  "needs to highlight to paste". Adds an **Ask AI** button (`#kh-cp-ai`, shown only when `khiEnabled()`) →
+  `_khAskAI(text)` overlay calling `khiCall`.
+- **Silk `navigator.onLine` fix**: `_khSubmitScore`/`_khFetchScores`/`_logVisit` used `!navigator.onLine`,
+  which is `undefined`→truthy on Kindle Silk → scores never submitted/shown and visits never logged. All now
+  use `navigator.onLine===false` (the lenient pattern Slither/cloud-sync already use). This was "global
+  leaderboard shows nothing on Kindle".
+- **Guest visitor stats**: `_logVisit` packs a `g|`/`u|` (guest/signed-in) flag into `kh_visits.ua_hint`
+  (NO schema change); `_visitUaClean`/`_visitIsGuest` read/strip it; the admin USAGE STATS card shows
+  GUESTS TODAY / 7D. Strip the flag wherever ua_hint is shown (`_famOf` device-family).
+- **Admin Supabase cards removed**: `buildDiagnosticsCard`/`buildBackendCard`/`buildUserBackupCard` are no
+  longer appended in the admin panel (functions kept as dead code). Cloudflare gateways + capacity guard stay
+  in `buildLocalInsightsCard`.
+- **KindleOS custom-app back = FOOTER**: the `#kd-customapp` iframe overlay now has its own footer back bar
+  (`_cbar`) inside the overlay; the top-left `kdBackFab` is kept HIDDEN for custom apps (was "button in the
+  header"). **App Share/Import** (`_khAppShareDialog('export'|'import')`): export packs an app into a
+  `KHAPP1:`+base64 code; import decodes it and `customApps.push`+`persistOS`+`buildPages` → installs straight
+  onto the home grid. Per-app **Share** button + an **Import** button by the Installed Apps title.
+- **Keyboard quick-toggle in Control Center** (`ccTileSpecs`, a `cycle` tile over `S.kindleKeyboardMode` →
+  `_khKeyboard.refresh()`): the Settings → App Settings → "KindleHub Keyboard" card already exists but is hard
+  to find from the launcher, so the same config is surfaced in the CC.
+- **Offline AI** (`offlineAI`): added identity/small-talk/fact/joke/advice handlers, year-awareness via
+  `NOW()`, and a question-aware fallback (was a flat "add a key" blurb).
 - **KindleOS launcher**: `launchKindleDesktop()`, `openApp(app)` (built-in nav OR `customHTML` iframe overlay
   `#kd-customapp`), `closeApp()`. Custom AI-built apps in `osState.customApps`. KindleOS has its OWN tour
   (`startKindleOSTour`); the App-mode guided tour (`_showTutorial`) is suppressed while KindleOS is mounted.
