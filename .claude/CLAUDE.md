@@ -53,6 +53,23 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `GeometryDash` (`const GeometryDash`) is a one-button auto-runner ("Stereo Madness"): fixed hand-authored
   `LEVEL` array, canvas + flat fills, ~26fps `setInterval`; level is provably beatable (verified by a pure-
   physics sim mirror — keep them in sync if you retune `G`/`JV`/`SPD`/`LEVEL`).
+  **⚠ LEAK FIX — exitImmersive stops EVERY game**: `exitImmersive()` now calls `stop()` on the FULL list of
+  game modules (not just the running one + a 6-module subset), each guarded `try{if(g&&g.stop)g.stop()}`. A
+  game that used `setInterval`/RAF but neither set `immersiveRoot._trackStop` NOR was in the old list kept
+  ticking after you left it — every launch stacked another live loop → site got slower → Silk crashed. NB:
+  `CandyCrush` is `window.CandyCrush` (lazy), so it's referenced as `window.CandyCrush` in that array (a bare
+  ref throws ReferenceError before first launch and would abort the whole sweep). Every game's `stop()` must be
+  a safe no-op when not running (guard its own timer/RAF handle).
+  **Slither** (`const Slither`) is a slither.io-style **hybrid arena**: cheap-but-smart AI (chase food, but
+  look-ahead `blockedAt()` veer so bots don't ram walls/snakes; light hunt/flee) + an **online overlay** — each
+  player publishes a ~1.8s beacon (pos/angle/len/sparse-path/username) as a `kh_presence` row keyed `sl_<id>`
+  with the beacon JSON packed into `display_name` (NO schema/worker change; `user_id=like.sl_*` + `last_seen`
+  TTL to read peers). Real online players replace AI slots (`reconcileBots`, `TARGET_OPP`) and show their REAL
+  username (◆); degrades to pure-AI when offline/no backend (`_netOk`). Snakes **spawn with a pre-built body at
+  length 5** (`buildBody`, no growing-from-head); **New Game** = `reset()` (clears the `.kh-sl-gameover` msg +
+  restarts both timers — the old handler left the game-over text up and never restarted the loop = "infinite
+  game over"). `_pub` flag gates the dead-beacon on stop so the global exit-sweep can't emit a spurious beacon.
+  Filter `sl_` rows out of any kh_presence DISPLAY (done in the admin "ONLINE NOW" list).
 - **KindleOS launcher**: `launchKindleDesktop()`, `openApp(app)` (built-in nav OR `customHTML` iframe overlay
   `#kd-customapp`), `closeApp()`. Custom AI-built apps in `osState.customApps`. KindleOS has its OWN tour
   (`startKindleOSTour`); the App-mode guided tour (`_showTutorial`) is suppressed while KindleOS is mounted.
