@@ -553,7 +553,94 @@ async function dailyUsed(DB, isWrite){
   return { n:_budget.estN, w:_budget.estW };
 }
 
+/* ── Autonomous AI moderator (lets KindleHub police itself for weeks) ─────────
+   A Cloudflare Cron trigger fires scheduled() periodically. When AUTO_MOD is on
+   and GEMINI_KEY is set, it reads recent un-actioned [USERNAME] reports from
+   kh_feedback and, using the AI verdict the client already recorded (or asking
+   Gemini itself), applies the decision SERVER-SIDE — so reports get actioned even
+   when no admin is online. This is what lets the AI "maintain KindleHub" for up
+   to a month: bans, warnings, dismissals and human-escalation all happen here.
+
+   Env on the Worker:
+     GEMINI_KEY        (required) — same key as the shared-AI proxy
+     AUTO_MOD=1        (required) — opt-in master switch (omit/0 = disabled)
+     ADMIN_USERNAMES   (optional) — comma list never auto-actioned
+     MOD_MODEL         (optional) — Gemini model (default gemini-2.5-flash-lite)
+     MOD_MAX           (optional) — max reports per run (default 10)
+   wrangler.toml:  [triggers]\n  crons = ["0 * * * *"]   # hourly */
+async function geminiOnce(env, prompt){
+  const KEY = env && env.GEMINI_KEY; if(!KEY) return '';
+  const model = (env && env.MOD_MODEL) || 'gemini-2.5-flash-lite';
+  try{
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+KEY,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:120}})
+    });
+    if(!r.ok) return '';
+    const j = await r.json();
+    const parts = ((((j.candidates||[])[0]||{}).content)||{}).parts || [];
+    return parts.map(p=>p.text||'').join('').trim();
+  }catch(_){ return ''; }
+}
+function modPrompt(reportText, name){
+  return 'You are the content-moderation assistant for KindleHub, a friendly e-reader chat app whose users include minors. '
+    +'A user REPORTED another user\'s USERNAME (full report below). Decide the action and reply on ONE line in EXACTLY this format:\n'
+    +'AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <one short reason>\n\n'
+    +'BAN = clear slur / sexual / hateful / impersonation username. WARN = borderline. ESCALATE = a human admin should judge. '
+    +'IGNORE = no violation or likely false report. NEEDINFO = too vague. Be strict on slurs and sexual content; lenient on ordinary names.\n\n'
+    +'REPORTED USERNAME: "'+String(name||'').slice(0,80)+'"\nFULL REPORT:\n'+String(reportText||'').slice(0,1200);
+}
+async function markFeedback(DB, id, status, note){
+  try{
+    if(note) await DB.prepare('UPDATE kh_feedback SET status=?, status_at=?, text=text||? WHERE id=?').bind(status, nowIso(), '\n[auto-mod] '+note, id).run();
+    else await DB.prepare('UPDATE kh_feedback SET status=?, status_at=? WHERE id=?').bind(status, nowIso(), id).run();
+  }catch(_){}
+}
+async function runAutoModeration(DB, env){
+  let rows=[];
+  try{
+    const res = await DB.prepare("SELECT id,text FROM kh_feedback WHERE text LIKE '%[USERNAME]%' AND text NOT LIKE '%[auto-mod]%' AND (status IS NULL OR status='' OR status='open') ORDER BY date DESC LIMIT ?")
+      .bind(parseInt((env&&env.MOD_MAX)||'',10)||10).all();
+    rows = (res && res.results) || [];
+  }catch(_){ return; }
+  const admins = String((env&&env.ADMIN_USERNAMES)||'').toLowerCase().split(',').map(s=>s.trim()).filter(Boolean);
+  for(const row of rows){
+    try{
+      const text = String(row.text||'');
+      const name = ((text.match(/Username:\s*"([^"]+)"/)||[])[1]||'').trim();
+      if(!name){ await markFeedback(DB, row.id, 'open', 'no username parsed'); continue; }
+      if(admins.indexOf(name.toLowerCase())>=0){ await markFeedback(DB, row.id, 'open', 'subject is an admin — skipped'); continue; }
+      /* reuse the client-recorded verdict if present, else ask Gemini */
+      let verdict = (text.match(/AI:\s*(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || '';
+      if(!verdict){ const out = await geminiOnce(env, modPrompt(text, name)); verdict = (String(out).match(/(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || ''; }
+      const action = ((verdict.match(/(BAN|WARN|ESCALATE|IGNORE|NEEDINFO)/i)||[])[1]||'ESCALATE').toUpperCase();
+      const reason = ((verdict.split('—')[1] || verdict.replace(/^[^-]*-/,'') || 'community guidelines').trim()).slice(0,160);
+      if(action==='BAN'){
+        await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(name.toLowerCase(), 'auto-mod: '+reason, nowIso()).run();
+        await markFeedback(DB, row.id, 'done', 'auto-banned: '+reason);
+      } else if(action==='WARN'){
+        const wtext = '⚠️ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
+        await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext, JSON.stringify([name]), nowIso()).run();
+        await markFeedback(DB, row.id, 'done', 'auto-warned: '+reason);
+      } else if(action==='IGNORE'){
+        await markFeedback(DB, row.id, 'ignored', 'no violation: '+reason);
+      } else {
+        await markFeedback(DB, row.id, 'open', 'needs human review: '+reason);
+      }
+    }catch(_){ /* skip this report, try the rest */ }
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx){
+    try{
+      const DB = env && env.DB; if(!DB) return;
+      const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
+      if(!on || !(env && env.GEMINI_KEY)) return;   // opt-in + needs a key
+      await ensureSchema(DB);
+      await runAutoModeration(DB, env);
+    }catch(_){ /* never throw out of a cron tick */ }
+  },
   async fetch(request, env){
     if(request.method==='OPTIONS') return new Response(null,{status:204,headers:cors(env)});
     const DB = env && env.DB;

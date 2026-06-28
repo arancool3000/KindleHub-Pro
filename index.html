@@ -1677,6 +1677,97 @@ function _khMessageUserPicker(onDone){
 }
 window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
 
+/* ── Admin AI: "ask about a user" ─────────────────────────────────────────
+   Gathers a user's cloud METADATA (email, last sync, message count + recent
+   group/ts/device/location hints, presence last_seen) and asks the AI to answer
+   a free-text question from ONLY that data. Message bodies are E2E-encrypted
+   per group, so the AI sees activity/identity metadata — not message text
+   (except groups the admin is already in). HARD-GATED on admin: it reads other
+   users' data, so non-admins are refused. The general Assistant stays open to
+   all; only this cross-user tool is restricted. */
+async function _khGatherUserContext(question,targetName){
+  try{
+    if(typeof _sbSelect!=='function')return null;
+    let rows=null, token=String(targetName||'').trim();
+    if(token){
+      rows=await _sbSelect('kh_users','email=ilike.'+encodeURIComponent('*'+token.replace(/[%_]/g,'')+'*')+'&select=hash,email,updated_at&limit=4');
+    } else {
+      const words=(String(question||'').toLowerCase().match(/[a-z0-9._-]{3,}/g)||[]);
+      const stop=new Set(['the','was','when','last','online','who','what','user','users','about','are','did','does','message','messages','this','that','code','help','edit','ask','tell','show','how','many','their','them','they','been','have','has','with','your','you','from','give','answer']);
+      const cands=words.filter(w=>!stop.has(w)).sort((a,b)=>b.length-a.length);
+      for(const c of cands){
+        const r=await _sbSelect('kh_users','email=ilike.'+encodeURIComponent('*'+c.replace(/[%_]/g,'')+'*')+'&select=hash,email,updated_at&limit=4');
+        if(Array.isArray(r)&&r.length){ token=c; rows=r; break; }
+      }
+    }
+    if(!Array.isArray(rows)||!rows.length)return null;
+    const u=rows[0]; const uid=String(u.hash||'').slice(0,16);
+    const lines=[];
+    lines.push('Username/email: '+(u.email||'(unknown)'));
+    lines.push('Last account sync (updated_at, UTC): '+(u.updated_at||'(never)'));
+    if(rows.length>1)lines.push('NOTE: '+rows.length+' accounts match "'+token+'": '+rows.map(r=>r.email).join(', ')+' — answering for the first.');
+    let nMsgs=null;try{if(typeof _sbCount==='function')nMsgs=await _sbCount('kh_messages','user_id=eq.'+encodeURIComponent(uid));}catch(_){}
+    if(nMsgs!=null)lines.push('Total chat messages currently in cloud from this user: '+nMsgs);
+    let msgs=[];try{msgs=await _sbSelect('kh_messages','user_id=eq.'+encodeURIComponent(uid)+'&select=group_code,ts,device_hint,location_hint&order=ts.desc&limit=200');}catch(_){}
+    if(Array.isArray(msgs)&&msgs.length){
+      const groups=[...new Set(msgs.map(m=>m.group_code))];
+      lines.push('Active in '+groups.length+' chat group(s); most recent message at '+(msgs[0].ts||'?')+' UTC.');
+      const dev=[...new Set(msgs.map(m=>m.device_hint).filter(Boolean))].slice(0,4);
+      const loc=[...new Set(msgs.map(m=>m.location_hint).filter(Boolean))].slice(0,4);
+      if(dev.length)lines.push('Device hints seen: '+dev.join(', '));
+      if(loc.length)lines.push('Approx location hints seen: '+loc.join(', '));
+    } else { lines.push('No chat messages from this user currently in the cloud.'); }
+    let pres=[];try{pres=await _sbSelect('kh_presence','user_id=like.'+encodeURIComponent(uid)+'*&select=display_name,last_seen&order=last_seen.desc&limit=1');}catch(_){}
+    lines.push('Last seen online (presence, UTC): '+((Array.isArray(pres)&&pres[0]&&pres[0].last_seen)||'no recent presence row'));
+    lines.push('(Message TEXT is end-to-end encrypted and NOT readable here — only this activity metadata.)');
+    return {text:lines.join('\n'),email:u.email||'',uid:uid};
+  }catch(_){return null;}
+}
+async function _khAskAboutUser(question,opts){
+  opts=opts||{};
+  if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
+  if(window._isAdminCached!==true){ if(typeof toast==='function')toast('Asking the AI about another user is admin-only.'); return; }
+  if(typeof _sbActive!=='function'||!_sbActive()){ if(typeof toast==='function')toast('Needs the cloud backend.'); return; }
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'480px',width:'100%',maxHeight:'82vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','AI — about a user',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div',(typeof _censorText==='function'?_censorText(String(question||'')):String(question||'')),{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}}));
+  const out=el('div',{style:{fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',minHeight:'40px'}});
+  out.textContent='Gathering data…'; card.appendChild(out);
+  const cl=txt('button','Close',{className:'btn small'}); cl.onclick=()=>ov.remove(); card.appendChild(cl);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  try{
+    const ctx=await _khGatherUserContext(question,opts.targetName);
+    if(!ctx){ out.textContent='No user matched that question. Try including their exact username.'; return; }
+    out.textContent='Thinking…';
+    const prompt='You are an admin assistant for KindleHub (an e-reader web app). Answer the QUESTION using ONLY the DATA below. '
+      +'If the data does not contain the answer, say so plainly — do NOT invent facts or guess a person\'s real-world identity. Times are ISO-8601 UTC. Be concise.\n\nDATA:\n'+ctx.text+'\n\nQUESTION:\n'+String(question||'');
+    let ans=null; if(typeof khiCall==='function')ans=await khiCall(prompt,{maxTokens:500,temperature:0.2});
+    if(!ans){ out.textContent='AI is off or unavailable — enable AI in Settings (or pick the Shared key). Raw data gathered:\n\n'+ctx.text; return; }
+    out.textContent=String(ans).trim();
+  }catch(e){ out.textContent='Failed: '+String((e&&e.message)||e).slice(0,140); }
+}
+function _khAskUserDialog(prefillName){
+  if(window._isAdminCached!==true){ if(typeof toast==='function')toast('Admin only.'); return; }
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'460px',width:'100%',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','Ask AI about a user',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div','Admin tool. e.g. "when was Yuvaan last online?" or "is augustinejames the one who offered to help edit the code?". The AI reads cloud activity metadata (last online, message counts, groups, device/location hints) — not message text.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const nameIn=el('input',{type:'text',placeholder:'Username (optional — or name them in the question)',value:prefillName||'',style:{width:'100%'}});
+  card.appendChild(nameIn);
+  const qIn=el('textarea',{rows:'3',placeholder:'Your question…',style:{width:'100%'}});
+  card.appendChild(qIn);
+  const row=el('div',{style:{display:'flex',gap:'6px'}});
+  const ask=txt('button','Ask',{className:'btn small primary'});
+  const cl=txt('button','Cancel',{className:'btn small'});
+  ask.onclick=()=>{const q=(qIn.value||'').trim();if(!q){if(typeof toast==='function')toast('Type a question.');return;}ov.remove();_khAskAboutUser(q,{targetName:(nameIn.value||'').trim()});};
+  cl.onclick=()=>ov.remove();
+  row.append(ask,cl); card.appendChild(row);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  try{qIn.focus();}catch(_){}
+}
+window._khAskAboutUser=_khAskAboutUser;window._khAskUserDialog=_khAskUserDialog;window._khGatherUserContext=_khGatherUserContext;
+
 let _msgNotifyTimer=null;
 function _startMessageNotifier(){
   if(_msgNotifyTimer)return;
@@ -7215,6 +7306,44 @@ async function _khWarnUsername(name){
   return !!ok;
 }
 window._khWarnUsername=_khWarnUsername;
+/* Non-interactive warn (for the AI moderator) — same delivery as _khWarnUsername
+   but takes the reason directly instead of prompting. Admin-token gated. */
+async function _khWarnUsernameSilent(name,reason){
+  name=String(name||'').trim();
+  if(!name)return false;
+  if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
+  if(!window._adminToken)return false;
+  const msg=String(reason||'').trim()||'Please follow the community rules.';
+  const text='⚠️ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
+  return !!ok;
+}
+window._khWarnUsernameSilent=_khWarnUsernameSilent;
+/* AI moderation triage: judge a user-vs-user report and return a one-line verdict
+   "AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <reason>" that gets recorded INTO the
+   report. Works for ANY reporter (it's just an AI call, no privilege needed) —
+   the actual enforcement is done by the admin client (if the reporter is the
+   admin) or by the server-side autonomous moderator (api-worker scheduled). */
+async function _khAITriageReport(name,reason,note,autoFlagged){
+  try{
+    if(typeof khiEnabled!=='function'||!khiEnabled()||typeof khiCall!=='function')return '';
+    const prompt='You are the content-moderation assistant for KindleHub, a friendly e-reader chat app whose users include minors. '
+      +'A user REPORTED another user\'s USERNAME. Decide the action and reply on ONE line in EXACTLY this format:\n'
+      +'AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <one short reason>\n\n'
+      +'BAN = clear slur / sexual / hateful / impersonation username. WARN = borderline or mildly inappropriate. '
+      +'ESCALATE = a real human admin should judge. IGNORE = no violation or likely false report. NEEDINFO = too vague to act. '
+      +'Be strict on slurs and sexual content; lenient on ordinary names.\n\n'
+      +'REPORTED USERNAME: "'+String(name||'').slice(0,80)+'"\n'
+      +'REASON GIVEN: '+String(reason||'(none)')+'\n'
+      +'EXTRA NOTE: '+(String(note||'').slice(0,300)||'(none)')+'\n'
+      +'BANNED-WORD FILTER MATCHED: '+(autoFlagged?'YES':'no')+'\n';
+    const out=await khiCall(prompt,{maxTokens:120,temperature:0.1});
+    if(!out)return '';
+    const line=String(out).split('\n').map(s=>s.trim()).filter(Boolean).find(s=>/^AI:/i.test(s));
+    return (line||('AI: ESCALATE — '+String(out).trim().slice(0,120))).slice(0,200);
+  }catch(_){return '';}
+}
+window._khAITriageReport=_khAITriageReport;
 
 function _composeAnnouncement(card){
   card.innerHTML='';
@@ -36500,6 +36629,12 @@ feedback:()=>{
       const sAvgState=stat('AVG STATE','…','KB per user');
       dbGrid.append(sUsers,sNewU,sActiveU,sGroups,sMsgs,sMsgsRecent,sSenders,sFb,sScores,sAnn,sErrs,sErrsRecent,sVisitRows,sAvgState);
 
+      /* Admin AI — ask a free-text question about any user (last online, activity,
+         identity) answered from their cloud metadata. Admin-only. */
+      const aiAskBtn=txt('button','🔍 Ask AI about a user',{className:'btn small primary',style:{marginBottom:'14px',width:'100%'}});
+      aiAskBtn.onclick=()=>{if(typeof _khAskUserDialog==='function')_khAskUserDialog('');};
+      c.appendChild(aiAskBtn);
+
       /* Top groups by message volume + feedback-by-status breakdown */
       c.appendChild(txt('div','TOP GROUPS BY MESSAGES',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
       const topGroupsBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
@@ -51651,11 +51786,17 @@ messages:()=>{
         submit.disabled=true;submit.textContent='Submitting…';
         const note=(noteInp.value||'').trim().slice(0,500);
         const auto=(typeof _badUsername==='function'&&_badUsername(name))?' [auto-flag: contains banned word]':'';
+        /* AI triage — the AI judges the report and records a recommended action
+           (BAN/WARN/ESCALATE/IGNORE/NEEDINFO + reason) into the report body, so
+           the admin AND the server-side autonomous moderator can act on it. */
+        let aiVerdict='';
+        try{aiVerdict=await _khAITriageReport(name,chosen,note,!!auto);}catch(_){}
         const body='[REPORT] [USERNAME] '+chosen+auto+
           '\nUsername: "'+name.slice(0,80)+'"'+
           '\nUser id: '+String(uid||'').slice(0,16)+
           '\nReporter: '+displayName()+(S.userId?' uid='+String(S.userId).slice(0,16):'')+
-          (note?'\nNote: '+note:'');
+          (note?'\nNote: '+note:'')+
+          (aiVerdict?'\n'+aiVerdict:'');
         let ok=false;
         try{
           if(typeof _sbActive==='function'&&_sbActive()){
@@ -51670,8 +51811,16 @@ messages:()=>{
           }
         }catch(e){console.warn('Username report failed',e);}
         repd[dkey]={name:name,reason:chosen,ts:Date.now()};_saveUserReports(repd);
+        /* If the reporter IS the admin (holds the token) and the AI is confident
+           it's a clear violation, act immediately. For everyone else the verdict
+           is recorded and the server-side autonomous moderator enforces it. */
+        let acted='';
+        try{
+          if(window._adminToken&&/\bAI:\s*BAN\b/i.test(aiVerdict)){ const bok=await _khBanUsername(name); if(bok)acted='AI moderation auto-banned "'+name+'".'; }
+          else if(window._adminToken&&/\bAI:\s*WARN\b/i.test(aiVerdict)){ const wok=await _khWarnUsernameSilent(name,((aiVerdict.split('—')[1]||'community guidelines').trim()).slice(0,160)); if(wok)acted='AI moderation warned "'+name+'".'; }
+        }catch(_){}
         ov.remove();
-        toast(ok?'Username reported to moderators':'Report logged locally (offline)',2500);
+        toast(acted||(ok?'Reported — our AI moderator is reviewing it now.':'Report logged locally (offline)'),3200);
       };
       btnRow.append(cancel,submit);
       box.appendChild(btnRow);
@@ -51699,6 +51848,10 @@ messages:()=>{
       const repNameBtn=txt('button','Report username',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
       repNameBtn.onclick=()=>{ov.remove();_openUsernameReportModal(msg.displayName||'',msg.userId||'');};
       btnBar.append(closeBtn,repNameBtn);
+      /* Ask AI about this user — opens the admin AI query pre-filled with the name. */
+      const _aiAskBtn=txt('button','🔍 Ask AI',{className:'btn small'});
+      _aiAskBtn.onclick=()=>{ov.remove();if(typeof _khAskUserDialog==='function')_khAskUserDialog(msg.displayName||'');};
+      btnBar.append(_aiAskBtn);
       /* This modal is admin-only, so offer a direct ban (skips the report
          queue — you ARE the moderator). */
       const _nm=msg.displayName||'';
