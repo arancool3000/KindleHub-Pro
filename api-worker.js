@@ -102,7 +102,7 @@ function cors(env){
   return {
     'Access-Control-Allow-Origin': (env && env.ALLOW_ORIGIN) || '*',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, HEAD, OPTIONS',
-    'Access-Control-Allow-Headers': 'apikey, authorization, content-type, prefer, x-kh-secret, range, range-unit, accept',
+    'Access-Control-Allow-Headers': 'apikey, authorization, content-type, prefer, x-kh-secret, x-kh-admin, range, range-unit, accept',
     'Access-Control-Expose-Headers': 'Content-Range',  // so _sbCount can read the total cross-origin
     'Access-Control-Max-Age': '86400',
   };
@@ -333,7 +333,13 @@ async function handleGet(table, url, request, env, DB, headOnly){
 }
 
 async function handlePost(table, url, request, env, DB){
-  if(!INSERT_OK.has(table)) return err('insert not allowed on '+table, 403, env);
+  /* Admin-authenticated bulk writes (the data-migration tool) may seed tables
+     that are otherwise insert-gated (announcements, bans) AND must bypass the
+     per-group/feedback rate limits so the copy isn't throttled. The admin token
+     is sent in X-KH-Admin, verified by SHA-256 against ADMIN_HASHES (same as the
+     RPCs). Without it, behaviour is exactly as before. */
+  const adminReq = await isAdmin(request.headers.get('x-kh-admin')||'');
+  if(!INSERT_OK.has(table) && !adminReq) return err('insert not allowed on '+table, 403, env);
   let payload; try{ payload = await request.json(); }catch(_){ return err('bad json',400,env); }
   const rows = Array.isArray(payload)?payload:[payload];
   const cols = COLUMNS[table];
@@ -342,8 +348,9 @@ async function handlePost(table, url, request, env, DB){
   const prefer = (request.headers.get('prefer')||'');
   const minimal = /return=minimal/i.test(prefer);
 
-  /* rate limits (ported from the BEFORE INSERT triggers) */
-  for(const row of rows){
+  /* rate limits (ported from the BEFORE INSERT triggers) — skipped for admin
+     bulk writes so the migration isn't throttled. */
+  if(!adminReq) for(const row of rows){
     if(table==='kh_messages'){ if(!await checkRate(DB,'msg:'+(row.group_code||''),30,60)) return err('Rate limit exceeded — max 30 messages per group per minute',429,env); }
     if(table==='kh_feedback'){ if(!await checkRate(DB,'fb:'+(row.type||''),10,60)) return err('Rate limit exceeded — max 10 feedback submissions per minute',429,env); }
   }

@@ -6412,8 +6412,19 @@ async function _migrateToCloudflare(onProgress){
         const rows=await rr.json();
         if(!Array.isArray(rows)||!rows.length)break;
         const wurl=gw+'/rest/v1/'+c.t+'?on_conflict='+c.pk;
-        const wr=await fetch(wurl,{method:'POST',headers:Object.assign(_sbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify(rows)});
-        if(!wr.ok){ err='write HTTP '+wr.status+' '+(await wr.text().catch(function(){return '';})).slice(0,80); break; }
+        /* Send the admin token so the Worker allows the privileged tables
+           (announcements, bans) and skips the chat rate-limit; retry 429 with
+           backoff so a throttle never aborts the copy. */
+        const whdr=Object.assign(_sbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal','X-KH-Admin':window._adminToken||''});
+        let wr=null,wtxt='';
+        for(let attempt=0;attempt<5;attempt++){
+          wr=await fetch(wurl,{method:'POST',headers:whdr,body:JSON.stringify(rows)});
+          if(wr.ok)break;
+          wtxt=(await wr.text().catch(function(){return '';})).slice(0,100);
+          if(wr.status===429){ await new Promise(function(r){setTimeout(r,900*Math.pow(2,attempt));}); continue; }
+          break;/* non-retryable (e.g. 403) — record and move on to the next table */
+        }
+        if(!wr||!wr.ok){ err='write HTTP '+(wr?wr.status:'?')+' '+wtxt; break; }
         copied+=rows.length; out.total+=rows.length;
         if(typeof onProgress==='function')onProgress(c.t,copied,out.total);
         if(rows.length<c.page)break;
@@ -37477,7 +37488,8 @@ Deno.serve(async (req)=>{
         const res=await _migrateToCloudflare(function(t,n,tot){migStat.textContent='Copying '+t.replace('kh_','')+'… '+n+' rows ('+tot+' total)';});
         migBtn.disabled=false;
         if(res&&res.ok){migStat.style.color='var(--muted)';migStat.textContent='Done — '+res.total+' rows copied.  '+Object.keys(res.tables).map(function(k){return k.replace('kh_','')+':'+res.tables[k].copied;}).join('  ');}
-        else{migStat.style.color='var(--danger)';const fl=Object.keys((res&&res.tables)||{}).filter(function(k){return res.tables[k].error;}).map(function(k){return k.replace('kh_','')+' ('+res.tables[k].error+')';});migStat.textContent=((res&&res.error)||('Partial — '+(res?res.total:0)+' rows; issues: '+fl.join('; '))).slice(0,300);}
+        else if(res&&res.error){migStat.style.color='var(--danger)';migStat.textContent=res.error.slice(0,300);}
+        else{const fl=Object.keys((res&&res.tables)||{}).filter(function(k){return res.tables[k].error;}).map(function(k){return k.replace('kh_','');});const copied=res?res.total:0;migStat.style.color=copied>0?'#b8860b':'var(--danger)';migStat.textContent=copied>0?('Copied '+copied+' rows. A few tables ('+fl.join(', ')+') still need the latest Worker — paste the newest api-worker.js into your Worker, Deploy, then re-run this.'):('Failed: '+fl.join(', '));}
       };
       c.appendChild(migBtn);c.appendChild(migStat);
       c.appendChild(txt('div','Reads every table from Supabase and upserts it into the D1 Worker above (set the API gateway first). Re-runnable. User save-files also self-migrate on each person\'s next login, so a partial copy still self-heals.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
