@@ -1305,6 +1305,39 @@ function defaultState(){
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
+/* Declared HERE, not ~6000 lines down, so it is initialized BEFORE the boot
+   state loader below decodes a KHZ2 blob (_decompStr -> _COMP_DICT). A const sits
+   in the temporal dead zone until its own line runs, so the original late
+   placement threw at boot and silently reset all settings AND the login. */
+const _COMP_DICT=[
+  /* Most common JSON structural tokens first (longer == more savings) */
+  '"strInstructions":"','"strMealThumb":"','"strCategory":"',
+  '"displayName":"','"savedChatHistory":[','"chatSessions":[',
+  '"savedRecipes":[','"strYoutube":"','"strSource":"','"strArea":"',
+  '"mdJournals":[','"flashDecks":[','"calEvents":[','"updatedAt":"',
+  '"createdAt":"','"createdBy":"','"strMeal":"','"messages":[',
+  '"rssFeeds":[','"rssCache":{','"rssRead":{','"rssSaved":[',
+  '"focusLog":[','"idMeal":"','"sleepLog":[','"avgCost":',
+  '"shares":','"notes":[','"books":[','"badges":[','"games":{',
+  '"stats":{','"srData":{','"status":"','"author":"','"genre":"',
+  '"title":"','"color":"','"time":"','"note":"','"text":"',
+  '"year":','"month":','"day":','"uid":"','"id":"','"date":"',
+  '"userId":"','"icon":"','"label":"','"https://','"http://',
+  '.com/','.jpg"','.png"','.org/','/api/',
+  /* Common JSON glue */
+  '","','"},{"','":[{"','":{"','"}],','":{}','":[]','":null',
+  '":true','":false','":0,','":1,','":[',
+  /* Common values */
+  'reading','finished','suggestion','unread',
+  /* Appended: more KindleHub-specific keys to squeeze the cloud blob (and
+     localStorage) harder. Index-stable, so old blobs still decode; an older app
+     build that lacks these tokens just fails a single merge gracefully
+     (decrypt returns null → no data loss). */
+  '"savedDiscover":{','"homeWidgets":{','"msgGroups":[','"savedWords":[',
+  '"savedPlaces":[','"savedQuizzes":[','"weatherData":{','"nextReview":',
+  '"description":"','"location":"','"pinned":','"tags":[','"front":"',
+  '"answer":"','"recurring":','"allDay":','"activity":"','"box":',
+];
 let S=(()=>{try{
   let r=localStorage.getItem(SK);
   if(!r)return defaultState();
@@ -3712,7 +3745,7 @@ function launchKindleDesktop(){
     /* Label */
     const lbl=document.createElement('div');
     lbl.className='kd-icon-lbl';
-    lbl.textContent=app.label;
+    lbl.textContent=_censorText(app.label);
     lbl.style.cssText='color:#111;font-size:10px;font-weight:600;text-align:center;margin-top:4px;max-width:70px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;letter-spacing:0.1px;line-height:1.2;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;';
     cell.appendChild(outer);cell.appendChild(lbl);
     /* Press feedback */
@@ -3865,7 +3898,7 @@ function launchKindleDesktop(){
     const sv=bx.querySelector('svg');if(sv){sv.style.cssText='width:32px;height:32px;position:relative;z-index:1;';}
     const lbl=document.createElement('div');lbl.className='dil';
     lbl.style.cssText='color:rgba(255,255,255,0.65);font-size:9px;font-weight:600;letter-spacing:0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:62px;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,0.6);transition:opacity .15s;';
-    lbl.textContent=app.label;
+    lbl.textContent=_censorText(app.label);
     const dot=document.createElement('div');dot.className='ddi';dot.style.cssText='width:4px;height:4px;border-radius:50%;background:#fff;opacity:0;margin-top:-2px;';
     item.appendChild(bx);item.appendChild(lbl);item.appendChild(dot);
     item.addEventListener('touchstart',()=>{bx.style.transform='scale(0.88)';},{passive:true});
@@ -4432,7 +4465,7 @@ function launchKindleDesktop(){
       ib.style.cssText='width:42px;height:42px;border-radius:12px;overflow:hidden;background:'+(app.color||'#374151')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;';
       ib.innerHTML=app.icon||'';const sv=ib.querySelector('svg');if(sv){sv.style.width='28px';sv.style.height='28px';}
       const lbWrap=document.createElement('div');lbWrap.style.cssText='flex:1;min-width:0;';
-      const lb=document.createElement('div');lb.style.cssText='color:var(--fg,#111);font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';lb.textContent=app.label;
+      const lb=document.createElement('div');lb.style.cssText='color:var(--fg,#111);font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';lb.textContent=_censorText(app.label);
       if(app.builtWith){const bw=document.createElement('div');bw.style.cssText='color:var(--muted,#888);font-size:10px;margin-top:1px;';bw.textContent='Built with '+app.builtWith;lbWrap.appendChild(lb);lbWrap.appendChild(bw);}else{lbWrap.appendChild(lb);}
       const del=document.createElement('button');del.textContent='Remove';del.className='btn small';
       del.style.cssText+='color:#c0392b;border-color:#c0392b;';
@@ -6251,8 +6284,57 @@ const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
    Supabase, exactly as today. */
 const KH_DEFAULT_STATE_GATEWAY='';   /* e.g. 'https://kindlehub-state.you.workers.dev' */
 const KH_DEFAULT_API_GATEWAY='';     /* e.g. 'https://kindlehub-api.you.workers.dev'   */
+const KH_DEFAULT_MAIL_GATEWAY='';    /* e.g. 'https://kindlehub-mail.you.workers.dev' — real email for ALL users */
 function _apiGatewayUrl(){try{const v=(localStorage.getItem('kh_api_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_API_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');}}
 function _sbBase(){const gw=_apiGatewayUrl();return gw||(SUPABASE_URL||'').replace(/\/$/,'');}
+/* One-click migration: copy ALL data from Supabase into the Cloudflare D1
+   gateway. Reads each table DIRECTLY from Supabase (not via _sbBase, which may
+   already point at D1) and upserts it to the gateway in pages — safe to re-run
+   (on_conflict upsert). The one-time read FROM Supabase uses egress; user state
+   blobs are the bulk and also self-migrate on each user's next login, so even a
+   partial copy self-heals. Admin-only. */
+async function _migrateToCloudflare(onProgress){
+  if(!window._adminToken)return {ok:false,error:'admin only'};
+  const gw=_apiGatewayUrl();
+  if(!gw)return {ok:false,error:'Set the API gateway (D1 Worker URL) first.'};
+  const sb=(SUPABASE_URL||'').replace(/\/$/,'');
+  if(!sb||sb.indexOf('supabase.co')<0)return {ok:false,error:'No Supabase source configured to read from.'};
+  const TABLES=[
+    {t:'kh_users',pk:'hash',page:50},          /* the big state blobs */
+    {t:'kh_groups',pk:'code',page:500},
+    {t:'kh_messages',pk:'id',page:400},
+    {t:'kh_mail',pk:'id',page:300},
+    {t:'kh_scores',pk:'id',page:500},
+    {t:'kh_announcements',pk:'id',page:500},
+    {t:'kh_presence',pk:'user_id',page:500},
+    {t:'kh_banned_usernames',pk:'name',page:1000},
+    {t:'kh_visits',pk:'device_id,day',page:1000},
+    {t:'kh_feedback',pk:'id',page:300},
+  ];
+  const out={ok:true,tables:{},total:0};
+  for(const c of TABLES){
+    let copied=0,offset=0,err=null;
+    try{
+      for(;;){
+        const rurl=sb+'/rest/v1/'+c.t+'?select=*&limit='+c.page+'&offset='+offset;
+        const rr=await fetch(rurl,{headers:_sbHeaders()});
+        if(!rr.ok){ if(rr.status===404){break;} err='read HTTP '+rr.status; break; }
+        const rows=await rr.json();
+        if(!Array.isArray(rows)||!rows.length)break;
+        const wurl=gw+'/rest/v1/'+c.t+'?on_conflict='+c.pk;
+        const wr=await fetch(wurl,{method:'POST',headers:Object.assign(_sbHeaders(),{'Prefer':'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify(rows)});
+        if(!wr.ok){ err='write HTTP '+wr.status+' '+(await wr.text().catch(function(){return '';})).slice(0,80); break; }
+        copied+=rows.length; out.total+=rows.length;
+        if(typeof onProgress==='function')onProgress(c.t,copied,out.total);
+        if(rows.length<c.page)break;
+        offset+=c.page;
+      }
+    }catch(e){err=String((e&&e.message)||e).slice(0,120);}
+    out.tables[c.t]={copied,error:err};
+    if(err)out.ok=false;
+  }
+  return out;
+}
 function _sbActive(){
   if(_apiGatewayUrl())return true;
   return SUPABASE_URL&&SUPABASE_URL.indexOf('supabase.co')>0
@@ -6568,7 +6650,9 @@ function _badUsername(name){
    at boot + after any ban) so rendering stays fast. */
 function _dispName(name){
   if(typeof _khIsBannedSync==='function'&&_khIsBannedSync(name))return '[removed]';
-  return name;
+  /* Also profanity-censor every displayed name (chat authors, leaderboards,
+     about-modal, etc.) — this is the single choke point for name display. */
+  return typeof _censorText==='function'?_censorText(name):name;
 }
 window._censorText=_censorText;window._hasProfanity=_hasProfanity;window._badUsername=_badUsername;window._dispName=_dispName;
 
@@ -6964,7 +7048,7 @@ async function _renderAnnouncementWidget(card){
     visible.forEach(a=>{
       const block=el('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start',borderTop:'1px dashed var(--muted)',paddingTop:'6px',marginTop:'6px'}});
       const body=el('div',{style:{flex:'1',minWidth:'0'}});
-      body.appendChild(txt('div',a.text,{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+      body.appendChild(txt('div',_censorText(a.text),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
       const metaBits=[new Date(a.created_at).toLocaleString()];
       if(Array.isArray(a.targets)&&a.targets.length){
         metaBits.push(isAdmin
@@ -7295,35 +7379,10 @@ function _startPresence(){
    ASCII + \uXXXX escapes), so the markers are unambiguous and reversible.
    Yields ~35-55% size reduction on typical KindleHub state, on top of
    AES base64 overhead. */
-const _COMP_DICT=[
-  /* Most common JSON structural tokens first (longer == more savings) */
-  '"strInstructions":"','"strMealThumb":"','"strCategory":"',
-  '"displayName":"','"savedChatHistory":[','"chatSessions":[',
-  '"savedRecipes":[','"strYoutube":"','"strSource":"','"strArea":"',
-  '"mdJournals":[','"flashDecks":[','"calEvents":[','"updatedAt":"',
-  '"createdAt":"','"createdBy":"','"strMeal":"','"messages":[',
-  '"rssFeeds":[','"rssCache":{','"rssRead":{','"rssSaved":[',
-  '"focusLog":[','"idMeal":"','"sleepLog":[','"avgCost":',
-  '"shares":','"notes":[','"books":[','"badges":[','"games":{',
-  '"stats":{','"srData":{','"status":"','"author":"','"genre":"',
-  '"title":"','"color":"','"time":"','"note":"','"text":"',
-  '"year":','"month":','"day":','"uid":"','"id":"','"date":"',
-  '"userId":"','"icon":"','"label":"','"https://','"http://',
-  '.com/','.jpg"','.png"','.org/','/api/',
-  /* Common JSON glue */
-  '","','"},{"','":[{"','":{"','"}],','":{}','":[]','":null',
-  '":true','":false','":0,','":1,','":[',
-  /* Common values */
-  'reading','finished','suggestion','unread',
-  /* Appended: more KindleHub-specific keys to squeeze the cloud blob (and
-     localStorage) harder. Index-stable, so old blobs still decode; an older app
-     build that lacks these tokens just fails a single merge gracefully
-     (decrypt returns null → no data loss). */
-  '"savedDiscover":{','"homeWidgets":{','"msgGroups":[','"savedWords":[',
-  '"savedPlaces":[','"savedQuizzes":[','"weatherData":{','"nextReview":',
-  '"description":"','"location":"','"pinned":','"tags":[','"front":"',
-  '"answer":"','"recurring":','"allDay":','"activity":"','"box":',
-];
+/* _COMP_DICT is declared up by the boot state loader (it MUST initialize
+   before that loader's KHZ2 decode calls _decompStr, else the const is in the
+   temporal dead zone and EVERY saved blob fails to load -> full state reset).
+   _compStr/_decompStr below use it. */
 /* For decompression we only need a quick index→token lookup. */
 function _compStr(json){
   if(typeof json!=='string')json=JSON.stringify(json);
@@ -8953,6 +9012,9 @@ async function _uniqueUsername(name){
    hash(username+password), so sign-in is unaffected; the display name changes.
    Admin-run (reads the whole table), idempotent (re-running finds nothing). */
 async function _dedupeUsernames(onProgress){
+  /* Admin-only: this rewrites kh_users rows. Gate it like _khBanUsername etc. so
+     it can't be invoked by a non-admin (e.g. from the console). */
+  if(!window._adminToken)return {ok:false,error:'admin only'};
   if(typeof _sbActive!=='function'||!_sbActive())return {ok:false,error:'needs the Supabase backend'};
   let rows;
   try{ rows=await _sbSelectAll('kh_users','select=hash,email'); }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
@@ -8993,6 +9055,14 @@ function _loginClearFailures(name){try{localStorage.removeItem(_loginFailKey(nam
    The blob is the same AES-GCM ciphertext the cloud holds — useless without
    the password (which alone derives the key), so it's safe at rest. Kept to
    the 3 most-recent accounts. */
+/* Saved sign-in credentials for automatic re-login. The user asked for the
+   username + password to be remembered on the device so nobody gets logged out,
+   so we store them in plaintext here (a deliberate convenience-over-secrecy
+   choice, on top of the encrypted offline-cred blob) and auto-login from them at
+   boot. Cleared on explicit logout. */
+function _saveCreds(u,p){try{if(u&&p)localStorage.setItem('kh_creds',JSON.stringify({u:u,p:p,at:Date.now()}));}catch(_){}}
+function _readCreds(){try{const o=JSON.parse(localStorage.getItem('kh_creds')||'null');return (o&&o.u&&o.p)?o:null;}catch(_){return null;}}
+function _clearCreds(){try{localStorage.removeItem('kh_creds');}catch(_){}}
 function _cacheOfflineCred(key,email,packed){
   try{
     if(!key||typeof packed!=='string'||!packed)return;
@@ -9057,6 +9127,7 @@ async function authRegister(email,password){
     window.__khStateLoadFailed=false;/* authoritative new account — re-enable saves */
     await _saveUser(key,email,_buildSafeState());
     save();
+    try{_saveCreds(email,password);}catch(_){}
     return{success:true,username:email,adjusted:(email!==_origName)};
   }catch(e){console.error('Register error',e);return{success:false,error:e.message};}
 }
@@ -9143,6 +9214,7 @@ async function authLogin(email,password){
        boot left you stuck on the Pro tier ("no longer Ultra"). */
     try{if(typeof _resetAdminCache==='function')_resetAdminCache();}catch(_){}
     try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}}).catch(function(){});}catch(_){}
+    try{_saveCreds(email,password);}catch(_){}
     return{success:true};
   }catch(e){console.error('Login error',e);return{success:false,error:e.message};}
 }
@@ -9150,6 +9222,7 @@ async function authLogin(email,password){
 async function authLogout(){
   if(S.authToken)try{await syncToCloud();}catch(e){}
   S.userId=null;S.authToken=null;S.email=null;S.syncEnabled=false;S._encKey=null;
+  try{_clearCreds();}catch(_){}
   if(typeof _resetAdminCache==='function')_resetAdminCache();
   try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}
   save();
@@ -9556,8 +9629,10 @@ function _mailIsExternal(addr){
    inbound mail for @kindlehub.pro via Email Routing. The URL is set once
    by the admin; empty = external sending disabled with a clear message. */
 function _mailGatewayUrl(){
-  try{const o=(localStorage.getItem('kh_mail_gateway')||'').trim();if(o)return o.replace(/\/+$/,'');}catch(_){}
-  return '';
+  /* Per-device localStorage override, else the baked-in fleet default. Set the
+     KH_DEFAULT_MAIL_GATEWAY constant + redeploy to turn external email on for
+     ALL users at once; a device can opt out with the localStorage value 'off'. */
+  try{const v=(localStorage.getItem('kh_mail_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_MAIL_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_MAIL_GATEWAY||'').replace(/\/+$/,'');}
 }
 function _myMailUser(){return _mailNorm(S.email||'');}
 function _mailState(){if(!S.mailState||typeof S.mailState!=='object')S.mailState={};return S.mailState;}
@@ -11895,7 +11970,6 @@ const GAME_HELP={
   towerdef:{name:'Tower Defence',how:'Place and upgrade towers along the path to stop waves of enemies reaching your castle. 8 towers, 8 enemy types, 40 waves.'},
   candycrush:{name:'Match 3',how:'Swap adjacent pieces to line up three or more of a kind. Matches clear and score — set up chains for big combos.'},
   blockblast:{name:'Block Blast',how:'Drag the block shapes onto the grid. Fill a full row or column to clear it. It ends when no piece can fit.'},
-  racer:{name:'Turbo Racer',how:'A 3D road RACE against 5 rivals over 2 laps. ▲ accelerates, ▼ brakes, ◄ ► steer (or arrow keys / swipe; tap top half = gas, bottom half = brake). Pass the red cars and cross the finish line first — finishing position is your result (1st wins, top 3 is a podium). Keep off the grass or you slow right down, and beat the clock or it\'s a DNF. Win bigger by finishing higher with time to spare.'},
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
 };
 function _showGameHelp(g){
@@ -11993,15 +12067,15 @@ function exitImmersive(){
   document.body.style.webkitOverflowScrolling='';
   document.documentElement.style.overflowY='';
 
-  /* Restore app chrome — kdRoot's original inline cssText sets display:flex.
-     setting style.display='' would fall back to the element's default
-     (block), which collapses the launcher (no flex → kdMain has no height
-     → home layer invisible, dock crammed against the status bar). So we
-     restore the flex display explicitly. */
+  /* Always restore the MAIN APP shell and land on the GAMES menu. Per product
+     decision the in-game Back button NEVER returns to KindleOS — whether or not
+     the OS launcher was mounted, exiting a game goes straight to the games view.
+     So we hide kd-root (instead of restoring it to flex) and force the games
+     view, syncing the nav active tab so the chrome matches. */
   var kdRoot=document.getElementById('kd-root');
   var kdSizer=document.getElementById('kd-sizer');
-  if(kdRoot)kdRoot.style.display='flex';
-  if(kdSizer)kdSizer.style.display='';
+  if(kdRoot)kdRoot.style.display='none';   /* keep the OS launcher hidden */
+  if(kdSizer)kdSizer.style.display='none';
   if(appNode)appNode.style.display='';
 
   /* Re-attach app shell if needed */
@@ -12011,27 +12085,14 @@ function exitImmersive(){
 
   window.scrollTo(0,0);
 
-  /* If KindleOS is active, drop the user back at its home rather than
-     trying to re-render the main app's view (which would create a phantom
-     duplicate view-games element and break the OS chrome). */
-  if(kdRoot&&typeof window._kdCloseApp==='function'){
-    try{window._kdCloseApp();}catch(e){}
-    return;
-  }
-
-  /* Re-attach the active view from cache — regular (non-OS) path.
-     Previously this also force-deleted VIEWS[vid] before re-showing,
-     which paid the full rebuild cost (hundreds of ms for big views)
-     even though the underlying view DOM was completely untouched
-     by the immersive game. showView() correctly handles the cached
-     case so we just call it. */
+  /* Clear the host and show the games menu, syncing the nav active tab. */
   var mh=document.getElementById('mainHost');
   if(mh){while(mh.firstChild)mh.removeChild(mh.firstChild);}
-  var active=document.querySelector('nav .tab.active');
-  if(active){
-    var vid=active.dataset.view;
-    showView(vid);
-  }
+  try{
+    var gt=document.querySelector('nav .tab[data-view="games"]');
+    if(gt){document.querySelectorAll('nav .tab.active').forEach(function(t){t.classList.remove('active');});gt.classList.add('active');gt.style.display='';}
+  }catch(_){}
+  showView('games');
 }
 $('immersiveExit').onclick=exitImmersive;
 function updateImmersiveScore(s){const e=$('immersiveScore');if(e)e.textContent=s;}
@@ -12977,7 +13038,6 @@ function _doLaunch(g){
     case 'mastermind':    Mastermind.start();break;
     case 'dotsboxes':     _initDotsBoxes();DotsBoxes.start();break;
     case 'blockblast':    _initBlockBlast();BlockBlast.start();break;
-    case 'racer':         _initRacer();Racer.start();break;
     case 'digquest':      DigQuest.start();break;
     case 'hanoi':         Hanoi.start();break;
     case 'blackjack':     Blackjack.start();break;
@@ -13911,16 +13971,26 @@ window.KH_MP=(function(){
         };
       }catch(e){console.warn('KH_MP ws failed',e);}
     }
-    /* Polling fallback — only runs if the websocket isn't connected.
-       Skip the round-trip when WS is healthy (saves 1 request every 4 s
-       per active multiplayer session). Also skip when the tab is hidden. */
+    /* Polling fallback — runs whenever the websocket isn't connected, which is
+       ALWAYS on the Cloudflare D1 gateway (realtime is Supabase-only). Game
+       moves are turn-based, so a 2s poll feels responsive; a cheap newest-id
+       probe (~50 B) skips the full body fetch when nothing new arrived, so a
+       quiet room costs almost nothing. Paused while the tab is hidden. */
+    let _lastPollId=null;
     const poll=setInterval(async()=>{
       if(closed)return;
       if(wsOpen)return;
       if(typeof document!=='undefined'&&document.hidden)return;
       if(typeof _groupFetchMessages!=='function')return;
-      try{const msgs=await _groupFetchMessages(code);(msgs||[]).forEach(handle);}catch(e){}
-    },4000);
+      try{
+        if(typeof _groupLatestId==='function'){
+          const lid=await _groupLatestId(code);
+          if(lid&&lid===_lastPollId)return;   /* nothing new — skip the body fetch */
+          _lastPollId=lid;
+        }
+        const msgs=await _groupFetchMessages(code);(msgs||[]).forEach(handle);
+      }catch(e){}
+    },2000);
     return{close(){closed=true;if(ws){try{ws.close();}catch(e){}}if(hb)clearInterval(hb);clearInterval(poll);}};
   }
   /* ── Player search + invite system ────────────────────────────────────
@@ -16618,22 +16688,32 @@ const Snake=(()=>{
    hand-authored level. Tap / Space / ▲ to jump; clear the spikes, ride the
    blocks, reach 100%. One learnable layout so it's beatable with practice
    (instant retry, GD-style). Canvas + flat fills + a modest framerate, kept
-   e-ink friendly like Snake/Racer (no audio — Kindle speakers are unreliable;
+   e-ink friendly like Snake (no audio — Kindle speakers are unreliable;
    the scrolling grid carries the "to the beat" feel). */
 const GeometryDash=(()=>{
   const W=360,H=240,GY=196,SZ=18,HALF=9,PX=58;
   const G=0.92,JV=-11.2,SPD=4.2,FR=38;
   const SPK_W=22,SPK_H=18,BLK_W=26,BLK_H=22;
-  /* Fixed level: [type,x] where x = left edge in world px, ascending. Generous
-     gaps so every spike/cluster is clearable in a single forgiving jump. */
+  /* Fixed level: [type,x] where x = left edge in world px, ascending. Paced to
+     mirror the real "Stereo Madness" sections (gentle intro -> block hops ->
+     busy mixed middle -> calm run -> finish). Blocks are jump-OVER obstacles in
+     this engine (the arc clears a 22px block), not platforms to ride. Every gap
+     is >=278px so each obstacle is an independent, forgiving single jump. ~81s
+     at SPD=4.2. Beatability re-verified by the pure-physics sim mirror. */
   const LEVEL=[
-    ['spike',460],['spike',720],['spike',1000],['spike2',1300],
-    ['block',1640],['spike',1960],['spike',2230],['spike2',2520],
-    ['spike',2840],['block',3160],['spike',3480],['spike2',3780],
-    ['spike',4140],['block',4460],['spike',4790],['spike2',5080],
-    ['spike',5400]
+    /* INTRO — gentle single spikes, learn the one-tap (0%–~22%) */
+    ['spike',520],['spike',820],['spike',1120],['spike',1440],
+    /* BLOCK HOPS — taller jump-over blocks + a spike after each (~22%–38%) */
+    ['block',1820],['spike',2160],['block',2520],['spike',2860],
+    /* MIXED MIDDLE — double spikes + block→spike combos, the busy part (~38%–68%) */
+    ['spike2',3240],['spike',3620],['block',3980],['spike2',4320],
+    ['spike',4700],['block',5060],['spike2',5420],['spike',5820],
+    /* CALM RUN — breathe, spaced singles (~68%–82%) */
+    ['spike',6260],['spike',6620],['spike',7000],
+    /* FINISH — short build to the last double, then home (~82%–100%) */
+    ['block',7380],['spike',7720],['spike2',8060],['spike',8460]
   ].map(o=>({t:o[0],x:o[1]}));
-  const LEVEL_LEN=5400+SPK_W+440; /* finish line a little past the last obstacle */
+  const LEVEL_LEN=8460+SPK_W+440; /* finish line a little past the last obstacle */
   let game=null,timer=null,attempts=0,_submitted=false;
 
   function _best(){return (S.games&&S.games.geometrydash&&S.games.geometrydash.best)||0;}
@@ -16831,18 +16911,21 @@ const Slither=(()=>{
     if(!ctx||!G)return;const dark=document.body.classList.contains('dark');
     ctx.fillStyle=dark?'#0b0b0b':'#f4f4f4';ctx.fillRect(0,0,VW,VH);
     const p=me();const camX=p.x-VW/2,camY=p.y-VH/2;
-    ctx.save();ctx.translate(-camX,-camY);
-    ctx.strokeStyle=dark?'#444':'#bbb';ctx.lineWidth=3;ctx.strokeRect(0,0,WORLD,WORLD);
+    /* Manual camera offset (world→screen = coord-cam) instead of a whole-scene
+       ctx.translate(): old Kindle Silk/WebKit silently DROPS a large fractional
+       translate, which blanked the snake/food/border (drawn at world coords
+       ~750) while the untransformed HUD still showed. Mirrors GeometryDash's
+       proven e-ink camera; pixel-identical on capable browsers. */
+    ctx.strokeStyle=dark?'#444':'#bbb';ctx.lineWidth=3;ctx.strokeRect(-camX,-camY,WORLD,WORLD);
     ctx.fillStyle=dark?'#9ad':'#39c';
-    for(const f of G.food){if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,6.283);ctx.fill();}
+    for(const f of G.food){if(f.x<camX-10||f.x>camX+VW+10||f.y<camY-10||f.y>camY+VH+10)continue;ctx.beginPath();ctx.arc(f.x-camX,f.y-camY,f.r,0,6.283);ctx.fill();}
     G.snakes.forEach(s=>{
       if(s.dead)return;const r=Math.max(4,3+s.len*0.05);
       ctx.fillStyle=s.ai?(dark?'#777':'#999'):(dark?'#eee':'#111');
-      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i];if(pt.x<camX-20||pt.x>camX+VW+20||pt.y<camY-20||pt.y>camY+VH+20)continue;ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,6.283);ctx.fill();}
-      ctx.beginPath();ctx.arc(s.x,s.y,r+1,0,6.283);ctx.fill();
-      if(!s.ai){ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(s.x+Math.cos(s.angle+0.5)*r,s.y+Math.sin(s.angle+0.5)*r,1.7,0,6.283);ctx.arc(s.x+Math.cos(s.angle-0.5)*r,s.y+Math.sin(s.angle-0.5)*r,1.7,0,6.283);ctx.fill();}
+      for(let i=s.path.length-1;i>=0;i--){const pt=s.path[i];if(pt.x<camX-20||pt.x>camX+VW+20||pt.y<camY-20||pt.y>camY+VH+20)continue;ctx.beginPath();ctx.arc(pt.x-camX,pt.y-camY,r,0,6.283);ctx.fill();}
+      ctx.beginPath();ctx.arc(s.x-camX,s.y-camY,r+1,0,6.283);ctx.fill();
+      if(!s.ai){ctx.fillStyle=dark?'#111':'#fff';ctx.beginPath();ctx.arc(s.x-camX+Math.cos(s.angle+0.5)*r,s.y-camY+Math.sin(s.angle+0.5)*r,1.7,0,6.283);ctx.arc(s.x-camX+Math.cos(s.angle-0.5)*r,s.y-camY+Math.sin(s.angle-0.5)*r,1.7,0,6.283);ctx.fill();}
     });
-    ctx.restore();
     ctx.fillStyle=dark?'#888':'#666';ctx.font='12px monospace';ctx.textAlign='left';ctx.fillText('Length '+Math.round(p.len)+'   Food '+G.score,8,18);
   }
   function start(){
@@ -19752,358 +19835,6 @@ function _initSolitaire(){if(Solitaire)return;Solitaire=(()=>{
   return{start,restore};
 })();}
 
-/* ── Turbo Racer ─────────────────────────────────────────────────────
-   Behind-the-wheel pseudo-3D road racer. The projection below was
-   verified numerically (road covers the screen from horizon to bottom,
-   widths shrink with distance) BEFORE shipping — the previous version's
-   maths projected the road off-screen, which is why nothing showed.
-
-   project(worldX, dz, hillY): dz = depth ahead (segments). Returns screen
-   x/y + half-width. Drawn far→near as filled trapezoids. Cheap enough for
-   e-ink (flat fills, ~20fps), same family as the Flight Sim's projection. */
-let Racer=null;
-function _initRacer(){ if(Racer)return; Racer=(()=>{
-  const CW=300, CH=420, HORIZON=160;
-  const camH=1.5, camD=2.2, ROADW=1.6;   /* verified constants */
-  const DRAW=160;                          /* segments rendered ahead */
-  const LAPS=2;                  /* a race = this many laps of the circuit */
-  const CFG={
-    /* rivalAvg = how fast the AI field averages (your max is 1.0-ish via
-       accel); slower rival field on easy so a clean lap wins. */
-    easy:  {max:0.62, accel:0.26, time:70, rival:0.34},
-    normal:{max:0.76, accel:0.30, time:62, rival:0.42},
-    hard:  {max:0.92, accel:0.34, time:55, rival:0.52},
-  };
-  const FIELD=5;                 /* number of rival cars you race */
-  let G=null, timer=null, submitted=false, lastT=0;
-  /* Held state of the on-screen steer buttons, sampled by tick() every
-     frame. The old design re-armed a 160 ms watchdog from a 90 ms
-     setInterval; on a busy Kindle those callbacks arrive late, the
-     watchdog expired mid-hold and steering kept cutting out — the
-     "turning doesn't work" bug. A plain flag has no timer to miss. */
-  let steerHeld=0;
-
-  /* Track = array of segments, each with a curve amount and a hill height.
-     curve bends the road left/right; hillY raises/lowers it. */
-  function buildTrack(){
-    const t=[];
-    const push=(n,curve,hill)=>{for(let i=0;i<n;i++)t.push({curve:curve,hill:hill});};
-    const hillRamp=(n,curve,from,to)=>{for(let i=0;i<n;i++){const k=(1-Math.cos(i/n*Math.PI))/2;t.push({curve:curve,hill:from+(to-from)*k});}};
-    push(60,0,0);
-    push(40,-0.6,0);          /* gentle left */
-    hillRamp(50,0,0,0.5);     /* climb */
-    push(40,0.9,0.5);         /* right on the crest */
-    hillRamp(50,0.2,0.5,0);   /* descend */
-    push(30,0,0);
-    push(50,1.3,0);           /* hard right */
-    push(40,-1.3,0);          /* hard left */
-    hillRamp(60,0,0,0.8);
-    push(40,-0.7,0.8);
-    hillRamp(60,0,0.8,0);
-    push(60,0,0);
-    return t;
-  }
-
-  function start(){
-    if(timer){clearInterval(timer);timer=null;}
-    submitted=false;steerHeld=0;
-    const diff=(($('racerDiff')||{}).value)||'normal';
-    const cfg=CFG[diff]||CFG.normal;
-    const track=buildTrack();
-    const trackLen=track.length*LAPS;     /* finish line distance (in segments) */
-    G={diff,cfg,track,trackLen,
-       prog:0,                            /* YOUR race progress 0..trackLen */
-       playerX:0, speed:0,
-       throttle:false, brake:false, steer:0, steerUntil:0, auto:false,
-       timeLeft:cfg.time, lap:1,
-       rivals:_mkRivals(cfg,trackLen),
-       place:1, active:true, over:false, won:false, dnf:false,
-       best:(S.games&&S.games.racer&&S.games.racer.best)||0};
-    enterImmersive('Turbo Racer','Lap 1/'+LAPS);
-    buildUI();
-  }
-  /* Rivals are real competitors: each has its own race progress + a lane,
-     and a slightly varied pace around the difficulty's rival average. They
-     start spread out just ahead of and behind you on the grid. */
-  function _mkRivals(cfg,trackLen){
-    const r=[];
-    for(let i=0;i<FIELD;i++){
-      r.push({
-        prog:(i-2)*6,                                  /* small grid spread */
-        x:(i%2?1:-1)*(0.35+0.18*Math.floor(i/2)),      /* staggered lanes */
-        pace:cfg.rival*(0.86+Math.random()*0.30),      /* per-rival speed */
-        name:'CPU'+(i+1)
-      });
-    }
-    return r;
-  }
-
-  function buildUI(){
-    immersiveContent.innerHTML='';
-    immersiveContent.style.cssText='display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px;';
-    immersiveContent.appendChild(txt('div','',{id:'racerBar',style:{fontSize:'12px',fontWeight:'700',fontFamily:'monospace'}}));
-    const cv=el('canvas',{id:'racerCanvas',width:CW,height:CH});
-    cv.style.cssText='display:block;border:2px solid var(--fg);border-radius:6px;background:#000;touch-action:none;max-width:100%;';
-    immersiveContent.appendChild(cv);
-    /* tap top half = gas, bottom half = brake; swipe L/R steers */
-    let _sx=null;
-    cv.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];_sx=t.clientX;const r=cv.getBoundingClientRect();if((t.clientY-r.top)<r.height*0.5)G.throttle=true;else G.brake=true;},{passive:false});
-    cv.addEventListener('touchmove',e=>{e.preventDefault();if(_sx==null)return;const dx=e.touches[0].clientX-_sx;_steer(dx<-12?-1:dx>12?1:0);},{passive:false});
-    cv.addEventListener('touchend',e=>{e.preventDefault();_sx=null;G.steer=0;G.throttle=false;G.brake=false;},{passive:false});
-    /* Swipe steering arms a 160ms auto-expiry so it can never get stuck on
-       (touchmove keeps re-arming it while the finger is actually moving). */
-    function _steer(d){G.steer=d;G.steerUntil=Date.now()+160;}
-    const row=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',width:'100%',maxWidth:'300px',marginTop:'8px'}});
-    /* Steer buttons set a plain held flag that tick() samples every frame —
-       no repeat timer, no expiry to miss on a throttled Kindle. Release is
-       covered by touchend, touchcancel, mouseup and mouseleave. */
-    const mkHold=(lbl,dir)=>{const b=txt('button',lbl,{className:'btn',style:{fontSize:'22px',minHeight:'56px',padding:'0'}});
-      const startHold=()=>{steerHeld=dir;};
-      const endHold=()=>{if(steerHeld===dir){steerHeld=0;if(G)G.steer=0;}};
-      b.ontouchstart=e=>{e.preventDefault();startHold();};b.ontouchend=e=>{e.preventDefault();endHold();};b.ontouchcancel=e=>{endHold();};
-      b.onmousedown=startHold;b.onmouseup=endHold;b.onmouseleave=endHold;
-      return b;};
-    const mk=(lbl,on,off)=>{const b=txt('button',lbl,{className:'btn',style:{fontSize:'22px',minHeight:'56px',padding:'0'}});
-      b.ontouchstart=e=>{e.preventDefault();on();};b.ontouchend=e=>{e.preventDefault();off&&off();};
-      b.onmousedown=on;b.onmouseup=off||(()=>{});b.onmouseleave=off||(()=>{});
-      b.onclick=()=>{on();setTimeout(()=>off&&off(),200);};return b;};
-    row.appendChild(mkHold('◄',-1));
-    row.appendChild(mk('▲',()=>G.throttle=true,()=>G.throttle=false));
-    row.appendChild(mk('▼',()=>G.brake=true,()=>G.brake=false));
-    row.appendChild(mkHold('►',1));
-    immersiveContent.appendChild(row);
-    const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center',gap:'6px'}});
-    /* Auto-accelerate: hold full throttle automatically so you only steer.
-       Toggle on/off; button shows state. */
-    const autoBtn=txt('button',G.auto?'Auto: ON':'Auto-accelerate',{className:'btn small'+(G.auto?' primary':'')});
-    autoBtn.onclick=()=>{G.auto=!G.auto;autoBtn.textContent=G.auto?'Auto: ON':'Auto-accelerate';autoBtn.classList.toggle('primary',G.auto);toast(G.auto?'Auto-accelerate on — just steer!':'Auto-accelerate off',1600);};
-    ctrl.appendChild(autoBtn);
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>G&&G.active,start)}));
-    immersiveContent.appendChild(ctrl);
-    if(timer)clearInterval(timer);
-    lastT=Date.now();
-    timer=setInterval(tick,1000/20);
-    /* Stop the race loop on ANY immersive exit (Recent switcher, swipe, etc.) —
-       not just the in-game Exit button — so the 20fps timer can't leak. */
-    try{immersiveRoot._trackStop=function(){if(timer){clearInterval(timer);timer=null;}};}catch(_){}
-    draw();
-  }
-
-  function seg(i){const t=G.track;return t[((i%t.length)+t.length)%t.length];}
-
-  function project(worldX,dz,hillY){
-    const scale=camD/dz;
-    return{scale,
-      sx:Math.round(CW/2+scale*worldX*CW/2),
-      sy:Math.round(HORIZON+scale*(camH-hillY)*(CH-HORIZON)),
-      sw:Math.max(1,Math.round(scale*ROADW*CW/2))};
-  }
-
-  function tick(){
-    if(!G||!G.active)return;
-    if(typeof document!=='undefined'&&document.hidden)return;
-    const now=Date.now();let dt=(now-lastT)/1000;lastT=now;if(dt>0.12)dt=0.12;
-    /* Auto-accelerate keeps the throttle pinned unless you're braking. */
-    if(G.brake)G.speed-=G.cfg.accel*1.8*dt;
-    else if(G.throttle||G.auto)G.speed+=G.cfg.accel*dt;
-    else G.speed-=G.cfg.accel*0.4*dt;
-    const off=Math.abs(G.playerX)>1.0;
-    if(off&&G.speed>G.cfg.max*0.4)G.speed-=G.cfg.accel*2.2*dt;
-    G.speed=Math.max(0,Math.min(G.cfg.max,G.speed));
-    /* advance YOUR race progress (segments) */
-    const adv=G.speed*dt*90;
-    G.prog+=adv;
-    G.lap=Math.min(LAPS,1+Math.floor(G.prog/G.track.length));
-    /* Steer sources, in priority order:
-       1. On-screen buttons — steerHeld flag, sampled here every tick, so
-          holding always turns regardless of how throttled timers are.
-       2. Canvas swipe / keyboard — G.steer armed with steerUntil; the
-          expiry auto-releases if a touchend was missed (the old Kindle
-          "turns forever" bug). */
-    if(steerHeld!==0){G.steer=steerHeld;G.steerUntil=0;}
-    else if(G.steerUntil&&now>G.steerUntil)G.steer=0;
-    if(G.steer!==0&&G.speed>0.02){
-      G.playerX+=G.steer*dt*1.4*Math.min(1,0.3+G.speed/G.cfg.max);
-      G.playerX=Math.max(-2,Math.min(2,G.playerX));
-    }
-    G.leanFade=G.steer; /* for the car sprite lean */
-    /* rivals race their own progress; bump if you're side-by-side near them */
-    for(const rv of G.rivals){
-      rv.prog+=rv.pace*dt*90;
-      const gap=rv.prog-G.prog;                      /* >0 = ahead of you */
-      if(gap>0&&gap<6&&Math.abs(rv.x-G.playerX)<0.5&&G.speed>0.2){
-        G.speed*=0.55;                                /* rear-ended a rival */
-        try{navigator.vibrate&&navigator.vibrate(70);}catch(_){}
-      }
-    }
-    /* Live placing: 1 + number of rivals ahead of you */
-    G.place=1+G.rivals.filter(rv=>rv.prog>G.prog).length;
-    /* WIN: you crossed the finish line */
-    if(G.prog>=G.trackLen){G.prog=G.trackLen;endGame(false);return;}
-    /* DNF: time ran out before finishing */
-    G.timeLeft-=dt;
-    if(G.timeLeft<=0){G.timeLeft=0;endGame(true);return;}
-    const bar=$('racerBar');
-    const pctRace=Math.floor(G.prog/G.trackLen*100);
-    if(bar)bar.textContent='Lap '+G.lap+'/'+LAPS+'  ·  P'+G.place+'/'+(FIELD+1)+'  ·  '+pctRace+'%  ·  '+Math.ceil(G.timeLeft)+'s';
-    updateImmersiveScore('Lap '+G.lap+'/'+LAPS+' · P'+G.place);
-    draw();
-  }
-  function _ordinal(n){return n+(['th','st','nd','rd'][(n%100>10&&n%100<14)?0:(n%10<4?n%10:0)]||'th');}
-
-  function draw(){
-    const cv=$('racerCanvas');if(!cv)return;
-    const ctx=cv.getContext('2d');
-    const dark=document.body.classList.contains('dark');
-    ctx.fillStyle=dark?'#0a0a18':'#a9ccff';ctx.fillRect(0,0,CW,HORIZON);
-    ctx.fillStyle=dark?'#102016':'#2f6b2b';ctx.fillRect(0,HORIZON,CW,CH-HORIZON);
-
-    const base=Math.floor(G.prog);
-    const frac=G.prog-base;
-    /* accumulate curve + hill across the drawn segments */
-    let x=0, dxv=0;          /* lateral road centre offset + its velocity */
-    let camHill=seg(base).hill;
-    /* Pre-compute projected centre points + widths, far portion first */
-    const P=[];
-    /* Curve accumulation (Jake Gordon road model): each segment's curve
-       feeds a horizontal VELOCITY (dx), which integrates into the road
-       centre offset (cx). cx is what bends the road across the screen.
-       CURVE_SCALE=0.02 was tuned numerically so a hard corner visibly
-       sweeps the road sideways while a straight stays centred — the old
-       0.0008 was ~25x too weak, so the road never appeared to turn. */
-    const CURVE_SCALE=0.02;
-    let cx=0, cdx=0;
-    for(let n=0;n<DRAW;n++){
-      const s=seg(base+n);
-      const dz=n-frac+1;                       /* depth ahead (>0) */
-      const worldX=cx - G.playerX;
-      const p=project(worldX,dz, s.hill-camHill);
-      P.push({sx:p.sx,sy:p.sy,sw:p.sw,seg:base+n,hill:s.hill});
-      /* integrate AFTER projecting this segment so n=0 is at the player */
-      cx+=cdx;
-      cdx+=s.curve*CURVE_SCALE;
-    }
-    /* Draw far→near so nearer trapezoids overpaint */
-    for(let n=DRAW-1;n>0;n--){
-      const a=P[n], b=P[n-1];            /* a = farther, b = nearer */
-      if(b.sy<=a.sy)continue;
-      const band=Math.floor(a.seg/3)%2===0;
-      /* grass */
-      ctx.fillStyle=band?(dark?'#102016':'#2f6b2b'):(dark?'#0c180f':'#276022');
-      ctx.fillRect(0,a.sy,CW,b.sy-a.sy+1);
-      /* road */
-      ctx.fillStyle=band?(dark?'#3a3a3a':'#787878'):(dark?'#323232':'#6a6a6a');
-      ctx.beginPath();
-      ctx.moveTo(a.sx-a.sw,a.sy);ctx.lineTo(a.sx+a.sw,a.sy);
-      ctx.lineTo(b.sx+b.sw,b.sy);ctx.lineTo(b.sx-b.sw,b.sy);
-      ctx.closePath();ctx.fill();
-      /* white rumble edges + dashed centre on alternate bands */
-      if(band){
-        ctx.fillStyle=dark?'#ddd':'#fff';
-        const er=Math.max(1,a.sw*0.10);
-        ctx.beginPath();ctx.moveTo(a.sx-a.sw,a.sy);ctx.lineTo(a.sx-a.sw+er,a.sy);ctx.lineTo(b.sx-b.sw+er,b.sy);ctx.lineTo(b.sx-b.sw,b.sy);ctx.closePath();ctx.fill();
-        ctx.beginPath();ctx.moveTo(a.sx+a.sw,a.sy);ctx.lineTo(a.sx+a.sw-er,a.sy);ctx.lineTo(b.sx+b.sw-er,b.sy);ctx.lineTo(b.sx+b.sw,b.sy);ctx.closePath();ctx.fill();
-        const cwd=Math.max(0.5,a.sw*0.04);
-        ctx.fillRect(a.sx-cwd,a.sy,cwd*2,Math.max(1,(b.sy-a.sy)*0.6));
-      }
-    }
-    /* Finish line — drawn as a checkered band when it's within view ahead. */
-    const finAhead=G.trackLen-G.prog;
-    if(finAhead>0&&finAhead<DRAW){
-      const fp=P[Math.max(0,Math.min(DRAW-1,Math.round(finAhead)))];
-      if(fp){
-        const sq=Math.max(2,fp.sw/5);
-        for(let i=-2;i<=2;i++){
-          ctx.fillStyle=(i%2===0)?'#fff':'#111';
-          ctx.fillRect(fp.sx+i*sq-sq/2, fp.sy-sq, sq, sq);
-        }
-        ctx.fillStyle='#fff';ctx.font='bold 9px monospace';ctx.textAlign='center';
-        ctx.fillText('FINISH',fp.sx,fp.sy-sq-2);
-      }
-    }
-    /* Rivals — position by race progress RELATIVE to you (gap>0 = ahead and
-       visible up the road). Sort far→near so nearer cars overpaint. */
-    G.rivals.map(rv=>({rv,gap:rv.prog-G.prog})).filter(o=>o.gap>0.3&&o.gap<DRAW)
-      .sort((p,q)=>q.gap-p.gap).forEach(({rv,gap})=>{
-      const p=P[Math.max(0,Math.min(DRAW-1,Math.round(gap)))];
-      if(!p)return;
-      const w=Math.max(6,p.sw*0.9), h=w*0.7;
-      const rx=p.sx + (rv.x*p.sw);
-      ctx.fillStyle='#d33';ctx.fillRect(rx-w/2,p.sy-h,w,h);
-      ctx.fillStyle='#911';ctx.fillRect(rx-w/2,p.sy-h*0.35,w,h*0.35);
-      ctx.fillStyle='#fdd';ctx.fillRect(rx-w/2+w*0.15,p.sy-h*0.75,w*0.7,h*0.3);
-    });
-    /* player car */
-    const pcx=CW/2+G.steer*7, pcy=CH-44, pw=52, ph=30;
-    ctx.fillStyle=dark?'#4af':'#06c';ctx.fillRect(pcx-pw/2,pcy,pw,ph);
-    ctx.fillStyle='#bcd';ctx.fillRect(pcx-pw/2+8,pcy+5,pw-16,9);
-    ctx.fillStyle='#111';ctx.fillRect(pcx-pw/2-3,pcy+ph-10,7,11);ctx.fillRect(pcx+pw/2-4,pcy+ph-10,7,11);
-    if(Math.abs(G.playerX)>1){ctx.fillStyle='rgba(170,130,40,0.22)';ctx.fillRect(0,HORIZON,CW,CH-HORIZON);}
-  }
-
-  /* dnf = ran out of time before finishing. Otherwise you crossed the line
-     and G.place is your finishing position among (FIELD+1) cars. The POINT:
-     beat the field. Win = 1st. Podium = top 3. */
-  function endGame(dnf){
-    if(!G||!G.active)return;
-    G.active=false;G.over=true;G.dnf=!!dnf;
-    if(timer){clearInterval(timer);timer=null;}
-    /* Final placing: if you finished, rivals still short of the line are
-       behind you; rivals already past it are ahead. */
-    const finishedAhead=G.rivals.filter(rv=>rv.prog>=G.trackLen).length;
-    const place=dnf?(FIELD+1):(1+G.rivals.filter(rv=>rv.prog>G.prog).length);
-    G.place=place;
-    G.won=(!dnf&&place===1);
-    /* Score rewards finishing position + speed bonus for time left.
-       1st≈600 base, each place down -90, +up to ~time bonus. DNF scores
-       only the distance fraction so a near-miss still beats a standstill. */
-    let score;
-    if(dnf){ score=Math.floor((G.prog/G.trackLen)*200); }
-    else { score=Math.max(50,(FIELD+1-place)*90+100)+Math.floor(G.timeLeft*4); }
-    if(!submitted){submitted=true;
-      try{if(!S.games)S.games={};const prev=(S.games.racer&&S.games.racer.best)||0;S.games.racer={best:Math.max(prev,score)};if(typeof saveNow==='function')saveNow();}catch(_){}
-      try{if(typeof _khSubmitScore==='function')_khSubmitScore('racer',score);}catch(_){}
-      try{if(typeof recordStat==='function')recordStat('racer',!dnf&&place<=3);}catch(_){}
-    }
-    /* Result overlay on the canvas */
-    const cv=$('racerCanvas');
-    if(cv){const ctx=cv.getContext('2d');ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,CW,CH);
-      ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 26px monospace';
-      ctx.fillText(dnf?'DNF':(_ordinal(place)),CW/2,CH/2-6);
-      ctx.font='13px monospace';ctx.fillText(dnf?'Out of time':(place===1?'YOU WON!':'of '+(FIELD+1)+' racers'),CW/2,CH/2+18);}
-    const headline=dnf?'Did not finish':place===1?'1st — YOU WON!':place<=3?_ordinal(place)+' — Podium!':_ordinal(place)+' place';
-    const isBest=score>=(G.best||0)&&score>0;
-    const banner=el('div',{style:{marginTop:'8px',padding:'12px',border:'2px solid var(--fg)',borderRadius:'8px',textAlign:'center',maxWidth:'300px',width:'100%'}});
-    banner.appendChild(txt('div',headline.replace('',''),{style:{fontSize:'18px',fontWeight:'900',letterSpacing:'1px'}}));
-    banner.appendChild(txt('div','Score '+score+(isBest?'   ★ NEW BEST':'   (best '+(G.best||0)+')'),{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px'}}));
-    if(!dnf)banner.appendChild(txt('div','Finished P'+place+' of '+(FIELD+1)+' · '+Math.ceil(G.timeLeft)+'s to spare',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
-    immersiveContent.insertBefore(banner,immersiveContent.querySelector('.card-row'));
-    toast(dnf?'Out of time — DNF':(place===1?'You won the race!':'Finished '+_ordinal(place)),2800);
-  }
-
-  document.addEventListener('keydown',e=>{
-    if(immersiveRoot.style.display!=='block'||!G||!G.active)return;
-    /* racerCanvas check pins this to the Racer UI so a stale game can't
-       hijack arrow keys while another game is on screen. */
-    if(!document.getElementById('racerCanvas'))return;
-    /* Keyboard: hold steer with a long expiry; keyup clears it. */
-    if(e.key==='ArrowLeft'){G.steer=-1;G.steerUntil=Date.now()+99999;e.preventDefault();}
-    else if(e.key==='ArrowRight'){G.steer=1;G.steerUntil=Date.now()+99999;e.preventDefault();}
-    else if(e.key==='ArrowUp'){G.throttle=true;e.preventDefault();}
-    else if(e.key==='ArrowDown'){G.brake=true;e.preventDefault();}
-  });
-  document.addEventListener('keyup',e=>{
-    if(!G||!G.active)return;
-    if(e.key==='ArrowLeft'&&G.steer===-1)G.steer=0;
-    else if(e.key==='ArrowRight'&&G.steer===1)G.steer=0;
-    else if(e.key==='ArrowUp')G.throttle=false;
-    else if(e.key==='ArrowDown')G.brake=false;
-  });
-  try{$('immersiveExit').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;}});}catch(_){}
-
-  return{start};
-})();}
-
 let FlightSim=null;
 function _initFlightSim(){
   if(FlightSim)return;
@@ -22628,8 +22359,7 @@ const GAME_NAMES={
   g2048:'2048',tetris:'Tetris',spaceinv:'Space Invaders',flightsim:'Flight Sim',
   solitaire:'Solitaire',towerdef:'Tower Defence',chess:'Chess',
   battleship:'Battleship',lightsout:'Lights Out',snakesladders:'Snakes & Ladders',
-  wordsearch:'Word Search',candycrush:'Gem Blast',mastermind:'Mastermind',
-  racer:'Turbo Racer'
+  wordsearch:'Word Search',candycrush:'Gem Blast',mastermind:'Mastermind'
 };
 function gameDisplayName(key){return GAME_NAMES[key]||key;}
 
@@ -27232,7 +26962,7 @@ home:()=>{
         const icon=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',cursor:'pointer',padding:'12px 4px 8px',borderRadius:'14px',border:isLast?'2px solid var(--fg)':'var(--thin)',background:isLast?'var(--highlight)':'var(--card)',boxShadow:'var(--shadow)',position:'relative',transition:'none'}});
         if(isLast){const dot=txt('div','▶',{style:{position:'absolute',top:'4px',right:'6px',fontSize:'8px',color:'var(--muted)'}});icon.appendChild(dot);}
         icon.appendChild(txt('div',app.icon,{style:{fontSize:'18px',fontWeight:'900',fontFamily:'monospace',lineHeight:'1',textAlign:'center',color:'var(--fg)',letterSpacing:'-1px'}}));
-        icon.appendChild(txt('div',app.label,{style:{fontSize:'9px',fontWeight:'700',textAlign:'center',color:'var(--muted)',lineHeight:'1.2',fontFamily:'var(--ui-font)',textTransform:'uppercase',letterSpacing:'0.3px',maxWidth:'56px',wordBreak:'break-word'}}));
+        icon.appendChild(txt('div',_censorText(app.label),{style:{fontSize:'9px',fontWeight:'700',textAlign:'center',color:'var(--muted)',lineHeight:'1.2',fontFamily:'var(--ui-font)',textTransform:'uppercase',letterSpacing:'0.3px',maxWidth:'56px',wordBreak:'break-word'}}));
         icon.onclick=()=>{
           /* Try nav tab first; fall back to direct showView */
           const t=document.querySelector('nav .tab[data-view="'+app.view+'"]');
@@ -27879,13 +27609,6 @@ games:()=>{
     const ccBest=S.games&&S.games.candycrush&&S.games.candycrush.best||0;
     if(ccBest)c.appendChild(txt('p','Best: '+ccBest,{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'candycrush',style:{marginTop:'6px',width:'100%'}}));
-  }));
-  rowArc.appendChild(gc('Turbo Racer',null,c=>{
-    c.appendChild(txt('p','3D road race vs 5 rivals over 2 laps. Pass them, cross the line first, don\'t get timed out. Finish on the podium!',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
-    c.appendChild(sel('racerDiff',[['easy','Easy'],['normal','Normal'],['hard','Hard']],'normal'));
-    const rBest=S.games&&S.games.racer&&S.games.racer.best;
-    if(rBest)c.appendChild(txt('p','Best: '+rBest+' m',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'4px'}}));
-    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'racer',style:{marginTop:'6px',width:'100%'}}));
   }));
   v.appendChild(rowArc);
 
@@ -33974,7 +33697,7 @@ breathe:()=>{
       const c=el('div',{style:{border:'var(--thin)',borderRadius:'6px',padding:'9px 10px',cursor:'pointer',userSelect:'none'}});
       c.id='gscard'+i;
       const nameRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:'4px',marginBottom:'2px'}});
-      nameRow.appendChild(txt('div',g.name,{style:{fontWeight:'800',fontSize:'12px'}}));
+      nameRow.appendChild(txt('div',_censorText(g.name),{style:{fontWeight:'800',fontSize:'12px'}}));
       nameRow.appendChild(txt('div',g.duration,{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0'}}));
       c.appendChild(nameRow);
       c.appendChild(txt('div',g.desc,{style:{fontSize:'10px',color:'var(--muted)',lineHeight:'1.4'}}));
@@ -37402,6 +37125,21 @@ Deno.serve(async (req)=>{
       agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to Supabase.',5000);}catch(_){}};
       agRow.append(agIn,agSave);c.appendChild(agRow);
       c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list off Supabase — zero egress. Blank = Supabase. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      /* One-click migration: copy ALL Supabase data into the D1 gateway. */
+      c.appendChild(txt('div','Migrate data → Cloudflare',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
+      const migStat=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px',fontFamily:'monospace',whiteSpace:'pre-wrap'}});
+      const migBtn=txt('button','Copy Supabase → Cloudflare',{className:'btn small'});
+      migBtn.onclick=async()=>{
+        if(!_apiGatewayUrl()){toast('Set the API gateway URL above first.');return;}
+        if(!await kindleConfirm('Copy ALL data (accounts, chat, mail, scores, announcements, bans, visits) from Supabase into your Cloudflare D1 database? Safe to re-run. The one-time read from Supabase uses some egress.'))return;
+        migBtn.disabled=true;migStat.style.color='var(--muted)';migStat.textContent='Migrating…';
+        const res=await _migrateToCloudflare(function(t,n,tot){migStat.textContent='Copying '+t.replace('kh_','')+'… '+n+' rows ('+tot+' total)';});
+        migBtn.disabled=false;
+        if(res&&res.ok){migStat.style.color='var(--muted)';migStat.textContent='Done — '+res.total+' rows copied.  '+Object.keys(res.tables).map(function(k){return k.replace('kh_','')+':'+res.tables[k].copied;}).join('  ');}
+        else{migStat.style.color='var(--danger)';const fl=Object.keys((res&&res.tables)||{}).filter(function(k){return res.tables[k].error;}).map(function(k){return k.replace('kh_','')+' ('+res.tables[k].error+')';});migStat.textContent=((res&&res.error)||('Partial — '+(res?res.total:0)+' rows; issues: '+fl.join('; '))).slice(0,300);}
+      };
+      c.appendChild(migBtn);c.appendChild(migStat);
+      c.appendChild(txt('div','Reads every table from Supabase and upserts it into the D1 Worker above (set the API gateway first). Re-runnable. User save-files also self-migrate on each person\'s next login, so a partial copy still self-heals.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* ── Capacity guard ── close NEW sign-ins during a quota emergency, with
          an auto-expiring "back on <date>" message, so the project throttles
          itself instead of getting suspended/stuck. */
@@ -37646,7 +37384,9 @@ Deno.serve(async (req)=>{
        gate its admin-only cards — but the tab itself is now available to ALL
        users, so anyone can run the AI bug-fix on their own errors. */
     try{ await _checkAdmin(); }catch(e){}
-    try{ _installAdminTab(); }catch(e){}
+    /* Admin lockdown: the Errors / AI-Fix / Diagnostics tab is admin-only now —
+       only install it once admin status has resolved to true. */
+    try{ if(window._isAdminCached===true) _installAdminTab(); }catch(e){}
   })();
 
   const boardSection=el('div');
@@ -45580,7 +45320,7 @@ mail:()=>{
         if(typeof _avatarEl==='function')line1.appendChild(_avatarEl(folder==='sent'?m.to:m.from,24));
         const whoCol=el('div',{style:{flex:'1',minWidth:'0'}});
         whoCol.appendChild(txt('div',_addrLbl(who),{style:{fontSize:'12px',fontWeight:unread?'900':'600',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
-        whoCol.appendChild(txt('div',m.subject||'(no subject)',{style:{fontSize:'12px',fontWeight:unread?'800':'400',color:unread?'var(--fg)':'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        whoCol.appendChild(txt('div',_censorText(m.subject||'(no subject)'),{style:{fontSize:'12px',fontWeight:unread?'800':'400',color:unread?'var(--fg)':'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
         line1.appendChild(whoCol);
         line1.appendChild(txt('span',fmtTs(m.ts),{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0',alignSelf:'flex-start',marginTop:'2px'}}));
         row.appendChild(line1);
@@ -50317,7 +50057,7 @@ messages:()=>{
       row.appendChild(icon);
       const info=el('div',{style:{flex:'1',minWidth:'0'}});
       const titleRow=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}});
-      titleRow.appendChild(txt('span',g.name||'Unnamed Group',{style:{fontWeight:'700',fontSize:'13px'}}));
+      titleRow.appendChild(txt('span',_censorText(g.name||'Unnamed Group'),{style:{fontWeight:'700',fontSize:'13px'}}));
       if(isGlobal){
         titleRow.appendChild(txt('span','PUBLIC',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',padding:'2px 7px',borderRadius:'10px',background:'var(--fg)',color:'var(--bg)'}}));
       }
@@ -50613,7 +50353,7 @@ messages:()=>{
     const hInfo=el('div',{style:{flex:'1',minWidth:'0',cursor:'pointer'}});
     const nameLine=el('div',{style:{display:'flex',alignItems:'center',gap:'4px'}});
     if(_sbActive())nameLine.appendChild(el('span',{className:'msg-realtime-dot',title:'Live updates'}));
-    nameLine.appendChild(txt('span',g.name,{style:{fontWeight:'800',fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+    nameLine.appendChild(txt('span',_censorText(g.name),{style:{fontWeight:'800',fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
     hInfo.appendChild(nameLine);
     const memberLine=txt('div','Tap for info',{style:{fontSize:'10px',color:'var(--muted)',fontFamily:'var(--ui-font)'}});
     hInfo.appendChild(memberLine);
@@ -51322,7 +51062,7 @@ messages:()=>{
     async function _openUserAboutModal(msg,grp){
       const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
       const box=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'18px',maxWidth:'480px',width:'100%',boxShadow:'var(--shadow-md)',maxHeight:'80vh',overflowY:'auto'}});
-      box.appendChild(txt('h3','User · '+(msg.displayName||'Unknown'),{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+      box.appendChild(txt('h3','User · '+_dispName(msg.displayName||'Unknown'),{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
       box.appendChild(txt('div','Admin view — visible to admins only',{style:{fontSize:'10px',color:'var(--danger)',fontWeight:'800',letterSpacing:'.5px',textTransform:'uppercase',marginBottom:'10px'}}));
       const info=el('div',{style:{fontSize:'12px',lineHeight:'1.7',fontFamily:'var(--ui-font)'}});
       info.appendChild(txt('div','Loading profile…',{style:{color:'var(--muted)'}}));
@@ -51539,7 +51279,7 @@ messages:()=>{
         pinBox.appendChild(txt('div','PINNED ('+pins.length+')',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px'}}));
         pins.slice(0,3).forEach(p=>{
           const r=el('div',{style:{fontSize:'12px',lineHeight:'1.4',cursor:'pointer'}});
-          r.innerHTML='<b>'+String(p.displayName||'?').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+String(_censorText(p.text||'')).slice(0,120).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((p.text||'').length>120?'…':'');
+          r.innerHTML='<b>'+String(_dispName(p.displayName||'?')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+String(_censorText(p.text||'')).slice(0,120).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((p.text||'').length>120?'…':'');
           r.onclick=()=>{
             /* Scroll to the original message in the log */
             const target=log.querySelector('[data-msg-id="'+p.id+'"]');
@@ -51588,7 +51328,7 @@ messages:()=>{
         if(m.replyTo&&msgById[m.replyTo]){
           const rq=el('div',{className:'msg-reply-quote'});
           const orig=msgById[m.replyTo];
-          rq.innerHTML='<b>'+String(orig.displayName||'Unknown').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
+          rq.innerHTML='<b>'+String(_dispName(orig.displayName||'Unknown')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
           bubble.appendChild(rq);
         }
         if(m.important)bubble.appendChild(txt('span','IMPORTANT',{className:'msg-important-tag'}));
@@ -52064,7 +51804,7 @@ messages:()=>{
     const modal=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'20px',maxWidth:'320px',width:'100%',display:'flex',flexDirection:'column',gap:'14px',boxShadow:'var(--shadow-md)'}});
 
     const mHdr=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}});
-    mHdr.appendChild(txt('strong',g.name,{style:{fontFamily:'var(--title-font)',fontSize:'15px'}}));
+    mHdr.appendChild(txt('strong',_censorText(g.name),{style:{fontFamily:'var(--title-font)',fontSize:'15px'}}));
     const cls=txt('button','x',{style:{background:'none',border:'none',fontSize:'18px',cursor:'pointer',color:'var(--muted)',padding:'0',lineHeight:'1'}});
     cls.onclick=()=>overlay.remove();
     mHdr.appendChild(cls);
@@ -54446,40 +54186,62 @@ window._showWelcome=function(){
   const STEPS=[
     {
       id:'login',
-      heading:'Already have an account?',
-      sub:'Sign in to restore your data. Or skip to set up as new.',
+      heading:'Sign in or create an account',
+      sub:'Create an account to save your library, notes and progress across devices — or sign in to restore them.',
       build(wrap){
         /* Language picker up top so non-English users can choose it first thing. */
         const langRow=el('div',{style:{marginBottom:'14px'}});
         langRow.appendChild(txt('label','Language',{style:{fontSize:'12px',fontWeight:'700',marginBottom:'6px',display:'block',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.5px'}}));
         langRow.appendChild(_langSelectEl());
         wrap.appendChild(langRow);
+        /* Mandatory auth up front: Sign In (default) vs Create Account. No skip —
+           every new user makes an account here so their data is saved + synced. */
+        let mode='signin';
+        const tabs=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}});
+        const tSignin=txt('button','Sign In',{className:'btn small primary',style:{flex:'1'}});
+        const tSignup=txt('button','Create Account',{className:'btn small',style:{flex:'1'}});
+        tabs.append(tSignin,tSignup);wrap.appendChild(tabs);
         const em=el('input',{id:'ob-login-email',type:'text',autocomplete:'username',placeholder:'Username',style:{fontSize:'15px',marginBottom:'6px'}});
-        const pw=el('input',{id:'ob-login-pw',type:'password',placeholder:'Password',style:{fontSize:'15px',marginBottom:'8px'}});
+        const pw=el('input',{id:'ob-login-pw',type:'password',autocomplete:'current-password',placeholder:'Password',style:{fontSize:'15px',marginBottom:'6px'}});
+        const pw2=el('input',{type:'password',autocomplete:'new-password',placeholder:'Confirm password',style:{fontSize:'15px',marginBottom:'8px',display:'none'}});
         const status=txt('p','',{style:{fontSize:'12px',color:'var(--danger)',minHeight:'18px',margin:'0 0 4px'}});
-        const loginBtn=txt('button','Sign In & Restore Data',{className:'btn primary',style:{width:'100%',fontSize:'14px',minHeight:'44px'}});
-        loginBtn.onclick=async()=>{
+        const goBtn=txt('button','Sign In',{className:'btn primary',style:{width:'100%',fontSize:'14px',minHeight:'44px'}});
+        function setMode(m){
+          mode=m;
+          tSignin.className='btn small'+(m==='signin'?' primary':'');
+          tSignup.className='btn small'+(m==='signup'?' primary':'');
+          pw2.style.display=m==='signup'?'':'none';
+          try{pw.setAttribute('autocomplete',m==='signup'?'new-password':'current-password');}catch(_){}
+          goBtn.textContent=m==='signup'?'Create Account':'Sign In';
+          status.textContent='';status.style.color='var(--danger)';
+        }
+        tSignin.onclick=()=>setMode('signin');
+        tSignup.onclick=()=>setMode('signup');
+        goBtn.onclick=async()=>{
           const e2=em.value.trim(),p2=pw.value;
-          if(!e2||!p2){status.textContent='Enter username and password.';return;}
-          loginBtn.disabled=true;loginBtn.textContent='Signing in...';status.textContent='';
-          const res=await authLogin(e2,p2);
-          if(res.success){
-            S.onboardingDone=true;saveNow();
-            if(typeof syncNavVisibility==='function')syncNavVisibility();
-            if(typeof applyTheme==='function')applyTheme(S.theme||'light');
-            ov.remove();
-            showView('home');
+          if(!e2||!p2){status.textContent='Enter a username and password.';return;}
+          if(mode==='signup'&&p2!==pw2.value){status.textContent='Passwords don\'t match.';return;}
+          goBtn.disabled=true;goBtn.textContent=mode==='signup'?'Creating…':'Signing in…';status.textContent='';
+          const res=mode==='signup'?await authRegister(e2,p2):await authLogin(e2,p2);
+          if(res&&res.success){
+            if(mode==='signup'){
+              /* New account — keep going through the rest of the setup (name, age…). */
+              if(res.adjusted&&res.username){status.style.color='var(--muted)';status.textContent='That name was taken — you\'re "'+res.username+'".';}
+              advance();
+            }else{
+              /* Existing user — they already have their setup; jump straight in. */
+              S.onboardingDone=true;saveNow();
+              if(typeof syncNavVisibility==='function')syncNavVisibility();
+              if(typeof applyTheme==='function')applyTheme(S.theme||'light');
+              ov.remove();showView('home');
+            }
           }else{
-            status.textContent=res.error||'Login failed.';
-            loginBtn.disabled=false;loginBtn.textContent='Sign In & Restore Data';
+            status.textContent=(res&&res.error)||(mode==='signup'?'Could not create account.':'Login failed.');
+            goBtn.disabled=false;goBtn.textContent=mode==='signup'?'Create Account':'Sign In';
           }
         };
-        /* Make skipping obvious on this first page — the footer Skip button
-           is hidden on step 0, so without this a new user can be unsure how
-           to get past the sign-in screen. */
-        const skipNew=txt('button','New here? Skip and set up as new →',{className:'btn',style:{width:'100%',marginTop:'10px',fontSize:'13px'}});
-        skipNew.onclick=()=>advance();
-        wrap.append(em,pw,status,loginBtn,skipNew);
+        wrap.append(em,pw,pw2,status,goBtn);
+        setMode('signin');
       },
       save(){}
     },
@@ -54819,6 +54581,25 @@ window._showWelcome=function(){
       setTimeout(function(){try{if(typeof toast==='function')toast('Couldn’t read your saved session this time — reload the page to recover it, or log in again. Your data is safe.',9000);}catch(_){}},800);
     }
     setTimeout(()=>{S.totalSessions=(S.totalSessions||0)+1;save(2000);},50);
+    /* Auto re-login from saved credentials: if there's no live session but the
+       device has remembered creds, sign in silently and refresh the UI + start
+       syncing. Belt-and-suspenders so a wiped/evicted session restores itself
+       without a manual re-login. authLogin handles the offline path itself. */
+    setTimeout(async function(){
+      try{
+        if(!S.authToken){
+          const c=_readCreds();
+          if(c){
+            const r=await authLogin(c.u,c.p);
+            if(r&&r.success){
+              try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}
+              try{_lastSyncedHash=_stateFingerprint();_startPeriodicSync();}catch(_){}
+              try{var act=document.querySelector('nav .tab.active');if(act&&act.dataset)showView(act.dataset.view);}catch(_){}
+            }
+          }
+        }
+      }catch(_){}
+    },150);
     /* Kick off the 45 s cloud-sync heartbeat if the user has a session.
        Idempotent — skipped if no auth, exits if already running. */
     if(S.authToken&&S.syncEnabled){
