@@ -9128,7 +9128,7 @@ async function _dedupeUsernames(onProgress){
   /* Admin-only: this rewrites kh_users rows. Gate it like _khBanUsername etc. so
      it can't be invoked by a non-admin (e.g. from the console). */
   if(!window._adminToken)return {ok:false,error:'admin only'};
-  if(typeof _sbActive!=='function'||!_sbActive())return {ok:false,error:'needs the Supabase backend'};
+  if(typeof _sbActive!=='function'||!_sbActive())return {ok:false,error:'needs the cloud backend'};
   let rows;
   try{ rows=await _sbSelectAll('kh_users','select=hash,email'); }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
   if(!Array.isArray(rows))return {ok:false,error:'could not read accounts'};
@@ -35220,7 +35220,7 @@ settings:()=>{
                 }
               }
             }
-          }catch(e){pullErr='Supabase fetch error: '+(e&&e.message||String(e)).slice(0,60);}
+          }catch(e){pullErr='Cloud fetch error: '+(e&&e.message||String(e)).slice(0,60);}
         } else {
           try{
             const doc=await _masterRead();
@@ -37807,7 +37807,7 @@ Deno.serve(async (req)=>{
   /* Admin-only: set status of a feedback item ('open'|'done'|'ignored').
      Writes to the kh_feedback row. Refuses if Supabase isn't active. */
   async function _setItemStatus(id,status){
-    if(!_sbActive()){toast('Status changes require Supabase backend');return false;}
+    if(!_sbActive()){toast('Status changes require the cloud backend');return false;}
     if(_schemaHasStatus===false){
       toast('Your Supabase deployment doesn\'t have the status column on kh_feedback. Re-run the schema SQL (Admin → Diagnostics) to add it.',6500);
       return false;
