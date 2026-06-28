@@ -2,9 +2,14 @@
 -- The zero-egress replacement for the Supabase REST backend. Pairs with
 -- api-worker.js (which holds the RLS/RPC/trigger logic that lived in Postgres).
 --
--- Apply once:
+-- You normally DON'T need to run this by hand: api-worker.js auto-creates every
+-- table on its first request (ensureSchema). Just deploy the Worker + bind a D1
+-- database, then open the app once. Apply manually only if you want to pre-load:
 --   wrangler d1 create kindlehub
---   wrangler d1 execute kindlehub --remote --file=schema-d1.sql
+--   wrangler d1 execute kindlehub --remote --file=schema-d1.sql   (runs the WHOLE file)
+-- ⚠ Do NOT paste this into the D1 dashboard "Console" (one statement per Execute)
+--   or "Studio"/Explore-Data editor (its Run only executes the statement at the
+--   cursor → you get just one table). Use wrangler --file, or the Worker auto-create.
 --
 -- Type mapping vs the Postgres schema.sql:
 --   timestamptz -> TEXT (ISO-8601 strings)   bigserial -> INTEGER PRIMARY KEY AUTOINCREMENT

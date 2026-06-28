@@ -100,7 +100,11 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   so the D1 backend works the moment the Worker is deployed + a DB is bound — no separate "run schema-d1.sql"
   step. This was the `D1_ERROR: no such table` flood (schema never applied). `SCHEMA_DDL` is kept in sync with
   `schema-d1.sql` (still the canonical copy). Tested via the node:sqlite shim (worker_test.mjs). The user must
-  REDEPLOY the worker for it to self-heal (or run schema-d1.sql once in the D1 console).
+  REDEPLOY the worker for it to self-heal — then hit the Worker URL once and all 13 tables
+  create themselves. ⚠ Do NOT paste schema-d1.sql into the D1 dashboard: the **Console** tab runs ONE
+  statement per Execute, and the **Studio** (Explore Data) editor's Run only executes the statement at the
+  cursor ("Executed 1/1" → one table). Use the Worker auto-create, or `wrangler d1 execute kindlehub --remote
+  --file=schema-d1.sql` (runs the whole file). Setup steps live in api-worker.js + schema-d1.sql headers.
 - **Draw eraser** (`BUILDERS.draw` `drawStroke`/`startStroke`/`addPoint`): the eraser now PAINTS the current
   background colour (`#fff`/`#1a1a1a`) with `source-over`, NOT `globalCompositeOperation='destination-out'` —
   old Kindle Silk WebKit ignores destination-out, so the eraser drew solid marks. Painting the bg colour is

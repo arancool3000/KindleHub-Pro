@@ -14,11 +14,30 @@
    policies, RPCs and storage-cap triggers from schema.sql are reimplemented
    here in code.
 
-   ── ONE-TIME SETUP (all free) ───────────────────────────────────────────────
-   1. Install wrangler:            npm i -g wrangler   (then `wrangler login`)
-   2. Create the database:         wrangler d1 create kindlehub
-        → copy the printed database_id.
-   3. Create wrangler.toml next to this file:
+   ── ONE-TIME SETUP (all free, no card) ──────────────────────────────────────
+   ★ You do NOT need to run schema-d1.sql by hand. On its first request this
+     Worker AUTO-CREATES every table (see ensureSchema below). So the whole setup
+     is: deploy the Worker + bind a D1 database + open the app once.
+
+   A) DASHBOARD ONLY (no CLI — recommended):
+   1. D1 → Create database, name it "kindlehub".
+   2. Workers & Pages → Create application → Worker → name it "kindlehub-api" →
+      Deploy the starter → Edit code → paste THIS whole file → Deploy.
+   3. That Worker → Settings → Bindings → Add binding → D1 database:
+        Variable name = DB     Database = kindlehub      → Deploy.
+   4. Hit the Worker URL once in a browser (it returns {"ok":true}) — that first
+      request creates all 13 tables. Verify in D1 → kindlehub → Tables.
+      ⚠ Do NOT try to paste schema-d1.sql into the dashboard:
+        • the D1 "Console" tab runs ONE statement per Execute (it's a single-line
+          box with /tables, /clear … slash commands); and
+        • the "Studio" (Explore Data) editor's Run only executes the statement at
+          the cursor — that's the "Executed 1/1 → only kh_users created" you saw.
+        The auto-create in step 4 does the entire job, so skip the SQL console.
+
+   B) WITH WRANGLER (CLI):
+   1. npm i -g wrangler   (then `wrangler login`)
+   2. wrangler d1 create kindlehub      → copy the printed database_id
+   3. wrangler.toml next to this file:
         name = "kindlehub-api"
         main = "api-worker.js"
         compatibility_date = "2024-09-23"
@@ -26,11 +45,13 @@
         binding = "DB"
         database_name = "kindlehub"
         database_id = "PASTE_THE_ID_HERE"
-   4. Load the schema:             wrangler d1 execute kindlehub --remote --file=schema-d1.sql
-   5. Deploy:                      wrangler deploy
-   6. Copy the Worker URL (e.g. https://kindlehub-api.YOURNAME.workers.dev) and
-      paste it into KindleHub: Admin → Local Insights → "API gateway (Cloudflare
-      D1)". Leave BLANK to keep using Supabase exactly as before.
+   4. wrangler deploy        (tables auto-create on first hit; to pre-load instead:
+        wrangler d1 execute kindlehub --remote --file=schema-d1.sql  — this runs the
+        WHOLE file reliably, unlike the dashboard editors.)
+
+   FINALLY (either path): copy the Worker URL (https://kindlehub-api.YOURNAME.
+   workers.dev) into KindleHub → Admin → Local Insights → "API gateway (Cloudflare
+   D1)". Leave BLANK to keep using Supabase exactly as before.
 
    SECURITY (mirrors the Supabase RLS model it replaces)
    • Reads + most inserts are open — same as the public anon key + permissive
