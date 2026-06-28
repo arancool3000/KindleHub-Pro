@@ -1308,7 +1308,7 @@ function defaultState(){
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
-    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],localFixes:{},savedWords:[],
+    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
@@ -1573,6 +1573,109 @@ function _khMarkGroupSeen(code,id){try{if(code&&id!=null)localStorage.setItem('k
 function _khGroupUnread(code){try{return localStorage.getItem('kh_msg_unread_'+code)==='1';}catch(_){return false;}}
 function _khAnyUnread(){try{if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&_khGroupUnread(KH_GLOBAL_GROUP_CODE))return true;const gs=(typeof S!=='undefined'&&S.msgGroups)||[];for(let i=0;i<gs.length;i++){if(gs[i]&&gs[i].code&&_khGroupUnread(gs[i].code))return true;}return false;}catch(_){return false;}}
 window._khMarkGroupUnread=_khMarkGroupUnread;window._khClearGroupUnread=_khClearGroupUnread;window._khGroupUnread=_khGroupUnread;window._khAnyUnread=_khAnyUnread;window._khMarkGroupSeen=_khMarkGroupSeen;
+/* ── Code-free chat requests ──────────────────────────────────────────────
+   A user can DM another by USERNAME (no 12-digit code to share): the sender
+   creates a private group, keeps it locally, and drops a CHAT_REQUEST on the
+   recipient's inbox (KH_MP.sendChatRequest). The recipient sees it as a pending
+   request here and Accepts (joins the group) or Declines (tombstones it so a
+   replayed request can't re-prompt). Requests live in S.chatRequests. */
+function _khOnChatRequest(env){
+  try{
+    const p=(env&&env.payload)||{}; const code=String(p.code||'');
+    if(!/^[0-9]{12}$/.test(code)||typeof S==='undefined')return;
+    if(Array.isArray(S.msgGroups)&&S.msgGroups.find(x=>x&&x.code===code))return;/* already chatting */
+    if(Array.isArray(S.leftGroups)&&S.leftGroups.indexOf(code)>=0)return;/* declined/left before */
+    if(!Array.isArray(S.chatRequests))S.chatRequests=[];
+    if(S.chatRequests.find(r=>r&&r.code===code))return;/* already pending */
+    const fromName=String(p.fromName||'Someone').slice(0,40);
+    S.chatRequests.push({code:code,name:String(p.name||('Chat with '+fromName)).slice(0,80),fromName:fromName,fromId:String(p.fromUserId||''),ts:Date.now()});
+    if(S.chatRequests.length>40)S.chatRequests=S.chatRequests.slice(-40);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    try{if(typeof _khMarkGroupUnread==='function')_khMarkGroupUnread('__requests__');}catch(_){}
+    if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(fromName):fromName)+' wants to chat — open Messages to accept.',6000);
+  }catch(_){}
+}
+function _khAcceptChatRequest(code){
+  try{
+    if(!Array.isArray(S.chatRequests))return;
+    const i=S.chatRequests.findIndex(r=>r&&r.code===code); if(i<0)return;
+    const req=S.chatRequests[i];
+    if(!Array.isArray(S.msgGroups))S.msgGroups=[];
+    if(!S.msgGroups.find(x=>x&&x.code===code))S.msgGroups.push({code:code,name:req.name||'Chat'});
+    if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==code);
+    S.chatRequests.splice(i,1);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+function _khDeclineChatRequest(code){
+  try{
+    if(!Array.isArray(S.chatRequests))return;
+    const i=S.chatRequests.findIndex(r=>r&&r.code===code); if(i<0)return;
+    S.chatRequests.splice(i,1);
+    if(!Array.isArray(S.leftGroups))S.leftGroups=[];
+    if(S.leftGroups.indexOf(code)<0)S.leftGroups.push(code);/* don't re-prompt on inbox replay */
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+/* Search users by name and send a chat request — the code-free "Message a user"
+   flow. onDone() refreshes the caller (e.g. the Messages list). */
+function _khMessageUserPicker(onDone){
+  if(!(window.KH_MP&&KH_MP.findPlayers&&KH_MP.sendChatRequest)){if(typeof toast==='function')toast('Messaging needs the cloud backend — sign in first.');return;}
+  if(typeof S==='undefined'||!S.authToken){if(typeof toast==='function')toast('Sign in to message users.');return;}
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'420px',width:'100%',maxHeight:'80vh',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','Message a user',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div','Search by username — they get a chat request to accept. No codes to share.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const inp=el('input',{type:'text',placeholder:'Username…',autocomplete:'off',style:{width:'100%'}});
+  card.appendChild(inp);
+  const results=el('div',{style:{flex:'1',overflowY:'auto',minHeight:'70px'}});
+  card.appendChild(results);
+  const closeBtn=txt('button','Close',{className:'btn small'});
+  closeBtn.onclick=()=>ov.remove();
+  card.appendChild(closeBtn);
+  ov.appendChild(card);
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+  try{inp.focus();}catch(_){}
+  async function _request(u){
+    try{
+      const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
+      const dn=(typeof _dispName==='function')?_dispName:(x=>x);
+      const name='DM: '+dn(myShort)+' & '+dn(String(u.name||'user').slice(0,20));
+      const created=await _groupCreate(name);
+      if(!Array.isArray(S.msgGroups))S.msgGroups=[];
+      if(!S.msgGroups.find(x=>x&&x.code===created.code))S.msgGroups.push({code:created.code,name:created.name||name});
+      if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==created.code);
+      if(typeof save==='function')save();
+      await KH_MP.sendChatRequest(u.hash,created.code,name);
+      if(typeof toast==='function')toast('Chat request sent to '+(typeof _censorText==='function'?_censorText(u.name):u.name)+' — they\'ll see it in Messages.',5000);
+      ov.remove();
+      if(typeof onDone==='function')onDone();
+    }catch(e){if(typeof toast==='function')toast('Could not send request: '+String((e&&e.message)||e).slice(0,80));}
+  }
+  let _t=null;
+  inp.addEventListener('input',()=>{
+    if(_t)clearTimeout(_t);
+    const q=inp.value.trim();
+    if(q.length<2){results.innerHTML='';return;}
+    _t=setTimeout(async()=>{
+      results.innerHTML='';results.appendChild(txt('div','Searching…',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));
+      let players=[];try{players=await KH_MP.findPlayers(q);}catch(_){}
+      results.innerHTML='';
+      if(!players.length){results.appendChild(txt('div','No users found.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));return;}
+      players.slice(0,20).forEach(u=>{
+        const row=el('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'8px 4px',borderBottom:'var(--thin)'}});
+        try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(u.name||'?',28));}catch(_){}
+        row.appendChild(txt('span',(typeof _dispName==='function'?_dispName(u.name||'user'):u.name),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px'}}));
+        const rq=txt('button','Request',{className:'btn small primary'});
+        rq.onclick=()=>{rq.disabled=true;rq.textContent='Sending…';_request(u);};
+        row.appendChild(rq);
+        results.appendChild(row);
+      });
+    },250);
+  });
+}
+window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
 
 let _msgNotifyTimer=null;
 function _startMessageNotifier(){
@@ -14281,6 +14384,16 @@ window.KH_MP=(function(){
       fromUserId:me.userId
     });
   }
+  /* Code-free chat REQUEST: drop a CHAT_REQUEST on the target's inbox. Unlike
+     sendDmInvite this does NOT auto-add on their side — they get a pending
+     request to Accept/Decline (handled by the global _khOnChatRequest). */
+  async function sendChatRequest(targetHash,code,name){
+    if(!targetHash)throw new Error('Invalid target');
+    const inbox=await _ensureInbox(targetHash);
+    if(!inbox)throw new Error('Invalid target hash');
+    const me=identity();
+    return send(inbox,{type:'CHAT_REQUEST',code:code,name:name||('Chat with '+(me.name||'someone')),fromName:me.name,fromUserId:me.userId});
+  }
   /* Recipient side: a DM_INVITE means another user opened a private chat
      with us — auto-add it to our Messages panel. Idempotent and respects a
      prior leave, so replaying old invites on reconnect/open is harmless. */
@@ -14340,6 +14453,9 @@ window.KH_MP=(function(){
       /* DM auto-join — handled before the game-invite freshness drop below
          so an offline recipient still gets it on their next open via replay. */
       if(env.type==='DM_INVITE'){ _handleDmInvite(env); return; }
+      /* Code-free chat REQUEST: unlike DM_INVITE this does NOT auto-join — it
+         surfaces a pending request the recipient must Accept (see _khOnChatRequest). */
+      if(env.type==='CHAT_REQUEST'){ try{if(typeof window._khOnChatRequest==='function')window._khOnChatRequest(env);}catch(_){} return; }
       if(env.type!=='GAME_INVITE')return;
       const dedupeKey=(env.id||'')+(env.payload&&env.payload.roomShort||'');
       if(_recentInvites.has(dedupeKey))return;
@@ -14410,7 +14526,7 @@ window.KH_MP=(function(){
     return out;
   }
   return{makeCode,createRoom,joinRoom,send,subscribe,identity,
-         findPlayers,inboxCode,sendInvite,sendDmInvite,onInvite,startInbox,stopInbox,
+         findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,onInvite,startInbox,stopInbox,
          announceOpenGame,listOpenGames};
 })();
 
@@ -50493,12 +50609,15 @@ messages:()=>{
     const hdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderBottom:'var(--thin)',background:'var(--card)',flexShrink:'0',gap:'8px'}});
     hdr.appendChild(txt('h2','Messages',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0',flex:'1'}}));
     if(S.authToken){
-      const cBtn=txt('button','New Group',{className:'btn small primary'});
+      const mBtn=txt('button','✎ Message',{className:'btn small primary'});
+      const cBtn=txt('button','New Group',{className:'btn small'});
       const jBtn=txt('button','Join Group',{className:'btn small'});
+      mBtn.onclick=()=>{if(typeof _khMessageUserPicker==='function')_khMessageUserPicker(()=>render());};
       cBtn.onclick=()=>{_screen='create';render();};
       jBtn.onclick=()=>{_screen='join';render();};
       hdr.appendChild(jBtn);
       hdr.appendChild(cBtn);
+      hdr.appendChild(mBtn);
     }
     v.appendChild(hdr);
 
@@ -50517,6 +50636,27 @@ messages:()=>{
       wall.appendChild(goBtn);
       body.appendChild(wall);
       return;
+    }
+
+    /* Pending chat requests (code-free DMs someone sent you) — Accept to join,
+       Decline to dismiss. Rendered above the group list so they're seen first. */
+    const _reqs=Array.isArray(S.chatRequests)?S.chatRequests:[];
+    if(_reqs.length){
+      body.appendChild(txt('div','CHAT REQUESTS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 6px'}}));
+      _reqs.slice().reverse().forEach(req=>{
+        const rrow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px',border:'2px solid var(--accent)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'10px'}});
+        try{if(typeof _avatarEl==='function')rrow.appendChild(_avatarEl(req.fromName||'?',34));}catch(_){}
+        const ri=el('div',{style:{flex:'1',minWidth:'0'}});
+        ri.appendChild(txt('div',_dispName(req.fromName||'Someone'),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        ri.appendChild(txt('div','wants to start a chat',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+        rrow.appendChild(ri);
+        const acc=txt('button','Accept',{className:'btn small primary'});
+        const dec=txt('button','Decline',{className:'btn small'});
+        acc.onclick=()=>{try{if(typeof _khAcceptChatRequest==='function')_khAcceptChatRequest(req.code);}catch(_){}render();};
+        dec.onclick=()=>{try{if(typeof _khDeclineChatRequest==='function')_khDeclineChatRequest(req.code);}catch(_){}render();};
+        rrow.appendChild(acc);rrow.appendChild(dec);
+        body.appendChild(rrow);
+      });
     }
 
     /* Always render the Global Chat at the top — every user is a member. */
