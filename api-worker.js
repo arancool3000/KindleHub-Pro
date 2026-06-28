@@ -219,6 +219,12 @@ async function applyCaps(DB, table, row){
   try{
     if(table==='kh_messages' && row && row.group_code){
       await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT 30)').bind(row.group_code,row.group_code).run();
+      /* Occasionally sweep EVERY room down to its latest 30 — so rooms that stopped
+         receiving messages, or that arrived via migration before the per-insert cap
+         kicked in, don't keep old rows sitting in D1 storage. After convergence this
+         deletes ~0 rows, so its write cost is negligible. (Window-function partition
+         delete — SQLite/D1 support ROW_NUMBER() OVER.) */
+      if(Math.random()<0.03){ try{ await DB.prepare('DELETE FROM kh_messages WHERE rowid IN (SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER (PARTITION BY group_code ORDER BY ts DESC) AS rn FROM kh_messages) WHERE rn>30)').run(); }catch(_){} }
     } else if(table==='kh_mail' && row && row.to_user){
       await DB.prepare('DELETE FROM kh_mail WHERE to_user=? AND id NOT IN (SELECT id FROM kh_mail WHERE to_user=? ORDER BY ts DESC LIMIT 60)').bind(row.to_user,row.to_user).run();
     } else if(table==='kh_scores' && row && row.game){
@@ -460,14 +466,21 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_banned_usernames (name TEXT PRIMARY KEY, reason TEXT DEFAULT '', created_at TEXT)",
   "CREATE TABLE IF NOT EXISTS kh_visits (device_id TEXT NOT NULL, day TEXT NOT NULL, last_seen TEXT, ua_hint TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '', PRIMARY KEY (device_id, day))",
   "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS kh_daily (date TEXT PRIMARY KEY, n INTEGER DEFAULT 0, w INTEGER DEFAULT 0)",
 ];
 let _schemaReady = false;
 async function ensureSchema(DB){
   if(_schemaReady) return;
-  try{ await DB.batch(SCHEMA_DDL.map(s=>DB.prepare(s))); _schemaReady=true; return; }
-  catch(_){ /* some D1 versions reject DDL inside batch() — fall back to sequential */ }
-  try{ for(const s of SCHEMA_DDL){ await DB.prepare(s).run(); } _schemaReady=true; }
-  catch(_){ /* leave _schemaReady=false so the next request retries */ }
+  let ok=false;
+  try{ await DB.batch(SCHEMA_DDL.map(s=>DB.prepare(s))); ok=true; }
+  catch(_){ /* some D1 versions reject DDL inside batch() — fall back to sequential */
+    try{ for(const s of SCHEMA_DDL){ await DB.prepare(s).run(); } ok=true; }catch(_){}
+  }
+  if(!ok) return;            // leave _schemaReady=false so the next request retries
+  // best-effort column migrations (CREATE…IF NOT EXISTS won't add a column to a
+  // table that already exists from an earlier deploy). ALTER throws if it's there.
+  try{ await DB.prepare("ALTER TABLE kh_daily ADD COLUMN w INTEGER DEFAULT 0").run(); }catch(_){}
+  _schemaReady=true;
 }
 
 /* ── Shared-key Gemini proxy (ported from the Supabase Edge Function) ─────────
@@ -503,6 +516,37 @@ async function handleGeminiProxy(request, env, DB){
   return new Response(up.body, {status:up.status, headers:Object.assign({}, cors(env), {'Content-Type':'text/event-stream','x-kh-count':String(newCount),'x-kh-cap':String(cap)})});
 }
 
+/* ── Cloudflare free-tier budget guard ───────────────────────────────────────
+   The free plan caps Workers at 100,000 requests/day and D1 at 100,000 ROW
+   WRITES/day (both reset 00:00 UTC; D1 also: 5M reads/day, 5GB storage). To make
+   it *impossible* to blow past either, every request is counted and, near the
+   cap, non-admin traffic is shed (reads stay up while only the write budget is
+   gone). We must not write the counter on every request — that would itself burn
+   the 100k write budget — so each isolate counts locally and flushes the
+   accumulated delta to kh_daily in batches (~1 write per 40 requests, or every
+   20s), reading back the global total. Writes are estimated at 2 row-writes per
+   mutating request (the insert/update + an amortised cap-trim/GC delete). */
+let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+const REQ_HARD_CAP   = 90000;   // Workers free: 100k requests/day — stop 10% short
+const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short
+async function dailyUsed(DB, isWrite){
+  const today = nowIso().slice(0,10);
+  const now = Date.now();
+  if(_budget.date!==today) _budget = { date:today, estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+  _budget.estN++; _budget.pendN++;
+  if(isWrite){ _budget.estW += 2; _budget.pendW += 2; }
+  const due = _budget.pendN>=40 || _budget.pendW>=40 || (now-_budget.lastFlush)>20000;
+  if(due){
+    const an=_budget.pendN, aw=_budget.pendW; _budget.pendN=0; _budget.pendW=0; _budget.lastFlush=now;
+    try{
+      await DB.prepare('INSERT INTO kh_daily(date,n,w) VALUES(?,?,?) ON CONFLICT(date) DO UPDATE SET n=n+?, w=w+?').bind(today,an,aw,an,aw).run();
+      const r = await DB.prepare('SELECT n,w FROM kh_daily WHERE date=?').bind(today).first();
+      if(r){ if(typeof r.n==='number') _budget.estN=r.n; if(typeof r.w==='number') _budget.estW=r.w; }
+    }catch(_){ /* counter unavailable — fall back to the local per-isolate estimate */ }
+  }
+  return { n:_budget.estN, w:_budget.estW };
+}
+
 export default {
   async fetch(request, env){
     if(request.method==='OPTIONS') return new Response(null,{status:204,headers:cors(env)});
@@ -511,6 +555,19 @@ export default {
     await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
+
+    /* Budget guard — shed non-admin load before we can hit a Cloudflare limit.
+       Health check above is always allowed so uptime monitors keep working. */
+    const _isWrite = request.method!=='GET' && request.method!=='HEAD';
+    const _usage = await dailyUsed(DB, _isWrite);
+    if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
+      const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
+      if(!adminOk){
+        if(_usage.n>REQ_HARD_CAP)
+          return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
+        return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub is temporarily read-only (daily free-tier write limit). New posts resume automatically at midnight UTC.'},503,env);
+      }
+    }
 
     /* Shared-key AI proxy — ports the kh-gemini-proxy Supabase Edge Function onto
        this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */
