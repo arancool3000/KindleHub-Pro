@@ -1606,6 +1606,7 @@ function _startMessageNotifier(){
        subscription handles those updates with its own notifyMsg call). */
     if(typeof currentView!=='undefined'&&currentView==='messages')return;
     if(!navigator.onLine)return;/* offline — don't burn a failing fetch */
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat notifier polling during a CF limit */
     if(!S.authToken)return;/* signed-out users shouldn't get Global Chat toasts */
     const groups=(S.msgGroups||[]).slice();
     if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&!groups.find(g=>g.code===KH_GLOBAL_GROUP_CODE)){
@@ -4504,7 +4505,7 @@ function launchKindleDesktop(){
     const closeBtn=document.createElement('button');closeBtn.textContent='Close';closeBtn.className='btn small';
     closeBtn.onclick=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     if(mode==='export'&&app){
-      ttl.textContent='Share "'+app.label+'"';
+      ttl.textContent='Share "'+_censorText(app.label)+'"';
       hint.textContent='Copy this code and send it to anyone. They tap Import in their KindleOS app store and paste it — it installs straight onto their home screen.';
       let code='';try{code='KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:app.label,color:app.color,icon:app.icon,html:app.customHTML}))));}catch(e){code='(encode failed)';}
       ta.value=code;ta.readOnly=true;
@@ -6455,6 +6456,35 @@ function _sbHeaders(extra){
   if(extra)for(const k in extra)h[k]=extra[k];
   return h;
 }
+/* ── Cloudflare free-tier client throttle ─────────────────────────────────
+   The Worker sheds non-admin load with a 503 {code:CF_DAILY|CF_WRITE} when it
+   nears the free-plan ceilings (100k requests/day, 100k D1 writes/day). The
+   client cooperates so we recover fast and never hammer a limited backend:
+   on a 503 it parks all (CF_DAILY) or just write (CF_WRITE) traffic for ~15
+   min, and every background poller/beacon checks _khCfBlocked() before firing.
+   Windows auto-expire; the server itself fully resets at 00:00 UTC. */
+window._khCfReqUntil=window._khCfReqUntil||0;     // ALL traffic parked until ts (CF_DAILY)
+window._khCfWriteUntil=window._khCfWriteUntil||0; // writes parked until ts (CF_WRITE)
+let _khCfNoticeAt=0;
+function _khCfBlocked(isWrite){
+  const now=Date.now();
+  if(window._khCfReqUntil>now)return true;
+  if(isWrite&&window._khCfWriteUntil>now)return true;
+  return false;
+}
+function _khCfNote(kind){
+  const now=Date.now();
+  if(now-_khCfNoticeAt<60000)return; _khCfNoticeAt=now;
+  try{if(typeof toast==='function')toast(kind==='write'
+    ?'KindleHub is busy right now (daily free-tier write limit) — new posts pause briefly and resume automatically.'
+    :'KindleHub reached its daily free limit — some live features pause until midnight UTC.',4500);}catch(_){}
+}
+function _khCfOn503(body){
+  let code='';try{code=(JSON.parse(body||'{}')||{}).code||'';}catch(_){}
+  const now=Date.now();
+  if(code==='CF_WRITE'){ window._khCfWriteUntil=now+15*60000; _khCfNote('write'); }
+  else { window._khCfReqUntil=now+15*60000; _khCfNote('req'); }
+}
 async function _sbFetch(path,opts){
   opts=opts||{};
   const url=_sbBase()+'/rest/v1'+path;
@@ -6469,6 +6499,7 @@ async function _sbFetch(path,opts){
   }finally{clearTimeout(tid);}
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
+    if(r.status===503)_khCfOn503(body);
     const err=new Error('SB '+(opts.method||'GET')+' '+path+' → HTTP '+r.status+(body?' '+body.slice(0,120):''));
     err.status=r.status;
     throw err;
@@ -7460,7 +7491,8 @@ function _visitIsGuest(ua){return /^g\|/.test(String(ua||''));}
 
 /* ── Live presence heartbeat ──────────────────────────────────────────
    Each open client upserts ONE row into kh_presence (keyed on a stable
-   per-user / per-device id) every ~25s while the tab is visible. The
+   per-user / per-device id) every ~40s while the tab is visible (kept under
+   the admin panel's 60s "online" window; the slower beat trims D1 writes). The
    admin "Online now" panel then lists every row whose last_seen is
    within the last 60s. Upsert-on-PK means the table never grows past
    the number of distinct users/devices, so no cleanup job is needed —
@@ -7478,6 +7510,7 @@ function _presenceIdentity(){
 }
 async function _pingPresence(){
   if(typeof _sbActive!=='function'||!_sbActive()||!navigator.onLine)return;
+  if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;/* park the heartbeat write during a CF limit */
   try{
     const id=_presenceIdentity();
     await _sbUpsert('kh_presence',{user_id:id.user_id,display_name:id.display_name,last_seen:new Date().toISOString()},'user_id');
@@ -7486,7 +7519,7 @@ async function _pingPresence(){
 function _startPresence(){
   if(_presenceTimer)return;
   _pingPresence();
-  _presenceTimer=setInterval(function(){ if(!document.hidden)_pingPresence(); },25000);
+  _presenceTimer=setInterval(function(){ if(!document.hidden)_pingPresence(); },40000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden)_pingPresence(); });
 }
 
@@ -12165,7 +12198,7 @@ function _gameScores(game){
       const left=el('div',{style:{display:'flex',alignItems:'center',gap:'7px',minWidth:'0'}});
       left.appendChild(txt('span','#'+(i+1),{style:{fontFamily:'monospace',color:'var(--muted)',flexShrink:'0',width:'22px'}}));
       try{if(typeof _avatarEl==='function')left.appendChild(_avatarEl(s.display_name||'Anon',18));}catch(_){}
-      left.appendChild(txt('span',s.display_name||'Anon',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+      left.appendChild(txt('span',_dispName(s.display_name||'Anon'),{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
       r.appendChild(left);
       r.appendChild(txt('span',String(s.score),{style:{fontFamily:'monospace',fontWeight:'800',flexShrink:'0'}}));
       wall.appendChild(r);
@@ -12980,7 +13013,7 @@ const CrazyEights=(function(){
         if(env.from&&env.from.userId&&me&&me.userId&&env.from.userId===me.userId)return; /* ignore own */
         var p=env.payload||{};
         if(env.type==='JOIN'){
-          if(role==='host'){if(!dealt)dealOnline();else broadcastState();if(p.name&&typeof toast==='function')toast(p.name+' joined',1800);}
+          if(role==='host'){if(!dealt)dealOnline();else broadcastState();if(p.name&&typeof toast==='function')toast(_censorText(p.name)+' joined',1800);}
         }else if(env.type==='STATE'){
           if(role==='guest'){gView=p;renderGuest();}
         }else if(env.type==='ACT'){
@@ -13497,7 +13530,7 @@ const TTT=(()=>{
     _closeMp();
     _mpSession=session;
     start();
-    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+opponentName,2000),300);
+    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+_censorText(opponentName),2000),300);
   }
   function start(){
     const diff=($('tttDiff')||{}).value||'medium';
@@ -13714,7 +13747,7 @@ const Connect4=(()=>{
     _closeMp();
     _mpSession=session;
     start();
-    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+opponentName,2000),300);
+    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+_censorText(opponentName),2000),300);
   }
 
   function start(){
@@ -14141,6 +14174,7 @@ window.KH_MP=(function(){
       if(wsOpen)return;
       if(typeof document!=='undefined'&&document.hidden)return;
       if(typeof _groupFetchMessages!=='function')return;
+      if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park online-game polling during a CF limit */
       try{
         if(typeof _groupLatestId==='function'){
           const lid=await _groupLatestId(code);
@@ -14149,7 +14183,7 @@ window.KH_MP=(function(){
         }
         const msgs=await _groupFetchMessages(code);(msgs||[]).forEach(handle);
       }catch(e){}
-    },2000);
+    },3000);
     return{close(){closed=true;if(ws){try{ws.close();}catch(e){}}if(hb)clearInterval(hb);clearInterval(poll);}};
   }
   /* ── Player search + invite system ────────────────────────────────────
@@ -14544,7 +14578,7 @@ window.KH_MP.openLobby=function(opts){
     const wMsg=document.createElement('div');
     wMsg.style.cssText='font-size:12px;color:var(--muted,#666);text-align:center;line-height:1.5;';
     wMsg.innerHTML=opponentLabel
-      ? 'Invite sent to <b>'+_lobbyEsc(opponentLabel)+'</b>.<br>The game will start as soon as they accept.'
+      ? 'Invite sent to <b>'+_lobbyEsc(_dispName(opponentLabel))+'</b>.<br>The game will start as soon as they accept.'
       : 'Share this room code with a friend.<br>The game will start as soon as they join.';
     box.appendChild(wMsg);
     const codeBox=document.createElement('div');
@@ -14583,7 +14617,7 @@ window.KH_MP.openLobby=function(opts){
         const oppName=(env.payload&&env.payload.name)||opponentLabel||'opponent';
         ov.remove();
         onConnected(session,oppName);
-        if(typeof toast==='function')toast(oppName+' joined — game starting',2200);
+        if(typeof toast==='function')toast(_censorText(oppName)+' joined — game starting',2200);
       }
     });
     const _timeoutId=setTimeout(()=>{
@@ -17039,7 +17073,7 @@ const Slither=(()=>{
   const VW=360,VH=520,WORLD=1600,SPEED=3.2,BOOST=5.4,TURN=0.28,SEG_GAP=6;
   const FOOD_N=42,MAXPTS=60,START_LEN=5;
   const TARGET_OPP=5,MIN_AI=2;          // arena fills to ~TARGET_OPP rivals; humans replace bots
-  const PUB_MS=1800,TTL_MS=7000,FRAME_MS=1000/15;
+  const PUB_MS=2800,TTL_MS=8500,FRAME_MS=1000/15;
   const BOT_NAMES=['Viper','Coil','Zigzag','Slinky','Noodle','Pixel','Twist','Fang','Mamba','Loop','Dash','Hiss','Wriggle','Cobra','Boa','Echo','Glide','Rattle','Quark','Jet'];
   let cv,ctx,timer,netTimer,G,submitted=false,_keyH=null,_lb=null,_pub=false;
 
@@ -17215,6 +17249,7 @@ const Slither=(()=>{
   /* ── online beacons over kh_presence (best-effort; off when no backend) ── */
   async function _publish(){
     if(!_netOk()||!G||!G.active)return;const p=me();if(!p||p.dead)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;/* park beacon writes during a CF limit */
     const pts=[],stepN=Math.max(1,Math.floor(p.path.length/8));
     for(let i=0;i<p.path.length&&pts.length<8;i+=stepN)pts.push([Math.round(p.path[i].x),Math.round(p.path[i].y)]);
     _pub=true;
@@ -17223,6 +17258,7 @@ const Slither=(()=>{
   }
   async function _poll(){
     if(!_netOk()||!G||!G.active)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park beacon reads during a CF limit */
     const cut=new Date(Date.now()-TTL_MS).toISOString();let rows;
     try{rows=await _sbSelect('kh_presence','select=user_id,display_name,last_seen&user_id=like.sl_*&last_seen=gte.'+encodeURIComponent(cut)+'&limit=24');}catch(_){return;}
     if(!Array.isArray(rows)||!G||!G.active)return;
@@ -19220,7 +19256,7 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
         }
       });
     }
-    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+opponentName,2000),300);
+    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+_censorText(opponentName),2000),300);
   }
   function _showOnlineBoard(){
     reset();
@@ -36376,7 +36412,7 @@ feedback:()=>{
             const row=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',borderBottom:'1px dashed var(--muted)',padding:'3px 0'}});
             const nameWrap=el('div',{style:{display:'flex',alignItems:'center',gap:'7px',minWidth:'0'}});
             if(typeof _avatarEl==='function')nameWrap.appendChild(_avatarEl(r.user_id||r.display_name||'?',20));
-            nameWrap.appendChild(txt('span',r.display_name||'(unnamed)',{style:{fontWeight:'700',wordBreak:'break-word'}}));
+            nameWrap.appendChild(txt('span',_dispName(r.display_name||'(unnamed)'),{style:{fontWeight:'700',wordBreak:'break-word'}}));
             row.appendChild(nameWrap);
             row.appendChild(txt('span',secs<10?'now':secs+'s ago',{style:{color:'var(--muted)',fontFamily:'monospace',flexShrink:'0'}}));
             list.appendChild(row);
@@ -38037,7 +38073,7 @@ Deno.serve(async (req)=>{
         const hdr=el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',fontSize:'10px',color:'var(--muted)',fontWeight:'700'}});
         const _cAuth=el('div',{style:{display:'flex',alignItems:'center',gap:'6px'}});
         if(typeof _avatarEl==='function')_cAuth.appendChild(_avatarEl(c.author||'Anon',16));
-        _cAuth.appendChild(txt('span',c.author||'Anon'));
+        _cAuth.appendChild(txt('span',_dispName(c.author||'Anon')));
         hdr.appendChild(_cAuth);
         hdr.appendChild(txt('span',c.date?new Date(c.date).toLocaleString():''));
         row.appendChild(hdr);
@@ -45677,7 +45713,7 @@ mail:()=>{
     function fmtTs(ts){try{const d=new Date(new Date(ts).getTime()+((typeof S!=='undefined'&&S.clockOffset)||0));return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(_){return '';}}
     /* Bare usernames get the home domain; full external addresses (anything
        already containing @) pass through untouched. */
-    function _addrLbl(a){a=String(a||'');return a.includes('@')?a:(a+'@'+KH_MAIL_DOMAIN);}
+    function _addrLbl(a){a=String(a||'');var at=a.indexOf('@');var local=at>=0?a.slice(0,at):a;var dom=at>=0?a.slice(at):('@'+KH_MAIL_DOMAIN);return (typeof _dispName==='function'?_dispName(local):local)+dom;}
     function unreadCount(){
       if(folder==='sent')return 0;
       return mails.filter(m=>effFolder(m)==='inbox'&&!(st()[m.id]||{}).read).length;
@@ -50503,7 +50539,7 @@ messages:()=>{
   }
 
   async function confirmLeave(g){
-    if(!await kindleConfirm('Leave the group "'+g.name+'"? You can rejoin with the code later.'))return;
+    if(!await kindleConfirm('Leave the group "'+_censorText(g.name)+'"? You can rejoin with the code later.'))return;
     S.msgGroups=(S.msgGroups||[]).filter(x=>x.code!==g.code);
     save();
     toast('Left group.');
@@ -50774,7 +50810,7 @@ messages:()=>{
       const nowMuted=!_isMuted(g.code);
       _setMuted(g.code,nowMuted);
       muteBtn.textContent=nowMuted?'Unmute':'Mute';
-      toast(nowMuted?'Notifications muted for "'+g.name+'"':'Notifications on for "'+g.name+'"');
+      toast(nowMuted?'Notifications muted for "'+_censorText(g.name)+'"':'Notifications on for "'+_censorText(g.name)+'"');
     };
     hdr.appendChild(muteBtn);
     /* Rename — change the group's name (not allowed on the permanent
@@ -50812,7 +50848,7 @@ messages:()=>{
           }
           return Promise.resolve(window.confirm(msg));
         };
-        askLeave('Leave the group "'+g.name+'"? You can rejoin with the 12-digit code later.').then(ok=>{
+        askLeave('Leave the group "'+_censorText(g.name)+'"? You can rejoin with the 12-digit code later.').then(ok=>{
           if(!ok)return;
           S.msgGroups=(S.msgGroups||[]).filter(x=>x.code!==g.code);
           /* Tombstone: record this code so a subsequent cloud-pull
@@ -51323,7 +51359,7 @@ messages:()=>{
       box.appendChild(txt('p','Tell the moderators what\'s wrong with this message. False reports may result in your own account being restricted.',{style:{fontSize:'11.5px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.55'}}));
       /* Quoted preview of the offending message */
       const quote=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--fg)',borderLeft:'3px solid var(--danger)'}});
-      quote.innerHTML='<b>'+String(msg.displayName||'Unknown').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+String(msg.text||'').slice(0,200).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+(((msg.text||'').length>200)?'…':'');
+      quote.innerHTML='<b>'+_dispName(String(msg.displayName||'Unknown')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+_censorText(String(msg.text||'')).slice(0,200).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+(((msg.text||'').length>200)?'…':'');
       box.appendChild(quote);
       const reasonRow=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px'}});
       const REASONS=['Spam','Harassment','Hate speech','Sexual content','Threats / violence','Misinformation','Other'];
@@ -51775,7 +51811,7 @@ messages:()=>{
           actionRow=el('div',{className:'msg-action-row'});
           /* Reply */
           const rBtn=txt('button','Reply',{className:'msg-action-btn'});
-          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+String(m.displayName||'?').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
+          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+_dispName(String(m.displayName||'?')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
           actionRow.appendChild(rBtn);
           /* React — opens a small inline picker */
           const reactBtn=txt('button','React',{className:'msg-action-btn'});
@@ -51847,7 +51883,7 @@ messages:()=>{
                 /* Local label: include both names so the group list is
                    readable from either side once they join. */
                 const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
-                const groupName='DM: '+myShort+' & '+otherName.slice(0,30);
+                const groupName='DM: '+_dispName(myShort)+' & '+_dispName(otherName.slice(0,30));
                 const created=await _groupCreate(groupName);
                 /* Add to my local group list */
                 if(!Array.isArray(S.msgGroups))S.msgGroups=[];
@@ -52085,7 +52121,9 @@ messages:()=>{
         try{txtArea.style.height='auto';txtArea.style.height=Math.min(txtArea.scrollHeight,120)+'px';}catch(_){}
         _saveDraft(g.code,_sentRaw);
         const msg2=String(e&&e.message||e);
-        if(msg2.indexOf('Rate limit')>=0||msg2.indexOf('429')>=0){
+        if(msg2.indexOf('503')>=0||msg2.indexOf('daily-limit')>=0||msg2.indexOf('write-limit')>=0){
+          toast('KindleHub is briefly read-only (daily free-tier limit) — your message is kept as a draft, try again shortly.',5000);
+        } else if(msg2.indexOf('Rate limit')>=0||msg2.indexOf('429')>=0){
           toast('Slow down — group is rate-limited (30/min). Try again in a moment.',4000);
         } else {
           toast('Send failed: '+msg2);
@@ -52188,6 +52226,8 @@ messages:()=>{
       _pollTimer=setInterval(async()=>{
         const log2=document.getElementById('msgChatLog');
         if(!log2){stopPoll();cleanup();return;}
+        if(typeof document!=='undefined'&&document.hidden)return;/* no point polling a backgrounded tab */
+        if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat polling during a CF limit */
         try{
           /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
              group this matches our current tail and we SKIP the full ~50-message

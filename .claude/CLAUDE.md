@@ -162,6 +162,26 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   Phase 2. STILL on Supabase even with the gateway set: the shared-key **Gemini Edge Function**
   (`/functions/v1/kh-gemini-proxy`, line ~23004) — port separately if fully decommissioning Supabase. Tested
   via a node:sqlite D1 shim (`--experimental-sqlite`): worker unit + full client↔worker↔SQLite integration.
+- **Cloudflare free-tier budget guard (make it IMPOSSIBLE to hit the limits)**: free plan = Workers
+  100k requests/day + D1 100k row-writes/day (both reset 00:00 UTC) + D1 5GB / 5M reads/day; R2 10GB +
+  $0 egress. **Worker side** (`api-worker.js`): `dailyUsed(DB,isWrite)` counts every request per-isolate
+  and flushes the delta to `kh_daily(date,n,w)` in BATCHES (~1 write per 40 requests / 20s — so the
+  counter itself can't burn the write budget), reading back the global total. Past `REQ_HARD_CAP=90000`
+  non-admin gets `503 {code:CF_DAILY}`; past `WRITE_HARD_CAP=90000` non-admin WRITES get `503 {code:CF_WRITE}`
+  while READS stay up (site goes read-only, not down). Admin token (`x-kh-admin`) bypasses both; `/` health
+  check never gated. `kh_daily` gains `w`; `ensureSchema` runs a best-effort `ALTER` for older DBs. **Client
+  side** (`index.html`): `_sbFetch` is the chokepoint — on a 503 it calls `_khCfOn503` which parks ALL
+  (CF_DAILY) or just WRITE (CF_WRITE) traffic for 15 min and toasts once. Every background poller/beacon
+  checks `_khCfBlocked(isWrite)` first: presence heartbeat, Slither `_publish`/`_poll`, online-game poll,
+  chat notifier, active-chat poll. Frequencies trimmed to cut baseline writes: Slither beacon 1.8s→2.8s
+  (TTL 7s→8.5s), online-game poll 2s→3s, presence 25s→40s (kept under the 60s online window); chat poll
+  also pauses on `document.hidden`. Chat send shows a friendly "briefly read-only" toast on 503 (draft
+  kept). Tested with the node:sqlite shim (`budget_test.mjs`) + headless (`validate_cf.cjs`).
+- **Chat storage bound (delete past the limit, not just hide)**: `KH_MSG_CAP_MAX=30` (client never fetches
+  more); the Worker `applyCaps` DELETEs every kh_messages row beyond the latest 30 per `group_code` on every
+  insert (incl. during migration, which writes through the same POST path so it self-trims) + a 3%-chance
+  global `ROW_NUMBER() OVER (PARTITION BY group_code)` sweep cleans quiet/migrated rooms. So over-limit
+  messages are removed from D1, not just unloaded. Migration read is capped newest-first (≤3000 msgs/2000 mail).
 - **Cloud sync merge** (`mergeCloudState`): id-lists (notes/books/flashDecks/mdJournals/calEvents/advStories)
   are UNIONED by id, so deletions need git-style tombstones — `S.deletedItems` (`<list>:<id>`→ts, SYNCED &
   unioned across devices like `leftGroups`) recorded by `_khTrackDeletions()` (a save-time diff of the lists
@@ -175,6 +195,16 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   `_khWarnUsername(name)` — a lighter warning delivered as a PRIVATE targeted announcement (no new schema).
   Admin surfaces: the chat "Admin About" modal (`_openUserAboutModal`) and the feedback review of
   `[USERNAME]` reports (which are user ban-requests, stored in kh_feedback) — both have Warn + Ban.
+  **Coverage sweep**: an adversarially-verified pass closed 17 remaining display-side gaps where
+  user-generated text reaches OTHER users uncensored. `_dispName` (name = ban-list + censor) now wraps:
+  global-leaderboard names, admin ONLINE-NOW names, feedback comment authors, chat reply-preview +
+  report-modal author, DM group-name (`otherName`+`myShort`), and the lobby "invite sent" name; the
+  single mail-address choke point `_addrLbl` censors the local-part (covers mail list + reading-pane
+  From/To). `_censorText` (free text) now wraps: KindleOS app-share dialog title, group-name confirm/
+  leave/mute toasts, online-game JOIN/opponent toasts (tic-tac-toe, connect4, generic lobby), and the
+  report-modal quoted message text. Rule kept: a user's OWN private content (notes/journal/drafts) is
+  never censored — only text shown to others. Both helpers are global `function` decls (hoisted), safe
+  to call from inside game IIFEs.
 - **Encryption**: `_encryptState/_decryptState` (user state), `_msgEncrypt/_msgDecrypt` (chat & mail).
 - **AI**: `khiCall(prompt,opts)` (user's Gemini/OpenRouter key), `khiEnabled()`. Shared-key proxy too.
 - **Tiers + header**: `_khTier()` = `creator` (admin = `window._isAdminCached===true`, via `_checkAdmin`),
