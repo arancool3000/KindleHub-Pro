@@ -7144,7 +7144,11 @@ function _composeAnnouncement(card){
         tgtSugg.innerHTML='';
         if(!names.length){tgtSugg.style.display='none';return;}
         names.forEach(n=>{
-          const it=txt('div',n,{style:{padding:'8px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--highlight)'}});
+          /* Show the user's avatar next to the name so the admin can tell which
+             account it is at a glance (the user asked for profile pictures here). */
+          const it=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--highlight)'}});
+          try{if(typeof _avatarEl==='function')it.appendChild(_avatarEl(n,22));}catch(_){}
+          it.appendChild(txt('span',_dispName(n),{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:'1',minWidth:'0'}}));
           it.onclick=()=>_tgtPick(n);
           tgtSugg.appendChild(it);
         });
@@ -9882,6 +9886,25 @@ async function _mailFetch(folder){
     out.push({id:r.id,to:r.to_user,from:r.from_user||'unknown',fromId:r.from_id||'',subject,body,ts:r.ts,replyTo:r.reply_to||''});
   }
   return out;
+}
+/* Fetch THIS device's replies to a given mail id, so the inbox reading-pane can
+   show your side of the conversation inline. A reply row carries reply_to=<origId>
+   and from_id=<me>; its body is encrypted under 'mail:'+to_user (the recipient),
+   a key the sender re-derives — so we can decrypt our own sent replies. */
+async function _mailReplies(origId){
+  try{
+    if(!_sbActive()||!origId)return[];
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return[];
+    const myId=S.userId||'';
+    const rows=await _sbSelect('kh_mail','reply_to=eq.'+encodeURIComponent(origId)+'&from_id=eq.'+encodeURIComponent(myId)+'&order=ts.asc&limit=20&select=id,to_user,body,ts');
+    if(!Array.isArray(rows))return[];
+    const out=[];
+    for(const r of rows){
+      let body='';try{body=await _msgDecrypt('mail:'+r.to_user,r.body);}catch(_){body='(unreadable)';}
+      out.push({id:r.id,to:r.to_user,body:body,ts:r.ts});
+    }
+    return out;
+  }catch(_){return[];}
 }
 async function _mailUnsend(id){
   const secret=_getMsgSecret(id);
@@ -45783,6 +45806,24 @@ mail:()=>{
           const body=el('div',{style:{margin:'0 0 8px',padding:'10px',background:'var(--highlight)',borderRadius:'0 0 8px 8px',fontSize:'13px',lineHeight:'1.65',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
           body.textContent=m.body||'(empty)';
           row.appendChild(body);
+          /* Your replies to this mail, shown inline so the inbox holds the whole
+             conversation (the user asked: a reply should also appear in the inbox
+             under the email you responded to). Best-effort, async, read-only. */
+          if(folder!=='sent'&&m.id){
+            const thread=el('div',{style:{display:'none',margin:'0 0 8px'}});
+            row.appendChild(thread);
+            _mailReplies(m.id).then(reps=>{
+              if(!reps||!reps.length||openId!==m.id)return;
+              thread.style.display='block';
+              thread.appendChild(txt('div','YOUR REPLIES',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 4px'}}));
+              reps.forEach(rp=>{
+                const rb=el('div',{style:{margin:'0 0 6px',padding:'9px 11px',background:'var(--card)',border:'var(--thin)',borderLeft:'3px solid var(--accent)',borderRadius:'8px',fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
+                rb.appendChild(txt('div','You → '+_addrLbl(rp.to)+'  ·  '+fmtTs(rp.ts),{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'3px',fontWeight:'700'}}));
+                rb.appendChild(txt('div',rp.body||'(empty)'));
+                thread.appendChild(rb);
+              });
+            }).catch(()=>{});
+          }
           /* KHI row — summarise long mail, draft a reply. Uses the user's
              own AI key (khiCall); costs no Supabase bandwidth. */
           if(typeof khiEnabled==='function'&&khiEnabled()&&(m.body||'').length>0){
