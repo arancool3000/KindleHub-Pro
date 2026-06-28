@@ -123,7 +123,7 @@ nav::-webkit-scrollbar{display:none}
 #rotateRoot[data-rotated="1"] main{min-height:0;}
 /* Unread dot for nav tabs (Mail) — high-contrast on e-ink */
 nav .tab.has-unread{position:relative;}
-nav .tab.has-unread::after{content:'';position:absolute;top:7px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--fg);}
+nav .tab.has-unread::after{content:'';position:absolute;top:7px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--accent);}
 nav .tab{
   flex:0 0 auto;text-align:center;
   padding:0 9px;
@@ -136,8 +136,15 @@ nav .tab{
   transition:color .15s;
   scroll-snap-align:start;
 }
-nav .tab.active{color:var(--fg);border-bottom:2px solid var(--fg);}
+nav .tab.active{color:var(--accent);border-bottom:2px solid var(--accent);}
 nav .tab:active{color:var(--fg);background:var(--highlight);}
+/* Accent-driven surfaces — links + text selection pick up the user's chosen
+   accent colour. The default --accent equals --fg in every theme, so a user who
+   hasn't picked an accent sees no change; the moment they pick one, these light
+   up along with primary buttons, the active tab, chat bubbles, progress, toasts
+   and game "correct" tiles (all repointed from --fg to --accent below). */
+a{color:var(--accent);}
+::selection{background:var(--accent);color:var(--accent-inv);}
 
 main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);}
 /* `.view` was using padding:var(--gap) (12px on all sides) which left
@@ -199,7 +206,7 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
   min-height:36px;border-radius:6px;
   box-shadow:none;font-weight:600;
 }
-.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);box-shadow:var(--btn-shadow);}
+.btn.primary{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);box-shadow:var(--btn-shadow);}
 .btn.primary:active{opacity:0.72;}
 .btn.danger{border-color:var(--danger);color:var(--danger);box-shadow:none;}
 
@@ -214,7 +221,7 @@ input,textarea,select{
   transition:border-color .15s,box-shadow .15s;
   min-height:var(--touch-min);
 }
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--fg);box-shadow:inset 0 1px 2px rgba(0,0,0,.04),0 0 0 2px rgba(0,0,0,.07);}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:inset 0 1px 2px rgba(0,0,0,.04),0 0 0 2px rgba(0,0,0,.07);}
 /* Hide Edge/IE native password reveal + clear buttons so they don't double
    up with our wrapEye toggle. */
 input::-ms-reveal,input::-ms-clear{display:none!important;width:0!important;height:0!important;}
@@ -229,7 +236,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .chat-log{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg);}
 .msg{max-width:88%;padding:11px 15px;border:var(--border);border-radius:18px;font-size:14px;line-height:1.65;background:var(--card);color:var(--fg);box-shadow:var(--shadow);}
 .msg.bot{align-self:flex-start;background:var(--card);color:var(--fg);white-space:pre-line;border-radius:4px 18px 18px 18px;}
-.msg.user{align-self:flex-end;background:var(--fg);color:var(--bg);border-color:var(--fg);border-radius:18px 4px 18px 18px;}
+.msg.user{align-self:flex-end;background:var(--accent);color:var(--accent-inv);border-color:var(--accent);border-radius:18px 4px 18px 18px;}
 .msg.thinking{align-self:flex-start;color:var(--muted);font-style:italic;background:var(--highlight);border-color:transparent;box-shadow:none;}
 .msg.streaming{align-self:flex-start;background:var(--card);color:var(--fg);border-radius:4px 18px 18px 18px;}
 .msg.streaming::after{content:'▋';display:inline-block;animation:blink 2s step-end infinite;margin-left:1px;}
@@ -255,7 +262,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .hm-key-row{display:flex;gap:5px;justify-content:center;margin-bottom:7px}
 .hm-key{min-width:40px;height:48px;display:flex;align-items:center;justify-content:center;border:var(--border);border-radius:9px;font-weight:700;cursor:pointer;font-size:17px;padding:0 5px;user-select:none;font-family:var(--ui-font);background:var(--card);box-shadow:var(--btn-shadow);transition:background .1s;}
 .hm-key:active{background:var(--fg);color:var(--bg)}
-.hm-key.correct{background:var(--fg);color:var(--bg)}
+.hm-key.correct{background:var(--accent);color:var(--accent-inv)}
 .hm-key.wrong{background:var(--highlight);color:var(--muted);border-color:transparent;pointer-events:none;opacity:0.45}
 .hm-word{font-family:monospace;font-size:26px;letter-spacing:8px;text-align:center;margin:10px 0;word-break:break-all}
 .mem-grid{display:grid;gap:7px;justify-content:center}
@@ -265,13 +272,13 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .mem-card.back{background:var(--fg);color:var(--bg)}
 .wordle-row{display:flex;gap:5px;justify-content:center;margin-bottom:5px}
 .wordle-cell{width:46px;height:46px;border:var(--border);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;border-radius:8px;font-family:var(--ui-font);background:var(--card);}
-.wordle-cell.correct{background:var(--fg);color:var(--bg);border-color:var(--fg);}
+.wordle-cell.correct{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);}
 .wordle-cell.present{background:var(--muted);color:var(--bg);border-color:var(--muted);}
 .wordle-cell.absent{background:var(--highlight);color:var(--muted);border-color:transparent;}
 .wordle-kb{display:flex;flex-direction:column;gap:6px;margin-top:10px;align-items:center}
 .wordle-kb-row{display:flex;gap:5px}
 .wk{min-width:34px;height:46px;border:var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;cursor:pointer;padding:0 4px;user-select:none;background:var(--card);color:var(--fg);font-family:var(--ui-font);box-shadow:var(--btn-shadow);}
-.wk.correct{background:var(--fg);color:var(--bg)}
+.wk.correct{background:var(--accent);color:var(--accent-inv)}
 .wk.present{background:var(--muted);color:var(--bg)}
 .wk.absent{background:var(--highlight);color:var(--muted);border-color:transparent;box-shadow:none;}
 .cf-board{display:grid;gap:4px;padding:8px;border:var(--border);border-radius:12px;background:var(--card);justify-content:center;box-shadow:var(--shadow);}
@@ -286,7 +293,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .sdk-cell{width:100%;aspect-ratio:1;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
 .sdk-cell.fixed{color:var(--fg);background:var(--card)}
 .sdk-cell.user-input{color:var(--accent,#0055cc)}
-.sdk-cell.selected{background:var(--fg)!important;color:var(--bg)!important}
+.sdk-cell.selected{background:var(--accent)!important;color:var(--accent-inv)!important}
 .sdk-cell.highlight{background:var(--highlight);}
 .sdk-cell.error{color:var(--danger)!important}
 .sudoku-numpad{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;max-width:300px;margin-left:auto;margin-right:auto}
@@ -302,13 +309,13 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .tools-grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
 @media(max-width:700px){.tools-grid{grid-template-columns:1fr}}
 .progress-bar{height:6px;background:var(--highlight);border-radius:4px;overflow:hidden;}
-.progress-fill{height:100%;background:var(--fg);border-radius:4px;transition:width .3s;}
+.progress-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .3s;}
 .pomodoro-ring{font-size:52px;font-weight:900;font-family:monospace;text-align:center;padding:10px;letter-spacing:2px}
 .flashcard{border:var(--border);border-radius:var(--radius);padding:28px 20px;min-height:130px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;cursor:pointer;user-select:none;margin:6px 0;line-height:1.65;background:var(--card);box-shadow:var(--shadow);}
 .flashcard.answer{background:var(--highlight)}
 .mc-option{width:100%;text-align:left;padding:14px 16px;border:var(--border);border-radius:var(--radius-sm);margin-bottom:8px;font-size:14px;cursor:pointer;background:var(--card);color:var(--fg);font-family:var(--body-font);display:block;box-shadow:var(--shadow);transition:background .1s;min-height:var(--touch-min);}
 .mc-option:active{background:var(--highlight)}
-.mc-option.mc-correct{background:var(--fg);color:var(--bg)}
+.mc-option.mc-correct{background:var(--accent);color:var(--accent-inv)}
 .mc-option.mc-wrong{background:var(--highlight);color:var(--muted);text-decoration:line-through}
 .note-item{border-bottom:var(--thin);padding:12px 0}
 .note-tag{display:inline-block;padding:3px 10px;border:var(--thin);border-radius:20px;font-size:11px;margin-right:4px;color:var(--muted);background:var(--highlight);}
@@ -316,7 +323,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .book-status{font-size:11px;padding:4px 11px;border:var(--thin);border-radius:20px;background:var(--highlight);}
 .stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:var(--thin)}
 .stat-val{font-weight:700;font-family:monospace}
-.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--fg);color:var(--bg);z-index:1000001;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--accent);color:var(--accent-inv);z-index:1000001;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
 #drawCanvas{display:block;touch-action:none;cursor:crosshair;max-width:100%}
 footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:center;border-top:var(--thin);flex-shrink:0;background:var(--card);}
 .badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:600;border:var(--thin);font-family:var(--ui-font);margin:2px;background:var(--highlight);}
@@ -324,9 +331,9 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 .section-title{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:0.8px;margin:12px 0 7px}
 .draw-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:10px;border:var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow);}
 .color-swatch{width:28px;height:28px;border:var(--border);border-radius:6px;cursor:pointer;display:inline-block}
-.color-swatch.selected{outline:2px solid var(--fg);outline-offset:2px}
+.color-swatch.selected{outline:2px solid var(--accent);outline-offset:2px}
 .draw-layer-thumb{width:60px;height:45px;border:var(--border);border-radius:7px;cursor:pointer;background:var(--card);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--ui-font);font-weight:700}
-.draw-layer-thumb.active{background:var(--fg);color:var(--bg)}
+.draw-layer-thumb.active{background:var(--accent);color:var(--accent-inv)}
 .api-key-bar{background:var(--card);border-bottom:var(--thin);padding:10px 14px;font-size:12px;font-family:var(--ui-font);display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow);}
 .quick-deck-row{display:flex;gap:4px;margin-bottom:4px}
 .quick-deck-input{flex:1;font-size:13px;padding:7px}
@@ -9517,7 +9524,7 @@ const KH_GLOBAL_GROUP_CODE='000000000000';
 const KH_MSG_CAP_MIN=10;
 const KH_MSG_CAP_MAX=30;
 const KH_MSG_CAP_DEFAULT=20;
-const KH_MSG_GLOBAL_CAP=30;
+const KH_MSG_GLOBAL_CAP=50;
 function _msgHistoryCap(code){
   if(code===KH_GLOBAL_GROUP_CODE)return KH_MSG_GLOBAL_CAP;
   try{
@@ -10048,7 +10055,7 @@ async function _groupToggleReaction(code,msgId,key){
   save();
   if(!window._reactedLocalToastShown){
     window._reactedLocalToastShown=true;
-    toast('Reaction saved on this device only. Server-side reactions need the kh_set_reaction function — run the schema SQL in Supabase, then run "notify pgrst, \'reload schema\';" once to fix.',7000);
+    toast('Reaction saved on this device only. Server-side reactions need the kh_set_reaction function — run the schema SQL on your backend, then run "notify pgrst, \'reload schema\';" once to fix.',7000);
   }
 }
 
@@ -27059,7 +27066,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "Editing a message opens a centered modal. Save commits the change to the group; Cancel discards it. The modal survives realtime updates from other users — your edit window won't vanish if someone else sends a message while you're typing.",
 "",
-"Messages are end-to-end encrypted with the group code (AES-GCM) and gzipped before transit so the typical chat fits well under Supabase's row size budget. KindleHub now ships a pure-JS gzip fallback, so even older Kindle Silk browsers without DecompressionStream can read compressed messages — no more \"square question mark\" corruption.",
+"Messages are end-to-end encrypted with the group code (AES-GCM) and gzipped before transit so the typical chat fits well within the backend's per-row size budget. KindleHub now ships a pure-JS gzip fallback, so even older Kindle Silk browsers without DecompressionStream can read compressed messages — no more \"square question mark\" corruption.",
 "",
 "## Data, privacy, sync",
 "",
@@ -27067,7 +27074,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "Compression: the full state blob (notes, books, calendar, habits, etc.) used for cross-device sync is also gzipped with the same path as messages. The pure-JS inflate fallback means devices that can't decompress natively (older Kindles) still read the synced state correctly — your calendar, notes, etc. all decompress the same way.",
 "",
-"Community features (Feedback board, shared notes between groups, error log) use either Supabase (if the source has SUPABASE_URL set) or jsonstorage.net (legacy free tier). Nothing is shared unless you explicitly post to the community board.",
+"Community features (Feedback board, shared notes between groups, error log) use the configured cloud backend (Cloudflare D1 or Supabase). Nothing is shared unless you explicitly post to the community board.",
 "",
 "## Troubleshooting",
 "",
@@ -36236,7 +36243,7 @@ feedback:()=>{
          but this gives Aran a one-tap recovery path. */
       if(_sbActive()){
         c.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'14px 0 10px'}}));
-        c.appendChild(txt('div','SUPABASE ONE-CLICK CLEANUP',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
+        c.appendChild(txt('div','CLOUD DATABASE — ONE-CLICK CLEANUP',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
         c.appendChild(txt('p','Each button COUNTS the affected rows first, then asks before deleting. Real chat rooms, DMs, valid inboxes (codes starting with 800000) and valid game rooms (codes starting with 900000) are NEVER touched.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',margin:'0 0 10px'}}));
         const sbStatus=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'18px',margin:'4px 0 8px',fontFamily:'monospace',whiteSpace:'pre-wrap'}});
         c.appendChild(sbStatus);
@@ -36342,7 +36349,7 @@ feedback:()=>{
       const sNewU=stat('NEW USERS','…','7d / 30d');
       const sActiveU=stat('ACTIVE','…','synced 7d');
       const sGroups=stat('GROUPS','…','chat groups');
-      const sMsgs=stat('MESSAGES','…','total sent');
+      const sMsgs=stat('MESSAGES','…','in cloud now');
       const sMsgsRecent=stat('MSGS 24H','…','today / 7d');
       const sSenders=stat('SENDERS','…','distinct (last 200)');
       const sFb=stat('FEEDBACK','…','reports + ideas');
@@ -37541,7 +37548,7 @@ Deno.serve(async (req)=>{
       const sgRow=el('div',{style:{display:'flex',gap:'5px'}});
       const sgIn=el('input',{type:'text',placeholder:'https://kindlehub-state.workers.dev',value:(localStorage.getItem('kh_state_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
       const sgSave=txt('button','Save',{className:'btn small'});
-      sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to Supabase.',4500);}catch(_){}};
+      sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to the default backend.',4500);}catch(_){}};
       sgRow.append(sgIn,sgSave);c.appendChild(sgRow);
       c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on Supabase unless you also set the API gateway below. Leave blank to keep state on Supabase. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* API gateway — paste the deployed api-worker.js (Cloudflare D1) URL to move
@@ -37550,9 +37557,9 @@ Deno.serve(async (req)=>{
       const agRow=el('div',{style:{display:'flex',gap:'5px'}});
       const agIn=el('input',{type:'text',placeholder:'https://kindlehub-api.workers.dev',value:(localStorage.getItem('kh_api_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
       const agSave=txt('button','Save',{className:'btn small'});
-      agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to Supabase.',5000);}catch(_){}};
+      agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to the default backend.',5000);}catch(_){}};
       agRow.append(agIn,agSave);c.appendChild(agRow);
-      c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list off Supabase — zero egress. Blank = Supabase. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list onto Cloudflare D1 — zero egress. Blank = use the default backend. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* One-click migration: copy ALL Supabase data into the D1 gateway. */
       c.appendChild(txt('div','Migrate data → Cloudflare',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
       const migStat=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px',fontFamily:'monospace',whiteSpace:'pre-wrap'}});
@@ -37561,7 +37568,7 @@ Deno.serve(async (req)=>{
         if(!_apiGatewayUrl()){toast('Set the API gateway URL above first.');return;}
         if(!await kindleConfirm('Copy ALL data (accounts, chat, mail, scores, announcements, bans, visits) from Supabase into your Cloudflare D1 database? Safe to re-run. The one-time read from Supabase uses some egress.'))return;
         migBtn.disabled=true;migStat.style.color='var(--muted)';migStat.textContent='Migrating…';
-        const res=await _migrateToCloudflare(function(t,n,tot){migStat.textContent='Copying '+t.replace('kh_','')+'… '+n+' rows ('+tot+' total)';});
+        const res=await _migrateToCloudflare(function(t,n,tot){migStat.textContent='Copying '+t.replace('kh_','')+'… '+n+' rows · '+tot+' rows copied so far';});
         migBtn.disabled=false;
         if(res&&res.ok){migStat.style.color='var(--muted)';migStat.textContent='Done — '+res.total+' rows copied.  '+Object.keys(res.tables).map(function(k){return k.replace('kh_','')+':'+res.tables[k].copied;}).join('  ');}
         else if(res&&res.error){migStat.style.color='var(--danger)';migStat.textContent=res.error.slice(0,300);}
@@ -37592,7 +37599,7 @@ Deno.serve(async (req)=>{
       };
       capOpen.onclick=async()=>{capOpen.disabled=true;const ok=await _capSet(false,'','');capOpen.disabled=false;if(ok){toast('Sign-ins re-opened.',3000);_capPaint();}};
       capRow.append(capLock,capOpen);c.appendChild(capRow);
-      c.appendChild(txt('div','When you see the Supabase quota warning, lock sign-ins until a date you pick — users get a clear "back on <date>" message and the project throttles itself instead of getting suspended. It auto-reopens on that date; "Re-open now" lifts it early. You and existing signed-in users are never locked out.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      c.appendChild(txt('div','When you see a hosting/quota warning from your backend, lock sign-ins until a date you pick — users get a clear "back on <date>" message and the project throttles itself instead of getting suspended. It auto-reopens on that date; "Re-open now" lifts it early. You and existing signed-in users are never locked out.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       return c;
     }
     async function renderErrPanel(){
@@ -37646,7 +37653,7 @@ Deno.serve(async (req)=>{
       }catch(e){}
       if(sbReadDenied){
         const note=el('div',{style:{padding:'10px',background:'var(--highlight)',borderRadius:'8px',fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}});
-        note.innerHTML='Cloud errors are insert-only for the anon key (so they can\'t be tampered with). View them in the <b>Supabase dashboard → kh_errors</b>.';
+        note.innerHTML='Cloud errors are insert-only for the anon key (so they can\'t be tampered with). View them in your backend dashboard (Cloudflare D1 / Supabase) under <b>kh_errors</b>.';
         errPanel.appendChild(note);
       }
       if(!sessionErrs.length&&!cloudErrs.length){
@@ -37782,7 +37789,7 @@ Deno.serve(async (req)=>{
             if(_sbActive()){
               /* Anon cannot DELETE from kh_errors under the safe schema —
                  use the Supabase dashboard (Table Editor → kh_errors → delete) */
-              toast('Open Supabase dashboard → kh_errors to clear (anon DELETE disabled for safety)',4500);
+              toast('Cloud errors are insert-only for safety (no anon delete) and auto-prune on the server — nothing to clear here. To wipe them now, delete the kh_errors rows from your backend dashboard (Cloudflare D1 / Supabase).',6000);
               return;
             }
             await _masterWrite(function(doc){doc.autoErrors=[];});

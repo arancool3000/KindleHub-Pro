@@ -215,16 +215,22 @@ function whereSql(table, filters){
 }
 
 /* ── storage-cap triggers (ported from schema.sql) ───────────────────────── */
+/* Per-group message ceiling: the single Global Chat room keeps the latest 50,
+   every other room keeps 30 (mirrors KH_MSG_GLOBAL_CAP / KH_MSG_CAP_MAX in
+   index.html). Keep these in sync if the client caps change. */
+const GLOBAL_GROUP_CODE='000000000000';
+const GLOBAL_MSG_CAP=50, GROUP_MSG_CAP=30;
 async function applyCaps(DB, table, row){
   try{
     if(table==='kh_messages' && row && row.group_code){
-      await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT 30)').bind(row.group_code,row.group_code).run();
-      /* Occasionally sweep EVERY room down to its latest 30 — so rooms that stopped
+      const keep = row.group_code===GLOBAL_GROUP_CODE ? GLOBAL_MSG_CAP : GROUP_MSG_CAP;
+      await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT '+keep+')').bind(row.group_code,row.group_code).run();
+      /* Occasionally sweep EVERY room down to its cap — so rooms that stopped
          receiving messages, or that arrived via migration before the per-insert cap
          kicked in, don't keep old rows sitting in D1 storage. After convergence this
          deletes ~0 rows, so its write cost is negligible. (Window-function partition
-         delete — SQLite/D1 support ROW_NUMBER() OVER.) */
-      if(Math.random()<0.03){ try{ await DB.prepare('DELETE FROM kh_messages WHERE rowid IN (SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER (PARTITION BY group_code ORDER BY ts DESC) AS rn FROM kh_messages) WHERE rn>30)').run(); }catch(_){} }
+         delete — SQLite/D1 support ROW_NUMBER() OVER.) The global room keeps 50. */
+      if(Math.random()<0.03){ try{ await DB.prepare("DELETE FROM kh_messages WHERE rowid IN (SELECT rowid FROM (SELECT rowid, group_code, ROW_NUMBER() OVER (PARTITION BY group_code ORDER BY ts DESC) AS rn FROM kh_messages) WHERE rn > (CASE WHEN group_code='"+GLOBAL_GROUP_CODE+"' THEN "+GLOBAL_MSG_CAP+" ELSE "+GROUP_MSG_CAP+" END))").run(); }catch(_){} }
     } else if(table==='kh_mail' && row && row.to_user){
       await DB.prepare('DELETE FROM kh_mail WHERE to_user=? AND id NOT IN (SELECT id FROM kh_mail WHERE to_user=? ORDER BY ts DESC LIMIT 60)').bind(row.to_user,row.to_user).run();
     } else if(table==='kh_scores' && row && row.game){
