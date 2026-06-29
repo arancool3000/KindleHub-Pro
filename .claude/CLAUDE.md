@@ -279,6 +279,24 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
 3. Site is behind **Cloudflare** — if changes don't show, **Purge Everything** (cache).
 4. For real internet email: deploy `email-worker.js` (full setup guide in its header), paste its URL into
    Admin → Local Insights → Mail gateway (`localStorage['kh_mail_gateway']`).
+   - **email-worker.js now stores mail on Cloudflare D1** (full migration): its backend base is
+     `env.API_GATEWAY || env.SUPABASE_URL` (`_base`/`_bhdr` helpers), so set `API_GATEWAY` to the D1
+     api-worker URL and inbound/outbound mail lands in the SAME D1 database as everything else (no
+     SUPABASE_SERVICE_KEY needed). Falls back to Supabase only if API_GATEWAY is unset. Outbound still
+     uses Resend (free 100/day; worker caps DAILY_SEND_CAP=80) — the one paid-tier risk if volume grows.
+
+## Account upkeep / staying under Cloudflare limits
+- **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
+  account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
+  never the data-pruning supercompress (that stays reserved for a real out-of-space emergency,
+  `_emergencyFreeSpace`). Each account is pinned to ONE day of a 7-day cycle via `hash(userId)%7`, so only
+  ~1/7 of users re-sync on any given day (verified ~14% max) — no daily write spike. Skips when offline or
+  while `_khCfBlocked(true)` (a CF limit is active). `localStorage['kh_last_autocompress']` is the per-device
+  guard. The cloud blob is ALREADY dictionary+gzip compressed on every normal sync (inside `_encryptState`),
+  so this just guarantees periodic compaction without bloat.
+- **Admin MESSAGES / per-user message counts are LIVE `_sbCount` queries**, never a stored cumulative tally —
+  nothing persists "every message ever sent", so the number only reflects rows currently in the cloud
+  (bounded by groups×cap). No counter to grow, no extra storage.
 
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**

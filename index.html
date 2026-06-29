@@ -6732,6 +6732,34 @@ async function _khKeepAlive(){
   }catch(_){/* offline / blocked — harmless, retries next load */}
 }
 setTimeout(()=>{try{_khKeepAlive();}catch(_){}},6000);
+/* ── Weekly staggered auto-compress ───────────────────────────────────────
+   Re-pack each synced account into the compact gzip form and push a fresh
+   compressed copy ~once a week, so cloud blobs stay small over time. NORMAL
+   compress only — never the data-pruning supercompress (that's reserved for a
+   genuine out-of-space emergency). Each user is pinned to ONE day of a 7-day
+   cycle (a hash of their id), so only ~1/7 of accounts re-sync on any given day
+   — this is what keeps the daily Cloudflare write/request count from spiking if
+   everyone compressed at once. Skips when offline or while a CF limit is active. */
+async function _maybeWeeklyCompress(){
+  try{
+    if(typeof S==='undefined'||!S.authToken||!S.syncEnabled)return;   // only synced accounts have a cloud blob
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;    // don't add writes during a CF limit — try again another day
+    const now=(typeof NOW==='function')?NOW():Date.now();
+    /* deterministic 0..6 slot from the user id → spreads accounts across the week */
+    let slot=0; try{ const id=String(S.userId||S.authToken||'a'); let h=0; for(let i=0;i<id.length;i++){h=(h*31+id.charCodeAt(i))>>>0;} slot=h%7; }catch(_){}
+    if(Math.floor(now/86400000)%7!==slot)return;                      // not this account's day
+    let last=0; try{last=parseInt(localStorage.getItem('kh_last_autocompress')||'0',10)||0;}catch(_){}
+    if(now-last < 6*86400000)return;                                  // already compressed this cycle
+    try{localStorage.setItem('kh_last_autocompress',String(now));}catch(_){}
+    /* NORMAL compress: re-pack the local blob to compact gzip, then push one
+       compressed re-sync. No pruning, so nothing is lost. */
+    try{ const json=JSON.stringify(S); if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json); }catch(_){}
+    try{ if(typeof syncToCloud==='function')await syncToCloud(); }
+    catch(_){ try{if(typeof scheduleCloudSync==='function')scheduleCloudSync(true);}catch(__){} }
+  }catch(_){}
+}
+setTimeout(()=>{try{_maybeWeeklyCompress();}catch(_){}},30000);
 /* Page-aware select. PostgREST has a server-side `db-max-rows` setting
    (often 100 or 1000) that silently clamps the `limit=` URL param. This
    helper sends explicit Range headers and keeps requesting until the
