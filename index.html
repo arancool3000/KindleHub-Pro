@@ -36670,11 +36670,7 @@ feedback:()=>{
       aiAskBtn.onclick=()=>{if(typeof _khAskUserDialog==='function')_khAskUserDialog('');};
       c.appendChild(aiAskBtn);
 
-      /* Top groups by message volume + feedback-by-status breakdown */
-      c.appendChild(txt('div','TOP GROUPS BY MESSAGES',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
-      const topGroupsBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
-      topGroupsBox.textContent='Loading…';
-      c.appendChild(topGroupsBox);
+      /* Feedback-by-status breakdown + top senders */
       c.appendChild(txt('div','FEEDBACK BY STATUS',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
       const fbStatusBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
       fbStatusBox.textContent='Loading…';
@@ -36879,36 +36875,12 @@ feedback:()=>{
             const rows=await _sbSelectAll('kh_messages','select=group_code,user_id,display_name&order=ts.desc',1000,5000);
             const list=Array.isArray(rows)?rows:[];
             /* Distinct senders */
-            const senders={};const groups={};
+            const senders={};
             list.forEach(r=>{
               const uid=r.user_id||'';
               if(uid){if(!senders[uid])senders[uid]={n:0,name:r.display_name||uid.slice(0,8)};senders[uid].n++;}
-              const gc=r.group_code||'?';
-              groups[gc]=(groups[gc]||0)+1;
             });
             _setStat(sSenders,Object.keys(senders).length,'distinct (last '+list.length+')');
-
-            /* Top groups */
-            const gRank=Object.entries(groups).map(([k,n])=>({k,n})).sort((a,b)=>b.n-a.n).slice(0,8);
-            topGroupsBox.innerHTML='';
-            if(!gRank.length){topGroupsBox.textContent='No messages yet.';}
-            else{
-              const gMax=gRank[0].n;
-              gRank.forEach(({k,n})=>{
-                const isGlobal=/^0{12}$/.test(k);
-                /* Inline the XXXX-XXXX-XXXX formatting — `formatCode` is defined
-                   inside the Messages view, so it's out of scope here and a bare
-                   `formatCode?` reference throws "formatCode is not defined",
-                   which was aborting the whole Top-groups + Top-senders block. */
-                const label=isGlobal?'Global Chat':(k&&k.length>=12?k.slice(0,4)+'-'+k.slice(4,8)+'-'+k.slice(8,12):k);
-                const row=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'3px 0'}});
-                row.appendChild(txt('div',label,{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:'monospace',fontSize:'11px'}}));
-                row.appendChild(el('div',{style:{width:Math.max(8,Math.round(n/gMax*120))+'px',height:'10px',background:'var(--fg)',borderRadius:'3px',flexShrink:'0'}}));
-                row.appendChild(txt('div',String(n),{style:{minWidth:'40px',textAlign:'right',fontFamily:'monospace',fontWeight:'700'}}));
-                topGroupsBox.appendChild(row);
-              });
-              topGroupsBox.appendChild(txt('div','From the most recent '+list.length+' messages.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'6px',borderTop:'var(--thin)',paddingTop:'6px'}}));
-            }
 
             /* Top senders */
             const sRank=Object.values(senders).sort((a,b)=>b.n-a.n).slice(0,10);
@@ -36918,7 +36890,7 @@ feedback:()=>{
               const sMax=sRank[0].n;
               sRank.forEach(s=>{
                 const row=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'3px 0'}});
-                row.appendChild(txt('div',s.name,{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700'}}));
+                row.appendChild(txt('div',_dispName(s.name),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700'}}));
                 row.appendChild(el('div',{style:{width:Math.max(8,Math.round(s.n/sMax*120))+'px',height:'10px',background:'var(--fg)',borderRadius:'3px',flexShrink:'0'}}));
                 row.appendChild(txt('div',String(s.n),{style:{minWidth:'40px',textAlign:'right',fontFamily:'monospace',fontWeight:'700'}}));
                 topSendersBox.appendChild(row);
@@ -36926,7 +36898,6 @@ feedback:()=>{
               topSendersBox.appendChild(txt('div','From the most recent '+list.length+' messages (kh_messages caps history to 50/group, so this skews recent).',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'6px',borderTop:'var(--thin)',paddingTop:'6px'}}));
             }
           }catch(e){
-            topGroupsBox.textContent='Could not load: '+e.message;
             topSendersBox.textContent='Could not load.';
           }
         })();
@@ -38295,7 +38266,7 @@ Deno.serve(async (req)=>{
       const comments=Array.isArray(item.comments)?item.comments:[];
       const meta=el('div',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'3px',display:'flex',gap:'10px',flexWrap:'wrap'}});
       meta.appendChild(txt('span',new Date(item.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})));
-      if(isAdmin&&item.author)meta.appendChild(txt('span','by '+item.author,{style:{fontWeight:'700'}}));
+      if(isAdmin&&item.author)meta.appendChild(txt('span','by '+_dispName(item.author),{style:{fontWeight:'700'}}));
       if(comments.length)meta.appendChild(txt('span',comments.length+' comment'+(comments.length===1?'':'s'),{style:{fontWeight:'700'}}));
       textWrap.appendChild(meta);
       row.append(voteBtn,textWrap);card.appendChild(row);
@@ -38316,6 +38287,7 @@ Deno.serve(async (req)=>{
       if(isAdmin&&/\[USERNAME\]/.test(item.text||'')){
         const _m=/Username:\s*"([^"]*)"/.exec(item.text||'');
         const _banName=_m?_m[1]:'';
+        const _banDisp=(typeof _dispName==='function'?_dispName(_banName):_banName); /* shown blacked-out; the ban still targets the real name */
         if(_banName){
           /* Lighter option than a ban: warn the reported user instead, then
              clear the report. Shown right alongside Approve & ban so the admin
@@ -38326,21 +38298,21 @@ Deno.serve(async (req)=>{
             const ok=await _khWarnUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
-              toast('Warned “'+_banName+'” and marked the report done.',3000);
+              toast('Warned “'+_banDisp+'” and marked the report done.',3000);
               renderItems();
             } else { warnBtn.disabled=false; }
           };
           actRow.appendChild(warnBtn);
-          const banBtn=txt('button','Approve & ban "'+_banName.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
+          const banBtn=txt('button','Approve & ban "'+_banDisp.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
-            if(!await kindleConfirm('Ban the username "'+_banName+'"? They will no longer be able to sign in or post, and the name will show as [removed] in chat. This approves the report.'))return;
+            if(!await kindleConfirm('Ban the username "'+_banDisp+'"? They will no longer be able to sign in or post, and the name will show as [removed] in chat. This approves the report.'))return;
             banBtn.disabled=true;banBtn.textContent='Banning…';
             const ok=await _khBanUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
-              toast('Username "'+_banName+'" banned.',3500);
+              toast('Username "'+_banDisp+'" banned.',3500);
               renderItems();
-            } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banName.slice(0,24)+'"'; }
+            } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banDisp.slice(0,24)+'"'; }
           };
           actRow.appendChild(banBtn);
         }
