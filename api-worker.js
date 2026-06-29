@@ -640,6 +640,23 @@ async function runAutoModeration(DB, env){
   }
 }
 
+/* ── Per-IP rate limit (Cache API — no KV, free, per-colo) ───────────────────
+   Stops ONE source from flooding the Worker and tripping the shared daily budget
+   for everyone. Two windows: a short burst limit + a generous daily limit (well
+   above any real household, well below the 90k global cap). Distributed botnets
+   are still caught by the global budget guard + (recommended) Cloudflare Bot
+   Fight Mode. Admin bypasses. Cache failure never blocks legit traffic. */
+async function rlHit(ip, limit, windowSec, tag){
+  try{
+    const key='https://rl.kh.internal/'+tag+'/'+encodeURIComponent(ip||'0')+'/'+Math.floor(Date.now()/(windowSec*1000));
+    const cache=caches.default;
+    const hit=await cache.match(key);
+    const n=(hit?(parseInt(await hit.text(),10)||0):0)+1;
+    await cache.put(key,new Response(String(n),{headers:{'Cache-Control':'max-age='+windowSec}}));
+    return n>limit;
+  }catch(_){ return false; }
+}
+
 export default {
   async scheduled(event, env, ctx){
     try{
@@ -664,6 +681,17 @@ export default {
     await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
+
+    /* Per-IP rate limit — one abuser can't burn the shared daily budget for
+       everyone. Tunable via env RL_BURST (per 10s) / RL_DAY (per day); admin
+       bypasses (checked only when a limit is hit, so no hashing on every req). */
+    const _ip=request.headers.get('cf-connecting-ip')||'0';
+    const _overBurst=await rlHit(_ip, (parseInt((env&&env.RL_BURST)||'',10)||100), 10, 'b');
+    const _overDay  =await rlHit(_ip, (parseInt((env&&env.RL_DAY)||'',10)||20000), 86400, 'd');
+    if(_overBurst || _overDay){
+      const adminOk=await isAdmin(request.headers.get('x-kh-admin')||'');
+      if(!adminOk) return json({error:'rate-limit',code:'CF_IP',message:'Too many requests from your connection — please slow down for a moment.'},429,env);
+    }
 
     /* Budget guard — shed non-admin load before we can hit a Cloudflare limit.
        Health check above is always allowed so uptime monitors keep working. */

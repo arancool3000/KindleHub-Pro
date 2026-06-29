@@ -177,6 +177,22 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   (TTL 7s→8.5s), online-game poll 2s→3s, presence 25s→40s (kept under the 60s online window); chat poll
   also pauses on `document.hidden`. Chat send shows a friendly "briefly read-only" toast on 503 (draft
   kept). Tested with the node:sqlite shim (`budget_test.mjs`) + headless (`validate_cf.cjs`).
+- **Per-IP rate limit (anti-abuse — one source can't burn the shared daily budget)**: both `api-worker.js`
+  and `state-worker.js` have an `rlHit(ip,limit,windowSec,tag)` helper (Cloudflare Cache API — free, no KV,
+  per-colo, fail-open if cache is unavailable so it NEVER blocks legit traffic). api-worker: burst
+  `RL_BURST=100`/10s + daily `RL_DAY=20000`/IP (both env-tunable) → 429 `{code:CF_IP}` for non-admin past
+  either; admin (`x-kh-admin`) bypasses; checked AFTER the `/` health check, BEFORE the budget guard. The
+  burst stops floods; the per-IP daily bounds one IP well under the 90k global so a single abuser can't trip
+  read-only for everyone (distributed botnets still need the global guard + Cloudflare Bot Fight Mode).
+  state-worker: GET 300/5min, PUT 50/5min per IP (stops R2 junk-blob spam). Tested via the node:sqlite shim
+  with a mocked Cache API (`ratelimit_test.mjs`): under-limit→200, over-burst→429, other IPs unaffected,
+  admin bypasses. NB: regression tests don't define `caches`, so `rlHit` fails open (returns false) there.
+  ⚠ The PUBLIC repo ships real `SUPABASE_URL`/`SUPABASE_ANON_KEY` (anon key is public-by-design + RLS-gated,
+  but insert-spammable) — and `KH_DEFAULT_API_GATEWAY=''` means users WITHOUT the gateway in localStorage
+  fall back to Supabase (UNGUARDED — the budget/IP guards only protect the D1 worker). To actually protect
+  everyone: set `KH_DEFAULT_API_GATEWAY` to the D1 worker URL in the source (routes ALL users to D1), THEN
+  blank/rotate the Supabase creds. CORS is env-driven (`ALLOW_ORIGIN`, default `*`); not hardcoded to a
+  domain because a wrong value breaks the live app, and CORS doesn't stop scripted abuse anyway.
 - **Chat storage bound (delete past the limit, not just hide)**: per-room cap = 30 (`KH_MSG_CAP_MAX`), EXCEPT
   the Global Chat room (`KH_GLOBAL_GROUP_CODE='000000000000'`) which keeps **50** (`KH_MSG_GLOBAL_CAP=50`);
   client never fetches more. The Worker `applyCaps` DELETEs every kh_messages row beyond that cap per

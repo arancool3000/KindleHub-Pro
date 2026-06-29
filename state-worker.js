@@ -61,6 +61,20 @@ function json(obj, status, env) {
   });
 }
 
+/* Per-IP rate limit (Cache API — free, no KV). Stops one source from spamming
+   R2 with junk blobs (storage / Class-A ops) or hammering reads. Generous enough
+   that a real device's sync cadence never trips it. Cache failure never blocks. */
+async function rlHit(ip, limit, windowSec, tag) {
+  try {
+    const key = 'https://rl.kh.internal/' + tag + '/' + encodeURIComponent(ip || '0') + '/' + Math.floor(Date.now() / (windowSec * 1000));
+    const cache = caches.default;
+    const hit = await cache.match(key);
+    const n = (hit ? (parseInt(await hit.text(), 10) || 0) : 0) + 1;
+    await cache.put(key, new Response(String(n), { headers: { 'Cache-Control': 'max-age=' + windowSec } }));
+    return n > limit;
+  } catch (_) { return false; }
+}
+
 export default {
   async fetch(request, env) {
     const headers = cors(env);
@@ -73,8 +87,10 @@ export default {
     // Health check / friendly root
     if (url.pathname === '/' ) return json({ ok: true, service: 'kindlehub-state' }, 200, env);
 
+    const ip = request.headers.get('cf-connecting-ip') || '0';
     try {
       if (request.method === 'GET') {
+        if (await rlHit(ip, 300, 300, 'sg')) return json({ error: 'rate-limit — slow down' }, 429, env);
         const hash = (url.searchParams.get('hash') || '').toLowerCase();
         if (!HEX64.test(hash)) return json({ error: 'bad hash' }, 400, env);
         const key = 'state/' + hash;
@@ -95,6 +111,7 @@ export default {
       }
 
       if (request.method === 'PUT') {
+        if (await rlHit(ip, 50, 300, 'sp')) return json({ error: 'rate-limit — too many writes, slow down' }, 429, env);
         let body;
         try { body = await request.json(); } catch (_) { return json({ error: 'bad json' }, 400, env); }
         const hash = String(body.hash || '').toLowerCase();
