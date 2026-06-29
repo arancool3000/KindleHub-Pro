@@ -3535,6 +3535,12 @@ function launchKindleDesktop(){
       }
       const fr=document.createElement('iframe');
       fr.style.cssText='flex:1;width:100%;border:none;background:#fff;display:block;min-height:0;';
+      /* SECURITY: sandbox custom-app HTML. allow-scripts (apps need JS) + forms/
+         popups, but DELIBERATELY NO allow-same-origin — without it the iframe gets
+         a unique opaque origin, so an imported/shared app CANNOT read this page's
+         localStorage (the encrypted state, auth hash, device id), cookies, or call
+         our APIs as the user. Stops a malicious shared app from stealing accounts. */
+      fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
       fr.srcdoc=app.customHTML;
       frWrap.appendChild(fr);
       /* Back control in the FOOTER (not a top-left floating pill). The custom-app
@@ -4758,11 +4764,19 @@ function launchKindleDesktop(){
         if(v.indexOf('KHAPP1:')!==0){if(typeof toast==='function')toast('That doesn\'t look like an app code');return;}
         let obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
         if(!obj||!obj.html){if(typeof toast==='function')toast('Could not read that app code');return;}
+        const html=String(obj.html);
+        /* SECURITY: cap imported app size so a code can't bloat saved state. */
+        if(html.length>512*1024){if(typeof toast==='function')toast('That app is too large to import');return;}
         const ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
-        const color=obj.color||ACCS[Math.floor(Math.random()*ACCS.length)];
+        const color=/^#[0-9a-fA-F]{3,8}$/.test(String(obj.color||''))?obj.color:ACCS[Math.floor(Math.random()*ACCS.length)];
         const label=String(obj.label||'App').slice(0,40);
-        const icon=obj.icon||('<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+label.substring(0,3).toUpperCase()+'</text></svg>');
-        const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:String(obj.html),builtWith:'Imported'};
+        /* SECURITY: NEVER trust obj.icon — it's rendered via innerHTML on the home
+           grid / spotlight, so a crafted code could smuggle <svg onload=…> / <img
+           onerror=…>. Discard it and always generate our own safe icon from the
+           (text-escaped) label. */
+        const safeInitials=label.substring(0,3).toUpperCase().replace(/[<>&"']/g,'');
+        const icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+safeInitials+'</text></svg>';
+        const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:html,builtWith:'Imported'};
         osState.customApps.push(newApp);persistOS();buildPages();renderInstalled();
         if(ov.parentNode)ov.parentNode.removeChild(ov);
         if(typeof toast==='function')toast('"'+label+'" added to your home screen');
@@ -4991,6 +5005,10 @@ WEB SEARCH & LIVE DATA:
       ptitleBadge.style.cssText='font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:'+m2.color+'18;color:'+m2.color+';border:1px solid '+m2.color+'33;';
       ptitle.appendChild(ptitleText);ptitle.appendChild(ptitleBadge);
       const pframe=document.createElement('iframe');pframe.style.cssText='width:100%;height:340px;border:var(--thin);border-radius:10px;background:#fff;';
+      /* SECURITY: sandbox the AI-generated preview (opaque origin, no same-origin)
+         so generated code can't touch our localStorage / auth hash. See the
+         custom-app overlay above for the full rationale. */
+      pframe.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
       pframe.srcdoc=parsed.html;
       const installBtn=document.createElement('button');
       installBtn.textContent='Add to KindleOS';
@@ -14524,8 +14542,12 @@ window.KH_MP=(function(){
       const q='email=ilike.'+encodeURIComponent('*'+query.replace(/[%_]/g,'')+'*')+'&select=hash,email&limit=20';
       const rows=await _sbSelect('kh_users',q);
       const myHash=(typeof S!=='undefined'&&S.authToken)||'';
+      /* The backend now returns a 16-char hash PREFIX for non-self reads (the full
+         hash is the AES key — never exposed in bulk), so exclude self by PREFIX
+         match, not full equality. The prefix is enough to derive the invite inbox
+         code (first 6 hex) + group name (first 8). */
       return(rows||[])
-        .filter(r=>r&&r.hash&&r.email&&r.hash!==myHash)
+        .filter(r=>r&&r.hash&&r.email&&!(myHash&&myHash.slice(0,r.hash.length)===r.hash))
         .map(r=>({hash:r.hash,email:r.email,name:String(r.email).split('@')[0]}));
     }catch(e){return[];}
   }

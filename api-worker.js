@@ -138,6 +138,11 @@ function rowOut(table, row){
   const jc = JSON_COLS[table]||[], bc = BOOL_COLS[table]||[];
   const o = {};
   for(const k in row){
+    /* SECURITY: never serve owner_secret. It's the per-row token that gates
+       editing/unsending a message or mail (X-KH-Secret). Returning it on a read
+       would let anyone who can SELECT a row then edit/delete it. The client
+       generates+keeps its own secret locally, so it never needs it back. */
+    if(k==='owner_secret') continue;
     let v = row[k];
     if(jc.indexOf(k)>=0){ if(v==null){v=null;} else { try{ v = JSON.parse(v); }catch(_){ /* leave raw */ } } }
     else if(bc.indexOf(k)>=0){ v = (v===1||v==='1'||v===true); }
@@ -354,7 +359,27 @@ async function handleGet(table, url, request, env, DB, headOnly){
     if(q.offset!=null) sql += ' OFFSET '+q.offset;
   }
   const res = await DB.prepare(sql).bind(...binds).all();
-  const rows = (res.results||[]).map(r=>rowOut(table,r));
+  let rows = (res.results||[]).map(r=>rowOut(table,r));
+  /* SECURITY (critical): kh_users.hash IS the account's AES key (key == lookup),
+     and .state is the encrypted blob. A blind `GET /kh_users?select=hash,state`
+     would dump every account's key + ciphertext = full takeover of all accounts.
+     So a read only gets the real hash + state if it PROVES it already knows the
+     hash (exact `hash=eq.<64hex>` filter — i.e. the owner loading their own row)
+     or is admin. Everyone else (e.g. the username search) gets a 16-char hash
+     PREFIX — enough to derive the deterministic inbox code (first 6 hex) and
+     group name (first 8) for invites, but NOT the full key — and NO state blob. */
+  if(table==='kh_users'){
+    const adminReq = await isAdmin(request.headers.get('x-kh-admin')||'');
+    const hasHashEq = q.filters.some(f=>f.col==='hash' && f.op==='eq' && !f.neg);
+    if(!adminReq && !hasHashEq){
+      rows = rows.map(r=>{
+        const o = Object.assign({}, r);
+        if(typeof o.hash==='string' && o.hash.length>16) o.hash = o.hash.slice(0,16);
+        delete o.state;
+        return o;
+      });
+    }
+  }
   const extra = contentRange?{'Content-Range':contentRange}:null;
   return json(rows, 200, env, extra);
 }
@@ -413,6 +438,15 @@ async function handlePatch(table, url, request, env, DB){
   if(!UPDATE_OK.has(table) && !secretGated) return err('update not allowed on '+table, 403, env);
   let patch; try{ patch = await request.json(); }catch(_){ return err('bad json',400,env); }
   const q = parseQuery(table, url.searchParams);
+  /* SECURITY: an open (non-secret-gated) UPDATE must target a specific row by its
+     primary key. Without this a `PATCH /kh_users` with no filter would rewrite
+     EVERY user's row at once (mass vandalism); requiring an exact PK eq bounds the
+     write to one identified row. Every client _sbUpdate already filters by PK
+     (hash=eq / id=eq / code=eq), so this rejects only forged bulk writes. */
+  if(!secretGated){
+    const pkOk = (PK[table]||[]).length>0 && PK[table].every(pk=>q.filters.some(f=>f.col===pk && f.op==='eq' && !f.neg));
+    if(!pkOk) return err('update requires an exact primary-key match', 400, env);
+  }
   let { sql:where, binds } = whereSql(table, q.filters);
   if(secretGated){
     const secret = request.headers.get('x-kh-secret')||'';
