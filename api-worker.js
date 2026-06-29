@@ -628,7 +628,7 @@ async function runAutoModeration(DB, env){
         await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(name.toLowerCase(), 'auto-mod: '+reason, nowIso()).run();
         await markFeedback(DB, row.id, 'done', 'auto-banned: '+reason);
       } else if(action==='WARN'){
-        const wtext = '⚠️ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
+        const wtext = '⚠ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
         await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext, JSON.stringify([name]), nowIso()).run();
         await markFeedback(DB, row.id, 'done', 'auto-warned: '+reason);
       } else if(action==='IGNORE'){
