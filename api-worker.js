@@ -235,6 +235,13 @@ async function applyCaps(DB, table, row){
       await DB.prepare('DELETE FROM kh_mail WHERE to_user=? AND id NOT IN (SELECT id FROM kh_mail WHERE to_user=? ORDER BY ts DESC LIMIT 60)').bind(row.to_user,row.to_user).run();
     } else if(table==='kh_scores' && row && row.game){
       await DB.prepare('DELETE FROM kh_scores WHERE game=? AND id NOT IN (SELECT id FROM kh_scores WHERE game=? ORDER BY score DESC, date DESC LIMIT 100)').bind(row.game,row.game).run();
+    } else if(table==='kh_feedback'){
+      /* Auto-prune resolved feedback after 7 days so done/ignored bug reports +
+         suggestions don't pile up in the cloud. COALESCE(status_at, date) ages out
+         legacy rows that were resolved before status_at existed (by creation date).
+         Runs on every feedback insert — one bounded DELETE, cheap. */
+      const cut=new Date(Date.now()-7*86400000).toISOString();
+      await DB.prepare("DELETE FROM kh_feedback WHERE status IN ('done','ignored') AND COALESCE(status_at, date) < ?").bind(cut).run();
     } else if(table==='kh_errors'){
       if(Math.random()<0.05) await DB.prepare('DELETE FROM kh_errors WHERE id NOT IN (SELECT id FROM kh_errors ORDER BY date DESC LIMIT 600)').run();
     } else if(table==='kh_presence'){
@@ -436,9 +443,11 @@ async function handleDelete(table, url, request, env, DB){
     where += (where?' AND ':' WHERE ')+'owner_secret IS NOT NULL AND owner_secret = ?';
     binds = binds.concat([secret]);
   } else if(table==='kh_feedback'){
-    /* auto-prune policy: only done/ignored items resolved > 7 days ago */
+    /* auto-prune policy: done/ignored items resolved (or, for legacy rows with no
+       status_at, created) more than 7 days ago. COALESCE lets old pre-status_at
+       rows age out by their creation date instead of sticking around forever. */
     const cut = new Date(Date.now()-7*86400000).toISOString();
-    where += (where?' AND ':' WHERE ')+"status IN ('done','ignored') AND status_at IS NOT NULL AND status_at < ?";
+    where += (where?' AND ':' WHERE ')+"status IN ('done','ignored') AND COALESCE(status_at, date) < ?";
     binds = binds.concat([cut]);
   }
   await DB.prepare('DELETE FROM '+QUOTE(table)+where).bind(...binds).run();
@@ -635,10 +644,17 @@ export default {
   async scheduled(event, env, ctx){
     try{
       const DB = env && env.DB; if(!DB) return;
-      const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
-      if(!on || !(env && env.GEMINI_KEY)) return;   // opt-in + needs a key
       await ensureSchema(DB);
-      await runAutoModeration(DB, env);
+      /* Housekeeping (ALWAYS — no opt-in needed): prune resolved feedback older
+         than 7 days so done/ignored bug reports + suggestions auto-delete from the
+         cloud. COALESCE(status_at, date) also clears the legacy backlog. */
+      try{
+        const cut = new Date(Date.now()-7*86400000).toISOString();
+        await DB.prepare("DELETE FROM kh_feedback WHERE status IN ('done','ignored') AND COALESCE(status_at, date) < ?").bind(cut).run();
+      }catch(_){}
+      /* AI moderation (opt-in via AUTO_MOD + GEMINI_KEY). */
+      const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
+      if(on && env.GEMINI_KEY) await runAutoModeration(DB, env);
     }catch(_){ /* never throw out of a cron tick */ }
   },
   async fetch(request, env){

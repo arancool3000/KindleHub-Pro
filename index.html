@@ -36382,7 +36382,14 @@ feedback:()=>{
              policy from the schema is applied); always hidden from the list
              regardless, so it goes away after 7 days either way. */
           const cutoff=Date.now()-7*86400000;
-          const stale=list.filter(it=>(it.status==='done'||it.status==='ignored')&&it.status_at&&Date.parse(it.status_at)<cutoff);
+          /* done/ignored items age out 7 days after resolution (status_at); legacy
+             rows with no status_at fall back to their creation date so they clear
+             the backlog instead of sticking around forever. */
+          const stale=list.filter(it=>{
+            if(it.status!=='done'&&it.status!=='ignored')return false;
+            const t=Date.parse(it.status_at||it.date||'');
+            return !isNaN(t)&&t<cutoff;
+          });
           if(stale.length){
             stale.forEach(it=>{try{_sbDelete('kh_feedback','id=eq.'+encodeURIComponent(it.id)).catch(function(){});}catch(_){}});
             const drop=new Set(stale.map(it=>it.id));

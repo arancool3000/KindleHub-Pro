@@ -261,6 +261,13 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
 - **Storage** capped via triggers (in BOTH schema.sql and the in-app admin SQL — re-run schema to apply):
   kh_messages 50/group, kh_mail 60/recipient, kh_errors ~600 global. kh_feedback done/ignored items
   auto-prune after 7 days (needs `status_at` column + `kh_feedback_delete` policy from the schema).
+  **Feedback auto-prune now runs SERVER-SIDE on Cloudflare** (was admin-panel-only): the worker
+  `applyCaps` deletes `status IN ('done','ignored') AND COALESCE(status_at, date) < now-7d` on every
+  kh_feedback insert, and the `scheduled` cron runs the same DELETE every tick (ALWAYS — not gated on
+  AUTO_MOD). `COALESCE(status_at, date)` ages out LEGACY rows that were resolved before status_at existed
+  (by creation date) — that's what clears the old backlog that used to stack up. `handleDelete` for
+  kh_feedback + the admin-panel client prune use the same COALESCE rule, so resolved items also vanish
+  the moment the admin opens the panel.
 - **⚠ The user must RE-RUN the schema SQL** (Supabase SQL editor or Admin→Diagnostics) to apply new
   triggers/columns/policies after each schema change.
 
