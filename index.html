@@ -3354,16 +3354,51 @@ function launchKindleDesktop(){
   });
 
   /* Quick search icon */
+  /* Spotlight-style app search. The old handler opened App-mode chat UNDERNEATH
+     the KindleOS overlay, so the button looked dead — now it filters every
+     installed app (built-in + custom) and launches the one you tap. */
+  function openSpotlight(){
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:600000;display:flex;flex-direction:column;align-items:center;padding-top:52px;';
+    const box=document.createElement('div');
+    box.style.cssText='width:90%;max-width:440px;background:var(--card,#fff);border-radius:14px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.45);';
+    const inp=document.createElement('input');
+    inp.type='text';inp.placeholder='Search apps…';inp.autocapitalize='off';inp.autocorrect='off';inp.spellcheck=false;
+    inp.style.cssText='width:100%;box-sizing:border-box;border:none;border-bottom:1px solid var(--highlight,#e5e5e5);padding:15px 18px;font-size:16px;outline:none;background:var(--card,#fff);color:var(--fg,#111);font-family:var(--ui-font,sans-serif);';
+    const list=document.createElement('div');
+    list.style.cssText='max-height:54vh;overflow-y:auto;';
+    box.appendChild(inp);box.appendChild(list);ov.appendChild(box);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    document.body.appendChild(ov);
+    function render(){
+      const q=inp.value.trim().toLowerCase();
+      const apps=allApps().filter(a=>{const n=String(a.label||a.name||a.id||'').toLowerCase();return !q||n.indexOf(q)>=0;});
+      list.innerHTML='';
+      if(!apps.length){const e=document.createElement('div');e.style.cssText='padding:16px 18px;color:var(--muted,#888);font-size:13px;';e.textContent='No apps match.';list.appendChild(e);return;}
+      apps.slice(0,40).forEach(a=>{
+        const row=document.createElement('div');
+        row.style.cssText='padding:11px 16px;cursor:pointer;border-top:1px solid var(--highlight,#eee);display:flex;align-items:center;gap:12px;';
+        const ic=document.createElement('div');
+        ic.style.cssText='width:30px;height:30px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:'+(a.color||'#888')+';';
+        const icv=String(a.icon||'');
+        if(icv.indexOf('<svg')>=0){ic.innerHTML=icv;const sv=ic.querySelector('svg');if(sv){sv.setAttribute('width','22');sv.setAttribute('height','22');}}
+        else{ic.style.color='#fff';ic.style.fontWeight='800';ic.style.fontSize='13px';ic.textContent=(icv||String(a.label||a.name||'?')).slice(0,2);}
+        const nm=document.createElement('div');
+        nm.style.cssText='font-size:14px;color:var(--fg,#111);font-family:var(--ui-font,sans-serif);font-weight:600;';
+        nm.textContent=String(a.label||a.name||a.id||'App');
+        row.appendChild(ic);row.appendChild(nm);
+        row.addEventListener('click',()=>{ov.remove();try{openApp(a);}catch(_){}});
+        list.appendChild(row);
+      });
+    }
+    inp.addEventListener('input',render);
+    render();
+    setTimeout(()=>{try{inp.focus();}catch(_){}},60);
+  }
   const sbSearch=document.createElement('div');
   sbSearch.style.cssText='color:rgba(255,255,255,0.85);cursor:pointer;padding:2px 4px;display:flex;align-items:center;min-height:28px;';
   sbSearch.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-  sbSearch.addEventListener('click',()=>{
-    closeCC();
-    const chatTab=document.querySelector('nav .tab[data-view="chat"]');
-    if(chatTab){chatTab.click();}
-    closeApp();
-    setTimeout(()=>{const ci=document.getElementById('chatIn');if(ci)ci.focus();},200);
-  });
+  sbSearch.addEventListener('click',()=>{ closeCC(); openSpotlight(); });
 
   /* Swipe-down on status bar => CC */
   let _ccSY=null;
@@ -32544,8 +32579,11 @@ body.sepia #view-weather{--muted:#4a3a26;}
     /* ── Helpers ── */
     function dewPoint(tempC,rh){return tempC-(100-rh)/5;}
     function windDir(deg){const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];return dirs[Math.round(deg/22.5)%16];}
-    function aqiLabel(aqi){if(aqi<=20)return{l:'Good',c:'#00c853'};if(aqi<=40)return{l:'Fair',c:'#76ff03'};if(aqi<=60)return{l:'Moderate',c:'#ffea00'};if(aqi<=80)return{l:'Poor',c:'#ff6d00'};if(aqi<=100)return{l:'Very Poor',c:'#b71c1c'};return{l:'Hazardous',c:'#4a148c'};}
-    function uvLabel(uv){if(uv<3)return{l:'Low',c:'#00c853'};if(uv<6)return{l:'Moderate',c:'#ffea00'};if(uv<8)return{l:'High',c:'#ff6d00'};if(uv<11)return{l:'Very High',c:'#f44336'};return{l:'Extreme',c:'#9c27b0'};}
+    /* Colours double as TEXT, so the lighter scale steps are darkened to stay
+       readable on white / light-grey / colour-e-ink (bright yellow on white was
+       ~1.1:1 contrast — invisible). The bar fills just look a touch deeper. */
+    function aqiLabel(aqi){if(aqi<=20)return{l:'Good',c:'#1a8f3c'};if(aqi<=40)return{l:'Fair',c:'#4e9a00'};if(aqi<=60)return{l:'Moderate',c:'#b07d00'};if(aqi<=80)return{l:'Poor',c:'#d35400'};if(aqi<=100)return{l:'Very Poor',c:'#b71c1c'};return{l:'Hazardous',c:'#4a148c'};}
+    function uvLabel(uv){if(uv<3)return{l:'Low',c:'#1a8f3c'};if(uv<6)return{l:'Moderate',c:'#b07d00'};if(uv<8)return{l:'High',c:'#d35400'};if(uv<11)return{l:'Very High',c:'#e53935'};return{l:'Extreme',c:'#9c27b0'};}
     function pressureTrend(hPa){if(hPa>1020)return'High pressure';if(hPa>1013)return'Normal';if(hPa>1000)return'Low pressure';return'Very low';}
     function beaufort(kmh){if(kmh<1)return'Calm';if(kmh<6)return'Light Air';if(kmh<12)return'Light Breeze';if(kmh<20)return'Gentle';if(kmh<29)return'Moderate';if(kmh<39)return'Fresh';if(kmh<50)return'Strong';if(kmh<62)return'Near Gale';if(kmh<75)return'Gale';return'Storm';}
     function moonPhaseWx(jd){const k=(jd-2451550.1)/29.53058868;const phase=(k-Math.floor(k)+1)%1;const names=['New','Waxing Crescent','First Qtr','Waxing Gibbous','Full','Waning Gibbous','Last Qtr','Waning Crescent'];const idx=Math.round(phase*8)%8;const illum=Math.round(50-50*Math.cos(phase*2*Math.PI));return{name:names[idx],illum:Math.max(0,Math.min(100,illum))};}
@@ -32753,7 +32791,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
       if(wxCode!=null)dayCol.appendChild(txt('div',WX_DESC[wxCode]||'',{style:'font-size:9.5px;color:var(--muted);line-height:1.2;margin-top:1px;'}));
       row2.appendChild(dayCol);
       const prec=(daily.precipitation_probability_max||[])[i];
-      const precipCol=prec>50?'#2266cc':prec>20?'#6699cc':'var(--muted)';
+      const precipCol=prec>50?'#1f5fb0':prec>20?'#3a78c0':'var(--muted)';
       if(prec!=null)row2.appendChild(txt('span',(prec||0)+'% rain',{style:'font-size:10px;color:'+precipCol+';min-width:54px;text-align:right;font-weight:600;',title:'Peak hourly chance — not a whole-day forecast'}));
       const bw=el('div',{style:'flex:1;margin:0 6px;'});
       const pMin=maxT>minT?(daily.temperature_2m_min[i]-minT)/(maxT-minT)*100:30;
