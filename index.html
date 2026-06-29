@@ -3391,7 +3391,7 @@ function launchKindleDesktop(){
         list.appendChild(row);
       });
     }
-    inp.addEventListener('input',render);
+    inp.addEventListener('input',khDebounce(render,180));/* debounce the app-search re-render while typing */
     render();
     setTimeout(()=>{try{inp.focus();}catch(_){}},60);
   }
@@ -14757,7 +14757,7 @@ window.KH_MP=(function(){
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_check);
   else setTimeout(_check,200);
-  setInterval(_check,8000);
+  setInterval(()=>{if(!document.hidden)_check();},8000);/* skip the invite poll while backgrounded */
 })();
 
 /* ── Global incoming-invite banner ─────────────────────────────────────
@@ -17279,7 +17279,7 @@ const GeometryDash=(()=>{
     immersiveRoot._trackStop=stop;
     buildUI();
     if(timer)clearInterval(timer);
-    timer=setInterval(tick,FR);
+    timer=setInterval(()=>{if(!document.hidden)tick();},FR);/* pause auto-runner when screen is off so you don't die unseen + save battery */
     draw();
   }
 
@@ -17637,7 +17637,7 @@ const Slither=(()=>{
   async function _removeBeacon(){if(!_pub)return;_pub=false;try{if(_netOk())await _sbUpsert('kh_presence',{user_id:_myId(),display_name:JSON.stringify({n:_myName(),d:1,t:Date.now()}),last_seen:new Date().toISOString()},'user_id');}catch(_){}}
 
   function _startTimers(){
-    if(timer)clearInterval(timer);timer=setInterval(step,FRAME_MS);
+    if(timer)clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)step();},FRAME_MS);/* freeze the arena while backgrounded (no blind crashes, no wasted CPU) */
     if(netTimer)clearInterval(netTimer);
     if(_netOk()){netTimer=setInterval(_netTick,PUB_MS);_netTick();}
   }
@@ -17907,7 +17907,7 @@ const Tetris=(()=>{
       if(board[r].every(c=>c)){board.splice(r,1);board.unshift(Array(COLS).fill(0));cleared++;r++;}
     }
     if(cleared){score+=cleared===4?800:cleared===3?500:cleared===2?300:100;lvl=Math.floor(score/700)+1;
-      if(dropTimer){clearInterval(dropTimer);dropTimer=setInterval(()=>{if(gameActive)drop();},Math.max(100,600-lvl*50));}}
+      if(dropTimer){clearInterval(dropTimer);dropTimer=setInterval(()=>{if(gameActive&&!document.hidden)drop();},Math.max(100,600-lvl*50));}}
     if(score>best){best=score;S.games.tetris={best};save();}
     updateInfo();newPiece();
   }
@@ -18021,7 +18021,7 @@ const Tetris=(()=>{
     ic.appendChild(wrap);
     newPiece();draw();updateInfo();
     if(dropTimer)clearInterval(dropTimer);
-    dropTimer=setInterval(()=>{if(gameActive)drop();},Math.max(100,600-lvl*50));
+    dropTimer=setInterval(()=>{if(gameActive&&!document.hidden)drop();},Math.max(100,600-lvl*50));
   }
   document.addEventListener('keydown',e=>{
     const ic=$('immersiveContent');if(!ic||!gameActive)return;
@@ -18100,7 +18100,7 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
 
     const nb=txt('button','New Game',{className:'btn small'});nb.onclick=start;nb.style.cssText='display:block;margin:0 auto;';
     immersiveContent.appendChild(nb);
-    _timer=setInterval(tick,TICK);
+    _timer=setInterval(()=>{if(!document.hidden)tick();},TICK);/* pause invaders while backgrounded */
   }
 
   function shoot(){
@@ -20903,7 +20903,7 @@ function _initFlightSim(){
        physics interval / RAF loop on top of the old one. */
     if(physTimer){clearInterval(physTimer);physTimer=null;}
     if(rafHandle){cancelAnimationFrame(rafHandle);rafHandle=null;}
-    physTimer=setInterval(_physTick,50);
+    physTimer=setInterval(()=>{if(!document.hidden)_physTick();},50);/* pause physics while backgrounded (RAF already self-throttles when hidden) */
     rafHandle=requestAnimationFrame(_rafTick);
     updateStatusBar();
   }
@@ -33184,6 +33184,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
           function startAnim(){
             stopAnim();isPlaying=true;playBtn.textContent='⏸ Pause';
             animTimer=setInterval(()=>{
+              if(document.hidden)return;/* don't advance frames nobody can see */
               frameIdx=(frameIdx+1)%allFrames.length;
               updateTimeline();drawFrame();
             },parseInt(speedSel.value));
@@ -34424,6 +34425,11 @@ breathe:()=>{
     const ex=EXERCISES[breathExIdx];
     breathLast=performance.now();
     breathAnim=setInterval(()=>{
+      /* Pause while the screen is off / app backgrounded — nobody can see an
+         80 ms breathing animation then, and running it just flashes e-ink and
+         drains battery. Resetting breathLast makes the cycle resume smoothly
+         (no time-jump) when the user comes back. */
+      if(document.hidden){breathLast=performance.now();return;}
       /* Self-stop when the breathe UI has left the DOM (user switched
          view mid-session) — otherwise this 80 ms tick ran forever,
          draining the battery on e-ink devices. */
@@ -34537,6 +34543,7 @@ breathe:()=>{
       const pb=document.getElementById('gsPauseBtn');if(pb)pb.textContent='Pause';
       if(guidedTimer)clearInterval(guidedTimer);
       guidedTimer=setInterval(()=>{
+        if(document.hidden)return;/* pause guided session while screen is off */
         guidedElapsed+=0.5;
         const pf=document.getElementById('gsProgFill');
         if(pf)pf.style.width=Math.min(guidedElapsed/STEP_DURATION*100,100)+'%';
@@ -51288,7 +51295,7 @@ messages:()=>{
     /* ── Search strip (initially hidden) ── */
     const searchStrip=el('div',{className:'msg-search-strip',style:{display:'none'}});
     const searchInp=el('input',{type:'text',placeholder:'Search messages…',style:{flex:'1',fontSize:'13px',padding:'8px 10px',borderRadius:'8px'}});
-    searchInp.oninput=()=>{_searchTerm=searchInp.value.toLowerCase();renderMessages(_messages);};
+    searchInp.oninput=khDebounce(()=>{_searchTerm=searchInp.value.toLowerCase();renderMessages(_messages);},180);/* debounce so each keystroke doesn't rebuild the whole message log (e-ink flash) */
     const searchClose=txt('button','x',{className:'btn small',style:{padding:'0 10px'}});
     searchClose.onclick=()=>{_searchOpen=false;searchStrip.style.display='none';_searchTerm='';renderMessages(_messages);};
     searchStrip.append(searchInp,searchClose);
@@ -55473,10 +55480,10 @@ window._showWelcome=function(){
       setTimeout(()=>{try{_maybePullFromCloud();}catch(_){}},800);
     }
     /* Anonymous visit log — fires once per device per day, even for guests */
-    setTimeout(()=>{try{_logVisit();}catch(e){}},2500);
+    setTimeout(()=>{try{_logVisit();}catch(e){}},5000);
     /* Preload the username ban list so banned names render as [removed] in
        chat without a per-render network call. Refreshed lazily every 5 min. */
-    setTimeout(()=>{try{if(typeof _khLoadBanned==='function')_khLoadBanned(true);}catch(e){}},3200);
+    setTimeout(()=>{try{if(typeof _khLoadBanned==='function')_khLoadBanned(true);}catch(e){}},6000);
     /* Live presence heartbeat — keeps the admin "Online now" panel current */
     setTimeout(()=>{try{_startPresence();}catch(e){}},3000);
     /* Background message notifier — polls each joined group every 45s and
