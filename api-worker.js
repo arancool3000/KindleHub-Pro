@@ -138,6 +138,11 @@ function rowOut(table, row){
   const jc = JSON_COLS[table]||[], bc = BOOL_COLS[table]||[];
   const o = {};
   for(const k in row){
+    /* SECURITY: never serve owner_secret. It's the per-row token that gates
+       editing/unsending a message or mail (X-KH-Secret). Returning it on a read
+       would let anyone who can SELECT a row then edit/delete it. The client
+       generates+keeps its own secret locally, so it never needs it back. */
+    if(k==='owner_secret') continue;
     let v = row[k];
     if(jc.indexOf(k)>=0){ if(v==null){v=null;} else { try{ v = JSON.parse(v); }catch(_){ /* leave raw */ } } }
     else if(bc.indexOf(k)>=0){ v = (v===1||v==='1'||v===true); }
@@ -235,6 +240,13 @@ async function applyCaps(DB, table, row){
       await DB.prepare('DELETE FROM kh_mail WHERE to_user=? AND id NOT IN (SELECT id FROM kh_mail WHERE to_user=? ORDER BY ts DESC LIMIT 60)').bind(row.to_user,row.to_user).run();
     } else if(table==='kh_scores' && row && row.game){
       await DB.prepare('DELETE FROM kh_scores WHERE game=? AND id NOT IN (SELECT id FROM kh_scores WHERE game=? ORDER BY score DESC, date DESC LIMIT 100)').bind(row.game,row.game).run();
+    } else if(table==='kh_feedback'){
+      /* Auto-prune resolved feedback after 7 days so done/ignored bug reports +
+         suggestions don't pile up in the cloud. COALESCE(status_at, date) ages out
+         legacy rows that were resolved before status_at existed (by creation date).
+         Runs on every feedback insert — one bounded DELETE, cheap. */
+      const cut=new Date(Date.now()-7*86400000).toISOString();
+      await DB.prepare("DELETE FROM kh_feedback WHERE status IN ('done','ignored') AND COALESCE(status_at, date) < ?").bind(cut).run();
     } else if(table==='kh_errors'){
       if(Math.random()<0.05) await DB.prepare('DELETE FROM kh_errors WHERE id NOT IN (SELECT id FROM kh_errors ORDER BY date DESC LIMIT 600)').run();
     } else if(table==='kh_presence'){
@@ -347,7 +359,27 @@ async function handleGet(table, url, request, env, DB, headOnly){
     if(q.offset!=null) sql += ' OFFSET '+q.offset;
   }
   const res = await DB.prepare(sql).bind(...binds).all();
-  const rows = (res.results||[]).map(r=>rowOut(table,r));
+  let rows = (res.results||[]).map(r=>rowOut(table,r));
+  /* SECURITY (critical): kh_users.hash IS the account's AES key (key == lookup),
+     and .state is the encrypted blob. A blind `GET /kh_users?select=hash,state`
+     would dump every account's key + ciphertext = full takeover of all accounts.
+     So a read only gets the real hash + state if it PROVES it already knows the
+     hash (exact `hash=eq.<64hex>` filter — i.e. the owner loading their own row)
+     or is admin. Everyone else (e.g. the username search) gets a 16-char hash
+     PREFIX — enough to derive the deterministic inbox code (first 6 hex) and
+     group name (first 8) for invites, but NOT the full key — and NO state blob. */
+  if(table==='kh_users'){
+    const adminReq = await isAdmin(request.headers.get('x-kh-admin')||'');
+    const hasHashEq = q.filters.some(f=>f.col==='hash' && f.op==='eq' && !f.neg);
+    if(!adminReq && !hasHashEq){
+      rows = rows.map(r=>{
+        const o = Object.assign({}, r);
+        if(typeof o.hash==='string' && o.hash.length>16) o.hash = o.hash.slice(0,16);
+        delete o.state;
+        return o;
+      });
+    }
+  }
   const extra = contentRange?{'Content-Range':contentRange}:null;
   return json(rows, 200, env, extra);
 }
@@ -406,6 +438,15 @@ async function handlePatch(table, url, request, env, DB){
   if(!UPDATE_OK.has(table) && !secretGated) return err('update not allowed on '+table, 403, env);
   let patch; try{ patch = await request.json(); }catch(_){ return err('bad json',400,env); }
   const q = parseQuery(table, url.searchParams);
+  /* SECURITY: an open (non-secret-gated) UPDATE must target a specific row by its
+     primary key. Without this a `PATCH /kh_users` with no filter would rewrite
+     EVERY user's row at once (mass vandalism); requiring an exact PK eq bounds the
+     write to one identified row. Every client _sbUpdate already filters by PK
+     (hash=eq / id=eq / code=eq), so this rejects only forged bulk writes. */
+  if(!secretGated){
+    const pkOk = (PK[table]||[]).length>0 && PK[table].every(pk=>q.filters.some(f=>f.col===pk && f.op==='eq' && !f.neg));
+    if(!pkOk) return err('update requires an exact primary-key match', 400, env);
+  }
   let { sql:where, binds } = whereSql(table, q.filters);
   if(secretGated){
     const secret = request.headers.get('x-kh-secret')||'';
@@ -436,9 +477,11 @@ async function handleDelete(table, url, request, env, DB){
     where += (where?' AND ':' WHERE ')+'owner_secret IS NOT NULL AND owner_secret = ?';
     binds = binds.concat([secret]);
   } else if(table==='kh_feedback'){
-    /* auto-prune policy: only done/ignored items resolved > 7 days ago */
+    /* auto-prune policy: done/ignored items resolved (or, for legacy rows with no
+       status_at, created) more than 7 days ago. COALESCE lets old pre-status_at
+       rows age out by their creation date instead of sticking around forever. */
     const cut = new Date(Date.now()-7*86400000).toISOString();
-    where += (where?' AND ':' WHERE ')+"status IN ('done','ignored') AND status_at IS NOT NULL AND status_at < ?";
+    where += (where?' AND ':' WHERE ')+"status IN ('done','ignored') AND COALESCE(status_at, date) < ?";
     binds = binds.concat([cut]);
   }
   await DB.prepare('DELETE FROM '+QUOTE(table)+where).bind(...binds).run();
@@ -619,7 +662,7 @@ async function runAutoModeration(DB, env){
         await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(name.toLowerCase(), 'auto-mod: '+reason, nowIso()).run();
         await markFeedback(DB, row.id, 'done', 'auto-banned: '+reason);
       } else if(action==='WARN'){
-        const wtext = '⚠️ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
+        const wtext = '⚠ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
         await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext, JSON.stringify([name]), nowIso()).run();
         await markFeedback(DB, row.id, 'done', 'auto-warned: '+reason);
       } else if(action==='IGNORE'){
@@ -631,14 +674,38 @@ async function runAutoModeration(DB, env){
   }
 }
 
+/* ── Per-IP rate limit (Cache API — no KV, free, per-colo) ───────────────────
+   Stops ONE source from flooding the Worker and tripping the shared daily budget
+   for everyone. Two windows: a short burst limit + a generous daily limit (well
+   above any real household, well below the 90k global cap). Distributed botnets
+   are still caught by the global budget guard + (recommended) Cloudflare Bot
+   Fight Mode. Admin bypasses. Cache failure never blocks legit traffic. */
+async function rlHit(ip, limit, windowSec, tag){
+  try{
+    const key='https://rl.kh.internal/'+tag+'/'+encodeURIComponent(ip||'0')+'/'+Math.floor(Date.now()/(windowSec*1000));
+    const cache=caches.default;
+    const hit=await cache.match(key);
+    const n=(hit?(parseInt(await hit.text(),10)||0):0)+1;
+    await cache.put(key,new Response(String(n),{headers:{'Cache-Control':'max-age='+windowSec}}));
+    return n>limit;
+  }catch(_){ return false; }
+}
+
 export default {
   async scheduled(event, env, ctx){
     try{
       const DB = env && env.DB; if(!DB) return;
-      const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
-      if(!on || !(env && env.GEMINI_KEY)) return;   // opt-in + needs a key
       await ensureSchema(DB);
-      await runAutoModeration(DB, env);
+      /* Housekeeping (ALWAYS — no opt-in needed): prune resolved feedback older
+         than 7 days so done/ignored bug reports + suggestions auto-delete from the
+         cloud. COALESCE(status_at, date) also clears the legacy backlog. */
+      try{
+        const cut = new Date(Date.now()-7*86400000).toISOString();
+        await DB.prepare("DELETE FROM kh_feedback WHERE status IN ('done','ignored') AND COALESCE(status_at, date) < ?").bind(cut).run();
+      }catch(_){}
+      /* AI moderation (opt-in via AUTO_MOD + GEMINI_KEY). */
+      const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
+      if(on && env.GEMINI_KEY) await runAutoModeration(DB, env);
     }catch(_){ /* never throw out of a cron tick */ }
   },
   async fetch(request, env){
@@ -648,6 +715,17 @@ export default {
     await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
+
+    /* Per-IP rate limit — one abuser can't burn the shared daily budget for
+       everyone. Tunable via env RL_BURST (per 10s) / RL_DAY (per day); admin
+       bypasses (checked only when a limit is hit, so no hashing on every req). */
+    const _ip=request.headers.get('cf-connecting-ip')||'0';
+    const _overBurst=await rlHit(_ip, (parseInt((env&&env.RL_BURST)||'',10)||100), 10, 'b');
+    const _overDay  =await rlHit(_ip, (parseInt((env&&env.RL_DAY)||'',10)||20000), 86400, 'd');
+    if(_overBurst || _overDay){
+      const adminOk=await isAdmin(request.headers.get('x-kh-admin')||'');
+      if(!adminOk) return json({error:'rate-limit',code:'CF_IP',message:'Too many requests from your connection — please slow down for a moment.'},429,env);
+    }
 
     /* Budget guard — shed non-admin load before we can hit a Cloudflare limit.
        Health check above is always allowed so uptime monitors keep working. */

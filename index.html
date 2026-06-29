@@ -1880,7 +1880,7 @@ function _startMessageNotifier(){
 
 /* Heartbeat — every 45 s we check whether the local state has changed
    and (only then) push it. With ~20 active users each touching the app
-   briefly each day, this stays well under Supabase's 5 GB / month egress. */
+   briefly each day, this stays well under the backend's 5 GB / month egress. */
 /* Tracks the latest cloud `updated_at` we've already merged so we
    don't redundantly re-pull the same payload every tick. */
 let _lastPulledAt='';
@@ -1900,7 +1900,7 @@ async function _maybePullFromCloud(){
     const _gw=_stateGatewayUrl();
     if(_gw){
       /* R2 gateway: cheap meta probe (HEAD) first, then the blob ONLY if it
-         changed — same egress discipline as the Supabase path, but the download
+         changed — same egress discipline as the backend path, but the download
          is on Cloudflare R2 where egress is free. */
       const meta=await _r2GetState(_gw,S.authToken,true);
       const upAt=(meta&&meta.updated_at)||'';
@@ -1913,7 +1913,7 @@ async function _maybePullFromCloud(){
       /* EGRESS FIX: read the tiny updated_at FIRST and bail if it hasn't changed
          since our last pull — only THEN download the large encrypted state. This
          used to fetch state+updated_at together, re-downloading the full state on
-         every focus/visibility event, which was the dominant Supabase egress. */
+         every focus/visibility event, which was the dominant the backend egress. */
       const metaRows=await _sbSelect('kh_users','hash=eq.'+encodeURIComponent(S.authToken)+'&select=updated_at');
       if(!Array.isArray(metaRows)||!metaRows.length)return;
       const upAt=(metaRows[0]&&metaRows[0].updated_at)||'';
@@ -3354,16 +3354,51 @@ function launchKindleDesktop(){
   });
 
   /* Quick search icon */
+  /* Spotlight-style app search. The old handler opened App-mode chat UNDERNEATH
+     the KindleOS overlay, so the button looked dead — now it filters every
+     installed app (built-in + custom) and launches the one you tap. */
+  function openSpotlight(){
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:600000;display:flex;flex-direction:column;align-items:center;padding-top:52px;';
+    const box=document.createElement('div');
+    box.style.cssText='width:90%;max-width:440px;background:var(--card,#fff);border-radius:14px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.45);';
+    const inp=document.createElement('input');
+    inp.type='text';inp.placeholder='Search apps…';inp.autocapitalize='off';inp.autocorrect='off';inp.spellcheck=false;
+    inp.style.cssText='width:100%;box-sizing:border-box;border:none;border-bottom:1px solid var(--highlight,#e5e5e5);padding:15px 18px;font-size:16px;outline:none;background:var(--card,#fff);color:var(--fg,#111);font-family:var(--ui-font,sans-serif);';
+    const list=document.createElement('div');
+    list.style.cssText='max-height:54vh;overflow-y:auto;';
+    box.appendChild(inp);box.appendChild(list);ov.appendChild(box);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    document.body.appendChild(ov);
+    function render(){
+      const q=inp.value.trim().toLowerCase();
+      const apps=allApps().filter(a=>{const n=String(a.label||a.name||a.id||'').toLowerCase();return !q||n.indexOf(q)>=0;});
+      list.innerHTML='';
+      if(!apps.length){const e=document.createElement('div');e.style.cssText='padding:16px 18px;color:var(--muted,#888);font-size:13px;';e.textContent='No apps match.';list.appendChild(e);return;}
+      apps.slice(0,40).forEach(a=>{
+        const row=document.createElement('div');
+        row.style.cssText='padding:11px 16px;cursor:pointer;border-top:1px solid var(--highlight,#eee);display:flex;align-items:center;gap:12px;';
+        const ic=document.createElement('div');
+        ic.style.cssText='width:30px;height:30px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:'+(a.color||'#888')+';';
+        const icv=String(a.icon||'');
+        if(icv.indexOf('<svg')>=0){ic.innerHTML=icv;const sv=ic.querySelector('svg');if(sv){sv.setAttribute('width','22');sv.setAttribute('height','22');}}
+        else{ic.style.color='#fff';ic.style.fontWeight='800';ic.style.fontSize='13px';ic.textContent=(icv||String(a.label||a.name||'?')).slice(0,2);}
+        const nm=document.createElement('div');
+        nm.style.cssText='font-size:14px;color:var(--fg,#111);font-family:var(--ui-font,sans-serif);font-weight:600;';
+        nm.textContent=String(a.label||a.name||a.id||'App');
+        row.appendChild(ic);row.appendChild(nm);
+        row.addEventListener('click',()=>{ov.remove();try{openApp(a);}catch(_){}});
+        list.appendChild(row);
+      });
+    }
+    inp.addEventListener('input',khDebounce(render,180));/* debounce the app-search re-render while typing */
+    render();
+    setTimeout(()=>{try{inp.focus();}catch(_){}},60);
+  }
   const sbSearch=document.createElement('div');
   sbSearch.style.cssText='color:rgba(255,255,255,0.85);cursor:pointer;padding:2px 4px;display:flex;align-items:center;min-height:28px;';
   sbSearch.innerHTML='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-  sbSearch.addEventListener('click',()=>{
-    closeCC();
-    const chatTab=document.querySelector('nav .tab[data-view="chat"]');
-    if(chatTab){chatTab.click();}
-    closeApp();
-    setTimeout(()=>{const ci=document.getElementById('chatIn');if(ci)ci.focus();},200);
-  });
+  sbSearch.addEventListener('click',()=>{ closeCC(); openSpotlight(); });
 
   /* Swipe-down on status bar => CC */
   let _ccSY=null;
@@ -3500,6 +3535,12 @@ function launchKindleDesktop(){
       }
       const fr=document.createElement('iframe');
       fr.style.cssText='flex:1;width:100%;border:none;background:#fff;display:block;min-height:0;';
+      /* SECURITY: sandbox custom-app HTML. allow-scripts (apps need JS) + forms/
+         popups, but DELIBERATELY NO allow-same-origin — without it the iframe gets
+         a unique opaque origin, so an imported/shared app CANNOT read this page's
+         localStorage (the encrypted state, auth hash, device id), cookies, or call
+         our APIs as the user. Stops a malicious shared app from stealing accounts. */
+      fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
       fr.srcdoc=app.customHTML;
       frWrap.appendChild(fr);
       /* Back control in the FOOTER (not a top-left floating pill). The custom-app
@@ -4723,11 +4764,19 @@ function launchKindleDesktop(){
         if(v.indexOf('KHAPP1:')!==0){if(typeof toast==='function')toast('That doesn\'t look like an app code');return;}
         let obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
         if(!obj||!obj.html){if(typeof toast==='function')toast('Could not read that app code');return;}
+        const html=String(obj.html);
+        /* SECURITY: cap imported app size so a code can't bloat saved state. */
+        if(html.length>512*1024){if(typeof toast==='function')toast('That app is too large to import');return;}
         const ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
-        const color=obj.color||ACCS[Math.floor(Math.random()*ACCS.length)];
+        const color=/^#[0-9a-fA-F]{3,8}$/.test(String(obj.color||''))?obj.color:ACCS[Math.floor(Math.random()*ACCS.length)];
         const label=String(obj.label||'App').slice(0,40);
-        const icon=obj.icon||('<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+label.substring(0,3).toUpperCase()+'</text></svg>');
-        const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:String(obj.html),builtWith:'Imported'};
+        /* SECURITY: NEVER trust obj.icon — it's rendered via innerHTML on the home
+           grid / spotlight, so a crafted code could smuggle <svg onload=…> / <img
+           onerror=…>. Discard it and always generate our own safe icon from the
+           (text-escaped) label. */
+        const safeInitials=label.substring(0,3).toUpperCase().replace(/[<>&"']/g,'');
+        const icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+safeInitials+'</text></svg>';
+        const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:html,builtWith:'Imported'};
         osState.customApps.push(newApp);persistOS();buildPages();renderInstalled();
         if(ov.parentNode)ov.parentNode.removeChild(ov);
         if(typeof toast==='function')toast('"'+label+'" added to your home screen');
@@ -4956,6 +5005,10 @@ WEB SEARCH & LIVE DATA:
       ptitleBadge.style.cssText='font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:'+m2.color+'18;color:'+m2.color+';border:1px solid '+m2.color+'33;';
       ptitle.appendChild(ptitleText);ptitle.appendChild(ptitleBadge);
       const pframe=document.createElement('iframe');pframe.style.cssText='width:100%;height:340px;border:var(--thin);border-radius:10px;background:#fff;';
+      /* SECURITY: sandbox the AI-generated preview (opaque origin, no same-origin)
+         so generated code can't touch our localStorage / auth hash. See the
+         custom-app overlay above for the full rationale. */
+      pframe.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
       pframe.srcdoc=parsed.html;
       const installBtn=document.createElement('button');
       installBtn.textContent='Add to KindleOS';
@@ -5979,16 +6032,16 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
 
    S.authToken = the SHA-256 user hash (also the AES key); never an itemId.
 ─────────────────────────────────────────────────────────────────────────── */
-/* ── SUPABASE (primary backend) ─────────────────────────────────────────────
+/* ── CLOUD BACKEND (primary backend) ─────────────────────────────────────────────
    Set these two constants to the project URL + anon (publishable) key from
-   your Supabase project's API settings. As long as both are set to real
-   values, KindleHub will use Supabase for all cloud storage. If either is
+   your the backend project's API settings. As long as both are set to real
+   values, KindleHub will use the backend for all cloud storage. If either is
    left as the placeholder, it silently falls back to legacy jsonstorage.net.
 
    ── ON "SQL INJECTION" ──
    Classic SQL injection requires somebody to concatenate user input into
    a SQL string. KindleHub never does that:
-     * The client only ever talks to PostgREST (Supabase's HTTP layer),
+     * The client only ever talks to PostgREST (the backend's HTTP layer),
        which parses URL query params + JSON bodies into PREPARED-STATEMENT
        PARAMETERS. There is no SQL string being assembled with user input.
      * The DB also only receives those parameters; the planner already
@@ -6009,7 +6062,7 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
         helper, and even that one only returns a bool.
 
    ── SAFETY MODEL ──
-   The Supabase anon key is PUBLIC (it's in the HTML source of every
+   The the backend anon key is PUBLIC (it's in the HTML source of every
    request, like any other static-site setup). The schema below is
    designed for that reality:
 
@@ -6026,12 +6079,12 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
        header — so only the original sender (who stored the secret in
        their own localStorage at send-time) can edit or delete that row.
      * kh_errors is INSERT-only for anon; reading the error log requires
-       the service_role key (admin in the Supabase dashboard).
+       the service_role key (admin in the backend dashboard).
      * kh_feedback allows UPDATE so vote totals can be incremented but
        not DELETE, so reports can't be silently scrubbed.
 
    ── ONE-TIME SETUP (5 min, do this once on supabase.com) ──
-   1. Create a new Supabase project (free tier — pick any region/password).
+   1. Create a new the backend project (free tier — pick any region/password).
    2. Open SQL Editor → New Query → paste the block below → RUN.
       Safe to re-run; every CREATE/ALTER is idempotent.
 
@@ -6462,7 +6515,7 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
 
       -- Realtime publication (idempotent — swallow "already member" error)
       do $body$ begin
-        alter publication supabase_realtime add table kh_messages;
+        alter publication the backend_realtime add table kh_messages;
       exception when duplicate_object then null;
       end $body$;
 
@@ -6514,7 +6567,7 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
 
    3. Go to Project Settings → API → copy "Project URL" and the
       "anon / public" API key into the two constants below.
-   4. Save / reload — KindleHub is now on Supabase.
+   4. Save / reload — KindleHub is now on the backend.
 
    What the anon key CAN still do (limits to be aware of):
      * Read the encrypted state column. Mitigation: can't be decrypted
@@ -6540,31 +6593,31 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
 let SUPABASE_URL='https://hgqsugrcmdeoyedxobuj.supabase.co';
 let SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhncXN1Z3JjbWRlb3llZHhvYnVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyOTg5OTcsImV4cCI6MjA5NDg3NDk5N30.B9FzGOZjC55KJiAWkvgnzOd2pxxJJ3D2GAZXtIegJZw';
 /* ── Per-deployment backend override ──────────────────────────────────────
-   Point the app at YOUR OWN Supabase project (URL + anon key) from the admin
+   Point the app at YOUR OWN the backend project (URL + anon key) from the admin
    UI — no need to edit this file — so you can move off a shared or half-set-up
    backend. Set it in Admin → Errors & AI Fix → "Backend" card. The anon key is
    public by design, so storing it client-side is fine. */
 try{
   var _sbU=localStorage.getItem('kh_sb_url_override');
   var _sbK=localStorage.getItem('kh_sb_key_override');
-  if(_sbU&&_sbK&&/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(_sbU.trim())&&_sbK.trim().length>40){
+  if(_sbU&&_sbK&&/^https:\/\/[a-z0-9-]+\.the backend\.co\/?$/i.test(_sbU.trim())&&_sbK.trim().length>40){
     SUPABASE_URL=_sbU.trim().replace(/\/+$/,'');
     SUPABASE_ANON_KEY=_sbK.trim();
   }
 }catch(_){}
 
-/* Legacy jsonstorage — kept as automatic fallback if Supabase isn't set up,
+/* Legacy jsonstorage — kept as automatic fallback if the backend isn't set up,
    and as a one-time migration source for existing accounts. */
 const JS_COL='e116af42-736e-4437-ba6b-4d30e4d77094';
 const JS_API_KEY='3fc52043-9743-4000-ad5c-fdd615f4db4f';
 const KH_REG='9a40d7cc-4373-40eb-8c09-33a2a0d50516';
 const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
 
-/* ── Supabase REST helpers (PostgREST) ──────────────────────────────── */
+/* ── the backend REST helpers (PostgREST) ──────────────────────────────── */
 /* API gateway (Cloudflare D1 + Workers). When set, ALL REST/RPC traffic routes
-   here instead of Supabase — zero egress. Blank = Supabase, behaves as before.
+   here instead of the backend — zero egress. Blank = the backend, behaves as before.
    The Worker (api-worker.js) speaks the same PostgREST subset, so only the base
-   URL changes. Realtime (chat websockets) is Supabase-only, so it's gated off
+   URL changes. Realtime (chat websockets) is the backend-only, so it's gated off
    here and chat uses its existing 15s polling fallback.
 
    ── FLEET ROLLOUT ──────────────────────────────────────────────────────────
@@ -6572,8 +6625,8 @@ const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
    ALL users at once, paste your Worker URLs into the two KH_DEFAULT_* constants
    below and redeploy index.min.html — every device then uses Cloudflare on next
    load. A per-device localStorage value still overrides the default; set it to
-   the literal 'off' to force that one device back onto Supabase. Empty both =
-   Supabase, exactly as today. */
+   the literal 'off' to force that one device back onto the backend. Empty both =
+   the backend, exactly as today. */
 const KH_DEFAULT_STATE_GATEWAY='';   /* e.g. 'https://kindlehub-state.you.workers.dev' */
 const KH_DEFAULT_API_GATEWAY='';     /* e.g. 'https://kindlehub-api.you.workers.dev'   */
 const KH_DEFAULT_MAIL_GATEWAY='';    /* e.g. 'https://kindlehub-mail.you.workers.dev' — real email for ALL users */
@@ -6713,8 +6766,8 @@ async function _sbFetch(path,opts){
 async function _sbSelect(table,query){
   return _sbFetch('/'+table+(query?'?'+query:''),{method:'GET'});
 }
-/* ── Supabase keep-alive ──────────────────────────────────────────────────
-   Supabase's free tier auto-pauses a project after ~7 days with no API
+/* ── the backend keep-alive ──────────────────────────────────────────────────
+   the backend's free tier auto-pauses a project after ~7 days with no API
    activity. A tiny read on app load registers activity so the project the app
    relies on stays awake between visits. Throttled to once per 6h per device so
    it never spams, and failures (offline / table missing) are harmless. NOTE:
@@ -6732,6 +6785,34 @@ async function _khKeepAlive(){
   }catch(_){/* offline / blocked — harmless, retries next load */}
 }
 setTimeout(()=>{try{_khKeepAlive();}catch(_){}},6000);
+/* ── Weekly staggered auto-compress ───────────────────────────────────────
+   Re-pack each synced account into the compact gzip form and push a fresh
+   compressed copy ~once a week, so cloud blobs stay small over time. NORMAL
+   compress only — never the data-pruning supercompress (that's reserved for a
+   genuine out-of-space emergency). Each user is pinned to ONE day of a 7-day
+   cycle (a hash of their id), so only ~1/7 of accounts re-sync on any given day
+   — this is what keeps the daily Cloudflare write/request count from spiking if
+   everyone compressed at once. Skips when offline or while a CF limit is active. */
+async function _maybeWeeklyCompress(){
+  try{
+    if(typeof S==='undefined'||!S.authToken||!S.syncEnabled)return;   // only synced accounts have a cloud blob
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;    // don't add writes during a CF limit — try again another day
+    const now=(typeof NOW==='function')?NOW():Date.now();
+    /* deterministic 0..6 slot from the user id → spreads accounts across the week */
+    let slot=0; try{ const id=String(S.userId||S.authToken||'a'); let h=0; for(let i=0;i<id.length;i++){h=(h*31+id.charCodeAt(i))>>>0;} slot=h%7; }catch(_){}
+    if(Math.floor(now/86400000)%7!==slot)return;                      // not this account's day
+    let last=0; try{last=parseInt(localStorage.getItem('kh_last_autocompress')||'0',10)||0;}catch(_){}
+    if(now-last < 6*86400000)return;                                  // already compressed this cycle
+    try{localStorage.setItem('kh_last_autocompress',String(now));}catch(_){}
+    /* NORMAL compress: re-pack the local blob to compact gzip, then push one
+       compressed re-sync. No pruning, so nothing is lost. */
+    try{ const json=JSON.stringify(S); if(typeof _upgradeStoredCompression==='function')_upgradeStoredCompression(json); }catch(_){}
+    try{ if(typeof syncToCloud==='function')await syncToCloud(); }
+    catch(_){ try{if(typeof scheduleCloudSync==='function')scheduleCloudSync(true);}catch(__){} }
+  }catch(_){}
+}
+setTimeout(()=>{try{_maybeWeeklyCompress();}catch(_){}},30000);
 /* Page-aware select. PostgREST has a server-side `db-max-rows` setting
    (often 100 or 1000) that silently clamps the `limit=` URL param. This
    helper sends explicit Range headers and keeps requesting until the
@@ -7107,8 +7188,8 @@ async function _loadAllAnnouncements(){
     return Array.isArray(rows)?rows:[];
   }catch(_){return [];}
 }
-/* Turn a raw PostgREST/Supabase error body into a short, human message —
-   never show users the raw {"code":...,"details":...} JSON ("supabase in
+/* Turn a raw PostgREST/the backend error body into a short, human message —
+   never show users the raw {"code":...,"details":...} JSON ("the backend in
    braces"). Recognises the common cases and otherwise strips the JSON noise. */
 function _sbFriendlyErr(t,status){
   const s=String(t||'');
@@ -7299,7 +7380,7 @@ async function _khWarnUsername(name){
   const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
   if(reason==null)return false;/* admin cancelled */
   const msg=String(reason||'').trim()||'Please follow the community rules.';
-  const text='⚠️ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const text='⚠ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
   const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
   if(ok)toast('Warning sent privately to “'+name+'”.',3500);
   /* _announceRpc surfaces its own error toast on failure. */
@@ -7314,7 +7395,7 @@ async function _khWarnUsernameSilent(name,reason){
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
   if(!window._adminToken)return false;
   const msg=String(reason||'').trim()||'Please follow the community rules.';
-  const text='⚠️ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const text='⚠ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
   const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
   return !!ok;
 }
@@ -8128,7 +8209,7 @@ async function _gunzipBytes(u8){
    _compStr-encoded text by the reader). gzip wins ~75-85% of the byte
    count on the typical KindleHub state blob vs ~30-40% for _compStr,
    which lets users with large libraries (2000+ events / 1000+ notes)
-   actually fit inside the Supabase row size budget. */
+   actually fit inside the backend row size budget. */
 async function _encryptState(hexKey64,obj){
   const key=await _deriveAesKey(hexKey64);
   const iv=crypto.getRandomValues(new Uint8Array(12));
@@ -8730,7 +8811,7 @@ function _trimStateForCloud(stateObj){
 }
 
 /* ── Per-user storage budget + Supercompress ──────────────────────────
-   Supabase's free tier shares one 500 MB database across every account,
+   the backend's free tier shares one 500 MB database across every account,
    so each user gets a soft cap on the state they keep/sync. Going over
    never deletes data silently — it surfaces a "Supercompress" prompt that
    prunes ONLY regenerable caches + old AI chat history (never the user's
@@ -8854,7 +8935,7 @@ function _khUltraProgress(){const u=_ultraState();return {tier:_khTier(),active:
 window._khTier=_khTier;window._khUltraActive=_khUltraActive;window._khBadgeEl=_khBadgeEl;window._khUltraProgress=_khUltraProgress;window._startUltraTracking=_startUltraTracking;
 try{setTimeout(function(){try{_startUltraTracking();}catch(_){}},2500);}catch(_){}
 
-/* ══ Weekly kh_users backup → a SECOND Supabase project ════════════════════
+/* ══ Weekly kh_users backup → a SECOND the backend project ════════════════════
    True redundancy for accounts: replicate the kh_users table (hash, email,
    encrypted state, updated_at) from the ACTIVE backend (SUPABASE_URL) to a
    SEPARATE "backup" project once a week, so accounts + cloud state survive if
@@ -8883,7 +8964,7 @@ function _khBackupCfg(){
   try{
     const u=(localStorage.getItem('kh_backup_url')||'').trim().replace(/\/+$/,'');
     const k=(localStorage.getItem('kh_backup_key')||'').trim();
-    if(u&&k&&/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(u)&&k.length>=40)return {url:u,key:k};
+    if(u&&k&&/^https:\/\/[a-z0-9-]+\.the backend\.co$/i.test(u)&&k.length>=40)return {url:u,key:k};
   }catch(_){}
   return null;
 }
@@ -9176,15 +9257,15 @@ function _refreshStorageUI(){
 }
 
 /* ── User storage ────────────────────────────────────────────────────
-   Primary backend: Supabase (kh_users table — one row per registered user).
+   Primary backend: the backend (kh_users table — one row per registered user).
    Fallback: legacy jsonstorage master doc (doc.users[hash]) used when
-   Supabase isn't configured AND for one-time migration of pre-existing
+   the backend isn't configured AND for one-time migration of pre-existing
    accounts. State is dictionary-compressed → AES-GCM encrypted → base64. */
 /* ── Cloudflare R2 state gateway (free-egress state storage) ─────────────────
    OPT-IN via Admin → Local Insights → "State gateway (Cloudflare R2)". When the
    URL is set, the big encrypted state blob is read/written from R2 (which has
-   ZERO egress fees) instead of Supabase; a tiny registry row (hash+email, state
-   cleared) is still kept in Supabase so username-uniqueness keeps working. When
+   ZERO egress fees) instead of the backend; a tiny registry row (hash+email, state
+   cleared) is still kept in the backend so username-uniqueness keeps working. When
    the URL is BLANK, every branch below is skipped and sync behaves exactly as
    before — so this is safe to ship and migrate to whenever you're ready. The
    Worker + full setup live in state-worker.js. */
@@ -9211,10 +9292,10 @@ async function _saveUser(key,email,stateObj){
   const _ua=new Date().toISOString();
   const _gw=_stateGatewayUrl();
   if(_gw){
-    /* Big blob → R2 (free egress). Then keep a TINY Supabase registry row
+    /* Big blob → R2 (free egress). Then keep a TINY the backend registry row
        (email kept, state cleared) so username-uniqueness still works — but only
        AFTER R2 confirms the write, so a failed R2 push never clears the fallback.
-       Local state is always the backstop, so clearing the Supabase blob is safe. */
+       Local state is always the backstop, so clearing the backend blob is safe. */
     const r2ua=await _r2PutState(_gw,key,email,packed);
     if(typeof _sbActive==='function'&&_sbActive()){try{await _sbUpsert('kh_users',{hash:key,email,state:null,updated_at:r2ua||_ua},'hash');}catch(_){}}
     return r2ua||_ua;
@@ -9235,7 +9316,7 @@ async function _loadUser(key){
   const _gw=_stateGatewayUrl();
   if(_gw){
     /* R2 is the source of truth when the gateway is set. If it has nothing yet
-       (account not migrated) or is unreachable, fall through to Supabase so no
+       (account not migrated) or is unreachable, fall through to the backend so no
        one loses access during the transition. */
     try{const d=await _r2GetState(_gw,key,false);if(d&&d.state)return d.state;}catch(e){console.warn('R2 load failed',e);}
   }
@@ -9244,7 +9325,7 @@ async function _loadUser(key){
       const rows=await _sbSelect('kh_users','hash=eq.'+encodeURIComponent(key)+'&select=state,email');
       if(Array.isArray(rows)&&rows.length&&rows[0].state)return rows[0].state;
     }catch(e){console.warn('SB load user failed',e);}
-    /* Even if Supabase is active, also check the legacy doc for migration */
+    /* Even if the backend is active, also check the legacy doc for migration */
   }
   try{
     const doc=await _masterRead();
@@ -9538,7 +9619,7 @@ async function authLogin(email,password){
     try{ await _refreshCapacity(); if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
     const key=await _userKey(email,password);
     let packed=null;
-    let needsMigration=false; /* true if found in legacy jsonstorage but not Supabase */
+    let needsMigration=false; /* true if found in legacy jsonstorage but not the backend */
     /* State gateway (Cloudflare R2): when set, the encrypted blob lives in R2
        and the kh_users registry row's state is null — so load it from R2 first,
        or a fresh device (no offline cache) would read null and fail to sign in. */
@@ -9546,7 +9627,7 @@ async function authLogin(email,password){
       const _sgw=(typeof _stateGatewayUrl==='function')?_stateGatewayUrl():'';
       if(_sgw){ const d=await _r2GetState(_sgw,key,false); if(d&&d.state)packed=d.state; }
     }catch(e){console.warn('R2 login lookup failed',e);}
-    /* Try Supabase (or the D1 gateway) next */
+    /* Try the backend (or the D1 gateway) next */
     if(!packed&&_sbActive()){
       try{
         const rows=await _sbSelect('kh_users','hash=eq.'+encodeURIComponent(key)+'&select=state');
@@ -9596,7 +9677,7 @@ async function authLogin(email,password){
     if(_offline&&typeof toast==='function')toast('Signed in offline — your data syncs when you reconnect.',3500);
     if(cloudState&&Object.keys(cloudState).length>0)mergeCloudState(cloudState);
     if(needsMigration){
-      /* Move the user record over to Supabase (or refresh the legacy entry) */
+      /* Move the user record over to the backend (or refresh the legacy entry) */
       try{await _saveUser(key,email,_buildSafeState());}catch(e){console.warn('Migration save failed',e);}
     }
     save();
@@ -9680,9 +9761,9 @@ async function syncFromCloud(){
 
 /* ── Global game leaderboard ─────────────────────────────────────────
    Cross-device, cross-account scores for any game. Backed by the
-   kh_scores Supabase table (open read + insert for anon — no edit, no
+   kh_scores the backend table (open read + insert for anon — no edit, no
    delete, so leaderboards can't be tampered with). Each call is
-   best-effort: if Supabase isn't configured OR the table hasn't been
+   best-effort: if the backend isn't configured OR the table hasn't been
    created yet (older deployments), the helpers fail silently and the
    game falls back to its local-only score list. */
 async function _khSubmitScore(game,score){
@@ -9741,9 +9822,9 @@ async function _khFetchScores(game,limit){
 }
 
 /* ── Group chat storage ──────────────────────────────────────────────
-   Supabase: two real tables — kh_groups (group metadata) and kh_messages
+   the backend: two real tables — kh_groups (group metadata) and kh_messages
    (every message as its own row). Realtime subscriptions push new
-   messages instantly, no polling required when the DB is on Supabase.
+   messages instantly, no polling required when the DB is on the backend.
    Legacy jsonstorage path is kept for offline / fallback. */
 /* Hard-coded global group every user can see + post to. The 12-zero code
    wouldn't be generated by genCode() (digits chosen randomly) so it can't
@@ -9754,7 +9835,7 @@ const KH_GLOBAL_GROUP_CODE='000000000000';
    makes no sense to let one device pull 100). Private groups follow the
    local user's preference, stored as S.msgHistoryCaps[code], default 20,
    clamped 10-30. Lower caps mean faster loads, smaller localStorage
-   footprint, and (on the Supabase backend) less bandwidth — especially
+   footprint, and (on the backend) less bandwidth — especially
    important on Kindle where every extra message means another decrypt +
    gunzip + DOM render. */
 const KH_MSG_CAP_MIN=10;
@@ -9981,7 +10062,7 @@ async function _groupSend(code,msg){
    column for the newest row (~50 bytes) instead of pulling up to 30 full
    message bodies + reactions JSON. The background notifier calls this first
    and only downloads bodies when the latest id has actually changed, which
-   turned the dominant Supabase egress (a full history fetch every 45s per
+   turned the dominant the backend egress (a full history fetch every 45s per
    group, mostly of quiet rooms) into near-zero traffic. Returns the id, the
    '__empty__' sentinel for an empty room, or null when the probe itself
    failed so the caller can fall back to a full fetch. */
@@ -14323,7 +14404,7 @@ const Connect4=(()=>{
 /* ═══════════════════════════════════════════════════════════════════
    MULTIPLAYER FRAMEWORK — `KH_MP`
    Lightweight room/move exchange built on top of the existing
-   Supabase chat-group infrastructure (kh_groups + kh_messages +
+   the backend chat-group infrastructure (kh_groups + kh_messages +
    realtime websocket). Any 2-player game can plug in.
 
    API:
@@ -14426,7 +14507,7 @@ window.KH_MP=(function(){
       }catch(e){console.warn('KH_MP ws failed',e);}
     }
     /* Polling fallback — runs whenever the websocket isn't connected, which is
-       ALWAYS on the Cloudflare D1 gateway (realtime is Supabase-only). Game
+       ALWAYS on the Cloudflare D1 gateway (realtime is the backend-only). Game
        moves are turn-based, so a 2s poll feels responsive; a cheap newest-id
        probe (~50 B) skips the full body fetch when nothing new arrived, so a
        quiet room costs almost nothing. Paused while the tab is hidden. */
@@ -14461,8 +14542,12 @@ window.KH_MP=(function(){
       const q='email=ilike.'+encodeURIComponent('*'+query.replace(/[%_]/g,'')+'*')+'&select=hash,email&limit=20';
       const rows=await _sbSelect('kh_users',q);
       const myHash=(typeof S!=='undefined'&&S.authToken)||'';
+      /* The backend now returns a 16-char hash PREFIX for non-self reads (the full
+         hash is the AES key — never exposed in bulk), so exclude self by PREFIX
+         match, not full equality. The prefix is enough to derive the invite inbox
+         code (first 6 hex) + group name (first 8). */
       return(rows||[])
-        .filter(r=>r&&r.hash&&r.email&&r.hash!==myHash)
+        .filter(r=>r&&r.hash&&r.email&&!(myHash&&myHash.slice(0,r.hash.length)===r.hash))
         .map(r=>({hash:r.hash,email:r.email,name:String(r.email).split('@')[0]}));
     }catch(e){return[];}
   }
@@ -14672,7 +14757,7 @@ window.KH_MP=(function(){
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_check);
   else setTimeout(_check,200);
-  setInterval(_check,8000);
+  setInterval(()=>{if(!document.hidden)_check();},8000);/* skip the invite poll while backgrounded */
 })();
 
 /* ── Global incoming-invite banner ─────────────────────────────────────
@@ -17194,7 +17279,7 @@ const GeometryDash=(()=>{
     immersiveRoot._trackStop=stop;
     buildUI();
     if(timer)clearInterval(timer);
-    timer=setInterval(tick,FR);
+    timer=setInterval(()=>{if(!document.hidden)tick();},FR);/* pause auto-runner when screen is off so you don't die unseen + save battery */
     draw();
   }
 
@@ -17552,7 +17637,7 @@ const Slither=(()=>{
   async function _removeBeacon(){if(!_pub)return;_pub=false;try{if(_netOk())await _sbUpsert('kh_presence',{user_id:_myId(),display_name:JSON.stringify({n:_myName(),d:1,t:Date.now()}),last_seen:new Date().toISOString()},'user_id');}catch(_){}}
 
   function _startTimers(){
-    if(timer)clearInterval(timer);timer=setInterval(step,FRAME_MS);
+    if(timer)clearInterval(timer);timer=setInterval(()=>{if(!document.hidden)step();},FRAME_MS);/* freeze the arena while backgrounded (no blind crashes, no wasted CPU) */
     if(netTimer)clearInterval(netTimer);
     if(_netOk()){netTimer=setInterval(_netTick,PUB_MS);_netTick();}
   }
@@ -17822,7 +17907,7 @@ const Tetris=(()=>{
       if(board[r].every(c=>c)){board.splice(r,1);board.unshift(Array(COLS).fill(0));cleared++;r++;}
     }
     if(cleared){score+=cleared===4?800:cleared===3?500:cleared===2?300:100;lvl=Math.floor(score/700)+1;
-      if(dropTimer){clearInterval(dropTimer);dropTimer=setInterval(()=>{if(gameActive)drop();},Math.max(100,600-lvl*50));}}
+      if(dropTimer){clearInterval(dropTimer);dropTimer=setInterval(()=>{if(gameActive&&!document.hidden)drop();},Math.max(100,600-lvl*50));}}
     if(score>best){best=score;S.games.tetris={best};save();}
     updateInfo();newPiece();
   }
@@ -17936,7 +18021,7 @@ const Tetris=(()=>{
     ic.appendChild(wrap);
     newPiece();draw();updateInfo();
     if(dropTimer)clearInterval(dropTimer);
-    dropTimer=setInterval(()=>{if(gameActive)drop();},Math.max(100,600-lvl*50));
+    dropTimer=setInterval(()=>{if(gameActive&&!document.hidden)drop();},Math.max(100,600-lvl*50));
   }
   document.addEventListener('keydown',e=>{
     const ic=$('immersiveContent');if(!ic||!gameActive)return;
@@ -18015,7 +18100,7 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
 
     const nb=txt('button','New Game',{className:'btn small'});nb.onclick=start;nb.style.cssText='display:block;margin:0 auto;';
     immersiveContent.appendChild(nb);
-    _timer=setInterval(tick,TICK);
+    _timer=setInterval(()=>{if(!document.hidden)tick();},TICK);/* pause invaders while backgrounded */
   }
 
   function shoot(){
@@ -20818,7 +20903,7 @@ function _initFlightSim(){
        physics interval / RAF loop on top of the old one. */
     if(physTimer){clearInterval(physTimer);physTimer=null;}
     if(rafHandle){cancelAnimationFrame(rafHandle);rafHandle=null;}
-    physTimer=setInterval(_physTick,50);
+    physTimer=setInterval(()=>{if(!document.hidden)_physTick();},50);/* pause physics while backgrounded (RAF already self-throttles when hidden) */
     rafHandle=requestAnimationFrame(_rafTick);
     updateStatusBar();
   }
@@ -23372,10 +23457,10 @@ async function callOpenRouterStream(messages, onChunk){
   }
 }
 
-/* ── Shared Gemini key (via Supabase Edge Function proxy) ─────────
+/* ── Shared Gemini key (via backend Edge Function proxy) ─────────
    A Gemini key bundled into the app for users who don\'t want to
    register their own. CRITICALLY: the key is NEVER stored in the
-   client source. Instead, requests are proxied through a Supabase
+   client source. Instead, requests are proxied through a backend
    Edge Function (kh-gemini-proxy) that holds the key in its server
    env. The function enforces a daily cap (kh_shared_api_usage table)
    so no one user can run up the bill, and bills go to the function
@@ -23394,8 +23479,8 @@ async function callOpenRouterStream(messages, onChunk){
 const SHARED_KEY_DAILY_CAP=500+4*20+2*1500;/* 3580 — sum of every free model's daily quota: flash-lite 500 + 4 flash @20 + 2 Gemma @1500 */
 function sharedKeyProxyUrl(){
   /* Route to the Cloudflare API gateway when one is set — its Worker now hosts the
-     SAME /functions/v1/kh-gemini-proxy endpoint (ported off the Supabase Edge
-     Function), so the whole backend can be Cloudflare. Falls back to Supabase when
+     SAME /functions/v1/kh-gemini-proxy endpoint (ported off the backend Edge
+     Function), so the whole backend can be Cloudflare. Falls back to the backend when
      no gateway is configured. */
   const base=((typeof _sbBase==='function'?_sbBase():SUPABASE_URL)||'');
   if(!base)return null;
@@ -27342,7 +27427,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "Compression: the full state blob (notes, books, calendar, habits, etc.) used for cross-device sync is also gzipped with the same path as messages. The pure-JS inflate fallback means devices that can't decompress natively (older Kindles) still read the synced state correctly — your calendar, notes, etc. all decompress the same way.",
 "",
-"Community features (Feedback board, shared notes between groups, error log) use the configured cloud backend (Cloudflare D1 or Supabase). Nothing is shared unless you explicitly post to the community board.",
+"Community features (Feedback board, shared notes between groups, error log) use the configured cloud backend (Cloudflare D1 or the backend). Nothing is shared unless you explicitly post to the community board.",
 "",
 "## Troubleshooting",
 "",
@@ -32516,8 +32601,11 @@ body.sepia #view-weather{--muted:#4a3a26;}
     /* ── Helpers ── */
     function dewPoint(tempC,rh){return tempC-(100-rh)/5;}
     function windDir(deg){const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];return dirs[Math.round(deg/22.5)%16];}
-    function aqiLabel(aqi){if(aqi<=20)return{l:'Good',c:'#00c853'};if(aqi<=40)return{l:'Fair',c:'#76ff03'};if(aqi<=60)return{l:'Moderate',c:'#ffea00'};if(aqi<=80)return{l:'Poor',c:'#ff6d00'};if(aqi<=100)return{l:'Very Poor',c:'#b71c1c'};return{l:'Hazardous',c:'#4a148c'};}
-    function uvLabel(uv){if(uv<3)return{l:'Low',c:'#00c853'};if(uv<6)return{l:'Moderate',c:'#ffea00'};if(uv<8)return{l:'High',c:'#ff6d00'};if(uv<11)return{l:'Very High',c:'#f44336'};return{l:'Extreme',c:'#9c27b0'};}
+    /* Colours double as TEXT, so the lighter scale steps are darkened to stay
+       readable on white / light-grey / colour-e-ink (bright yellow on white was
+       ~1.1:1 contrast — invisible). The bar fills just look a touch deeper. */
+    function aqiLabel(aqi){if(aqi<=20)return{l:'Good',c:'#1a8f3c'};if(aqi<=40)return{l:'Fair',c:'#4e9a00'};if(aqi<=60)return{l:'Moderate',c:'#b07d00'};if(aqi<=80)return{l:'Poor',c:'#d35400'};if(aqi<=100)return{l:'Very Poor',c:'#b71c1c'};return{l:'Hazardous',c:'#4a148c'};}
+    function uvLabel(uv){if(uv<3)return{l:'Low',c:'#1a8f3c'};if(uv<6)return{l:'Moderate',c:'#b07d00'};if(uv<8)return{l:'High',c:'#d35400'};if(uv<11)return{l:'Very High',c:'#e53935'};return{l:'Extreme',c:'#9c27b0'};}
     function pressureTrend(hPa){if(hPa>1020)return'High pressure';if(hPa>1013)return'Normal';if(hPa>1000)return'Low pressure';return'Very low';}
     function beaufort(kmh){if(kmh<1)return'Calm';if(kmh<6)return'Light Air';if(kmh<12)return'Light Breeze';if(kmh<20)return'Gentle';if(kmh<29)return'Moderate';if(kmh<39)return'Fresh';if(kmh<50)return'Strong';if(kmh<62)return'Near Gale';if(kmh<75)return'Gale';return'Storm';}
     function moonPhaseWx(jd){const k=(jd-2451550.1)/29.53058868;const phase=(k-Math.floor(k)+1)%1;const names=['New','Waxing Crescent','First Qtr','Waxing Gibbous','Full','Waning Gibbous','Last Qtr','Waning Crescent'];const idx=Math.round(phase*8)%8;const illum=Math.round(50-50*Math.cos(phase*2*Math.PI));return{name:names[idx],illum:Math.max(0,Math.min(100,illum))};}
@@ -32725,7 +32813,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
       if(wxCode!=null)dayCol.appendChild(txt('div',WX_DESC[wxCode]||'',{style:'font-size:9.5px;color:var(--muted);line-height:1.2;margin-top:1px;'}));
       row2.appendChild(dayCol);
       const prec=(daily.precipitation_probability_max||[])[i];
-      const precipCol=prec>50?'#2266cc':prec>20?'#6699cc':'var(--muted)';
+      const precipCol=prec>50?'#1f5fb0':prec>20?'#3a78c0':'var(--muted)';
       if(prec!=null)row2.appendChild(txt('span',(prec||0)+'% rain',{style:'font-size:10px;color:'+precipCol+';min-width:54px;text-align:right;font-weight:600;',title:'Peak hourly chance — not a whole-day forecast'}));
       const bw=el('div',{style:'flex:1;margin:0 6px;'});
       const pMin=maxT>minT?(daily.temperature_2m_min[i]-minT)/(maxT-minT)*100:30;
@@ -33096,6 +33184,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
           function startAnim(){
             stopAnim();isPlaying=true;playBtn.textContent='⏸ Pause';
             animTimer=setInterval(()=>{
+              if(document.hidden)return;/* don't advance frames nobody can see */
               frameIdx=(frameIdx+1)%allFrames.length;
               updateTimeline();drawFrame();
             },parseInt(speedSel.value));
@@ -34336,6 +34425,11 @@ breathe:()=>{
     const ex=EXERCISES[breathExIdx];
     breathLast=performance.now();
     breathAnim=setInterval(()=>{
+      /* Pause while the screen is off / app backgrounded — nobody can see an
+         80 ms breathing animation then, and running it just flashes e-ink and
+         drains battery. Resetting breathLast makes the cycle resume smoothly
+         (no time-jump) when the user comes back. */
+      if(document.hidden){breathLast=performance.now();return;}
       /* Self-stop when the breathe UI has left the DOM (user switched
          view mid-session) — otherwise this 80 ms tick ran forever,
          draining the battery on e-ink devices. */
@@ -34449,6 +34543,7 @@ breathe:()=>{
       const pb=document.getElementById('gsPauseBtn');if(pb)pb.textContent='Pause';
       if(guidedTimer)clearInterval(guidedTimer);
       guidedTimer=setInterval(()=>{
+        if(document.hidden)return;/* pause guided session while screen is off */
         guidedElapsed+=0.5;
         const pf=document.getElementById('gsProgFill');
         if(pf)pf.style.width=Math.min(guidedElapsed/STEP_DURATION*100,100)+'%';
@@ -35525,7 +35620,7 @@ settings:()=>{
     _syncNowBtn.onclick=async()=>{
       if(!navigator.onLine)return toast('Sync requires internet.');
       _syncNowBtn.disabled=true;_syncNowBtn.textContent='Pulling…';
-      /* When the R2 state gateway is on, the Supabase-specific inline diagnostics
+      /* When the R2 state gateway is on, the backend-specific inline diagnostics
          below don't apply. Route through the standard R2-aware pull+push so a
          manual sync can never clobber another device's R2 state. */
       if(typeof _stateGatewayUrl==='function'&&_stateGatewayUrl()){
@@ -35632,7 +35727,7 @@ settings:()=>{
           }
         }catch(e){
           const raw=String(e&&e.message||e);
-          /* Pattern-match a few common Supabase errors to friendly text */
+          /* Pattern-match a few common the backend errors to friendly text */
           if(/check.*constraint|kh_users_state_len|violates check/i.test(raw)){
             pushErr='Your library is larger than the cloud row limit. Run the latest schema SQL (raises the kh_users state cap to 16 MB) and try again.';
           } else if(/permission denied|RLS/i.test(raw)){
@@ -36306,7 +36401,7 @@ settings:()=>{
      Credits the AI collaborators that built KindleHub and every user who
      filed a bug report or feature suggestion. Human names are read from the
      local kh_contributors cache that the Feedback board fills in from data
-     it already fetched — so this card adds ZERO Supabase bandwidth. */
+     it already fetched — so this card adds ZERO the backend bandwidth. */
   const cContrib=el('div',{className:'card',style:{gridColumn:'1/-1'}});
   cContrib.appendChild(txt('h2','Contributors'));
   cContrib.appendChild(txt('p','KindleHub was designed and built collaboratively with these AI models, and shaped by the community.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
@@ -36382,7 +36477,14 @@ feedback:()=>{
              policy from the schema is applied); always hidden from the list
              regardless, so it goes away after 7 days either way. */
           const cutoff=Date.now()-7*86400000;
-          const stale=list.filter(it=>(it.status==='done'||it.status==='ignored')&&it.status_at&&Date.parse(it.status_at)<cutoff);
+          /* done/ignored items age out 7 days after resolution (status_at); legacy
+             rows with no status_at fall back to their creation date so they clear
+             the backlog instead of sticking around forever. */
+          const stale=list.filter(it=>{
+            if(it.status!=='done'&&it.status!=='ignored')return false;
+            const t=Date.parse(it.status_at||it.date||'');
+            return !isNaN(t)&&t<cutoff;
+          });
           if(stale.length){
             stale.forEach(it=>{try{_sbDelete('kh_feedback','id=eq.'+encodeURIComponent(it.id)).catch(function(){});}catch(_){}});
             const drop=new Set(stale.map(it=>it.id));
@@ -36498,7 +36600,7 @@ feedback:()=>{
       btnRow.appendChild(delBtn);
       c.appendChild(btnRow);
 
-      /* ── Supabase one-click cleanup ──
+      /* ── the backend one-click cleanup ──
          The orphan-row patterns Aran keeps re-discovering: stale
          inbox-/mp- groups with non-deterministic codes (from the old
          _groupCreate bug), stale presence rows from devices that
@@ -36631,15 +36733,11 @@ feedback:()=>{
 
       /* Admin AI — ask a free-text question about any user (last online, activity,
          identity) answered from their cloud metadata. Admin-only. */
-      const aiAskBtn=txt('button','🔍 Ask AI about a user',{className:'btn small primary',style:{marginBottom:'14px',width:'100%'}});
+      const aiAskBtn=txt('button','Ask AI about a user',{className:'btn small primary',style:{marginBottom:'14px',width:'100%'}});
       aiAskBtn.onclick=()=>{if(typeof _khAskUserDialog==='function')_khAskUserDialog('');};
       c.appendChild(aiAskBtn);
 
-      /* Top groups by message volume + feedback-by-status breakdown */
-      c.appendChild(txt('div','TOP GROUPS BY MESSAGES',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
-      const topGroupsBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
-      topGroupsBox.textContent='Loading…';
-      c.appendChild(topGroupsBox);
+      /* Feedback-by-status breakdown + top senders */
       c.appendChild(txt('div','FEEDBACK BY STATUS',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
       const fbStatusBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
       fbStatusBox.textContent='Loading…';
@@ -36844,36 +36942,12 @@ feedback:()=>{
             const rows=await _sbSelectAll('kh_messages','select=group_code,user_id,display_name&order=ts.desc',1000,5000);
             const list=Array.isArray(rows)?rows:[];
             /* Distinct senders */
-            const senders={};const groups={};
+            const senders={};
             list.forEach(r=>{
               const uid=r.user_id||'';
               if(uid){if(!senders[uid])senders[uid]={n:0,name:r.display_name||uid.slice(0,8)};senders[uid].n++;}
-              const gc=r.group_code||'?';
-              groups[gc]=(groups[gc]||0)+1;
             });
             _setStat(sSenders,Object.keys(senders).length,'distinct (last '+list.length+')');
-
-            /* Top groups */
-            const gRank=Object.entries(groups).map(([k,n])=>({k,n})).sort((a,b)=>b.n-a.n).slice(0,8);
-            topGroupsBox.innerHTML='';
-            if(!gRank.length){topGroupsBox.textContent='No messages yet.';}
-            else{
-              const gMax=gRank[0].n;
-              gRank.forEach(({k,n})=>{
-                const isGlobal=/^0{12}$/.test(k);
-                /* Inline the XXXX-XXXX-XXXX formatting — `formatCode` is defined
-                   inside the Messages view, so it's out of scope here and a bare
-                   `formatCode?` reference throws "formatCode is not defined",
-                   which was aborting the whole Top-groups + Top-senders block. */
-                const label=isGlobal?'Global Chat':(k&&k.length>=12?k.slice(0,4)+'-'+k.slice(4,8)+'-'+k.slice(8,12):k);
-                const row=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'3px 0'}});
-                row.appendChild(txt('div',label,{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontFamily:'monospace',fontSize:'11px'}}));
-                row.appendChild(el('div',{style:{width:Math.max(8,Math.round(n/gMax*120))+'px',height:'10px',background:'var(--fg)',borderRadius:'3px',flexShrink:'0'}}));
-                row.appendChild(txt('div',String(n),{style:{minWidth:'40px',textAlign:'right',fontFamily:'monospace',fontWeight:'700'}}));
-                topGroupsBox.appendChild(row);
-              });
-              topGroupsBox.appendChild(txt('div','From the most recent '+list.length+' messages.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'6px',borderTop:'var(--thin)',paddingTop:'6px'}}));
-            }
 
             /* Top senders */
             const sRank=Object.values(senders).sort((a,b)=>b.n-a.n).slice(0,10);
@@ -36883,7 +36957,7 @@ feedback:()=>{
               const sMax=sRank[0].n;
               sRank.forEach(s=>{
                 const row=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'3px 0'}});
-                row.appendChild(txt('div',s.name,{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700'}}));
+                row.appendChild(txt('div',_dispName(s.name),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700'}}));
                 row.appendChild(el('div',{style:{width:Math.max(8,Math.round(s.n/sMax*120))+'px',height:'10px',background:'var(--fg)',borderRadius:'3px',flexShrink:'0'}}));
                 row.appendChild(txt('div',String(s.n),{style:{minWidth:'40px',textAlign:'right',fontFamily:'monospace',fontWeight:'700'}}));
                 topSendersBox.appendChild(row);
@@ -36891,7 +36965,6 @@ feedback:()=>{
               topSendersBox.appendChild(txt('div','From the most recent '+list.length+' messages (kh_messages caps history to 50/group, so this skews recent).',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'6px',borderTop:'var(--thin)',paddingTop:'6px'}}));
             }
           }catch(e){
-            topGroupsBox.textContent='Could not load: '+e.message;
             topSendersBox.textContent='Could not load.';
           }
         })();
@@ -37121,7 +37194,7 @@ feedback:()=>{
         c.appendChild(txt('div','Could not load stats: '+e.message,{style:{fontSize:'11px',color:'var(--danger)',marginTop:'8px'}}));
       }
 
-      /* Note about Supabase dashboard vs panel */
+      /* Note about the backend dashboard vs panel */
       const note=el('div',{style:{padding:'10px 12px',background:'var(--highlight)',borderRadius:'7px',fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',marginTop:'8px'}});
       note.innerHTML='<b>Why these numbers may differ from your backend dashboard:</b> the panel above counts <i>unique devices per day</i> (one row per device per day in kh_visits). Backend API dashboards show <i>raw HTTP requests</i> — every sync, every poll, every read. A single user generates dozens of requests per session. Visit tracking only started when the kh_visits table was created, so visits before that aren\'t included. GUESTS = devices whose visit that day was while signed out.';
       c.appendChild(note);
@@ -37154,13 +37227,13 @@ feedback:()=>{
       _saveResolved(_resolvedSet);
     }
 
-    /* Probe the Supabase backend for known-broken-after-rerun symptoms.
+    /* Probe the backend for known-broken-after-rerun symptoms.
        Specifically diagnoses the PGRST202 / kh_set_reaction case the
        user kept hitting after "running the schema 10000000 times" —
        which was almost always a stale PostgREST schema cache. */
     function buildDiagnosticsCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
-      c.appendChild(txt('div','SUPABASE DIAGNOSTICS',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
+      c.appendChild(txt('div','CLOUD BACKEND DIAGNOSTICS',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
       c.appendChild(txt('p','Sweeps every kh_* table, column and RPC the app expects, plus orphan-row counts and storage health. The most common "I ran the schema and it still doesn\'t work" cause is PostgREST\'s schema cache being stale — run "notify pgrst, \'reload schema\';" in the SQL Editor after any schema change.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
       const summary=el('div',{style:'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-family:monospace;font-size:11px;'});
       c.appendChild(summary);
@@ -37249,12 +37322,12 @@ feedback:()=>{
           ['kh_feedback','id'],['kh_scores','id'],
           ['kh_shared_api_usage','date'],['kh_errors','id'],
           /* kh_voted is localStorage-only ('kh_voted' key) — there is NO
-             Supabase table for it, so don't probe one. */
+             the backend table for it, so don't probe one. */
         ];
         for(const [t,col] of tables){
           const err=await _tryTable(t,col);
           if(!err)add('Table '+t,'OK','readable');
-          else if(/PGRST|relation .* does not exist|42P01/i.test(err))add('Table '+t,'FAIL',err,'Re-run the full schema SQL in the Supabase SQL Editor.');
+          else if(/PGRST|relation .* does not exist|42P01/i.test(err))add('Table '+t,'FAIL',err,'Re-run the full schema SQL in the backend SQL Editor.');
           else add('Table '+t,'WARN',err);
         }
 
@@ -37331,7 +37404,7 @@ feedback:()=>{
       };
 
       copyBtn.onclick=async()=>{
-        const txt2='KindleHub Supabase Diagnostics — '+new Date().toISOString()+'\n'
+        const txt2='KindleHub the backend Diagnostics — '+new Date().toISOString()+'\n'
           +'URL: '+SUPABASE_URL+'\n\n'
           +checks.map(ch=>ch.status.padEnd(4)+'  '+ch.label+(ch.detail?'\n        '+ch.detail.replace(/\n/g,'\n        '):'')+(ch.fix?'\n   FIX: '+ch.fix.replace(/\n/g,'\n        '):'')).join('\n');
         try{await navigator.clipboard.writeText(txt2);toast('Report copied to clipboard.');}
@@ -37505,13 +37578,13 @@ feedback:()=>{
        extract the key. */
     function buildBackendCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
-      c.appendChild(txt('div','BACKEND (SUPABASE PROJECT)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
+      c.appendChild(txt('div','BACKEND (CLOUD BACKEND PROJECT)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
       const ref=(SUPABASE_URL.match(/https:\/\/([a-z0-9-]+)\.supabase/i)||[])[1]||'?';
       let isOverride=false; try{isOverride=!!localStorage.getItem('kh_sb_url_override');}catch(_){}
       const status=el('div',{style:{fontSize:'11px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'8px',fontFamily:'monospace',wordBreak:'break-all'}});
       status.innerHTML='<b>Active project:</b> '+ref+(isOverride?' <span style="color:var(--success)">(your override)</span>':' <span style="color:var(--muted)">(built-in default)</span>')+'<br>'+SUPABASE_URL;
       c.appendChild(status);
-      c.appendChild(txt('p','Point the app at YOUR OWN Supabase project so AI, reactions and data all live in one place you control. Paste your project URL + anon key (Supabase → Settings → API). Switching changes which database the app reads — a different project means different data.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
+      c.appendChild(txt('p','Point the app at YOUR OWN the backend project so AI, reactions and data all live in one place you control. Paste your project URL + anon key (the backend → Settings → API). Switching changes which database the app reads — a different project means different data.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
       let _ovU='',_ovK=''; try{_ovU=localStorage.getItem('kh_sb_url_override')||'';_ovK=localStorage.getItem('kh_sb_key_override')||'';}catch(_){}
       const urlIn=el('input',{placeholder:'https://YOUR-REF.supabase.co',value:_ovU,style:{width:'100%',fontSize:'12px',marginBottom:'6px',fontFamily:'monospace',boxSizing:'border-box'}});
       const keyIn=el('input',{placeholder:'anon / public key (eyJ…)',value:_ovK,style:{width:'100%',fontSize:'12px',marginBottom:'8px',fontFamily:'monospace',boxSizing:'border-box'}});
@@ -37535,14 +37608,14 @@ feedback:()=>{
     }
 
     /* ── Weekly user-table backup card ──
-       Configure the SECOND (backup) Supabase project the kh_users table is
+       Configure the SECOND (backup) the backend project the kh_users table is
        replicated to once a week, see the last-run status, and trigger a manual
        backup. The auto-backup itself runs in the background (Creator-only) —
        this card is just its control surface. */
     function buildUserBackupCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
       c.appendChild(txt('div','USER TABLE BACKUP (WEEKLY)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-      c.appendChild(txt('p','Automatically copies the accounts table (kh_users — usernames + encrypted state) to a SECOND Supabase project once a week, so accounts survive if the main backend is lost. It runs in the background while you (the Creator) have KindleHub open, copying only what changed since last time. The backup project must have the same tables — run schema.sql in it first; no extra SQL needed.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
+      c.appendChild(txt('p','Automatically copies the accounts table (kh_users — usernames + encrypted state) to a SECOND the backend project once a week, so accounts survive if the main backend is lost. It runs in the background while you (the Creator) have KindleHub open, copying only what changed since last time. The backup project must have the same tables — run schema.sql in it first; no extra SQL needed.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
 
       /* Status line — last run + next-due, computed from localStorage */
       const statusEl=el('div',{style:{fontSize:'11px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'8px',fontFamily:'monospace',lineHeight:'1.5'}});
@@ -37565,7 +37638,7 @@ feedback:()=>{
         if(!cfg){html='<b>No backup target set.</b> Add the backup project below to enable weekly backups.';}
         else if(cfg.url.toLowerCase()===active){html='<b style="color:var(--danger)">⚠ Backup target is the SAME project as the live backend.</b> Choose a different project for real redundancy.';}
         else{
-          const ref=(cfg.url.match(/https:\/\/([a-z0-9-]+)\.supabase/i)||[])[1]||cfg.url;
+          const ref=(cfg.url.match(/https:\/\/([a-z0-9-]+)\.the backend/i)||[])[1]||cfg.url;
           html='<b>Backup → '+ref+'</b><br>';
           if(s.last){html+='Last run: '+_fmtAgo(Date.now()-s.last)+' · '+s.count+' account'+(s.count===1?'':'s')+'<br>Next auto-backup: '+(s.due?'<b style="color:var(--success)">due now</b>':_fmtIn(KH_BACKUP_INTERVAL_MS-(Date.now()-s.last)));}
           else{html+='Never run yet — the first backup copies everyone, then weekly runs copy only changes.';}
@@ -37637,7 +37710,7 @@ feedback:()=>{
     function buildSharedApiCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
       c.appendChild(txt('div','SHARED API KEY (FREE TIER FOR USERS)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-      c.appendChild(txt('p','One-time setup. Lets users chat without registering their own Gemini key — requests are proxied through a Supabase Edge Function you control, with a daily cap (currently '+SHARED_KEY_DAILY_CAP+'/day total across all users) and the key sealed inside the function\'s env. Users can NEVER see the key, only call the proxy.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
+      c.appendChild(txt('p','One-time setup. Lets users chat without registering their own Gemini key — requests are proxied through a backend Edge Function you control, with a daily cap (currently '+SHARED_KEY_DAILY_CAP+'/day total across all users) and the key sealed inside the function\'s env. Users can NEVER see the key, only call the proxy.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
 
       /* Probe whether the proxy is deployed */
       const statusLine=txt('div','Checking proxy status…',{style:{fontSize:'11px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',margin:'0 0 8px',fontFamily:'monospace'}});
@@ -37680,8 +37753,8 @@ feedback:()=>{
       c.appendChild(toggle);
 
       /* The Edge Function code itself. Designed to be COPIED verbatim
-         into Supabase Dashboard → Edge Functions → New function. */
-      const fnCode=`/* Supabase Edge Function: kh-gemini-proxy
+         into the backend Dashboard → Edge Functions → New function. */
+      const fnCode=`/* the backend Edge Function: kh-gemini-proxy
    Deno runtime. Proxies Gemini calls so GEMINI_KEY never reaches the
    client. FIRST-COME, FIRST-SERVED: single daily counter, cap matches
    Gemini\'s free-tier limit for gemini-3.1-flash-lite (default 500;
@@ -37748,7 +37821,7 @@ Deno.serve(async (req)=>{
       const stepsEl=el('div');stepsEl.innerHTML=stepsHtml;
       steps.appendChild(stepsEl);
 
-      const codeLabel=txt('div','Edge Function code (paste into Supabase Dashboard → Edge Functions → kh-gemini-proxy):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px',marginTop:'10px',marginBottom:'4px'}});
+      const codeLabel=txt('div','Edge Function code (paste into the backend Dashboard → Edge Functions → kh-gemini-proxy):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px',marginTop:'10px',marginBottom:'4px'}});
       steps.appendChild(codeLabel);
       const code=el('pre',{style:{fontFamily:'monospace',fontSize:'10px',background:'var(--bg)',border:'var(--thin)',borderRadius:'6px',padding:'8px',whiteSpace:'pre-wrap',wordBreak:'break-word',maxHeight:'280px',overflowY:'auto',margin:'0'}});
       code.textContent=fnCode;
@@ -37756,7 +37829,7 @@ Deno.serve(async (req)=>{
       const copyCodeBtn=txt('button','Copy code',{className:'btn small primary',style:{marginTop:'6px'}});
       copyCodeBtn.onclick=()=>{
         if(navigator.clipboard&&navigator.clipboard.writeText){
-          navigator.clipboard.writeText(fnCode).then(()=>toast('Edge Function code copied — paste into Supabase Edge Functions dashboard.'));
+          navigator.clipboard.writeText(fnCode).then(()=>toast('Edge Function code copied — paste into the backend Edge Functions dashboard.'));
         }
       };
       steps.appendChild(copyCodeBtn);
@@ -37766,7 +37839,7 @@ Deno.serve(async (req)=>{
     }
 
     /* Local Insights — admin info computed ENTIRELY on-device (localStorage
-       scan + cached backup status). Adds zero Supabase reads, so it costs no
+       scan + cached backup status). Adds zero the backend reads, so it costs no
        egress even though it surfaces useful operational detail. */
     function buildLocalInsightsCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
@@ -37816,17 +37889,17 @@ Deno.serve(async (req)=>{
       gwRow.append(gwIn,gwSave);c.appendChild(gwRow);
       c.appendChild(txt('div','Deploy email-worker.js (in the repo) to Cloudflare, then paste its URL. Inbound mail needs no URL — it flows via Email Routing once the worker is live.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* State gateway — paste the deployed state-worker.js (Cloudflare R2) URL to
-         move the big per-user state blob off Supabase. R2 has ZERO egress fees, so
-         this is the permanent fix for the egress quota. Blank = stay on Supabase. */
+         move the big per-user state blob off the backend. R2 has ZERO egress fees, so
+         this is the permanent fix for the egress quota. Blank = stay on the backend. */
       c.appendChild(txt('div','State gateway (Cloudflare R2 — free egress)',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
       const sgRow=el('div',{style:{display:'flex',gap:'5px'}});
       const sgIn=el('input',{type:'text',placeholder:'https://kindlehub-state.workers.dev',value:(localStorage.getItem('kh_state_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
       const sgSave=txt('button','Save',{className:'btn small'});
       sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to the default backend.',4500);}catch(_){}};
       sgRow.append(sgIn,sgSave);c.appendChild(sgRow);
-      c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on Supabase unless you also set the API gateway below. Leave blank to keep state on Supabase. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on the backend unless you also set the API gateway below. Leave blank to keep state on the backend. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* API gateway — paste the deployed api-worker.js (Cloudflare D1) URL to move
-         chat/mail/scores/announcements/presence/bans OFF Supabase too. Blank = Supabase. */
+         chat/mail/scores/announcements/presence/bans OFF the backend too. Blank = the backend. */
       c.appendChild(txt('div','API gateway (Cloudflare D1 — free egress)',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
       const agRow=el('div',{style:{display:'flex',gap:'5px'}});
       const agIn=el('input',{type:'text',placeholder:'https://kindlehub-api.workers.dev',value:(localStorage.getItem('kh_api_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
@@ -37834,7 +37907,7 @@ Deno.serve(async (req)=>{
       agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to the default backend.',5000);}catch(_){}};
       agRow.append(agIn,agSave);c.appendChild(agRow);
       c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list onto Cloudflare D1 — zero egress. Blank = use the default backend. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
-      /* One-click migration: copy ALL Supabase data into the D1 gateway. */
+      /* One-click migration: copy ALL the backend data into the D1 gateway. */
       c.appendChild(txt('div','Migrate data → Cloudflare',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
       const migStat=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px',fontFamily:'monospace',whiteSpace:'pre-wrap'}});
       const migBtn=txt('button','Copy Supabase → Cloudflare',{className:'btn small'});
@@ -37884,9 +37957,9 @@ Deno.serve(async (req)=>{
          don't hand out backend info or control to everyone. */
       var _isAdm=window._isAdminCached===true;
       if(_isAdm)errPanel.appendChild(buildCleanupCard());
-      /* Supabase-specific admin cards REMOVED now the backend is Cloudflare D1:
-         the "SUPABASE DIAGNOSTICS" probe, the "BACKEND (Supabase project)" swap,
-         and the weekly user-table backup to a 2nd Supabase project. The builder
+      /* the backend-specific admin cards REMOVED now the backend is Cloudflare D1:
+         the "CLOUD BACKEND DIAGNOSTICS" probe, the "BACKEND (cloud project)" swap,
+         and the weekly user-table backup to a 2nd the backend project. The builder
          functions stay DEFINED (harmless dead code) so nothing else that may
          reference them breaks — they're just no longer rendered in the panel.
          Cloudflare gateways + the capacity guard live on in buildLocalInsightsCard. */
@@ -37907,9 +37980,9 @@ Deno.serve(async (req)=>{
       const sessionErrs=(window._khAutoErrors||[]).filter(function(e){
         return !(_resolvedSet.has(e.id)||_resolvedSet.has(e.msg+'@'+e.line));
       });
-      /* Cloud errors — Supabase preferred, else master doc.
+      /* Cloud errors — the backend preferred, else master doc.
          Reads from kh_errors require service_role (admin must use the
-         Supabase dashboard); the anon key is write-only on errors. */
+         the backend dashboard); the anon key is write-only on errors. */
       let cloudErrs=[];
       let sbReadDenied=false;
       try{
@@ -37927,7 +38000,7 @@ Deno.serve(async (req)=>{
       }catch(e){}
       if(sbReadDenied){
         const note=el('div',{style:{padding:'10px',background:'var(--highlight)',borderRadius:'8px',fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}});
-        note.innerHTML='Cloud errors are insert-only for the anon key (so they can\'t be tampered with). View them in your backend dashboard (Cloudflare D1 / Supabase) under <b>kh_errors</b>.';
+        note.innerHTML='Cloud errors are insert-only for the anon key (so they can\'t be tampered with). View them in your backend dashboard (Cloudflare D1 / the backend) under <b>kh_errors</b>.';
         errPanel.appendChild(note);
       }
       if(!sessionErrs.length&&!cloudErrs.length){
@@ -38035,7 +38108,7 @@ Deno.serve(async (req)=>{
           var copyFull=txt('button','Copy full report',{className:'btn small'});
           copyFull.onclick=function(){_copyText(e.text||'','Full report');};
           actRow.appendChild(copyFull);
-          /* Resolved → hide locally. Cloud row stays in Supabase
+          /* Resolved → hide locally. Cloud row stays in the backend
              (anon DELETE is locked) but won't show on this device. */
           var resolvedBtn=txt('button','✓ Resolved',{className:'btn small primary'});
           resolvedBtn.title='Hide this error from THIS device. The cloud row stays for other admins.';
@@ -38062,8 +38135,8 @@ Deno.serve(async (req)=>{
           try{
             if(_sbActive()){
               /* Anon cannot DELETE from kh_errors under the safe schema —
-                 use the Supabase dashboard (Table Editor → kh_errors → delete) */
-              toast('Cloud errors are insert-only for safety (no anon delete) and auto-prune on the server — nothing to clear here. To wipe them now, delete the kh_errors rows from your backend dashboard (Cloudflare D1 / Supabase).',6000);
+                 use the backend dashboard (Table Editor → kh_errors → delete) */
+              toast('Cloud errors are insert-only for safety (no anon delete) and auto-prune on the server — nothing to clear here. To wipe them now, delete the kh_errors rows from your backend dashboard (Cloudflare D1 / the backend).',6000);
               return;
             }
             await _masterWrite(function(doc){doc.autoErrors=[];});
@@ -38122,7 +38195,7 @@ Deno.serve(async (req)=>{
 
   let items=[];
 
-  /* Helper: detect whether a Supabase/PostgREST error is specifically a
+  /* Helper: detect whether a backend/PostgREST error is specifically a
      "column doesn't exist" failure. Previously the detection was too
      loose — `msg.includes('400')` matched ANY HTTP-400 response (RLS
      denials, JSON parse errors, etc.) and `msg.includes('comments')`
@@ -38162,7 +38235,7 @@ Deno.serve(async (req)=>{
   }
 
   /* Admin-only: set status of a feedback item ('open'|'done'|'ignored').
-     Writes to the kh_feedback row. Refuses if Supabase isn't active. */
+     Writes to the kh_feedback row. Refuses if the backend isn't active. */
   async function _setItemStatus(id,status){
     if(!_sbActive()){toast('Status changes require the cloud backend');return false;}
     if(_schemaHasStatus===false){
@@ -38183,7 +38256,7 @@ Deno.serve(async (req)=>{
       if(_isMissingColumnError(e,'status')){
         /* Stop retrying this doomed update for the session, and DON'T console.error
            — that would cascade through the global hook into a kh_errors upload (which
-           itself RLS-fails on a drifted Supabase, spamming the console). The Cloudflare
+           itself RLS-fails on a drifted the backend, spamming the console). The Cloudflare
            D1 backend has the column, so switching the gateway fixes it for good. */
         _schemaHasStatus=false;
         toast('This backend\'s kh_feedback has no status column. Switch to the Cloudflare gateway (its schema has it) or re-run the schema SQL.',6500);
@@ -38260,7 +38333,7 @@ Deno.serve(async (req)=>{
       const comments=Array.isArray(item.comments)?item.comments:[];
       const meta=el('div',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'3px',display:'flex',gap:'10px',flexWrap:'wrap'}});
       meta.appendChild(txt('span',new Date(item.date).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})));
-      if(isAdmin&&item.author)meta.appendChild(txt('span','by '+item.author,{style:{fontWeight:'700'}}));
+      if(isAdmin&&item.author)meta.appendChild(txt('span','by '+_dispName(item.author),{style:{fontWeight:'700'}}));
       if(comments.length)meta.appendChild(txt('span',comments.length+' comment'+(comments.length===1?'':'s'),{style:{fontWeight:'700'}}));
       textWrap.appendChild(meta);
       row.append(voteBtn,textWrap);card.appendChild(row);
@@ -38281,6 +38354,7 @@ Deno.serve(async (req)=>{
       if(isAdmin&&/\[USERNAME\]/.test(item.text||'')){
         const _m=/Username:\s*"([^"]*)"/.exec(item.text||'');
         const _banName=_m?_m[1]:'';
+        const _banDisp=(typeof _dispName==='function'?_dispName(_banName):_banName); /* shown blacked-out; the ban still targets the real name */
         if(_banName){
           /* Lighter option than a ban: warn the reported user instead, then
              clear the report. Shown right alongside Approve & ban so the admin
@@ -38291,21 +38365,21 @@ Deno.serve(async (req)=>{
             const ok=await _khWarnUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
-              toast('Warned “'+_banName+'” and marked the report done.',3000);
+              toast('Warned “'+_banDisp+'” and marked the report done.',3000);
               renderItems();
             } else { warnBtn.disabled=false; }
           };
           actRow.appendChild(warnBtn);
-          const banBtn=txt('button','Approve & ban "'+_banName.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
+          const banBtn=txt('button','Approve & ban "'+_banDisp.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
-            if(!await kindleConfirm('Ban the username "'+_banName+'"? They will no longer be able to sign in or post, and the name will show as [removed] in chat. This approves the report.'))return;
+            if(!await kindleConfirm('Ban the username "'+_banDisp+'"? They will no longer be able to sign in or post, and the name will show as [removed] in chat. This approves the report.'))return;
             banBtn.disabled=true;banBtn.textContent='Banning…';
             const ok=await _khBanUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
-              toast('Username "'+_banName+'" banned.',3500);
+              toast('Username "'+_banDisp+'" banned.',3500);
               renderItems();
-            } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banName.slice(0,24)+'"'; }
+            } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banDisp.slice(0,24)+'"'; }
           };
           actRow.appendChild(banBtn);
         }
@@ -44683,7 +44757,7 @@ files:()=>{
         const list=el('div',{style:{padding:'0 0 8px'}});
         const knownNames=Object.fromEntries((f.keys||[]).map(([k,desc])=>[k,desc]));
         /* App-critical storage that must never be deleted (deleting it would
-           brick or sign out the app). These are shown LOCKED — a 🔒 marker and
+           brick or sign out the app). These are shown LOCKED — a (locked) marker and
            NO delete button (previously the delete button showed but disabled). */
         const PROTECTED=new Set(['kindlehub_v5','kh_device_id']);
         keys.forEach(k=>{
@@ -44694,7 +44768,7 @@ files:()=>{
           const headRow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 14px',cursor:'pointer',background:expanded?'var(--card)':'transparent'}});
           const left=el('div',{style:{flex:'1',minWidth:'0'}});
           const nameEl=el('div',{style:{fontFamily:'monospace',fontSize:'11px',fontWeight:'700',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}});
-          nameEl.textContent=(PROTECTED.has(k)?'🔒 ':'')+k;
+          nameEl.textContent=(PROTECTED.has(k)?'(locked) ':'')+k;
           left.appendChild(nameEl);
           if(knownNames[k])left.appendChild(txt('div',knownNames[k],{style:{fontSize:'10px',color:'var(--muted)',marginTop:'1px',lineHeight:'1.3'}}));
           headRow.appendChild(left);
@@ -44732,7 +44806,7 @@ files:()=>{
             };
             actions.appendChild(copyBtn);
             if(PROTECTED.has(k)){
-              actions.appendChild(txt('span','🔒 Locked — protected system file, can\'t be deleted',{style:{fontSize:'10px',color:'var(--muted)',fontStyle:'italic',padding:'6px 8px',display:'inline-flex',alignItems:'center'}}));
+              actions.appendChild(txt('span','Locked — protected system file, can\'t be deleted',{style:{fontSize:'10px',color:'var(--muted)',fontStyle:'italic',padding:'6px 8px',display:'inline-flex',alignItems:'center'}}));
             }
             detail.appendChild(actions);
             row.appendChild(detail);
@@ -44745,7 +44819,7 @@ files:()=>{
     });
   }
 
-  /* ── CLOUD (Supabase) ── */
+  /* ── CLOUD (the backend) ── */
   function renderCloud(){
     const signedIn=!!S.authToken;
     if(!signedIn){
@@ -46076,7 +46150,7 @@ mail:()=>{
             }).catch(()=>{});
           }
           /* KHI row — summarise long mail, draft a reply. Uses the user's
-             own AI key (khiCall); costs no Supabase bandwidth. */
+             own AI key (khiCall); costs no the backend bandwidth. */
           if(typeof khiEnabled==='function'&&khiEnabled()&&(m.body||'').length>0){
             const khiRow=el('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'6px'}});
             const khiOut=el('div',{className:'khi-output',style:{display:'none',marginBottom:'6px'}});
@@ -46181,7 +46255,7 @@ mail:()=>{
       box.appendChild(meta);
       const btns=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end',marginTop:'10px',flexWrap:'wrap'}});
       /* ✦ Polish — KHI rewrite of the draft for clarity/tone (user's own
-         AI key, no Supabase cost). Keeps the quoted thread intact. */
+         AI key, no the backend cost). Keeps the quoted thread intact. */
       if(typeof khiEnabled==='function'&&khiEnabled()){
         const polish=txt('button','✦ Polish',{className:'btn small',style:{marginRight:'auto'}});
         polish.onclick=async()=>{
@@ -47049,7 +47123,7 @@ habits:()=>{
       expandBtn.title='Show 30-day heatmap';
       expandBtn.onclick=()=>{if(_expanded.has(h.id))_expanded.delete(h.id);else _expanded.add(h.id);render();};
       actCol.appendChild(expandBtn);
-      const editBtn=txt('button','✎',{className:'btn small',style:{fontSize:'11px',padding:'3px 8px',minHeight:'24px'},title:'Edit name'});
+      const editBtn=txt('button','Edit',{className:'btn small',style:{fontSize:'11px',padding:'3px 8px',minHeight:'24px'},title:'Edit name'});
       editBtn.onclick=()=>{
         kindlePrompt('Rename habit:',h.name,nv=>{
           if(!nv||!nv.trim()||nv===h.name)return;
@@ -50660,7 +50734,7 @@ messages:()=>{
     if(_pollTimer){clearInterval(_pollTimer);_pollTimer=null;}
   }
   /* ── Timestamp parsing ──
-     Supabase's REST endpoint returns timestamptz values with an explicit
+     the backend's REST endpoint returns timestamptz values with an explicit
      offset ("2026-05-25T16:57:00+00:00") which `new Date()` parses
      correctly. But Realtime WebSocket pushes the same value WITHOUT
      the offset for INSERT/UPDATE payloads ("2026-05-25T16:57:00" or
@@ -50676,7 +50750,7 @@ messages:()=>{
     /* Postgres' default text format uses a space between date and time;
        turn it into the ISO form so older JS engines parse it. */
     let s=ts.replace(' ','T');
-    /* If no timezone marker, assume UTC (matches Supabase storage) */
+    /* If no timezone marker, assume UTC (matches the backend storage) */
     if(!/Z$|[+-]\d{2}:?\d{2}$/.test(s))s+='Z';
     return new Date(s);
   }
@@ -50744,7 +50818,7 @@ messages:()=>{
     const hdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderBottom:'var(--thin)',background:'var(--card)',flexShrink:'0',gap:'8px'}});
     hdr.appendChild(txt('h2','Messages',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0',flex:'1'}}));
     if(S.authToken){
-      const mBtn=txt('button','✎ Message',{className:'btn small primary'});
+      const mBtn=txt('button','+ Message',{className:'btn small primary'});
       const cBtn=txt('button','New Group',{className:'btn small'});
       const jBtn=txt('button','Join Group',{className:'btn small'});
       mBtn.onclick=()=>{if(typeof _khMessageUserPicker==='function')_khMessageUserPicker(()=>render());};
@@ -50856,7 +50930,7 @@ messages:()=>{
       body.appendChild(hint);
     }
 
-    /* Fire-and-forget: make sure the row exists in Supabase so the first
+    /* Fire-and-forget: make sure the row exists in the backend so the first
        message-send doesn't fail. Doesn't block rendering. */
     _ensureGlobalGroup();
   }
@@ -51049,7 +51123,7 @@ messages:()=>{
     let _editing=null;          /* message being edited */
     let _searchOpen=false;
     let _searchTerm='';
-    let _rtChannel=null;        /* Supabase Realtime channel */
+    let _rtChannel=null;        /* the backend Realtime channel */
     let _ws=null;               /* Realtime WebSocket */
 
     /* Inject chat-specific CSS once */
@@ -51221,7 +51295,7 @@ messages:()=>{
     /* ── Search strip (initially hidden) ── */
     const searchStrip=el('div',{className:'msg-search-strip',style:{display:'none'}});
     const searchInp=el('input',{type:'text',placeholder:'Search messages…',style:{flex:'1',fontSize:'13px',padding:'8px 10px',borderRadius:'8px'}});
-    searchInp.oninput=()=>{_searchTerm=searchInp.value.toLowerCase();renderMessages(_messages);};
+    searchInp.oninput=khDebounce(()=>{_searchTerm=searchInp.value.toLowerCase();renderMessages(_messages);},180);/* debounce so each keystroke doesn't rebuild the whole message log (e-ink flash) */
     const searchClose=txt('button','x',{className:'btn small',style:{padding:'0 10px'}});
     searchClose.onclick=()=>{_searchOpen=false;searchStrip.style.display='none';_searchTerm='';renderMessages(_messages);};
     searchStrip.append(searchInp,searchClose);
@@ -51581,7 +51655,7 @@ messages:()=>{
       /* Merge server-side reactions with local-only ones (stored in
          S.localReactions[msgId]). Local-only reactions exist when
          kh_set_reaction wasn't installed/reachable AND the user isn't
-         the message owner — so we couldn't write back to Supabase. */
+         the message owner — so we couldn't write back to the backend. */
       const rx=Object.assign({},m.reactions||{});
       const localFor=(S.localReactions&&S.localReactions[m.id])||{};
       Object.keys(localFor).forEach(k=>{
@@ -51849,7 +51923,7 @@ messages:()=>{
       repNameBtn.onclick=()=>{ov.remove();_openUsernameReportModal(msg.displayName||'',msg.userId||'');};
       btnBar.append(closeBtn,repNameBtn);
       /* Ask AI about this user — opens the admin AI query pre-filled with the name. */
-      const _aiAskBtn=txt('button','🔍 Ask AI',{className:'btn small'});
+      const _aiAskBtn=txt('button','Ask AI',{className:'btn small'});
       _aiAskBtn.onclick=()=>{ov.remove();if(typeof _khAskUserDialog==='function')_khAskUserDialog(msg.displayName||'');};
       btnBar.append(_aiAskBtn);
       /* This modal is admin-only, so offer a direct ban (skips the report
@@ -51972,7 +52046,7 @@ messages:()=>{
       renderRows();
 
       /* ── Cross-instance enrichment (admin-only, best-effort) ──
-         These hit Supabase so they run after the first paint. Each is
+         These hit the backend so they run after the first paint. Each is
          wrapped so one failing query never blanks the whole modal. */
       if(uid&&typeof _sbActive==='function'&&_sbActive()){
         const enrich=el('div',{style:{marginTop:'10px',paddingTop:'8px',borderTop:'var(--thin)',fontSize:'11px',color:'var(--muted)'}});
@@ -52484,10 +52558,10 @@ messages:()=>{
       _draftT=setTimeout(()=>_saveDraft(g.code,txtArea.value),350);
     });
 
-    /* ── Realtime subscription (Supabase) — falls back to polling ── */
+    /* ── Realtime subscription (the backend) — falls back to polling ── */
     function subscribeRealtime(){
       if(!_sbActive())return false;
-      /* Realtime is Supabase-only; on the Cloudflare API gateway, fall back to
+      /* Realtime is the backend-only; on the Cloudflare API gateway, fall back to
          polling (Durable-Objects realtime is a separate Phase 2). */
       if(typeof _apiGatewayUrl==='function'&&_apiGatewayUrl())return false;
       try{
@@ -55406,17 +55480,17 @@ window._showWelcome=function(){
       setTimeout(()=>{try{_maybePullFromCloud();}catch(_){}},800);
     }
     /* Anonymous visit log — fires once per device per day, even for guests */
-    setTimeout(()=>{try{_logVisit();}catch(e){}},2500);
+    setTimeout(()=>{try{_logVisit();}catch(e){}},5000);
     /* Preload the username ban list so banned names render as [removed] in
        chat without a per-render network call. Refreshed lazily every 5 min. */
-    setTimeout(()=>{try{if(typeof _khLoadBanned==='function')_khLoadBanned(true);}catch(e){}},3200);
+    setTimeout(()=>{try{if(typeof _khLoadBanned==='function')_khLoadBanned(true);}catch(e){}},6000);
     /* Live presence heartbeat — keeps the admin "Online now" panel current */
     setTimeout(()=>{try{_startPresence();}catch(e){}},3000);
     /* Background message notifier — polls each joined group every 45s and
        shows push-notification toasts when new messages arrive. */
     setTimeout(()=>{try{_startMessageNotifier();}catch(e){}},3000);
     /* KindleHub Mail unread dot — one ~60-byte probe at boot and then every
-       5 minutes. Deliberately sparse to protect the Supabase quota. */
+       5 minutes. Deliberately sparse to protect the backend quota. */
     setTimeout(()=>{try{_mailUnreadProbe();}catch(e){}},4000);
     setInterval(()=>{try{if(!document.hidden)_mailUnreadProbe();}catch(e){}},300000);
     /* Capacity guard — if the admin has locked new sign-ins, surface the clear
