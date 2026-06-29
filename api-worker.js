@@ -215,10 +215,22 @@ function whereSql(table, filters){
 }
 
 /* ── storage-cap triggers (ported from schema.sql) ───────────────────────── */
+/* Per-group message ceiling: the single Global Chat room keeps the latest 50,
+   every other room keeps 30 (mirrors KH_MSG_GLOBAL_CAP / KH_MSG_CAP_MAX in
+   index.html). Keep these in sync if the client caps change. */
+const GLOBAL_GROUP_CODE='000000000000';
+const GLOBAL_MSG_CAP=50, GROUP_MSG_CAP=30;
 async function applyCaps(DB, table, row){
   try{
     if(table==='kh_messages' && row && row.group_code){
-      await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT 30)').bind(row.group_code,row.group_code).run();
+      const keep = row.group_code===GLOBAL_GROUP_CODE ? GLOBAL_MSG_CAP : GROUP_MSG_CAP;
+      await DB.prepare('DELETE FROM kh_messages WHERE group_code=? AND id NOT IN (SELECT id FROM kh_messages WHERE group_code=? ORDER BY ts DESC LIMIT '+keep+')').bind(row.group_code,row.group_code).run();
+      /* Occasionally sweep EVERY room down to its cap — so rooms that stopped
+         receiving messages, or that arrived via migration before the per-insert cap
+         kicked in, don't keep old rows sitting in D1 storage. After convergence this
+         deletes ~0 rows, so its write cost is negligible. (Window-function partition
+         delete — SQLite/D1 support ROW_NUMBER() OVER.) The global room keeps 50. */
+      if(Math.random()<0.03){ try{ await DB.prepare("DELETE FROM kh_messages WHERE rowid IN (SELECT rowid FROM (SELECT rowid, group_code, ROW_NUMBER() OVER (PARTITION BY group_code ORDER BY ts DESC) AS rn FROM kh_messages) WHERE rn > (CASE WHEN group_code='"+GLOBAL_GROUP_CODE+"' THEN "+GLOBAL_MSG_CAP+" ELSE "+GROUP_MSG_CAP+" END))").run(); }catch(_){} }
     } else if(table==='kh_mail' && row && row.to_user){
       await DB.prepare('DELETE FROM kh_mail WHERE to_user=? AND id NOT IN (SELECT id FROM kh_mail WHERE to_user=? ORDER BY ts DESC LIMIT 60)').bind(row.to_user,row.to_user).run();
     } else if(table==='kh_scores' && row && row.game){
@@ -460,14 +472,21 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_banned_usernames (name TEXT PRIMARY KEY, reason TEXT DEFAULT '', created_at TEXT)",
   "CREATE TABLE IF NOT EXISTS kh_visits (device_id TEXT NOT NULL, day TEXT NOT NULL, last_seen TEXT, ua_hint TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '', PRIMARY KEY (device_id, day))",
   "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS kh_daily (date TEXT PRIMARY KEY, n INTEGER DEFAULT 0, w INTEGER DEFAULT 0)",
 ];
 let _schemaReady = false;
 async function ensureSchema(DB){
   if(_schemaReady) return;
-  try{ await DB.batch(SCHEMA_DDL.map(s=>DB.prepare(s))); _schemaReady=true; return; }
-  catch(_){ /* some D1 versions reject DDL inside batch() — fall back to sequential */ }
-  try{ for(const s of SCHEMA_DDL){ await DB.prepare(s).run(); } _schemaReady=true; }
-  catch(_){ /* leave _schemaReady=false so the next request retries */ }
+  let ok=false;
+  try{ await DB.batch(SCHEMA_DDL.map(s=>DB.prepare(s))); ok=true; }
+  catch(_){ /* some D1 versions reject DDL inside batch() — fall back to sequential */
+    try{ for(const s of SCHEMA_DDL){ await DB.prepare(s).run(); } ok=true; }catch(_){}
+  }
+  if(!ok) return;            // leave _schemaReady=false so the next request retries
+  // best-effort column migrations (CREATE…IF NOT EXISTS won't add a column to a
+  // table that already exists from an earlier deploy). ALTER throws if it's there.
+  try{ await DB.prepare("ALTER TABLE kh_daily ADD COLUMN w INTEGER DEFAULT 0").run(); }catch(_){}
+  _schemaReady=true;
 }
 
 /* ── Shared-key Gemini proxy (ported from the Supabase Edge Function) ─────────
@@ -503,7 +522,125 @@ async function handleGeminiProxy(request, env, DB){
   return new Response(up.body, {status:up.status, headers:Object.assign({}, cors(env), {'Content-Type':'text/event-stream','x-kh-count':String(newCount),'x-kh-cap':String(cap)})});
 }
 
+/* ── Cloudflare free-tier budget guard ───────────────────────────────────────
+   The free plan caps Workers at 100,000 requests/day and D1 at 100,000 ROW
+   WRITES/day (both reset 00:00 UTC; D1 also: 5M reads/day, 5GB storage). To make
+   it *impossible* to blow past either, every request is counted and, near the
+   cap, non-admin traffic is shed (reads stay up while only the write budget is
+   gone). We must not write the counter on every request — that would itself burn
+   the 100k write budget — so each isolate counts locally and flushes the
+   accumulated delta to kh_daily in batches (~1 write per 40 requests, or every
+   20s), reading back the global total. Writes are estimated at 2 row-writes per
+   mutating request (the insert/update + an amortised cap-trim/GC delete). */
+let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+const REQ_HARD_CAP   = 90000;   // Workers free: 100k requests/day — stop 10% short
+const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short
+async function dailyUsed(DB, isWrite){
+  const today = nowIso().slice(0,10);
+  const now = Date.now();
+  if(_budget.date!==today) _budget = { date:today, estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+  _budget.estN++; _budget.pendN++;
+  if(isWrite){ _budget.estW += 2; _budget.pendW += 2; }
+  const due = _budget.pendN>=40 || _budget.pendW>=40 || (now-_budget.lastFlush)>20000;
+  if(due){
+    const an=_budget.pendN, aw=_budget.pendW; _budget.pendN=0; _budget.pendW=0; _budget.lastFlush=now;
+    try{
+      await DB.prepare('INSERT INTO kh_daily(date,n,w) VALUES(?,?,?) ON CONFLICT(date) DO UPDATE SET n=n+?, w=w+?').bind(today,an,aw,an,aw).run();
+      const r = await DB.prepare('SELECT n,w FROM kh_daily WHERE date=?').bind(today).first();
+      if(r){ if(typeof r.n==='number') _budget.estN=r.n; if(typeof r.w==='number') _budget.estW=r.w; }
+    }catch(_){ /* counter unavailable — fall back to the local per-isolate estimate */ }
+  }
+  return { n:_budget.estN, w:_budget.estW };
+}
+
+/* ── Autonomous AI moderator (lets KindleHub police itself for weeks) ─────────
+   A Cloudflare Cron trigger fires scheduled() periodically. When AUTO_MOD is on
+   and GEMINI_KEY is set, it reads recent un-actioned [USERNAME] reports from
+   kh_feedback and, using the AI verdict the client already recorded (or asking
+   Gemini itself), applies the decision SERVER-SIDE — so reports get actioned even
+   when no admin is online. This is what lets the AI "maintain KindleHub" for up
+   to a month: bans, warnings, dismissals and human-escalation all happen here.
+
+   Env on the Worker:
+     GEMINI_KEY        (required) — same key as the shared-AI proxy
+     AUTO_MOD=1        (required) — opt-in master switch (omit/0 = disabled)
+     ADMIN_USERNAMES   (optional) — comma list never auto-actioned
+     MOD_MODEL         (optional) — Gemini model (default gemini-2.5-flash-lite)
+     MOD_MAX           (optional) — max reports per run (default 10)
+   wrangler.toml:  [triggers]\n  crons = ["0 * * * *"]   # hourly */
+async function geminiOnce(env, prompt){
+  const KEY = env && env.GEMINI_KEY; if(!KEY) return '';
+  const model = (env && env.MOD_MODEL) || 'gemini-2.5-flash-lite';
+  try{
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+KEY,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{temperature:0.1,maxOutputTokens:120}})
+    });
+    if(!r.ok) return '';
+    const j = await r.json();
+    const parts = ((((j.candidates||[])[0]||{}).content)||{}).parts || [];
+    return parts.map(p=>p.text||'').join('').trim();
+  }catch(_){ return ''; }
+}
+function modPrompt(reportText, name){
+  return 'You are the content-moderation assistant for KindleHub, a friendly e-reader chat app whose users include minors. '
+    +'A user REPORTED another user\'s USERNAME (full report below). Decide the action and reply on ONE line in EXACTLY this format:\n'
+    +'AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <one short reason>\n\n'
+    +'BAN = clear slur / sexual / hateful / impersonation username. WARN = borderline. ESCALATE = a human admin should judge. '
+    +'IGNORE = no violation or likely false report. NEEDINFO = too vague. Be strict on slurs and sexual content; lenient on ordinary names.\n\n'
+    +'REPORTED USERNAME: "'+String(name||'').slice(0,80)+'"\nFULL REPORT:\n'+String(reportText||'').slice(0,1200);
+}
+async function markFeedback(DB, id, status, note){
+  try{
+    if(note) await DB.prepare('UPDATE kh_feedback SET status=?, status_at=?, text=text||? WHERE id=?').bind(status, nowIso(), '\n[auto-mod] '+note, id).run();
+    else await DB.prepare('UPDATE kh_feedback SET status=?, status_at=? WHERE id=?').bind(status, nowIso(), id).run();
+  }catch(_){}
+}
+async function runAutoModeration(DB, env){
+  let rows=[];
+  try{
+    const res = await DB.prepare("SELECT id,text FROM kh_feedback WHERE text LIKE '%[USERNAME]%' AND text NOT LIKE '%[auto-mod]%' AND (status IS NULL OR status='' OR status='open') ORDER BY date DESC LIMIT ?")
+      .bind(parseInt((env&&env.MOD_MAX)||'',10)||10).all();
+    rows = (res && res.results) || [];
+  }catch(_){ return; }
+  const admins = String((env&&env.ADMIN_USERNAMES)||'').toLowerCase().split(',').map(s=>s.trim()).filter(Boolean);
+  for(const row of rows){
+    try{
+      const text = String(row.text||'');
+      const name = ((text.match(/Username:\s*"([^"]+)"/)||[])[1]||'').trim();
+      if(!name){ await markFeedback(DB, row.id, 'open', 'no username parsed'); continue; }
+      if(admins.indexOf(name.toLowerCase())>=0){ await markFeedback(DB, row.id, 'open', 'subject is an admin — skipped'); continue; }
+      /* reuse the client-recorded verdict if present, else ask Gemini */
+      let verdict = (text.match(/AI:\s*(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || '';
+      if(!verdict){ const out = await geminiOnce(env, modPrompt(text, name)); verdict = (String(out).match(/(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || ''; }
+      const action = ((verdict.match(/(BAN|WARN|ESCALATE|IGNORE|NEEDINFO)/i)||[])[1]||'ESCALATE').toUpperCase();
+      const reason = ((verdict.split('—')[1] || verdict.replace(/^[^-]*-/,'') || 'community guidelines').trim()).slice(0,160);
+      if(action==='BAN'){
+        await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(name.toLowerCase(), 'auto-mod: '+reason, nowIso()).run();
+        await markFeedback(DB, row.id, 'done', 'auto-banned: '+reason);
+      } else if(action==='WARN'){
+        const wtext = '⚠️ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
+        await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext, JSON.stringify([name]), nowIso()).run();
+        await markFeedback(DB, row.id, 'done', 'auto-warned: '+reason);
+      } else if(action==='IGNORE'){
+        await markFeedback(DB, row.id, 'ignored', 'no violation: '+reason);
+      } else {
+        await markFeedback(DB, row.id, 'open', 'needs human review: '+reason);
+      }
+    }catch(_){ /* skip this report, try the rest */ }
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx){
+    try{
+      const DB = env && env.DB; if(!DB) return;
+      const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
+      if(!on || !(env && env.GEMINI_KEY)) return;   // opt-in + needs a key
+      await ensureSchema(DB);
+      await runAutoModeration(DB, env);
+    }catch(_){ /* never throw out of a cron tick */ }
+  },
   async fetch(request, env){
     if(request.method==='OPTIONS') return new Response(null,{status:204,headers:cors(env)});
     const DB = env && env.DB;
@@ -511,6 +648,19 @@ export default {
     await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
+
+    /* Budget guard — shed non-admin load before we can hit a Cloudflare limit.
+       Health check above is always allowed so uptime monitors keep working. */
+    const _isWrite = request.method!=='GET' && request.method!=='HEAD';
+    const _usage = await dailyUsed(DB, _isWrite);
+    if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
+      const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
+      if(!adminOk){
+        if(_usage.n>REQ_HARD_CAP)
+          return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
+        return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub is temporarily read-only (daily free-tier write limit). New posts resume automatically at midnight UTC.'},503,env);
+      }
+    }
 
     /* Shared-key AI proxy — ports the kh-gemini-proxy Supabase Edge Function onto
        this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */

@@ -123,7 +123,7 @@ nav::-webkit-scrollbar{display:none}
 #rotateRoot[data-rotated="1"] main{min-height:0;}
 /* Unread dot for nav tabs (Mail) — high-contrast on e-ink */
 nav .tab.has-unread{position:relative;}
-nav .tab.has-unread::after{content:'';position:absolute;top:7px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--fg);}
+nav .tab.has-unread::after{content:'';position:absolute;top:7px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--accent);}
 nav .tab{
   flex:0 0 auto;text-align:center;
   padding:0 9px;
@@ -136,8 +136,15 @@ nav .tab{
   transition:color .15s;
   scroll-snap-align:start;
 }
-nav .tab.active{color:var(--fg);border-bottom:2px solid var(--fg);}
+nav .tab.active{color:var(--accent);border-bottom:2px solid var(--accent);}
 nav .tab:active{color:var(--fg);background:var(--highlight);}
+/* Accent-driven surfaces — links + text selection pick up the user's chosen
+   accent colour. The default --accent equals --fg in every theme, so a user who
+   hasn't picked an accent sees no change; the moment they pick one, these light
+   up along with primary buttons, the active tab, chat bubbles, progress, toasts
+   and game "correct" tiles (all repointed from --fg to --accent below). */
+a{color:var(--accent);}
+::selection{background:var(--accent);color:var(--accent-inv);}
 
 main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);}
 /* `.view` was using padding:var(--gap) (12px on all sides) which left
@@ -199,7 +206,7 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
   min-height:36px;border-radius:6px;
   box-shadow:none;font-weight:600;
 }
-.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg);box-shadow:var(--btn-shadow);}
+.btn.primary{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);box-shadow:var(--btn-shadow);}
 .btn.primary:active{opacity:0.72;}
 .btn.danger{border-color:var(--danger);color:var(--danger);box-shadow:none;}
 
@@ -214,7 +221,7 @@ input,textarea,select{
   transition:border-color .15s,box-shadow .15s;
   min-height:var(--touch-min);
 }
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--fg);box-shadow:inset 0 1px 2px rgba(0,0,0,.04),0 0 0 2px rgba(0,0,0,.07);}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:inset 0 1px 2px rgba(0,0,0,.04),0 0 0 2px rgba(0,0,0,.07);}
 /* Hide Edge/IE native password reveal + clear buttons so they don't double
    up with our wrapEye toggle. */
 input::-ms-reveal,input::-ms-clear{display:none!important;width:0!important;height:0!important;}
@@ -229,7 +236,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .chat-log{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg);}
 .msg{max-width:88%;padding:11px 15px;border:var(--border);border-radius:18px;font-size:14px;line-height:1.65;background:var(--card);color:var(--fg);box-shadow:var(--shadow);}
 .msg.bot{align-self:flex-start;background:var(--card);color:var(--fg);white-space:pre-line;border-radius:4px 18px 18px 18px;}
-.msg.user{align-self:flex-end;background:var(--fg);color:var(--bg);border-color:var(--fg);border-radius:18px 4px 18px 18px;}
+.msg.user{align-self:flex-end;background:var(--accent);color:var(--accent-inv);border-color:var(--accent);border-radius:18px 4px 18px 18px;}
 .msg.thinking{align-self:flex-start;color:var(--muted);font-style:italic;background:var(--highlight);border-color:transparent;box-shadow:none;}
 .msg.streaming{align-self:flex-start;background:var(--card);color:var(--fg);border-radius:4px 18px 18px 18px;}
 .msg.streaming::after{content:'▋';display:inline-block;animation:blink 2s step-end infinite;margin-left:1px;}
@@ -255,7 +262,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .hm-key-row{display:flex;gap:5px;justify-content:center;margin-bottom:7px}
 .hm-key{min-width:40px;height:48px;display:flex;align-items:center;justify-content:center;border:var(--border);border-radius:9px;font-weight:700;cursor:pointer;font-size:17px;padding:0 5px;user-select:none;font-family:var(--ui-font);background:var(--card);box-shadow:var(--btn-shadow);transition:background .1s;}
 .hm-key:active{background:var(--fg);color:var(--bg)}
-.hm-key.correct{background:var(--fg);color:var(--bg)}
+.hm-key.correct{background:var(--accent);color:var(--accent-inv)}
 .hm-key.wrong{background:var(--highlight);color:var(--muted);border-color:transparent;pointer-events:none;opacity:0.45}
 .hm-word{font-family:monospace;font-size:26px;letter-spacing:8px;text-align:center;margin:10px 0;word-break:break-all}
 .mem-grid{display:grid;gap:7px;justify-content:center}
@@ -265,13 +272,13 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .mem-card.back{background:var(--fg);color:var(--bg)}
 .wordle-row{display:flex;gap:5px;justify-content:center;margin-bottom:5px}
 .wordle-cell{width:46px;height:46px;border:var(--border);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;border-radius:8px;font-family:var(--ui-font);background:var(--card);}
-.wordle-cell.correct{background:var(--fg);color:var(--bg);border-color:var(--fg);}
+.wordle-cell.correct{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);}
 .wordle-cell.present{background:var(--muted);color:var(--bg);border-color:var(--muted);}
 .wordle-cell.absent{background:var(--highlight);color:var(--muted);border-color:transparent;}
 .wordle-kb{display:flex;flex-direction:column;gap:6px;margin-top:10px;align-items:center}
 .wordle-kb-row{display:flex;gap:5px}
 .wk{min-width:34px;height:46px;border:var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;cursor:pointer;padding:0 4px;user-select:none;background:var(--card);color:var(--fg);font-family:var(--ui-font);box-shadow:var(--btn-shadow);}
-.wk.correct{background:var(--fg);color:var(--bg)}
+.wk.correct{background:var(--accent);color:var(--accent-inv)}
 .wk.present{background:var(--muted);color:var(--bg)}
 .wk.absent{background:var(--highlight);color:var(--muted);border-color:transparent;box-shadow:none;}
 .cf-board{display:grid;gap:4px;padding:8px;border:var(--border);border-radius:12px;background:var(--card);justify-content:center;box-shadow:var(--shadow);}
@@ -286,7 +293,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .sdk-cell{width:100%;aspect-ratio:1;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
 .sdk-cell.fixed{color:var(--fg);background:var(--card)}
 .sdk-cell.user-input{color:var(--accent,#0055cc)}
-.sdk-cell.selected{background:var(--fg)!important;color:var(--bg)!important}
+.sdk-cell.selected{background:var(--accent)!important;color:var(--accent-inv)!important}
 .sdk-cell.highlight{background:var(--highlight);}
 .sdk-cell.error{color:var(--danger)!important}
 .sudoku-numpad{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:10px;max-width:300px;margin-left:auto;margin-right:auto}
@@ -302,13 +309,13 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .tools-grid{display:grid;gap:12px;grid-template-columns:1fr 1fr}
 @media(max-width:700px){.tools-grid{grid-template-columns:1fr}}
 .progress-bar{height:6px;background:var(--highlight);border-radius:4px;overflow:hidden;}
-.progress-fill{height:100%;background:var(--fg);border-radius:4px;transition:width .3s;}
+.progress-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .3s;}
 .pomodoro-ring{font-size:52px;font-weight:900;font-family:monospace;text-align:center;padding:10px;letter-spacing:2px}
 .flashcard{border:var(--border);border-radius:var(--radius);padding:28px 20px;min-height:130px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:15px;cursor:pointer;user-select:none;margin:6px 0;line-height:1.65;background:var(--card);box-shadow:var(--shadow);}
 .flashcard.answer{background:var(--highlight)}
 .mc-option{width:100%;text-align:left;padding:14px 16px;border:var(--border);border-radius:var(--radius-sm);margin-bottom:8px;font-size:14px;cursor:pointer;background:var(--card);color:var(--fg);font-family:var(--body-font);display:block;box-shadow:var(--shadow);transition:background .1s;min-height:var(--touch-min);}
 .mc-option:active{background:var(--highlight)}
-.mc-option.mc-correct{background:var(--fg);color:var(--bg)}
+.mc-option.mc-correct{background:var(--accent);color:var(--accent-inv)}
 .mc-option.mc-wrong{background:var(--highlight);color:var(--muted);text-decoration:line-through}
 .note-item{border-bottom:var(--thin);padding:12px 0}
 .note-tag{display:inline-block;padding:3px 10px;border:var(--thin);border-radius:20px;font-size:11px;margin-right:4px;color:var(--muted);background:var(--highlight);}
@@ -316,7 +323,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .book-status{font-size:11px;padding:4px 11px;border:var(--thin);border-radius:20px;background:var(--highlight);}
 .stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:var(--thin)}
 .stat-val{font-weight:700;font-family:monospace}
-.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--fg);color:var(--bg);z-index:1000001;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:28px;border:none;background:var(--accent);color:var(--accent-inv);z-index:1000001;font-size:14px;font-family:var(--ui-font);max-width:90vw;text-align:center;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.28);font-weight:600;letter-spacing:0.1px;}
 #drawCanvas{display:block;touch-action:none;cursor:crosshair;max-width:100%}
 footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:center;border-top:var(--thin);flex-shrink:0;background:var(--card);}
 .badge{display:inline-block;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:600;border:var(--thin);font-family:var(--ui-font);margin:2px;background:var(--highlight);}
@@ -324,9 +331,9 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 .section-title{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:0.8px;margin:12px 0 7px}
 .draw-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:10px;border:var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow);}
 .color-swatch{width:28px;height:28px;border:var(--border);border-radius:6px;cursor:pointer;display:inline-block}
-.color-swatch.selected{outline:2px solid var(--fg);outline-offset:2px}
+.color-swatch.selected{outline:2px solid var(--accent);outline-offset:2px}
 .draw-layer-thumb{width:60px;height:45px;border:var(--border);border-radius:7px;cursor:pointer;background:var(--card);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--ui-font);font-weight:700}
-.draw-layer-thumb.active{background:var(--fg);color:var(--bg)}
+.draw-layer-thumb.active{background:var(--accent);color:var(--accent-inv)}
 .api-key-bar{background:var(--card);border-bottom:var(--thin);padding:10px 14px;font-size:12px;font-family:var(--ui-font);display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow);}
 .quick-deck-row{display:flex;gap:4px;margin-bottom:4px}
 .quick-deck-input{flex:1;font-size:13px;padding:7px}
@@ -1301,7 +1308,7 @@ function defaultState(){
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
-    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],localFixes:{},savedWords:[],
+    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
@@ -1566,6 +1573,200 @@ function _khMarkGroupSeen(code,id){try{if(code&&id!=null)localStorage.setItem('k
 function _khGroupUnread(code){try{return localStorage.getItem('kh_msg_unread_'+code)==='1';}catch(_){return false;}}
 function _khAnyUnread(){try{if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&_khGroupUnread(KH_GLOBAL_GROUP_CODE))return true;const gs=(typeof S!=='undefined'&&S.msgGroups)||[];for(let i=0;i<gs.length;i++){if(gs[i]&&gs[i].code&&_khGroupUnread(gs[i].code))return true;}return false;}catch(_){return false;}}
 window._khMarkGroupUnread=_khMarkGroupUnread;window._khClearGroupUnread=_khClearGroupUnread;window._khGroupUnread=_khGroupUnread;window._khAnyUnread=_khAnyUnread;window._khMarkGroupSeen=_khMarkGroupSeen;
+/* ── Code-free chat requests ──────────────────────────────────────────────
+   A user can DM another by USERNAME (no 12-digit code to share): the sender
+   creates a private group, keeps it locally, and drops a CHAT_REQUEST on the
+   recipient's inbox (KH_MP.sendChatRequest). The recipient sees it as a pending
+   request here and Accepts (joins the group) or Declines (tombstones it so a
+   replayed request can't re-prompt). Requests live in S.chatRequests. */
+function _khOnChatRequest(env){
+  try{
+    const p=(env&&env.payload)||{}; const code=String(p.code||'');
+    if(!/^[0-9]{12}$/.test(code)||typeof S==='undefined')return;
+    if(Array.isArray(S.msgGroups)&&S.msgGroups.find(x=>x&&x.code===code))return;/* already chatting */
+    if(Array.isArray(S.leftGroups)&&S.leftGroups.indexOf(code)>=0)return;/* declined/left before */
+    if(!Array.isArray(S.chatRequests))S.chatRequests=[];
+    if(S.chatRequests.find(r=>r&&r.code===code))return;/* already pending */
+    const fromName=String(p.fromName||'Someone').slice(0,40);
+    S.chatRequests.push({code:code,name:String(p.name||('Chat with '+fromName)).slice(0,80),fromName:fromName,fromId:String(p.fromUserId||''),ts:Date.now()});
+    if(S.chatRequests.length>40)S.chatRequests=S.chatRequests.slice(-40);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    try{if(typeof _khMarkGroupUnread==='function')_khMarkGroupUnread('__requests__');}catch(_){}
+    if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(fromName):fromName)+' wants to chat — open Messages to accept.',6000);
+  }catch(_){}
+}
+function _khAcceptChatRequest(code){
+  try{
+    if(!Array.isArray(S.chatRequests))return;
+    const i=S.chatRequests.findIndex(r=>r&&r.code===code); if(i<0)return;
+    const req=S.chatRequests[i];
+    if(!Array.isArray(S.msgGroups))S.msgGroups=[];
+    if(!S.msgGroups.find(x=>x&&x.code===code))S.msgGroups.push({code:code,name:req.name||'Chat'});
+    if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==code);
+    S.chatRequests.splice(i,1);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+function _khDeclineChatRequest(code){
+  try{
+    if(!Array.isArray(S.chatRequests))return;
+    const i=S.chatRequests.findIndex(r=>r&&r.code===code); if(i<0)return;
+    S.chatRequests.splice(i,1);
+    if(!Array.isArray(S.leftGroups))S.leftGroups=[];
+    if(S.leftGroups.indexOf(code)<0)S.leftGroups.push(code);/* don't re-prompt on inbox replay */
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+/* Search users by name and send a chat request — the code-free "Message a user"
+   flow. onDone() refreshes the caller (e.g. the Messages list). */
+function _khMessageUserPicker(onDone){
+  if(!(window.KH_MP&&KH_MP.findPlayers&&KH_MP.sendChatRequest)){if(typeof toast==='function')toast('Messaging needs the cloud backend — sign in first.');return;}
+  if(typeof S==='undefined'||!S.authToken){if(typeof toast==='function')toast('Sign in to message users.');return;}
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'420px',width:'100%',maxHeight:'80vh',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','Message a user',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div','Search by username — they get a chat request to accept. No codes to share.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const inp=el('input',{type:'text',placeholder:'Username…',autocomplete:'off',style:{width:'100%'}});
+  card.appendChild(inp);
+  const results=el('div',{style:{flex:'1',overflowY:'auto',minHeight:'70px'}});
+  card.appendChild(results);
+  const closeBtn=txt('button','Close',{className:'btn small'});
+  closeBtn.onclick=()=>ov.remove();
+  card.appendChild(closeBtn);
+  ov.appendChild(card);
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+  try{inp.focus();}catch(_){}
+  async function _request(u){
+    try{
+      const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
+      const dn=(typeof _dispName==='function')?_dispName:(x=>x);
+      const name='DM: '+dn(myShort)+' & '+dn(String(u.name||'user').slice(0,20));
+      const created=await _groupCreate(name);
+      if(!Array.isArray(S.msgGroups))S.msgGroups=[];
+      if(!S.msgGroups.find(x=>x&&x.code===created.code))S.msgGroups.push({code:created.code,name:created.name||name});
+      if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==created.code);
+      if(typeof save==='function')save();
+      await KH_MP.sendChatRequest(u.hash,created.code,name);
+      if(typeof toast==='function')toast('Chat request sent to '+(typeof _censorText==='function'?_censorText(u.name):u.name)+' — they\'ll see it in Messages.',5000);
+      ov.remove();
+      if(typeof onDone==='function')onDone();
+    }catch(e){if(typeof toast==='function')toast('Could not send request: '+String((e&&e.message)||e).slice(0,80));}
+  }
+  let _t=null;
+  inp.addEventListener('input',()=>{
+    if(_t)clearTimeout(_t);
+    const q=inp.value.trim();
+    if(q.length<2){results.innerHTML='';return;}
+    _t=setTimeout(async()=>{
+      results.innerHTML='';results.appendChild(txt('div','Searching…',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));
+      let players=[];try{players=await KH_MP.findPlayers(q);}catch(_){}
+      results.innerHTML='';
+      if(!players.length){results.appendChild(txt('div','No users found.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));return;}
+      players.slice(0,20).forEach(u=>{
+        const row=el('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'8px 4px',borderBottom:'var(--thin)'}});
+        try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(u.name||'?',28));}catch(_){}
+        row.appendChild(txt('span',(typeof _dispName==='function'?_dispName(u.name||'user'):u.name),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px'}}));
+        const rq=txt('button','Request',{className:'btn small primary'});
+        rq.onclick=()=>{rq.disabled=true;rq.textContent='Sending…';_request(u);};
+        row.appendChild(rq);
+        results.appendChild(row);
+      });
+    },250);
+  });
+}
+window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
+
+/* ── Admin AI: "ask about a user" ─────────────────────────────────────────
+   Gathers a user's cloud METADATA (email, last sync, message count + recent
+   group/ts/device/location hints, presence last_seen) and asks the AI to answer
+   a free-text question from ONLY that data. Message bodies are E2E-encrypted
+   per group, so the AI sees activity/identity metadata — not message text
+   (except groups the admin is already in). HARD-GATED on admin: it reads other
+   users' data, so non-admins are refused. The general Assistant stays open to
+   all; only this cross-user tool is restricted. */
+async function _khGatherUserContext(question,targetName){
+  try{
+    if(typeof _sbSelect!=='function')return null;
+    let rows=null, token=String(targetName||'').trim();
+    if(token){
+      rows=await _sbSelect('kh_users','email=ilike.'+encodeURIComponent('*'+token.replace(/[%_]/g,'')+'*')+'&select=hash,email,updated_at&limit=4');
+    } else {
+      const words=(String(question||'').toLowerCase().match(/[a-z0-9._-]{3,}/g)||[]);
+      const stop=new Set(['the','was','when','last','online','who','what','user','users','about','are','did','does','message','messages','this','that','code','help','edit','ask','tell','show','how','many','their','them','they','been','have','has','with','your','you','from','give','answer']);
+      const cands=words.filter(w=>!stop.has(w)).sort((a,b)=>b.length-a.length);
+      for(const c of cands){
+        const r=await _sbSelect('kh_users','email=ilike.'+encodeURIComponent('*'+c.replace(/[%_]/g,'')+'*')+'&select=hash,email,updated_at&limit=4');
+        if(Array.isArray(r)&&r.length){ token=c; rows=r; break; }
+      }
+    }
+    if(!Array.isArray(rows)||!rows.length)return null;
+    const u=rows[0]; const uid=String(u.hash||'').slice(0,16);
+    const lines=[];
+    lines.push('Username/email: '+(u.email||'(unknown)'));
+    lines.push('Last account sync (updated_at, UTC): '+(u.updated_at||'(never)'));
+    if(rows.length>1)lines.push('NOTE: '+rows.length+' accounts match "'+token+'": '+rows.map(r=>r.email).join(', ')+' — answering for the first.');
+    let nMsgs=null;try{if(typeof _sbCount==='function')nMsgs=await _sbCount('kh_messages','user_id=eq.'+encodeURIComponent(uid));}catch(_){}
+    if(nMsgs!=null)lines.push('Total chat messages currently in cloud from this user: '+nMsgs);
+    let msgs=[];try{msgs=await _sbSelect('kh_messages','user_id=eq.'+encodeURIComponent(uid)+'&select=group_code,ts,device_hint,location_hint&order=ts.desc&limit=200');}catch(_){}
+    if(Array.isArray(msgs)&&msgs.length){
+      const groups=[...new Set(msgs.map(m=>m.group_code))];
+      lines.push('Active in '+groups.length+' chat group(s); most recent message at '+(msgs[0].ts||'?')+' UTC.');
+      const dev=[...new Set(msgs.map(m=>m.device_hint).filter(Boolean))].slice(0,4);
+      const loc=[...new Set(msgs.map(m=>m.location_hint).filter(Boolean))].slice(0,4);
+      if(dev.length)lines.push('Device hints seen: '+dev.join(', '));
+      if(loc.length)lines.push('Approx location hints seen: '+loc.join(', '));
+    } else { lines.push('No chat messages from this user currently in the cloud.'); }
+    let pres=[];try{pres=await _sbSelect('kh_presence','user_id=like.'+encodeURIComponent(uid)+'*&select=display_name,last_seen&order=last_seen.desc&limit=1');}catch(_){}
+    lines.push('Last seen online (presence, UTC): '+((Array.isArray(pres)&&pres[0]&&pres[0].last_seen)||'no recent presence row'));
+    lines.push('(Message TEXT is end-to-end encrypted and NOT readable here — only this activity metadata.)');
+    return {text:lines.join('\n'),email:u.email||'',uid:uid};
+  }catch(_){return null;}
+}
+async function _khAskAboutUser(question,opts){
+  opts=opts||{};
+  if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
+  if(window._isAdminCached!==true){ if(typeof toast==='function')toast('Asking the AI about another user is admin-only.'); return; }
+  if(typeof _sbActive!=='function'||!_sbActive()){ if(typeof toast==='function')toast('Needs the cloud backend.'); return; }
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'480px',width:'100%',maxHeight:'82vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','AI — about a user',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div',(typeof _censorText==='function'?_censorText(String(question||'')):String(question||'')),{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}}));
+  const out=el('div',{style:{fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',minHeight:'40px'}});
+  out.textContent='Gathering data…'; card.appendChild(out);
+  const cl=txt('button','Close',{className:'btn small'}); cl.onclick=()=>ov.remove(); card.appendChild(cl);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  try{
+    const ctx=await _khGatherUserContext(question,opts.targetName);
+    if(!ctx){ out.textContent='No user matched that question. Try including their exact username.'; return; }
+    out.textContent='Thinking…';
+    const prompt='You are an admin assistant for KindleHub (an e-reader web app). Answer the QUESTION using ONLY the DATA below. '
+      +'If the data does not contain the answer, say so plainly — do NOT invent facts or guess a person\'s real-world identity. Times are ISO-8601 UTC. Be concise.\n\nDATA:\n'+ctx.text+'\n\nQUESTION:\n'+String(question||'');
+    let ans=null; if(typeof khiCall==='function')ans=await khiCall(prompt,{maxTokens:500,temperature:0.2});
+    if(!ans){ out.textContent='AI is off or unavailable — enable AI in Settings (or pick the Shared key). Raw data gathered:\n\n'+ctx.text; return; }
+    out.textContent=String(ans).trim();
+  }catch(e){ out.textContent='Failed: '+String((e&&e.message)||e).slice(0,140); }
+}
+function _khAskUserDialog(prefillName){
+  if(window._isAdminCached!==true){ if(typeof toast==='function')toast('Admin only.'); return; }
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'460px',width:'100%',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','Ask AI about a user',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div','Admin tool. e.g. "when was Yuvaan last online?" or "is augustinejames the one who offered to help edit the code?". The AI reads cloud activity metadata (last online, message counts, groups, device/location hints) — not message text.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const nameIn=el('input',{type:'text',placeholder:'Username (optional — or name them in the question)',value:prefillName||'',style:{width:'100%'}});
+  card.appendChild(nameIn);
+  const qIn=el('textarea',{rows:'3',placeholder:'Your question…',style:{width:'100%'}});
+  card.appendChild(qIn);
+  const row=el('div',{style:{display:'flex',gap:'6px'}});
+  const ask=txt('button','Ask',{className:'btn small primary'});
+  const cl=txt('button','Cancel',{className:'btn small'});
+  ask.onclick=()=>{const q=(qIn.value||'').trim();if(!q){if(typeof toast==='function')toast('Type a question.');return;}ov.remove();_khAskAboutUser(q,{targetName:(nameIn.value||'').trim()});};
+  cl.onclick=()=>ov.remove();
+  row.append(ask,cl); card.appendChild(row);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  try{qIn.focus();}catch(_){}
+}
+window._khAskAboutUser=_khAskAboutUser;window._khAskUserDialog=_khAskUserDialog;window._khGatherUserContext=_khGatherUserContext;
 
 let _msgNotifyTimer=null;
 function _startMessageNotifier(){
@@ -1606,6 +1807,7 @@ function _startMessageNotifier(){
        subscription handles those updates with its own notifyMsg call). */
     if(typeof currentView!=='undefined'&&currentView==='messages')return;
     if(!navigator.onLine)return;/* offline — don't burn a failing fetch */
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat notifier polling during a CF limit */
     if(!S.authToken)return;/* signed-out users shouldn't get Global Chat toasts */
     const groups=(S.msgGroups||[]).slice();
     if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&!groups.find(g=>g.code===KH_GLOBAL_GROUP_CODE)){
@@ -4504,7 +4706,7 @@ function launchKindleDesktop(){
     const closeBtn=document.createElement('button');closeBtn.textContent='Close';closeBtn.className='btn small';
     closeBtn.onclick=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     if(mode==='export'&&app){
-      ttl.textContent='Share "'+app.label+'"';
+      ttl.textContent='Share "'+_censorText(app.label)+'"';
       hint.textContent='Copy this code and send it to anyone. They tap Import in their KindleOS app store and paste it — it installs straight onto their home screen.';
       let code='';try{code='KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:app.label,color:app.color,icon:app.icon,html:app.customHTML}))));}catch(e){code='(encode failed)';}
       ta.value=code;ta.readOnly=true;
@@ -6392,8 +6594,11 @@ async function _migrateToCloudflare(onProgress){
   const TABLES=[
     {t:'kh_users',pk:'hash',page:50},          /* the big state blobs */
     {t:'kh_groups',pk:'code',page:500},
-    {t:'kh_messages',pk:'id',page:400},
-    {t:'kh_mail',pk:'id',page:300},
+    /* Messages/mail: read NEWEST-FIRST and stop after `max`. The Worker keeps only
+       the latest 30 per group anyway, so paging through (potentially a million) old
+       messages is pure wasted egress — we just pull the recent ones the cap keeps. */
+    {t:'kh_messages',pk:'id',page:200,order:'ts.desc',max:3000},
+    {t:'kh_mail',pk:'id',page:200,order:'ts.desc',max:2000},
     {t:'kh_scores',pk:'id',page:500},
     {t:'kh_announcements',pk:'id',page:500},
     {t:'kh_presence',pk:'user_id',page:500},
@@ -6406,7 +6611,7 @@ async function _migrateToCloudflare(onProgress){
     let copied=0,offset=0,err=null;
     try{
       for(;;){
-        const rurl=sb+'/rest/v1/'+c.t+'?select=*&limit='+c.page+'&offset='+offset;
+        const rurl=sb+'/rest/v1/'+c.t+'?select=*&limit='+c.page+(c.order?'&order='+c.order:'')+'&offset='+offset;
         const rr=await fetch(rurl,{headers:_sbHeaders()});
         if(!rr.ok){ if(rr.status===404){break;} err='read HTTP '+rr.status; break; }
         const rows=await rr.json();
@@ -6428,6 +6633,7 @@ async function _migrateToCloudflare(onProgress){
         copied+=rows.length; out.total+=rows.length;
         if(typeof onProgress==='function')onProgress(c.t,copied,out.total);
         if(rows.length<c.page)break;
+        if(c.max&&copied>=c.max)break;/* enough recent rows — don't pull the long tail */
         offset+=c.page;
       }
     }catch(e){err=String((e&&e.message)||e).slice(0,120);}
@@ -6451,6 +6657,35 @@ function _sbHeaders(extra){
   if(extra)for(const k in extra)h[k]=extra[k];
   return h;
 }
+/* ── Cloudflare free-tier client throttle ─────────────────────────────────
+   The Worker sheds non-admin load with a 503 {code:CF_DAILY|CF_WRITE} when it
+   nears the free-plan ceilings (100k requests/day, 100k D1 writes/day). The
+   client cooperates so we recover fast and never hammer a limited backend:
+   on a 503 it parks all (CF_DAILY) or just write (CF_WRITE) traffic for ~15
+   min, and every background poller/beacon checks _khCfBlocked() before firing.
+   Windows auto-expire; the server itself fully resets at 00:00 UTC. */
+window._khCfReqUntil=window._khCfReqUntil||0;     // ALL traffic parked until ts (CF_DAILY)
+window._khCfWriteUntil=window._khCfWriteUntil||0; // writes parked until ts (CF_WRITE)
+let _khCfNoticeAt=0;
+function _khCfBlocked(isWrite){
+  const now=Date.now();
+  if(window._khCfReqUntil>now)return true;
+  if(isWrite&&window._khCfWriteUntil>now)return true;
+  return false;
+}
+function _khCfNote(kind){
+  const now=Date.now();
+  if(now-_khCfNoticeAt<60000)return; _khCfNoticeAt=now;
+  try{if(typeof toast==='function')toast(kind==='write'
+    ?'KindleHub is busy right now (daily free-tier write limit) — new posts pause briefly and resume automatically.'
+    :'KindleHub reached its daily free limit — some live features pause until midnight UTC.',4500);}catch(_){}
+}
+function _khCfOn503(body){
+  let code='';try{code=(JSON.parse(body||'{}')||{}).code||'';}catch(_){}
+  const now=Date.now();
+  if(code==='CF_WRITE'){ window._khCfWriteUntil=now+15*60000; _khCfNote('write'); }
+  else { window._khCfReqUntil=now+15*60000; _khCfNote('req'); }
+}
 async function _sbFetch(path,opts){
   opts=opts||{};
   const url=_sbBase()+'/rest/v1'+path;
@@ -6465,6 +6700,7 @@ async function _sbFetch(path,opts){
   }finally{clearTimeout(tid);}
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
+    if(r.status===503)_khCfOn503(body);
     const err=new Error('SB '+(opts.method||'GET')+' '+path+' → HTTP '+r.status+(body?' '+body.slice(0,120):''));
     err.status=r.status;
     throw err;
@@ -7070,6 +7306,44 @@ async function _khWarnUsername(name){
   return !!ok;
 }
 window._khWarnUsername=_khWarnUsername;
+/* Non-interactive warn (for the AI moderator) — same delivery as _khWarnUsername
+   but takes the reason directly instead of prompting. Admin-token gated. */
+async function _khWarnUsernameSilent(name,reason){
+  name=String(name||'').trim();
+  if(!name)return false;
+  if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
+  if(!window._adminToken)return false;
+  const msg=String(reason||'').trim()||'Please follow the community rules.';
+  const text='⚠️ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
+  return !!ok;
+}
+window._khWarnUsernameSilent=_khWarnUsernameSilent;
+/* AI moderation triage: judge a user-vs-user report and return a one-line verdict
+   "AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <reason>" that gets recorded INTO the
+   report. Works for ANY reporter (it's just an AI call, no privilege needed) —
+   the actual enforcement is done by the admin client (if the reporter is the
+   admin) or by the server-side autonomous moderator (api-worker scheduled). */
+async function _khAITriageReport(name,reason,note,autoFlagged){
+  try{
+    if(typeof khiEnabled!=='function'||!khiEnabled()||typeof khiCall!=='function')return '';
+    const prompt='You are the content-moderation assistant for KindleHub, a friendly e-reader chat app whose users include minors. '
+      +'A user REPORTED another user\'s USERNAME. Decide the action and reply on ONE line in EXACTLY this format:\n'
+      +'AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <one short reason>\n\n'
+      +'BAN = clear slur / sexual / hateful / impersonation username. WARN = borderline or mildly inappropriate. '
+      +'ESCALATE = a real human admin should judge. IGNORE = no violation or likely false report. NEEDINFO = too vague to act. '
+      +'Be strict on slurs and sexual content; lenient on ordinary names.\n\n'
+      +'REPORTED USERNAME: "'+String(name||'').slice(0,80)+'"\n'
+      +'REASON GIVEN: '+String(reason||'(none)')+'\n'
+      +'EXTRA NOTE: '+(String(note||'').slice(0,300)||'(none)')+'\n'
+      +'BANNED-WORD FILTER MATCHED: '+(autoFlagged?'YES':'no')+'\n';
+    const out=await khiCall(prompt,{maxTokens:120,temperature:0.1});
+    if(!out)return '';
+    const line=String(out).split('\n').map(s=>s.trim()).filter(Boolean).find(s=>/^AI:/i.test(s));
+    return (line||('AI: ESCALATE — '+String(out).trim().slice(0,120))).slice(0,200);
+  }catch(_){return '';}
+}
+window._khAITriageReport=_khAITriageReport;
 
 function _composeAnnouncement(card){
   card.innerHTML='';
@@ -7102,7 +7376,11 @@ function _composeAnnouncement(card){
         tgtSugg.innerHTML='';
         if(!names.length){tgtSugg.style.display='none';return;}
         names.forEach(n=>{
-          const it=txt('div',n,{style:{padding:'8px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--highlight)'}});
+          /* Show the user's avatar next to the name so the admin can tell which
+             account it is at a glance (the user asked for profile pictures here). */
+          const it=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',cursor:'pointer',fontSize:'13px',borderBottom:'1px solid var(--highlight)'}});
+          try{if(typeof _avatarEl==='function')it.appendChild(_avatarEl(n,22));}catch(_){}
+          it.appendChild(txt('span',_dispName(n),{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:'1',minWidth:'0'}}));
           it.onclick=()=>_tgtPick(n);
           tgtSugg.appendChild(it);
         });
@@ -7456,7 +7734,8 @@ function _visitIsGuest(ua){return /^g\|/.test(String(ua||''));}
 
 /* ── Live presence heartbeat ──────────────────────────────────────────
    Each open client upserts ONE row into kh_presence (keyed on a stable
-   per-user / per-device id) every ~25s while the tab is visible. The
+   per-user / per-device id) every ~40s while the tab is visible (kept under
+   the admin panel's 60s "online" window; the slower beat trims D1 writes). The
    admin "Online now" panel then lists every row whose last_seen is
    within the last 60s. Upsert-on-PK means the table never grows past
    the number of distinct users/devices, so no cleanup job is needed —
@@ -7474,6 +7753,7 @@ function _presenceIdentity(){
 }
 async function _pingPresence(){
   if(typeof _sbActive!=='function'||!_sbActive()||!navigator.onLine)return;
+  if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;/* park the heartbeat write during a CF limit */
   try{
     const id=_presenceIdentity();
     await _sbUpsert('kh_presence',{user_id:id.user_id,display_name:id.display_name,last_seen:new Date().toISOString()},'user_id');
@@ -7482,7 +7762,7 @@ async function _pingPresence(){
 function _startPresence(){
   if(_presenceTimer)return;
   _pingPresence();
-  _presenceTimer=setInterval(function(){ if(!document.hidden)_pingPresence(); },25000);
+  _presenceTimer=setInterval(function(){ if(!document.hidden)_pingPresence(); },40000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden)_pingPresence(); });
 }
 
@@ -9480,7 +9760,7 @@ const KH_GLOBAL_GROUP_CODE='000000000000';
 const KH_MSG_CAP_MIN=10;
 const KH_MSG_CAP_MAX=30;
 const KH_MSG_CAP_DEFAULT=20;
-const KH_MSG_GLOBAL_CAP=30;
+const KH_MSG_GLOBAL_CAP=50;
 function _msgHistoryCap(code){
   if(code===KH_GLOBAL_GROUP_CODE)return KH_MSG_GLOBAL_CAP;
   try{
@@ -9839,6 +10119,25 @@ async function _mailFetch(folder){
   }
   return out;
 }
+/* Fetch THIS device's replies to a given mail id, so the inbox reading-pane can
+   show your side of the conversation inline. A reply row carries reply_to=<origId>
+   and from_id=<me>; its body is encrypted under 'mail:'+to_user (the recipient),
+   a key the sender re-derives — so we can decrypt our own sent replies. */
+async function _mailReplies(origId){
+  try{
+    if(!_sbActive()||!origId)return[];
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return[];
+    const myId=S.userId||'';
+    const rows=await _sbSelect('kh_mail','reply_to=eq.'+encodeURIComponent(origId)+'&from_id=eq.'+encodeURIComponent(myId)+'&order=ts.asc&limit=20&select=id,to_user,body,ts');
+    if(!Array.isArray(rows))return[];
+    const out=[];
+    for(const r of rows){
+      let body='';try{body=await _msgDecrypt('mail:'+r.to_user,r.body);}catch(_){body='(unreadable)';}
+      out.push({id:r.id,to:r.to_user,body:body,ts:r.ts});
+    }
+    return out;
+  }catch(_){return[];}
+}
 async function _mailUnsend(id){
   const secret=_getMsgSecret(id);
   if(!secret)throw new Error('Only the device that sent this mail can unsend it.');
@@ -10011,7 +10310,7 @@ async function _groupToggleReaction(code,msgId,key){
   save();
   if(!window._reactedLocalToastShown){
     window._reactedLocalToastShown=true;
-    toast('Reaction saved on this device only. Server-side reactions need the kh_set_reaction function — run the schema SQL in Supabase, then run "notify pgrst, \'reload schema\';" once to fix.',7000);
+    toast('Reaction saved on this device only. Server-side reactions need the kh_set_reaction function — run the schema SQL on your backend, then run "notify pgrst, \'reload schema\';" once to fix.',7000);
   }
 }
 
@@ -12161,7 +12460,7 @@ function _gameScores(game){
       const left=el('div',{style:{display:'flex',alignItems:'center',gap:'7px',minWidth:'0'}});
       left.appendChild(txt('span','#'+(i+1),{style:{fontFamily:'monospace',color:'var(--muted)',flexShrink:'0',width:'22px'}}));
       try{if(typeof _avatarEl==='function')left.appendChild(_avatarEl(s.display_name||'Anon',18));}catch(_){}
-      left.appendChild(txt('span',s.display_name||'Anon',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+      left.appendChild(txt('span',_dispName(s.display_name||'Anon'),{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
       r.appendChild(left);
       r.appendChild(txt('span',String(s.score),{style:{fontFamily:'monospace',fontWeight:'800',flexShrink:'0'}}));
       wall.appendChild(r);
@@ -12976,7 +13275,7 @@ const CrazyEights=(function(){
         if(env.from&&env.from.userId&&me&&me.userId&&env.from.userId===me.userId)return; /* ignore own */
         var p=env.payload||{};
         if(env.type==='JOIN'){
-          if(role==='host'){if(!dealt)dealOnline();else broadcastState();if(p.name&&typeof toast==='function')toast(p.name+' joined',1800);}
+          if(role==='host'){if(!dealt)dealOnline();else broadcastState();if(p.name&&typeof toast==='function')toast(_censorText(p.name)+' joined',1800);}
         }else if(env.type==='STATE'){
           if(role==='guest'){gView=p;renderGuest();}
         }else if(env.type==='ACT'){
@@ -13493,7 +13792,7 @@ const TTT=(()=>{
     _closeMp();
     _mpSession=session;
     start();
-    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+opponentName,2000),300);
+    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+_censorText(opponentName),2000),300);
   }
   function start(){
     const diff=($('tttDiff')||{}).value||'medium';
@@ -13710,7 +14009,7 @@ const Connect4=(()=>{
     _closeMp();
     _mpSession=session;
     start();
-    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+opponentName,2000),300);
+    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+_censorText(opponentName),2000),300);
   }
 
   function start(){
@@ -14137,6 +14436,7 @@ window.KH_MP=(function(){
       if(wsOpen)return;
       if(typeof document!=='undefined'&&document.hidden)return;
       if(typeof _groupFetchMessages!=='function')return;
+      if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park online-game polling during a CF limit */
       try{
         if(typeof _groupLatestId==='function'){
           const lid=await _groupLatestId(code);
@@ -14145,7 +14445,7 @@ window.KH_MP=(function(){
         }
         const msgs=await _groupFetchMessages(code);(msgs||[]).forEach(handle);
       }catch(e){}
-    },2000);
+    },3000);
     return{close(){closed=true;if(ws){try{ws.close();}catch(e){}}if(hb)clearInterval(hb);clearInterval(poll);}};
   }
   /* ── Player search + invite system ────────────────────────────────────
@@ -14213,6 +14513,16 @@ window.KH_MP=(function(){
       fromUserId:me.userId
     });
   }
+  /* Code-free chat REQUEST: drop a CHAT_REQUEST on the target's inbox. Unlike
+     sendDmInvite this does NOT auto-add on their side — they get a pending
+     request to Accept/Decline (handled by the global _khOnChatRequest). */
+  async function sendChatRequest(targetHash,code,name){
+    if(!targetHash)throw new Error('Invalid target');
+    const inbox=await _ensureInbox(targetHash);
+    if(!inbox)throw new Error('Invalid target hash');
+    const me=identity();
+    return send(inbox,{type:'CHAT_REQUEST',code:code,name:name||('Chat with '+(me.name||'someone')),fromName:me.name,fromUserId:me.userId});
+  }
   /* Recipient side: a DM_INVITE means another user opened a private chat
      with us — auto-add it to our Messages panel. Idempotent and respects a
      prior leave, so replaying old invites on reconnect/open is harmless. */
@@ -14272,6 +14582,9 @@ window.KH_MP=(function(){
       /* DM auto-join — handled before the game-invite freshness drop below
          so an offline recipient still gets it on their next open via replay. */
       if(env.type==='DM_INVITE'){ _handleDmInvite(env); return; }
+      /* Code-free chat REQUEST: unlike DM_INVITE this does NOT auto-join — it
+         surfaces a pending request the recipient must Accept (see _khOnChatRequest). */
+      if(env.type==='CHAT_REQUEST'){ try{if(typeof window._khOnChatRequest==='function')window._khOnChatRequest(env);}catch(_){} return; }
       if(env.type!=='GAME_INVITE')return;
       const dedupeKey=(env.id||'')+(env.payload&&env.payload.roomShort||'');
       if(_recentInvites.has(dedupeKey))return;
@@ -14342,7 +14655,7 @@ window.KH_MP=(function(){
     return out;
   }
   return{makeCode,createRoom,joinRoom,send,subscribe,identity,
-         findPlayers,inboxCode,sendInvite,sendDmInvite,onInvite,startInbox,stopInbox,
+         findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,onInvite,startInbox,stopInbox,
          announceOpenGame,listOpenGames};
 })();
 
@@ -14540,7 +14853,7 @@ window.KH_MP.openLobby=function(opts){
     const wMsg=document.createElement('div');
     wMsg.style.cssText='font-size:12px;color:var(--muted,#666);text-align:center;line-height:1.5;';
     wMsg.innerHTML=opponentLabel
-      ? 'Invite sent to <b>'+_lobbyEsc(opponentLabel)+'</b>.<br>The game will start as soon as they accept.'
+      ? 'Invite sent to <b>'+_lobbyEsc(_dispName(opponentLabel))+'</b>.<br>The game will start as soon as they accept.'
       : 'Share this room code with a friend.<br>The game will start as soon as they join.';
     box.appendChild(wMsg);
     const codeBox=document.createElement('div');
@@ -14579,7 +14892,7 @@ window.KH_MP.openLobby=function(opts){
         const oppName=(env.payload&&env.payload.name)||opponentLabel||'opponent';
         ov.remove();
         onConnected(session,oppName);
-        if(typeof toast==='function')toast(oppName+' joined — game starting',2200);
+        if(typeof toast==='function')toast(_censorText(oppName)+' joined — game starting',2200);
       }
     });
     const _timeoutId=setTimeout(()=>{
@@ -17035,7 +17348,7 @@ const Slither=(()=>{
   const VW=360,VH=520,WORLD=1600,SPEED=3.2,BOOST=5.4,TURN=0.28,SEG_GAP=6;
   const FOOD_N=42,MAXPTS=60,START_LEN=5;
   const TARGET_OPP=5,MIN_AI=2;          // arena fills to ~TARGET_OPP rivals; humans replace bots
-  const PUB_MS=1800,TTL_MS=7000,FRAME_MS=1000/15;
+  const PUB_MS=2800,TTL_MS=8500,FRAME_MS=1000/15;
   const BOT_NAMES=['Viper','Coil','Zigzag','Slinky','Noodle','Pixel','Twist','Fang','Mamba','Loop','Dash','Hiss','Wriggle','Cobra','Boa','Echo','Glide','Rattle','Quark','Jet'];
   let cv,ctx,timer,netTimer,G,submitted=false,_keyH=null,_lb=null,_pub=false;
 
@@ -17211,6 +17524,7 @@ const Slither=(()=>{
   /* ── online beacons over kh_presence (best-effort; off when no backend) ── */
   async function _publish(){
     if(!_netOk()||!G||!G.active)return;const p=me();if(!p||p.dead)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;/* park beacon writes during a CF limit */
     const pts=[],stepN=Math.max(1,Math.floor(p.path.length/8));
     for(let i=0;i<p.path.length&&pts.length<8;i+=stepN)pts.push([Math.round(p.path[i].x),Math.round(p.path[i].y)]);
     _pub=true;
@@ -17219,6 +17533,7 @@ const Slither=(()=>{
   }
   async function _poll(){
     if(!_netOk()||!G||!G.active)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park beacon reads during a CF limit */
     const cut=new Date(Date.now()-TTL_MS).toISOString();let rows;
     try{rows=await _sbSelect('kh_presence','select=user_id,display_name,last_seen&user_id=like.sl_*&last_seen=gte.'+encodeURIComponent(cut)+'&limit=24');}catch(_){return;}
     if(!Array.isArray(rows)||!G||!G.active)return;
@@ -19216,7 +19531,7 @@ function _initDotsBoxes(){if(DotsBoxes)return;DotsBoxes=(()=>{
         }
       });
     }
-    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+opponentName,2000),300);
+    if(opponentName&&typeof toast==='function')setTimeout(()=>toast('Opponent: '+_censorText(opponentName),2000),300);
   }
   function _showOnlineBoard(){
     reset();
@@ -27019,7 +27334,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "Editing a message opens a centered modal. Save commits the change to the group; Cancel discards it. The modal survives realtime updates from other users — your edit window won't vanish if someone else sends a message while you're typing.",
 "",
-"Messages are end-to-end encrypted with the group code (AES-GCM) and gzipped before transit so the typical chat fits well under Supabase's row size budget. KindleHub now ships a pure-JS gzip fallback, so even older Kindle Silk browsers without DecompressionStream can read compressed messages — no more \"square question mark\" corruption.",
+"Messages are end-to-end encrypted with the group code (AES-GCM) and gzipped before transit so the typical chat fits well within the backend's per-row size budget. KindleHub now ships a pure-JS gzip fallback, so even older Kindle Silk browsers without DecompressionStream can read compressed messages — no more \"square question mark\" corruption.",
 "",
 "## Data, privacy, sync",
 "",
@@ -27027,7 +27342,7 @@ const KINDLEHUB_MANUAL=[
 "",
 "Compression: the full state blob (notes, books, calendar, habits, etc.) used for cross-device sync is also gzipped with the same path as messages. The pure-JS inflate fallback means devices that can't decompress natively (older Kindles) still read the synced state correctly — your calendar, notes, etc. all decompress the same way.",
 "",
-"Community features (Feedback board, shared notes between groups, error log) use either Supabase (if the source has SUPABASE_URL set) or jsonstorage.net (legacy free tier). Nothing is shared unless you explicitly post to the community board.",
+"Community features (Feedback board, shared notes between groups, error log) use the configured cloud backend (Cloudflare D1 or Supabase). Nothing is shared unless you explicitly post to the community board.",
 "",
 "## Troubleshooting",
 "",
@@ -36196,7 +36511,7 @@ feedback:()=>{
          but this gives Aran a one-tap recovery path. */
       if(_sbActive()){
         c.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'14px 0 10px'}}));
-        c.appendChild(txt('div','SUPABASE ONE-CLICK CLEANUP',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
+        c.appendChild(txt('div','CLOUD DATABASE — ONE-CLICK CLEANUP',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
         c.appendChild(txt('p','Each button COUNTS the affected rows first, then asks before deleting. Real chat rooms, DMs, valid inboxes (codes starting with 800000) and valid game rooms (codes starting with 900000) are NEVER touched.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',margin:'0 0 10px'}}));
         const sbStatus=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'18px',margin:'4px 0 8px',fontFamily:'monospace',whiteSpace:'pre-wrap'}});
         c.appendChild(sbStatus);
@@ -36302,7 +36617,7 @@ feedback:()=>{
       const sNewU=stat('NEW USERS','…','7d / 30d');
       const sActiveU=stat('ACTIVE','…','synced 7d');
       const sGroups=stat('GROUPS','…','chat groups');
-      const sMsgs=stat('MESSAGES','…','total sent');
+      const sMsgs=stat('MESSAGES','…','in cloud now');
       const sMsgsRecent=stat('MSGS 24H','…','today / 7d');
       const sSenders=stat('SENDERS','…','distinct (last 200)');
       const sFb=stat('FEEDBACK','…','reports + ideas');
@@ -36313,6 +36628,12 @@ feedback:()=>{
       const sVisitRows=stat('VISIT ROWS','…','device-days');
       const sAvgState=stat('AVG STATE','…','KB per user');
       dbGrid.append(sUsers,sNewU,sActiveU,sGroups,sMsgs,sMsgsRecent,sSenders,sFb,sScores,sAnn,sErrs,sErrsRecent,sVisitRows,sAvgState);
+
+      /* Admin AI — ask a free-text question about any user (last online, activity,
+         identity) answered from their cloud metadata. Admin-only. */
+      const aiAskBtn=txt('button','🔍 Ask AI about a user',{className:'btn small primary',style:{marginBottom:'14px',width:'100%'}});
+      aiAskBtn.onclick=()=>{if(typeof _khAskUserDialog==='function')_khAskUserDialog('');};
+      c.appendChild(aiAskBtn);
 
       /* Top groups by message volume + feedback-by-status breakdown */
       c.appendChild(txt('div','TOP GROUPS BY MESSAGES',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
@@ -36372,7 +36693,7 @@ feedback:()=>{
             const row=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px',borderBottom:'1px dashed var(--muted)',padding:'3px 0'}});
             const nameWrap=el('div',{style:{display:'flex',alignItems:'center',gap:'7px',minWidth:'0'}});
             if(typeof _avatarEl==='function')nameWrap.appendChild(_avatarEl(r.user_id||r.display_name||'?',20));
-            nameWrap.appendChild(txt('span',r.display_name||'(unnamed)',{style:{fontWeight:'700',wordBreak:'break-word'}}));
+            nameWrap.appendChild(txt('span',_dispName(r.display_name||'(unnamed)'),{style:{fontWeight:'700',wordBreak:'break-word'}}));
             row.appendChild(nameWrap);
             row.appendChild(txt('span',secs<10?'now':secs+'s ago',{style:{color:'var(--muted)',fontFamily:'monospace',flexShrink:'0'}}));
             list.appendChild(row);
@@ -37501,7 +37822,7 @@ Deno.serve(async (req)=>{
       const sgRow=el('div',{style:{display:'flex',gap:'5px'}});
       const sgIn=el('input',{type:'text',placeholder:'https://kindlehub-state.workers.dev',value:(localStorage.getItem('kh_state_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
       const sgSave=txt('button','Save',{className:'btn small'});
-      sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to Supabase.',4500);}catch(_){}};
+      sgSave.onclick=()=>{try{const v=sgIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_state_gateway',v);else localStorage.removeItem('kh_state_gateway');toast(v?'State gateway saved — cloud sync now uses R2 (free egress). Tap Sync Now to migrate this account.':'State gateway cleared — sync falls back to the default backend.',4500);}catch(_){}};
       sgRow.append(sgIn,sgSave);c.appendChild(sgRow);
       c.appendChild(txt('div','Deploy state-worker.js (in the repo) to Cloudflare + bind an R2 bucket, then paste its URL. Big state blobs move to R2 (no egress charge); chat/mail/scores stay on Supabase unless you also set the API gateway below. Leave blank to keep state on Supabase. Setup steps are in the worker file header.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* API gateway — paste the deployed api-worker.js (Cloudflare D1) URL to move
@@ -37510,9 +37831,9 @@ Deno.serve(async (req)=>{
       const agRow=el('div',{style:{display:'flex',gap:'5px'}});
       const agIn=el('input',{type:'text',placeholder:'https://kindlehub-api.workers.dev',value:(localStorage.getItem('kh_api_gateway')||''),style:{flex:'1',fontSize:'11px',fontFamily:'monospace'}});
       const agSave=txt('button','Save',{className:'btn small'});
-      agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to Supabase.',5000);}catch(_){}};
+      agSave.onclick=()=>{try{const v=agIn.value.trim().replace(/\/+$/,'');if(v)localStorage.setItem('kh_api_gateway',v);else localStorage.removeItem('kh_api_gateway');toast(v?'API gateway saved — chat/mail/scores now use Cloudflare D1 (free egress). Reload to apply everywhere.':'API gateway cleared — back to the default backend.',5000);}catch(_){}};
       agRow.append(agIn,agSave);c.appendChild(agRow);
-      c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list off Supabase — zero egress. Blank = Supabase. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      c.appendChild(txt('div','Deploy api-worker.js + schema-d1.sql to Cloudflare (one free D1 database), then paste the Worker URL. Moves chat, mail, scores, announcements, presence and the ban list onto Cloudflare D1 — zero egress. Blank = use the default backend. Live chat falls back to ~15s polling on D1 (instant realtime is a later add-on). Reload after changing.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       /* One-click migration: copy ALL Supabase data into the D1 gateway. */
       c.appendChild(txt('div','Migrate data → Cloudflare',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'12px 0 4px'}}));
       const migStat=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px',fontFamily:'monospace',whiteSpace:'pre-wrap'}});
@@ -37521,7 +37842,7 @@ Deno.serve(async (req)=>{
         if(!_apiGatewayUrl()){toast('Set the API gateway URL above first.');return;}
         if(!await kindleConfirm('Copy ALL data (accounts, chat, mail, scores, announcements, bans, visits) from Supabase into your Cloudflare D1 database? Safe to re-run. The one-time read from Supabase uses some egress.'))return;
         migBtn.disabled=true;migStat.style.color='var(--muted)';migStat.textContent='Migrating…';
-        const res=await _migrateToCloudflare(function(t,n,tot){migStat.textContent='Copying '+t.replace('kh_','')+'… '+n+' rows ('+tot+' total)';});
+        const res=await _migrateToCloudflare(function(t,n,tot){migStat.textContent='Copying '+t.replace('kh_','')+'… '+n+' rows · '+tot+' rows copied so far';});
         migBtn.disabled=false;
         if(res&&res.ok){migStat.style.color='var(--muted)';migStat.textContent='Done — '+res.total+' rows copied.  '+Object.keys(res.tables).map(function(k){return k.replace('kh_','')+':'+res.tables[k].copied;}).join('  ');}
         else if(res&&res.error){migStat.style.color='var(--danger)';migStat.textContent=res.error.slice(0,300);}
@@ -37552,7 +37873,7 @@ Deno.serve(async (req)=>{
       };
       capOpen.onclick=async()=>{capOpen.disabled=true;const ok=await _capSet(false,'','');capOpen.disabled=false;if(ok){toast('Sign-ins re-opened.',3000);_capPaint();}};
       capRow.append(capLock,capOpen);c.appendChild(capRow);
-      c.appendChild(txt('div','When you see the Supabase quota warning, lock sign-ins until a date you pick — users get a clear "back on <date>" message and the project throttles itself instead of getting suspended. It auto-reopens on that date; "Re-open now" lifts it early. You and existing signed-in users are never locked out.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+      c.appendChild(txt('div','When you see a hosting/quota warning from your backend, lock sign-ins until a date you pick — users get a clear "back on <date>" message and the project throttles itself instead of getting suspended. It auto-reopens on that date; "Re-open now" lifts it early. You and existing signed-in users are never locked out.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
       return c;
     }
     async function renderErrPanel(){
@@ -37606,7 +37927,7 @@ Deno.serve(async (req)=>{
       }catch(e){}
       if(sbReadDenied){
         const note=el('div',{style:{padding:'10px',background:'var(--highlight)',borderRadius:'8px',fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}});
-        note.innerHTML='Cloud errors are insert-only for the anon key (so they can\'t be tampered with). View them in the <b>Supabase dashboard → kh_errors</b>.';
+        note.innerHTML='Cloud errors are insert-only for the anon key (so they can\'t be tampered with). View them in your backend dashboard (Cloudflare D1 / Supabase) under <b>kh_errors</b>.';
         errPanel.appendChild(note);
       }
       if(!sessionErrs.length&&!cloudErrs.length){
@@ -37742,7 +38063,7 @@ Deno.serve(async (req)=>{
             if(_sbActive()){
               /* Anon cannot DELETE from kh_errors under the safe schema —
                  use the Supabase dashboard (Table Editor → kh_errors → delete) */
-              toast('Open Supabase dashboard → kh_errors to clear (anon DELETE disabled for safety)',4500);
+              toast('Cloud errors are insert-only for safety (no anon delete) and auto-prune on the server — nothing to clear here. To wipe them now, delete the kh_errors rows from your backend dashboard (Cloudflare D1 / Supabase).',6000);
               return;
             }
             await _masterWrite(function(doc){doc.autoErrors=[];});
@@ -38033,7 +38354,7 @@ Deno.serve(async (req)=>{
         const hdr=el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',fontSize:'10px',color:'var(--muted)',fontWeight:'700'}});
         const _cAuth=el('div',{style:{display:'flex',alignItems:'center',gap:'6px'}});
         if(typeof _avatarEl==='function')_cAuth.appendChild(_avatarEl(c.author||'Anon',16));
-        _cAuth.appendChild(txt('span',c.author||'Anon'));
+        _cAuth.appendChild(txt('span',_dispName(c.author||'Anon')));
         hdr.appendChild(_cAuth);
         hdr.appendChild(txt('span',c.date?new Date(c.date).toLocaleString():''));
         row.appendChild(hdr);
@@ -45673,7 +45994,7 @@ mail:()=>{
     function fmtTs(ts){try{const d=new Date(new Date(ts).getTime()+((typeof S!=='undefined'&&S.clockOffset)||0));return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(_){return '';}}
     /* Bare usernames get the home domain; full external addresses (anything
        already containing @) pass through untouched. */
-    function _addrLbl(a){a=String(a||'');return a.includes('@')?a:(a+'@'+KH_MAIL_DOMAIN);}
+    function _addrLbl(a){a=String(a||'');var at=a.indexOf('@');var local=at>=0?a.slice(0,at):a;var dom=at>=0?a.slice(at):('@'+KH_MAIL_DOMAIN);return (typeof _dispName==='function'?_dispName(local):local)+dom;}
     function unreadCount(){
       if(folder==='sent')return 0;
       return mails.filter(m=>effFolder(m)==='inbox'&&!(st()[m.id]||{}).read).length;
@@ -45736,6 +46057,24 @@ mail:()=>{
           const body=el('div',{style:{margin:'0 0 8px',padding:'10px',background:'var(--highlight)',borderRadius:'0 0 8px 8px',fontSize:'13px',lineHeight:'1.65',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
           body.textContent=m.body||'(empty)';
           row.appendChild(body);
+          /* Your replies to this mail, shown inline so the inbox holds the whole
+             conversation (the user asked: a reply should also appear in the inbox
+             under the email you responded to). Best-effort, async, read-only. */
+          if(folder!=='sent'&&m.id){
+            const thread=el('div',{style:{display:'none',margin:'0 0 8px'}});
+            row.appendChild(thread);
+            _mailReplies(m.id).then(reps=>{
+              if(!reps||!reps.length||openId!==m.id)return;
+              thread.style.display='block';
+              thread.appendChild(txt('div','YOUR REPLIES',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 4px'}}));
+              reps.forEach(rp=>{
+                const rb=el('div',{style:{margin:'0 0 6px',padding:'9px 11px',background:'var(--card)',border:'var(--thin)',borderLeft:'3px solid var(--accent)',borderRadius:'8px',fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
+                rb.appendChild(txt('div','You → '+_addrLbl(rp.to)+'  ·  '+fmtTs(rp.ts),{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'3px',fontWeight:'700'}}));
+                rb.appendChild(txt('div',rp.body||'(empty)'));
+                thread.appendChild(rb);
+              });
+            }).catch(()=>{});
+          }
           /* KHI row — summarise long mail, draft a reply. Uses the user's
              own AI key (khiCall); costs no Supabase bandwidth. */
           if(typeof khiEnabled==='function'&&khiEnabled()&&(m.body||'').length>0){
@@ -50405,12 +50744,15 @@ messages:()=>{
     const hdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderBottom:'var(--thin)',background:'var(--card)',flexShrink:'0',gap:'8px'}});
     hdr.appendChild(txt('h2','Messages',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0',flex:'1'}}));
     if(S.authToken){
-      const cBtn=txt('button','New Group',{className:'btn small primary'});
+      const mBtn=txt('button','✎ Message',{className:'btn small primary'});
+      const cBtn=txt('button','New Group',{className:'btn small'});
       const jBtn=txt('button','Join Group',{className:'btn small'});
+      mBtn.onclick=()=>{if(typeof _khMessageUserPicker==='function')_khMessageUserPicker(()=>render());};
       cBtn.onclick=()=>{_screen='create';render();};
       jBtn.onclick=()=>{_screen='join';render();};
       hdr.appendChild(jBtn);
       hdr.appendChild(cBtn);
+      hdr.appendChild(mBtn);
     }
     v.appendChild(hdr);
 
@@ -50429,6 +50771,27 @@ messages:()=>{
       wall.appendChild(goBtn);
       body.appendChild(wall);
       return;
+    }
+
+    /* Pending chat requests (code-free DMs someone sent you) — Accept to join,
+       Decline to dismiss. Rendered above the group list so they're seen first. */
+    const _reqs=Array.isArray(S.chatRequests)?S.chatRequests:[];
+    if(_reqs.length){
+      body.appendChild(txt('div','CHAT REQUESTS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 6px'}}));
+      _reqs.slice().reverse().forEach(req=>{
+        const rrow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px',border:'2px solid var(--accent)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'10px'}});
+        try{if(typeof _avatarEl==='function')rrow.appendChild(_avatarEl(req.fromName||'?',34));}catch(_){}
+        const ri=el('div',{style:{flex:'1',minWidth:'0'}});
+        ri.appendChild(txt('div',_dispName(req.fromName||'Someone'),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        ri.appendChild(txt('div','wants to start a chat',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+        rrow.appendChild(ri);
+        const acc=txt('button','Accept',{className:'btn small primary'});
+        const dec=txt('button','Decline',{className:'btn small'});
+        acc.onclick=()=>{try{if(typeof _khAcceptChatRequest==='function')_khAcceptChatRequest(req.code);}catch(_){}render();};
+        dec.onclick=()=>{try{if(typeof _khDeclineChatRequest==='function')_khDeclineChatRequest(req.code);}catch(_){}render();};
+        rrow.appendChild(acc);rrow.appendChild(dec);
+        body.appendChild(rrow);
+      });
     }
 
     /* Always render the Global Chat at the top — every user is a member. */
@@ -50499,7 +50862,7 @@ messages:()=>{
   }
 
   async function confirmLeave(g){
-    if(!await kindleConfirm('Leave the group "'+g.name+'"? You can rejoin with the code later.'))return;
+    if(!await kindleConfirm('Leave the group "'+_censorText(g.name)+'"? You can rejoin with the code later.'))return;
     S.msgGroups=(S.msgGroups||[]).filter(x=>x.code!==g.code);
     save();
     toast('Left group.');
@@ -50770,7 +51133,7 @@ messages:()=>{
       const nowMuted=!_isMuted(g.code);
       _setMuted(g.code,nowMuted);
       muteBtn.textContent=nowMuted?'Unmute':'Mute';
-      toast(nowMuted?'Notifications muted for "'+g.name+'"':'Notifications on for "'+g.name+'"');
+      toast(nowMuted?'Notifications muted for "'+_censorText(g.name)+'"':'Notifications on for "'+_censorText(g.name)+'"');
     };
     hdr.appendChild(muteBtn);
     /* Rename — change the group's name (not allowed on the permanent
@@ -50808,7 +51171,7 @@ messages:()=>{
           }
           return Promise.resolve(window.confirm(msg));
         };
-        askLeave('Leave the group "'+g.name+'"? You can rejoin with the 12-digit code later.').then(ok=>{
+        askLeave('Leave the group "'+_censorText(g.name)+'"? You can rejoin with the 12-digit code later.').then(ok=>{
           if(!ok)return;
           S.msgGroups=(S.msgGroups||[]).filter(x=>x.code!==g.code);
           /* Tombstone: record this code so a subsequent cloud-pull
@@ -51319,7 +51682,7 @@ messages:()=>{
       box.appendChild(txt('p','Tell the moderators what\'s wrong with this message. False reports may result in your own account being restricted.',{style:{fontSize:'11.5px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.55'}}));
       /* Quoted preview of the offending message */
       const quote=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'8px',marginBottom:'10px',fontSize:'12px',color:'var(--fg)',borderLeft:'3px solid var(--danger)'}});
-      quote.innerHTML='<b>'+String(msg.displayName||'Unknown').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+String(msg.text||'').slice(0,200).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+(((msg.text||'').length>200)?'…':'');
+      quote.innerHTML='<b>'+_dispName(String(msg.displayName||'Unknown')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+_censorText(String(msg.text||'')).slice(0,200).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+(((msg.text||'').length>200)?'…':'');
       box.appendChild(quote);
       const reasonRow=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px'}});
       const REASONS=['Spam','Harassment','Hate speech','Sexual content','Threats / violence','Misinformation','Other'];
@@ -51423,11 +51786,17 @@ messages:()=>{
         submit.disabled=true;submit.textContent='Submitting…';
         const note=(noteInp.value||'').trim().slice(0,500);
         const auto=(typeof _badUsername==='function'&&_badUsername(name))?' [auto-flag: contains banned word]':'';
+        /* AI triage — the AI judges the report and records a recommended action
+           (BAN/WARN/ESCALATE/IGNORE/NEEDINFO + reason) into the report body, so
+           the admin AND the server-side autonomous moderator can act on it. */
+        let aiVerdict='';
+        try{aiVerdict=await _khAITriageReport(name,chosen,note,!!auto);}catch(_){}
         const body='[REPORT] [USERNAME] '+chosen+auto+
           '\nUsername: "'+name.slice(0,80)+'"'+
           '\nUser id: '+String(uid||'').slice(0,16)+
           '\nReporter: '+displayName()+(S.userId?' uid='+String(S.userId).slice(0,16):'')+
-          (note?'\nNote: '+note:'');
+          (note?'\nNote: '+note:'')+
+          (aiVerdict?'\n'+aiVerdict:'');
         let ok=false;
         try{
           if(typeof _sbActive==='function'&&_sbActive()){
@@ -51442,8 +51811,16 @@ messages:()=>{
           }
         }catch(e){console.warn('Username report failed',e);}
         repd[dkey]={name:name,reason:chosen,ts:Date.now()};_saveUserReports(repd);
+        /* If the reporter IS the admin (holds the token) and the AI is confident
+           it's a clear violation, act immediately. For everyone else the verdict
+           is recorded and the server-side autonomous moderator enforces it. */
+        let acted='';
+        try{
+          if(window._adminToken&&/\bAI:\s*BAN\b/i.test(aiVerdict)){ const bok=await _khBanUsername(name); if(bok)acted='AI moderation auto-banned "'+name+'".'; }
+          else if(window._adminToken&&/\bAI:\s*WARN\b/i.test(aiVerdict)){ const wok=await _khWarnUsernameSilent(name,((aiVerdict.split('—')[1]||'community guidelines').trim()).slice(0,160)); if(wok)acted='AI moderation warned "'+name+'".'; }
+        }catch(_){}
         ov.remove();
-        toast(ok?'Username reported to moderators':'Report logged locally (offline)',2500);
+        toast(acted||(ok?'Reported — our AI moderator is reviewing it now.':'Report logged locally (offline)'),3200);
       };
       btnRow.append(cancel,submit);
       box.appendChild(btnRow);
@@ -51471,6 +51848,10 @@ messages:()=>{
       const repNameBtn=txt('button','Report username',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
       repNameBtn.onclick=()=>{ov.remove();_openUsernameReportModal(msg.displayName||'',msg.userId||'');};
       btnBar.append(closeBtn,repNameBtn);
+      /* Ask AI about this user — opens the admin AI query pre-filled with the name. */
+      const _aiAskBtn=txt('button','🔍 Ask AI',{className:'btn small'});
+      _aiAskBtn.onclick=()=>{ov.remove();if(typeof _khAskUserDialog==='function')_khAskUserDialog(msg.displayName||'');};
+      btnBar.append(_aiAskBtn);
       /* This modal is admin-only, so offer a direct ban (skips the report
          queue — you ARE the moderator). */
       const _nm=msg.displayName||'';
@@ -51771,7 +52152,7 @@ messages:()=>{
           actionRow=el('div',{className:'msg-action-row'});
           /* Reply */
           const rBtn=txt('button','Reply',{className:'msg-action-btn'});
-          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+String(m.displayName||'?').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
+          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+_dispName(String(m.displayName||'?')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
           actionRow.appendChild(rBtn);
           /* React — opens a small inline picker */
           const reactBtn=txt('button','React',{className:'msg-action-btn'});
@@ -51843,7 +52224,7 @@ messages:()=>{
                 /* Local label: include both names so the group list is
                    readable from either side once they join. */
                 const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
-                const groupName='DM: '+myShort+' & '+otherName.slice(0,30);
+                const groupName='DM: '+_dispName(myShort)+' & '+_dispName(otherName.slice(0,30));
                 const created=await _groupCreate(groupName);
                 /* Add to my local group list */
                 if(!Array.isArray(S.msgGroups))S.msgGroups=[];
@@ -52081,7 +52462,9 @@ messages:()=>{
         try{txtArea.style.height='auto';txtArea.style.height=Math.min(txtArea.scrollHeight,120)+'px';}catch(_){}
         _saveDraft(g.code,_sentRaw);
         const msg2=String(e&&e.message||e);
-        if(msg2.indexOf('Rate limit')>=0||msg2.indexOf('429')>=0){
+        if(msg2.indexOf('503')>=0||msg2.indexOf('daily-limit')>=0||msg2.indexOf('write-limit')>=0){
+          toast('KindleHub is briefly read-only (daily free-tier limit) — your message is kept as a draft, try again shortly.',5000);
+        } else if(msg2.indexOf('Rate limit')>=0||msg2.indexOf('429')>=0){
           toast('Slow down — group is rate-limited (30/min). Try again in a moment.',4000);
         } else {
           toast('Send failed: '+msg2);
@@ -52184,6 +52567,8 @@ messages:()=>{
       _pollTimer=setInterval(async()=>{
         const log2=document.getElementById('msgChatLog');
         if(!log2){stopPoll();cleanup();return;}
+        if(typeof document!=='undefined'&&document.hidden)return;/* no point polling a backgrounded tab */
+        if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat polling during a CF limit */
         try{
           /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
              group this matches our current tail and we SKIP the full ~50-message
