@@ -4866,6 +4866,38 @@ function launchKindleDesktop(){
   }
   renderInstalled();
 
+  /* ── AI app SAFETY GUARD: keep generated apps old-Kindle-safe ────────────
+     Modern models love optional chaining / nullish coalescing / parameterless
+     catch{}, which throw a SyntaxError on old Kindle WebKit (Silk) and crash
+     the WHOLE generated app — invisible in a desktop preview. We scan the
+     generated HTML, auto-fix what's deterministically safe, and ask the model
+     to repair the rest before the user can install a broken app. Mirrors the
+     build-time gate in tools/minify.mjs. */
+  function _khSilkScan(code){
+    if(!code)return [];
+    const C=String(code), hits=[];
+    const P=[
+      [/[)\]\w$]\?\?=/, 'nullish assignment (??=)'],
+      [/[)\]\w$]\?\?(?!=)/, 'nullish coalescing (??)'],
+      [/[)\]\w$]\?\.\s*[A-Za-z_$([]/, 'optional chaining (?.)'],
+      [/(?:^|[^A-Za-z0-9_$])catch\s*\{/, 'parameterless catch'],
+      [/[)\]\w$]\s*\|\|=/, '||= assignment'],
+      [/[)\]\w$]\s*&&=/, '&&= assignment'],
+    ];
+    P.forEach(function(p){ if(p[0].test(C))hits.push(p[1]); });
+    return hits;
+  }
+  function _khSilkAutofix(code){
+    /* Only the deterministically-safe rewrite: bind every parameterless catch.
+       (?? and ?. need real operand parsing, so those go back to the model.) */
+    return String(code).replace(/([^A-Za-z0-9_$])catch\s*\{/g, '$1catch(_e){');
+  }
+  async function _khCallActiveAI(sys,msg){
+    if(activeModelId==='shared')return await callSharedAPI(sys,msg);
+    if(activeModelId==='openrouter')return await callOpenRouterAPI(sys,msg);
+    return await callGeminiAPI(sys,msg);
+  }
+
   /* ── Build API functions ── */
   async function callGeminiAPI(systemPrompt,userMsg){
     const key=S.geminiKey||'';
@@ -4989,12 +5021,34 @@ WEB SEARCH & LIVE DATA:
     DuckDuckGo search: https://api.duckduckgo.com/?q=QUERY&format=json&no_html=1
 - Always handle fetch errors gracefully with a fallback UI message.`;
       const userMsg='Build this app: '+desc;
-      let raw='';
-      if(activeModelId==='shared')raw=await callSharedAPI(systemPrompt,userMsg);
-      else if(activeModelId==='openrouter')raw=await callOpenRouterAPI(systemPrompt,userMsg);
-      else raw=await callGeminiAPI(systemPrompt,userMsg);
+      let raw=await _khCallActiveAI(systemPrompt,userMsg);
       const clean=raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
       const parsed=JSON.parse(clean);
+      /* SAFETY GUARD: scrub Kindle-incompatible JS out of the generated app
+         before it can be previewed/installed. Auto-fix catch{}, then ask the
+         model once to remove any optional-chaining / nullish it slipped in. */
+      let _silkIssues=[];
+      if(parsed&&typeof parsed.html==='string'){
+        parsed.html=_khSilkAutofix(parsed.html);
+        _silkIssues=_khSilkScan(parsed.html);
+        if(_silkIssues.length){
+          try{
+            const repairMsg='The app you produced uses JavaScript that is UNSUPPORTED on the old Kindle browser and crashes the whole app: '+_silkIssues.join(', ')+'. Return the SAME app as JSON {"label","color","html"} with every one of those replaced by old-WebKit-safe equivalents (optional chaining -> a&&a.b ; nullish coalescing -> (a!=null?a:b) ; give every catch a parameter). Change nothing else.\n\nCurrent app HTML:\n'+parsed.html;
+            const rraw=await _khCallActiveAI(systemPrompt,repairMsg);
+            const rclean=rraw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
+            const rparsed=JSON.parse(rclean);
+            if(rparsed&&typeof rparsed.html==='string'){
+              const fixed=_khSilkAutofix(rparsed.html);
+              if(_khSilkScan(fixed).length<_silkIssues.length){
+                parsed.html=fixed;
+                if(rparsed.label)parsed.label=rparsed.label;
+                if(rparsed.color)parsed.color=rparsed.color;
+                _silkIssues=_khSilkScan(parsed.html);
+              }
+            }
+          }catch(_){}
+        }
+      }
       /* Preview */
       stPreview.innerHTML='';
       const m2=MODEL_DEFS.find(x=>x.id===activeModelId)||MODEL_DEFS[0];
@@ -5029,7 +5083,14 @@ WEB SEARCH & LIVE DATA:
         stPreview.style.display='none';stPreview.innerHTML='';stTextarea.value='';
         stBuild.disabled=false;stBuild.textContent='Build with AI';
       };
-      stPreview.appendChild(ptitle);stPreview.appendChild(pframe);stPreview.appendChild(installBtn);
+      stPreview.appendChild(ptitle);
+      if(_silkIssues.length){
+        const w=document.createElement('div');
+        w.style.cssText='font-size:11px;line-height:1.45;padding:7px 9px;border:1px solid #d35400;border-radius:7px;background:rgba(211,84,0,0.06);color:#a04000;';
+        w.textContent='Heads up: this app uses JavaScript ('+_silkIssues.join(', ')+') that can crash on an old Kindle, though it works on phones and computers. Tap "Build with AI" again to get a Kindle-safe version.';
+        stPreview.appendChild(w);
+      }
+      stPreview.appendChild(pframe);stPreview.appendChild(installBtn);
       stPreview.style.display='flex';stStatus.textContent='Done. Preview below.';
     }catch(err){
       stStatus.textContent='Error: '+(err.message||'Build failed. Try again.');
