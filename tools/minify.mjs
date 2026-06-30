@@ -83,6 +83,37 @@ async function run() {
   }
 
   if (errors.length) { console.error('MINIFY ERRORS:\n' + errors.join('\n')); process.exit(1); }
+
+  // ── Old-WebKit (Kindle Silk) compatibility gate ──────────────────────────
+  // The bundle parses fine in modern Chromium (so headless tests pass) but the
+  // Kindle "Experimental Browser" (old WebKit) throws a SyntaxError on ES2020+
+  // syntax. This bit us once via a code-snippet TEMPLATE string (`?? / catch{}`)
+  // that a user pasted into a KindleOS app — invisible to an AST parse of the
+  // bundle (it's string data) and to modern Chromium. So we scan the RAW output
+  // text (catches operators in real code AND inside code-template strings).
+  // Comments are already stripped by terser, so a "// use ||=" note won't trip it.
+  // Heuristics require an expression-ending char before the operator so the
+  // string literal '??' (placeholder country code) and regex \?? don't match.
+  const SILK_HOSTILE = [
+    { re: /[)\]\w$]\?\?=/g,                 label: 'nullish assignment (??=)' },
+    { re: /[)\]\w$]\?\?(?!=)/g,             label: 'nullish coalescing (??)' },
+    { re: /[)\]\w$]\?\.\s*[A-Za-z_$([]/g,   label: 'optional chaining (?.)' },
+    { re: /(?:^|[^A-Za-z0-9_$])catch\s*\{/g,label: 'optional catch binding (catch{})' },
+    { re: /[)\]\w$]\s*\|\|=/g,              label: 'logical OR assignment (||=)' },
+    { re: /[)\]\w$]\s*&&=/g,                label: 'logical AND assignment (&&=)' },
+  ];
+  const silkHits = [];
+  for (const { re, label } of SILK_HOSTILE) {
+    let m; re.lastIndex = 0;
+    while ((m = re.exec(out))) silkHits.push({ label, at: m.index, ctx: out.slice(Math.max(0, m.index - 35), m.index + 25) });
+  }
+  if (silkHits.length) {
+    console.error('OLD-WEBKIT (Kindle Silk) SYNTAX GATE FAILED — these break the app on Kindle but NOT in Chromium/headless:');
+    silkHits.slice(0, 40).forEach(h => console.error(`  [${h.label}] …${h.ctx.replace(/\n/g, ' ')}…`));
+    console.error(`\n${silkHits.length} occurrence(s). Rewrite to ES5-safe equivalents (?? -> (a!=null?a:b), ?. -> a&&a.b, catch{} -> catch(e){}). NOT written.`);
+    process.exit(1);
+  }
+
   writeFileSync(OUT, out);
   const before = Buffer.byteLength(src), after = Buffer.byteLength(out);
   console.log(`minified ${jsBlocks} JS + ${cssBlocks} CSS blocks`);

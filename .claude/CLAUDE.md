@@ -365,6 +365,25 @@ PENDING / bigger jobs (each its own session):
 - Non-UTC streak date-keys (habits/notes use UTC `toISOString().slice(0,10)` — wrong rollover off-UTC).
 
 ## Known gotchas
+- **⚠ Old-WebKit (Kindle Silk) syntax — modern Chromium/headless WON'T catch it.** Silk throws a
+  SyntaxError on ES2020+ syntax and that kills the WHOLE script/app. BANNED in any code that runs on
+  Kindle (incl. code-snippet TEMPLATE strings and AI-generated apps): optional chaining `?.`, nullish
+  coalescing `??`, logical-assignment `||= &&= ??=`, numeric separators `1_000`, parameterless `catch{}`,
+  regex lookbehind `(?<=)`/named-groups `(?<name>)`/`\p{}`/`s`,`y`,`d` flags. async/await + object spread
+  are fine (Silk supports them). The deploy gate: `tools/minify.mjs` runs an **OLD-WEBKIT SYNTAX GATE** on
+  the minified output (raw-text scan so it catches operators even inside template strings — an AST parse
+  misses those) and FAILS the build (non-zero exit, nothing written) on a hit. Heuristics need an
+  expression-ending char before the operator so the placeholder string `'??'`, regex `\??`, and ternaries
+  don't false-positive — and when you WRITE about these operators in a prompt/comment, name them in words,
+  don't spell the literal sequence (it'll trip the gate). This class once shipped via the `localStorage`
+  code-snippet template (`??`+`catch{}`) → "syntax error only on Kindle, line 1:282" (the position was
+  inside the generated app, not the bundle).
+- **AI app SAFETY GUARD** (`_khSilkScan`/`_khSilkAutofix`/`_khCallActiveAI` in the KindleOS app builder):
+  after the model returns an app, we auto-bind `catch{}`→`catch(_e){`, then if `?.`/`??`/etc. remain we
+  ask the model ONCE to repair, then show a "may crash on Kindle" preview note if still unsafe. The
+  builder system prompt (rule 8 in the CRITICAL KINDLE WEBKIT COMPATIBILITY RULES) also bans these by
+  name. AI-app + AI-preview iframes are `sandbox="allow-scripts allow-forms allow-popups allow-modals"`
+  (no `allow-same-origin`) so generated code can't reach our localStorage/auth.
 - Editing `index.html` desyncs the editor's file-state after a `sed` write — Read again before Edit.
 - Line numbers shift constantly; when wiring by line, grep the exact module/anchor first (a past batch
   mis-wired Snake/2048 new-game guards because line numbers moved between grep and edit).

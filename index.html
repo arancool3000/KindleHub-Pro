@@ -1300,7 +1300,7 @@ const SK='kindlehub_v5';
 function defaultState(){
   return{user:'Reader',theme:'light',fontSize:16,lastPlay:null,
     userId:null,authToken:null,email:null,syncEnabled:false,lastSync:null,
-    games:{},notes:[],stats:{},books:[],flashDecks:[],badges:[],geminiKey:'',openrouterKey:'',aiProvider:'gemini',openrouterModel:'meta-llama/llama-3.3-70b-instruct:free',proxyUrl:'',aiMsgDate:'',aiMsgCount:0,savedChatHistory:[],chatSessions:[],savedQuizzes:[],savedPlaces:[],srData:{},wallpaper:'none',
+    games:{},notes:[],stats:{},books:[],flashDecks:[],badges:[],geminiKey:'',openrouterKey:'',anthropicKey:'',openaiKey:'',aiProvider:'gemini',openrouterModel:'meta-llama/llama-3.3-70b-instruct:free',anthropicModel:'claude-haiku-4-5-20251001',openaiModel:'gpt-4o-mini',proxyUrl:'',aiMsgDate:'',aiMsgCount:0,savedChatHistory:[],chatSessions:[],savedQuizzes:[],savedPlaces:[],srData:{},wallpaper:'none',
     focusLog:[],rssFeeds:[],rssCache:{},rssSaved:[],rssRead:{},mindJournal:[],mdJournals:[],smLat:51.5,smLon:-0.1,smCity:'London',
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
@@ -3143,12 +3143,12 @@ function launchKindleDesktop(){
      inline (no refactor) while making the actual allocation lazy. */
   const BUILTIN_APPS=window._kh_builtin_apps||(window._kh_builtin_apps=[
     {id:'chat',      label:'Assistant',   nav:'chat',      color:'#2563eb',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M12 34 L8 42 L26 34" fill="#fff"/><circle cx="16" cy="20" r="3" fill="#2563eb"/><circle cx="24" cy="20" r="3" fill="#2563eb"/><circle cx="32" cy="20" r="3" fill="#2563eb"/></svg>'},
-    {id:'messages',  label:'Messages',    nav:'messages',  color:'#0f766e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M4 34 L4 42 L14 34" fill="#fff"/><circle cx="16" cy="20" r="2.5" fill="#0f766e"/><circle cx="24" cy="20" r="2.5" fill="#0f766e"/><circle cx="32" cy="20" r="2.5" fill="#0f766e"/></svg>'},
+    {id:'games',     label:'Arcade',      nav:'games',     color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="14" width="40" height="22" rx="9" fill="#fff"/><rect x="11" y="22" width="8" height="2" rx="1" fill="#7c3aed"/><rect x="14" y="19" width="2" height="8" rx="1" fill="#7c3aed"/><circle cx="32" cy="20" r="2.5" fill="#ef4444"/><circle cx="37" cy="25" r="2.5" fill="#3b82f6"/><circle cx="27" cy="25" r="2.5" fill="#22c55e"/><circle cx="32" cy="30" r="2.5" fill="#a3a3a3"/></svg>'},
     {id:'notes',     label:'Notes',       nav:'notes',     color:'#f59e0b',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="4" width="32" height="40" rx="5" fill="#fff"/><line x1="15" y1="16" x2="33" y2="16" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="23" x2="33" y2="23" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="30" x2="25" y2="30" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/></svg>'},
     {id:'maps',      label:'Maps',        nav:'maps',      color:'#10b981',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="20" r="15" fill="#fff"/><circle cx="24" cy="20" r="6" fill="#10b981"/><path d="M24 35 L24 44" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>'},
     {id:'weather',   label:'Weather',     nav:'weather',   color:'#0ea5e9',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="18" cy="15" r="8" fill="#fbbf24"/><rect x="6" y="22" width="36" height="14" rx="7" fill="#fff"/><line x1="14" y1="40" x2="12" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/><line x1="24" y1="40" x2="22" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/><line x1="34" y1="40" x2="32" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/></svg>'},
     {id:'starmap',   label:'Stars',       nav:'starmap',   color:'#1e1b4b',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="22" fill="#1e1b4b"/><polygon points="24,10 26,18 34,18 28,23 30,31 24,26 18,31 20,23 14,18 22,18" fill="#fde68a"/><circle cx="12" cy="12" r="2" fill="#fff" opacity=".7"/><circle cx="36" cy="14" r="1.5" fill="#fff" opacity=".6"/></svg>'},
-    {id:'games',     label:'Arcade',      nav:'games',     color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="14" width="40" height="22" rx="9" fill="#fff"/><rect x="11" y="22" width="8" height="2" rx="1" fill="#7c3aed"/><rect x="14" y="19" width="2" height="8" rx="1" fill="#7c3aed"/><circle cx="32" cy="20" r="2.5" fill="#ef4444"/><circle cx="37" cy="25" r="2.5" fill="#3b82f6"/><circle cx="27" cy="25" r="2.5" fill="#22c55e"/><circle cx="32" cy="30" r="2.5" fill="#a3a3a3"/></svg>'},
+    {id:'messages',  label:'Messages',    nav:'messages',  color:'#0f766e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M4 34 L4 42 L14 34" fill="#fff"/><circle cx="16" cy="20" r="2.5" fill="#0f766e"/><circle cx="24" cy="20" r="2.5" fill="#0f766e"/><circle cx="32" cy="20" r="2.5" fill="#0f766e"/></svg>'},
     {id:'tools',     label:'Tools',       nav:'tools',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="8" fill="#fff"/><line x1="16" y1="16" x2="32" y2="32" stroke="#475569" stroke-width="3" stroke-linecap="round"/><line x1="32" y1="16" x2="16" y2="32" stroke="#475569" stroke-width="3" stroke-linecap="round"/></svg>'},
     {id:'calc',      label:'Calculator',  nav:'calc',      color:'#1f2937',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="4" width="32" height="40" rx="6" fill="#fff"/><rect x="12" y="9" width="24" height="9" rx="3" fill="#d1d5db"/><rect x="12" y="23" width="7" height="6" rx="2" fill="#e5e7eb"/><rect x="21" y="23" width="7" height="6" rx="2" fill="#e5e7eb"/><rect x="30" y="23" width="7" height="6" rx="2" fill="#1f2937"/><rect x="12" y="32" width="7" height="6" rx="2" fill="#e5e7eb"/><rect x="21" y="32" width="7" height="6" rx="2" fill="#e5e7eb"/><rect x="30" y="32" width="7" height="6" rx="2" fill="#e5e7eb"/></svg>'},
     {id:'reading',   label:'Reading',     nav:'reading',   color:'#92400e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="6" width="17" height="36" rx="4" fill="#fff"/><rect x="26" y="6" width="17" height="36" rx="4" fill="#fff"/><line x1="9" y1="14" x2="18" y2="14" stroke="#92400e" stroke-width="1.5"/><line x1="9" y1="20" x2="18" y2="20" stroke="#92400e" stroke-width="1.5"/></svg>'},
@@ -4493,6 +4493,8 @@ function launchKindleDesktop(){
   /* Provider tabs */
   const MODEL_DEFS=[
     {id:'gemini',label:'Gemini',color:'#4285f4'},
+    {id:'anthropic',label:'Claude',color:'#d97706'},
+    {id:'openai',label:'GPT',color:'#10a37f'},
     {id:'openrouter',label:'OpenRouter',color:'#7c3aed'},
     {id:'shared',label:'Public AI',color:'#0891b2'},
   ];
@@ -4651,6 +4653,32 @@ function launchKindleDesktop(){
   sharedPanel.appendChild(sharedNote);
   modelPanels['shared']=sharedPanel;
   stSettings.appendChild(sharedPanel);
+  /* ── Claude (Anthropic) + GPT (OpenAI) panels — PAID. Compact: key status +
+     model dropdown; the key itself is entered in Settings → AI. ── */
+  function _khBuildPaidPanel(keyField,modelField,models,defModel,keyName,keyUrl){
+    const panel=document.createElement('div');
+    panel.style.cssText='display:none;flex-direction:column;gap:10px;padding:14px 16px;';
+    const status=document.createElement('div');
+    status.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg,#f0f0f0);border-radius:10px;border:var(--thin);';
+    const lbl=document.createElement('span');lbl.style.cssText='font-size:12px;color:var(--fg,#111);font-weight:600;flex:1;';
+    lbl.textContent=S[keyField]?(keyName+' key configured'):('No '+keyName+' key — add one in Settings → AI');
+    const dot=document.createElement('div');dot.style.cssText='width:8px;height:8px;border-radius:50%;margin-left:8px;flex-shrink:0;background:'+(S[keyField]?'#22c55e':'#f59e0b')+';';
+    status.appendChild(lbl);status.appendChild(dot);panel.appendChild(status);
+    const note=document.createElement('p');note.style.cssText='font-size:11px;color:var(--muted,#888);margin:0;line-height:1.5;';
+    note.innerHTML='<b>'+keyName+' is paid</b> — needs billing on your key ('+keyUrl+'). Add the key in Settings → AI.';
+    panel.appendChild(note);
+    const mLbl=document.createElement('div');mLbl.textContent='Model';mLbl.style.cssText='font-size:11px;font-weight:700;color:var(--muted,#888);text-transform:uppercase;letter-spacing:0.5px;';
+    panel.appendChild(mLbl);
+    const sel=document.createElement('select');sel.style.cssText='width:100%;padding:10px;border:var(--thin);border-radius:8px;background:var(--card,#fff);color:var(--fg,#111);font-size:13px;';
+    models.forEach(function(mm){const o=document.createElement('option');o.value=mm[0];o.textContent=mm[1];if((S[modelField]||defModel)===mm[0])o.selected=true;sel.appendChild(o);});
+    sel.onchange=function(){S[modelField]=sel.value;save();};
+    panel.appendChild(sel);
+    return panel;
+  }
+  modelPanels['anthropic']=_khBuildPaidPanel('anthropicKey','anthropicModel',ANTHROPIC_MODELS,'claude-haiku-4-5-20251001','Claude','console.anthropic.com');
+  stSettings.appendChild(modelPanels['anthropic']);
+  modelPanels['openai']=_khBuildPaidPanel('openaiKey','openaiModel',OPENAI_MODELS,'gpt-4o-mini','OpenAI GPT','platform.openai.com');
+  stSettings.appendChild(modelPanels['openai']);
   kdStore.appendChild(stSettings);
 
   /* Gear toggle */
@@ -4866,6 +4894,40 @@ function launchKindleDesktop(){
   }
   renderInstalled();
 
+  /* ── AI app SAFETY GUARD: keep generated apps old-Kindle-safe ────────────
+     Modern models love optional chaining / nullish coalescing / parameterless
+     catch{}, which throw a SyntaxError on old Kindle WebKit (Silk) and crash
+     the WHOLE generated app — invisible in a desktop preview. We scan the
+     generated HTML, auto-fix what's deterministically safe, and ask the model
+     to repair the rest before the user can install a broken app. Mirrors the
+     build-time gate in tools/minify.mjs. */
+  function _khSilkScan(code){
+    if(!code)return [];
+    const C=String(code), hits=[];
+    const P=[
+      [/[)\]\w$]\?\?=/, 'nullish assignment (??=)'],
+      [/[)\]\w$]\?\?(?!=)/, 'nullish coalescing (??)'],
+      [/[)\]\w$]\?\.\s*[A-Za-z_$([]/, 'optional chaining (?.)'],
+      [/(?:^|[^A-Za-z0-9_$])catch\s*\{/, 'parameterless catch'],
+      [/[)\]\w$]\s*\|\|=/, '||= assignment'],
+      [/[)\]\w$]\s*&&=/, '&&= assignment'],
+    ];
+    P.forEach(function(p){ if(p[0].test(C))hits.push(p[1]); });
+    return hits;
+  }
+  function _khSilkAutofix(code){
+    /* Only the deterministically-safe rewrite: bind every parameterless catch.
+       (?? and ?. need real operand parsing, so those go back to the model.) */
+    return String(code).replace(/([^A-Za-z0-9_$])catch\s*\{/g, '$1catch(_e){');
+  }
+  async function _khCallActiveAI(sys,msg){
+    if(activeModelId==='shared')return await callSharedAPI(sys,msg);
+    if(activeModelId==='openrouter')return await callOpenRouterAPI(sys,msg);
+    if(activeModelId==='anthropic')return await callAnthropicAPI(sys,msg);
+    if(activeModelId==='openai')return await callOpenAIAPI(sys,msg);
+    return await callGeminiAPI(sys,msg);
+  }
+
   /* ── Build API functions ── */
   async function callGeminiAPI(systemPrompt,userMsg){
     const key=S.geminiKey||'';
@@ -4891,6 +4953,35 @@ function launchKindleDesktop(){
     });
     const data=await resp.json();
     if(data.error)throw new Error(data.error.message||'OpenRouter error');
+    var _ch0=(data.choices||[])[0];return(_ch0&&_ch0.message&&_ch0.message.content)||'';
+  }
+  async function callAnthropicAPI(systemPrompt,userMsg){
+    const key=S.anthropicKey||'';
+    if(!key)throw new Error('No Anthropic key — add one in Settings → AI (paid).');
+    const model=S.anthropicModel||'claude-haiku-4-5-20251001';
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'x-api-key':key,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:model,max_tokens:4000,system:systemPrompt,messages:[{role:'user',content:userMsg}]})
+    });
+    if(!resp.ok){let em='';try{const j=await resp.json();em=(j.error&&j.error.message)||'';}catch(e){}throw new Error('Anthropic '+resp.status+(em?': '+em:''));}
+    const data=await resp.json();
+    return (data.content&&data.content.map(b=>(b&&b.text)||'').join(''))||'';
+  }
+  async function callOpenAIAPI(systemPrompt,userMsg){
+    const key=S.openaiKey||'';
+    if(!key)throw new Error('No OpenAI key — add one in Settings → AI (paid).');
+    const model=S.openaiModel||'gpt-4o-mini';
+    const reasoning=/^o[0-9]/.test(model)||/^gpt-5/.test(model);
+    const body={model:model,messages:[{role:'system',content:systemPrompt},{role:'user',content:userMsg}]};
+    if(reasoning)body.max_completion_tokens=4000;else body.max_tokens=4000;
+    const resp=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(body)
+    });
+    if(!resp.ok){let em='';try{const j=await resp.json();em=(j.error&&j.error.message)||'';}catch(e){}throw new Error('OpenAI '+resp.status+(em?': '+em:''));}
+    const data=await resp.json();
     var _ch0=(data.choices||[])[0];return(_ch0&&_ch0.message&&_ch0.message.content)||'';
   }
   /* Public/shared key — routes through the same community proxy the chat
@@ -4959,6 +5050,7 @@ CRITICAL KINDLE WEBKIT COMPATIBILITY RULES (violating these will break the app):
 5. NEVER use CSS grid "subgrid" or "masonry".
 6. For square cells in a grid (e.g. game boards, calendar), ALWAYS use the padding-bottom hack instead of aspect-ratio.
 7. The preview box inside AI Builder is 340px tall. Design your app to work from 320px height upward.
+8. JAVASCRIPT must be old-WebKit (ES5/ES2015) safe — modern operators throw a SyntaxError that kills the WHOLE app on Kindle, yet run fine in a desktop preview so they are easy to miss. Do NOT use: optional chaining, nullish coalescing, logical-assignment operators, numeric separators, or top-level await. For a default value write (a != null ? a : b); for a safe property read write a && a.b. Every catch block MUST name its error, e.g. catch(e) — a parameterless catch is also unsupported. Stick to var/let/const, function, arrow functions, template strings; async/await is fine.
 
 GENERAL RULES:
 - Return ONLY valid JSON, no markdown, no preamble, no code fences.
@@ -4988,12 +5080,34 @@ WEB SEARCH & LIVE DATA:
     DuckDuckGo search: https://api.duckduckgo.com/?q=QUERY&format=json&no_html=1
 - Always handle fetch errors gracefully with a fallback UI message.`;
       const userMsg='Build this app: '+desc;
-      let raw='';
-      if(activeModelId==='shared')raw=await callSharedAPI(systemPrompt,userMsg);
-      else if(activeModelId==='openrouter')raw=await callOpenRouterAPI(systemPrompt,userMsg);
-      else raw=await callGeminiAPI(systemPrompt,userMsg);
+      let raw=await _khCallActiveAI(systemPrompt,userMsg);
       const clean=raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
       const parsed=JSON.parse(clean);
+      /* SAFETY GUARD: scrub Kindle-incompatible JS out of the generated app
+         before it can be previewed/installed. Auto-fix catch{}, then ask the
+         model once to remove any optional-chaining / nullish it slipped in. */
+      let _silkIssues=[];
+      if(parsed&&typeof parsed.html==='string'){
+        parsed.html=_khSilkAutofix(parsed.html);
+        _silkIssues=_khSilkScan(parsed.html);
+        if(_silkIssues.length){
+          try{
+            const repairMsg='The app you produced uses JavaScript that is UNSUPPORTED on the old Kindle browser and crashes the whole app: '+_silkIssues.join(', ')+'. Return the SAME app as JSON {"label","color","html"} with every one of those replaced by old-WebKit-safe equivalents (optional chaining -> a&&a.b ; nullish coalescing -> (a!=null?a:b) ; give every catch a parameter). Change nothing else.\n\nCurrent app HTML:\n'+parsed.html;
+            const rraw=await _khCallActiveAI(systemPrompt,repairMsg);
+            const rclean=rraw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
+            const rparsed=JSON.parse(rclean);
+            if(rparsed&&typeof rparsed.html==='string'){
+              const fixed=_khSilkAutofix(rparsed.html);
+              if(_khSilkScan(fixed).length<_silkIssues.length){
+                parsed.html=fixed;
+                if(rparsed.label)parsed.label=rparsed.label;
+                if(rparsed.color)parsed.color=rparsed.color;
+                _silkIssues=_khSilkScan(parsed.html);
+              }
+            }
+          }catch(_){}
+        }
+      }
       /* Preview */
       stPreview.innerHTML='';
       const m2=MODEL_DEFS.find(x=>x.id===activeModelId)||MODEL_DEFS[0];
@@ -5028,7 +5142,14 @@ WEB SEARCH & LIVE DATA:
         stPreview.style.display='none';stPreview.innerHTML='';stTextarea.value='';
         stBuild.disabled=false;stBuild.textContent='Build with AI';
       };
-      stPreview.appendChild(ptitle);stPreview.appendChild(pframe);stPreview.appendChild(installBtn);
+      stPreview.appendChild(ptitle);
+      if(_silkIssues.length){
+        const w=document.createElement('div');
+        w.style.cssText='font-size:11px;line-height:1.45;padding:7px 9px;border:1px solid #d35400;border-radius:7px;background:rgba(211,84,0,0.06);color:#a04000;';
+        w.textContent='Heads up: this app uses JavaScript ('+_silkIssues.join(', ')+') that can crash on an old Kindle, though it works on phones and computers. Tap "Build with AI" again to get a Kindle-safe version.';
+        stPreview.appendChild(w);
+      }
+      stPreview.appendChild(pframe);stPreview.appendChild(installBtn);
       stPreview.style.display='flex';stStatus.textContent='Done. Preview below.';
     }catch(err){
       stStatus.textContent='Error: '+(err.message||'Build failed. Try again.');
@@ -5839,7 +5960,7 @@ function applyDyslexicFont(on){
   }
 }
 
-function hasAnyKey(){return !!(S.geminiKey||(S.openrouterKey&&S.aiProvider==='openrouter')||S.aiProvider==='shared');}
+function hasAnyKey(){return !!(S.geminiKey||S.anthropicKey||S.openaiKey||(S.openrouterKey&&S.aiProvider==='openrouter')||S.aiProvider==='shared');}
 
 /* ── KindleHub Intelligence ───────────────────────────────────── */
 /* Gate: feature must be enabled AND user must have an API key    */
@@ -5861,7 +5982,7 @@ async function khiCall(prompt, opts){
   const gKey=S.geminiKey;
   const oKey=S.openrouterKey;
   const prov=opts.provider||S.khiProvider||'auto';/* 'auto' | 'gemini' | 'openrouter' | 'shared' (per-call override via opts) */
-  if(!gKey&&!oKey&&prov!=='shared'){toast('KHI: no API key — add one in Settings, or switch KHI to the Shared key');return null;}
+  if(!gKey&&!oKey&&!S.anthropicKey&&!S.openaiKey&&prov!=='shared'){toast('KHI: no API key — add one in Settings, or switch KHI to the Shared key');return null;}
   if(!navigator.onLine){toast('Offline — connect to Wi-Fi to use AI features');return null;}
   /* Shared bundled key — no personal key needed. Reuses the streaming shared
      caller and collects its final text (honours the auto-switch setting). */
@@ -5872,6 +5993,16 @@ async function khiCall(prompt, opts){
       const out=String(r||_last||'').trim();
       return out||null;
     }catch(e){console.warn('KHI shared error',e);toast('KHI: shared key error');return null;}
+  }
+  /* Anthropic / OpenAI (paid keys) — reuse the streaming callers and collect
+     the final text. 'auto' uses them only when no Gemini/OpenRouter key is set. */
+  if(prov==='anthropic'||(prov==='auto'&&!gKey&&!oKey&&S.anthropicKey)){
+    if(!S.anthropicKey){toast('KHI: no Anthropic key — add one in Settings');return null;}
+    let _last='';try{const r=await callAnthropicStream([{role:'user',text:prompt}],t=>{_last=t;});const out=String(r||_last||'').trim();return out||null;}catch(e){console.warn('KHI anthropic error',e);toast('KHI: Anthropic error');return null;}
+  }
+  if(prov==='openai'||(prov==='auto'&&!gKey&&!oKey&&!S.anthropicKey&&S.openaiKey)){
+    if(!S.openaiKey){toast('KHI: no OpenAI key — add one in Settings');return null;}
+    let _last='';try{const r=await callOpenAIStream([{role:'user',text:prompt}],t=>{_last=t;});const out=String(r||_last||'').trim();return out||null;}catch(e){console.warn('KHI openai error',e);toast('KHI: OpenAI error');return null;}
   }
   /* Pull every part out of a Gemini candidate, joined with newlines.
      Previously we only read parts[0] which silently dropped extra blocks. */
@@ -23457,6 +23588,122 @@ async function callOpenRouterStream(messages, onChunk){
   }
 }
 
+/* ── Anthropic (Claude) + OpenAI direct-key providers ───────────────────
+   Both are PAID (need billing on the key). Model id lists live here so every
+   picker can reuse them. Labels say "(paid)" so it's obvious they cost money.
+   ⚠ Anthropic requires the `anthropic-dangerous-direct-browser-access` header
+   or the browser request is blocked by CORS — without it nothing works. */
+const ANTHROPIC_MODELS=[
+  ['claude-opus-4-8','Claude Opus 4.8 — most capable (paid)'],
+  ['claude-sonnet-4-6','Claude Sonnet 4.6 — balanced (paid)'],
+  ['claude-haiku-4-5-20251001','Claude Haiku 4.5 — fast & cheap (paid)'],
+];
+const OPENAI_MODELS=[
+  ['gpt-4o','GPT-4o (paid)'],
+  ['gpt-4o-mini','GPT-4o mini — cheap (paid)'],
+  ['gpt-4.1','GPT-4.1 (paid)'],
+  ['gpt-4.1-mini','GPT-4.1 mini — cheap (paid)'],
+  ['o4-mini','o4-mini — reasoning (paid)'],
+];
+async function callAnthropicStream(messages, onChunk){
+  const key=S.anthropicKey; if(!key)return null;
+  const model=S.anthropicModel||'claude-haiku-4-5-20251001';
+  const msgs=[];
+  for(const m of messages) msgs.push({role:m.role==='bot'?'assistant':'user',content:m.text});
+  /* Anthropic requires the first turn to be 'user'. */
+  if(msgs.length&&msgs[0].role!=='user')msgs.unshift({role:'user',content:'Hello'});
+  const body={model:model,max_tokens:8192,system:buildSYS(),messages:msgs,stream:true};
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'x-api-key':key,
+        'anthropic-version':'2023-06-01',
+        'content-type':'application/json',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify(body)
+    });
+    if(!res.ok){
+      let em='';try{const j=await res.json();em=(j.error&&(j.error.message||j.error.type))||'';}catch(e){}
+      if(res.status===401) return '(Anthropic: invalid API key — it should start with sk-ant- and be pasted in full. Get one at console.anthropic.com)';
+      if(res.status===400&&/credit|balance|billing/i.test(em)) return '(Anthropic: this key has no credit. Add billing at console.anthropic.com.)';
+      if(res.status===429) return '(Anthropic: rate limit — wait a moment and try again.)';
+      if(res.status===404) return '(Anthropic: model "'+model+'" not found — pick another Claude model in AI Key settings.)';
+      return '(Anthropic error '+res.status+(em?' — '+em:'')+')';
+    }
+    const reader=res.body.getReader();const dec=new TextDecoder();
+    let full='',buf='';
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split('\n');buf=lines.pop();
+      for(const line of lines){
+        if(line.indexOf('data:')!==0)continue;
+        const data=line.slice(5).trim();
+        if(!data||data==='[DONE]')continue;
+        try{
+          const j=JSON.parse(data);
+          if(j.type==='error')return '(Anthropic stream error: '+((j.error&&j.error.message)||'unknown')+')';
+          if(j.type==='content_block_delta'&&j.delta&&typeof j.delta.text==='string'){full+=j.delta.text;onChunk(full);}
+        }catch(e){}
+      }
+    }
+    return full||null;
+  }catch(e){
+    console.error('callAnthropicStream',e);
+    return '(Anthropic connection error: '+e.message+'. Check your internet connection and API key.)';
+  }
+}
+async function callOpenAIStream(messages, onChunk){
+  const key=S.openaiKey; if(!key)return null;
+  const model=S.openaiModel||'gpt-4o-mini';
+  const msgs=[{role:'system',content:buildSYS()}];
+  for(const m of messages) msgs.push({role:m.role==='bot'?'assistant':'user',content:m.text});
+  /* Reasoning models (o-series / gpt-5) use max_completion_tokens and reject a
+     custom temperature; classic chat models use max_tokens. */
+  const reasoning=/^o[0-9]/.test(model)||/^gpt-5/.test(model);
+  const body={model:model,messages:msgs,stream:true};
+  if(reasoning)body.max_completion_tokens=8192; else body.max_tokens=8192;
+  try{
+    const res=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(!res.ok){
+      let em='';try{const j=await res.json();em=(j.error&&(j.error.message||j.error.code))||'';}catch(e){}
+      if(res.status===401) return '(OpenAI: invalid API key — it should start with sk- and be pasted in full. Get one at platform.openai.com)';
+      if(res.status===429) return '(OpenAI: rate limit or no credit — check billing at platform.openai.com, or wait and retry.)';
+      if(res.status===404) return '(OpenAI: model "'+model+'" not found — pick another in AI Key settings.)';
+      return '(OpenAI error '+res.status+(em?' — '+em:'')+')';
+    }
+    const reader=res.body.getReader();const dec=new TextDecoder();
+    let full='',buf='';
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split('\n');buf=lines.pop();
+      for(const line of lines){
+        if(line.indexOf('data:')!==0)continue;
+        const data=line.slice(5).trim();
+        if(!data||data==='[DONE]')continue;
+        try{
+          const j=JSON.parse(data);
+          const chunk=j.choices&&j.choices[0]&&j.choices[0].delta&&j.choices[0].delta.content||'';
+          if(chunk){full+=chunk;onChunk(full);}
+        }catch(e){}
+      }
+    }
+    return full||null;
+  }catch(e){
+    console.error('callOpenAIStream',e);
+    return '(OpenAI connection error: '+e.message+'. Check your internet connection and API key.)';
+  }
+}
+
 /* ── Shared Gemini key (via backend Edge Function proxy) ─────────
    A Gemini key bundled into the app for users who don\'t want to
    register their own. CRITICALLY: the key is NEVER stored in the
@@ -23660,17 +23907,18 @@ async function callSharedGeminiStream(messages, onChunk){
 
 /* ── Unified streaming callAI ─────────────────────────────── */
 async function callAIStream(messages, onChunk){
-  /* Route to correct provider — fall back to the other if key is available */
-  if(S.aiProvider==='shared'){
-    return callSharedGeminiStream(messages,onChunk);
-  }
-  if(S.aiProvider==='openrouter'){
-    if(S.openrouterKey) return callOpenRouterStream(messages,onChunk);
-    if(S.geminiKey){console.warn('OpenRouter selected but no key — falling back to Gemini');return callGeminiStream(messages,onChunk);}
-  } else {
-    if(S.geminiKey) return callGeminiStream(messages,onChunk);
-    if(S.openrouterKey){console.warn('Gemini selected but no key — falling back to OpenRouter');return callOpenRouterStream(messages,onChunk);}
-  }
+  /* Route to the selected provider; if its key is missing, fall back to any
+     other key the user has (Gemini first). */
+  if(S.aiProvider==='shared') return callSharedGeminiStream(messages,onChunk);
+  if(S.aiProvider==='anthropic'&&S.anthropicKey) return callAnthropicStream(messages,onChunk);
+  if(S.aiProvider==='openai'&&S.openaiKey) return callOpenAIStream(messages,onChunk);
+  if(S.aiProvider==='openrouter'&&S.openrouterKey) return callOpenRouterStream(messages,onChunk);
+  if(S.aiProvider==='gemini'&&S.geminiKey) return callGeminiStream(messages,onChunk);
+  /* fallback: whatever key exists */
+  if(S.geminiKey) return callGeminiStream(messages,onChunk);
+  if(S.anthropicKey) return callAnthropicStream(messages,onChunk);
+  if(S.openaiKey) return callOpenAIStream(messages,onChunk);
+  if(S.openrouterKey) return callOpenRouterStream(messages,onChunk);
   return null;
 }
 
@@ -23747,6 +23995,8 @@ function buildAIModelPicker(opts){
   function chatModelLabel(){
     if(!hasAnyKey()) return 'Offline';
     if(S.aiProvider==='shared')return 'Shared (free)';
+    if(S.aiProvider==='anthropic'){const m=S.anthropicModel||'claude-haiku-4-5-20251001';const f=ANTHROPIC_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
+    if(S.aiProvider==='openai'){const m=S.openaiModel||'gpt-4o-mini';const f=OPENAI_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
     if(S.aiProvider==='openrouter'){
       const m=S.openrouterModel||'meta-llama/llama-3.3-70b-instruct:free';
       const found=CHAT_OR_MODELS.find(x=>x[0]===m);
@@ -23767,15 +24017,16 @@ function buildAIModelPicker(opts){
   function buildModelDrop(){
     modelDrop.innerHTML='';
     /* Provider toggle row — Shared / Gemini / OpenRouter. */
-    const provRow=el('div',{style:{display:'flex',borderBottom:'var(--thin)'}});
-    ['shared','gemini','openrouter'].forEach(prov=>{
+    const provRow=el('div',{style:{display:'flex',flexWrap:'wrap',borderBottom:'var(--thin)'}});
+    ['shared','gemini','anthropic','openai','openrouter'].forEach(prov=>{
       let hint='';
       if(prov==='gemini')hint=S.geminiKey?'':' (no key)';
       else if(prov==='openrouter')hint=S.openrouterKey?'':' (no key)';
-      const label=prov==='shared'?'Shared (free)':(prov==='gemini'?'Gemini':'OpenRouter');
+      else if(prov==='anthropic')hint=S.anthropicKey?'':' (no key)';
+      else if(prov==='openai')hint=S.openaiKey?'':' (no key)';
+      const label=prov==='shared'?'Shared (free)':(prov==='gemini'?'Gemini':(prov==='anthropic'?'Claude (paid)':(prov==='openai'?'GPT (paid)':'OpenRouter')));
       const pb=txt('button',label+hint,{});
-      pb.style.cssText='flex:1;padding:7px 4px;font-size:11px;font-weight:800;font-family:var(--ui-font);border:none;cursor:pointer;background:'+(S.aiProvider===prov?'var(--accent)':'var(--card)')+';color:'+(S.aiProvider===prov?'var(--accent-inv)':'var(--muted)')+';border-right:var(--thin);';
-      if(prov==='openrouter')pb.style.borderRight='none';
+      pb.style.cssText='flex:1 0 32%;padding:7px 4px;font-size:11px;font-weight:800;font-family:var(--ui-font);border:none;cursor:pointer;background:'+(S.aiProvider===prov?'var(--accent)':'var(--card)')+';color:'+(S.aiProvider===prov?'var(--accent-inv)':'var(--muted)')+';border-right:var(--thin);border-bottom:var(--thin);';
       if(prov==='shared')pb.title='Use the bundled API key — no setup needed. Limited to '+SHARED_KEY_DAILY_CAP+' messages per day across all users.';
       pb.onclick=()=>{S.aiProvider=prov;save();buildModelDrop();modelPickerBtn.textContent=chatModelLabel();updateSharedKeyCounter();if(typeof opts.onChange==='function')opts.onChange();};
       provRow.appendChild(pb);
@@ -23819,9 +24070,13 @@ function buildAIModelPicker(opts){
       });
     }
     /* Model list — grouped (free vs paid). */
-    let groups=S.aiProvider==='openrouter'?CHAT_OR_GROUPS:CHAT_GEMINI_GROUPS;
+    let groups;
+    if(S.aiProvider==='openrouter')groups=CHAT_OR_GROUPS;
+    else if(S.aiProvider==='anthropic')groups=[{group:'Paid — needs billing on your key',items:ANTHROPIC_MODELS}];
+    else if(S.aiProvider==='openai')groups=[{group:'Paid — needs billing on your key',items:OPENAI_MODELS}];
+    else groups=CHAT_GEMINI_GROUPS;
     if(S.aiProvider==='shared')groups=groups.filter(g=>!/paid/i.test(g.group));
-    const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.hbGeminiModel||'gemini-3.1-flash-lite');
+    const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.aiProvider==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(S.aiProvider==='openai'?(S.openaiModel||'gpt-4o-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
     const listEl=el('div',{style:{maxHeight:'280px',overflowY:'auto'}});
     groups.forEach(g=>{
       const hdr=txt('div',g.group,{style:{padding:'6px 12px 4px',fontSize:'9px',fontWeight:'800',letterSpacing:'0.8px',textTransform:'uppercase',color:'var(--muted)',background:'var(--highlight)',borderBottom:'var(--thin)',borderTop:'var(--thin)'}});
@@ -23836,6 +24091,8 @@ function buildAIModelPicker(opts){
         row.appendChild(check);row.appendChild(nameEl);
         row.onclick=()=>{
           if(S.aiProvider==='openrouter') S.openrouterModel=id;
+          else if(S.aiProvider==='anthropic') S.anthropicModel=id;
+          else if(S.aiProvider==='openai') S.openaiModel=id;
           else S.hbGeminiModel=id;
           save();
           modelPickerBtn.textContent=chatModelLabel();
@@ -25312,9 +25569,14 @@ document.addEventListener('click',e=>{
     const _h=document.createElement('div');_h.textContent='Test AI Connection';_h.style.cssText='font-size:14px;font-weight:900;font-family:var(--title-font);';
     const _provRow=document.createElement('div');_provRow.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
     const _pLbl=document.createElement('span');_pLbl.textContent='Provider:';_pLbl.style.cssText='font-size:11px;font-weight:700;';
-    const _pGem=document.createElement('button');_pGem.textContent='Gemini';_pGem.className='btn small'+(S.aiProvider!=='openrouter'?' primary':'');
-    const _pOR=document.createElement('button');_pOR.textContent='OpenRouter';_pOR.className='btn small'+(S.aiProvider==='openrouter'?' primary':'');
-    _provRow.append(_pLbl,_pGem,_pOR);
+    const _pGem=document.createElement('button');_pGem.textContent='Gemini';
+    const _pOR=document.createElement('button');_pOR.textContent='OpenRouter';
+    const _pAn=document.createElement('button');_pAn.textContent='Claude';
+    const _pOa=document.createElement('button');_pOa.textContent='GPT';
+    const _provBtns={gemini:_pGem,openrouter:_pOR,anthropic:_pAn,openai:_pOa};
+    function _syncProvBtns(){Object.keys(_provBtns).forEach(k=>{_provBtns[k].className='btn small'+(S.aiProvider===k?' primary':'');});}
+    _syncProvBtns();
+    _provRow.append(_pLbl,_pGem,_pOR,_pAn,_pOa);
     const _mLbl=document.createElement('div');_mLbl.textContent='Model:';_mLbl.style.cssText='font-size:11px;font-weight:700;';
     const _mSel=document.createElement('select');_mSel.style.cssText='font-size:11px;padding:5px 8px;border:var(--border);border-radius:8px;background:var(--card);color:var(--fg);width:100%;';
     function _populateModels(){
@@ -25332,14 +25594,20 @@ document.addEventListener('click',e=>{
         const cur=S.openrouterModel||'openrouter/free';
         _addGroup('Free models',[['openrouter/free','Free Router (auto)'],['meta-llama/llama-3.3-70b-instruct:free','Llama 3.3 70B'],['meta-llama/llama-4-maverick:free','Llama 4 Maverick'],['deepseek/deepseek-r1:free','DeepSeek R1'],['mistralai/mistral-small-3.1-24b-instruct:free','Mistral Small 3.1'],['qwen/qwen3-8b:free','Qwen 3 8B']],cur);
         _addGroup('Paid models',[['anthropic/claude-opus-4','Claude Opus 4'],['anthropic/claude-sonnet-4','Claude Sonnet 4'],['anthropic/claude-3.5-sonnet','Claude 3.5 Sonnet'],['anthropic/claude-3-haiku','Claude 3 Haiku'],['openai/gpt-4o','GPT-4o'],['openai/gpt-4o-mini','GPT-4o Mini'],['google/gemini-2.5-pro','Gemini 2.5 Pro'],['google/gemini-2.0-flash-001','Gemini 2.0 Flash']],cur);
+      } else if(S.aiProvider==='anthropic'){
+        _addGroup('Paid — needs billing',ANTHROPIC_MODELS,S.anthropicModel||'claude-haiku-4-5-20251001');
+      } else if(S.aiProvider==='openai'){
+        _addGroup('Paid — needs billing',OPENAI_MODELS,S.openaiModel||'gpt-4o-mini');
       } else {
         const cur=S.hbGeminiModel||'gemini-3.1-flash-lite';
         _addGroup('Free tier',[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (15 RPM)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3-flash','Gemini 3 Flash'],['gemini-3.5-flash','Gemini 3.5 Flash'],['gemma-4-26b-it','Gemma 4 26B'],['gemma-4-31b-it','Gemma 4 31B']],cur);
         _addGroup('Paid tier',[['gemini-2.5-pro','Gemini 2.5 Pro'],['gemini-3.1-pro','Gemini 3.1 Pro'],['gemini-2.0-flash','Gemini 2 Flash'],['gemini-2.0-flash-lite','Gemini 2 Flash Lite']],cur);
       }
     }
-    _pGem.onclick=()=>{S.aiProvider='gemini';save();_pGem.classList.add('primary');_pOR.classList.remove('primary');_populateModels();};
-    _pOR.onclick=()=>{S.aiProvider='openrouter';save();_pOR.classList.add('primary');_pGem.classList.remove('primary');_populateModels();};
+    _pGem.onclick=()=>{S.aiProvider='gemini';save();_syncProvBtns();_populateModels();};
+    _pOR.onclick=()=>{S.aiProvider='openrouter';save();_syncProvBtns();_populateModels();};
+    _pAn.onclick=()=>{S.aiProvider='anthropic';save();_syncProvBtns();_populateModels();};
+    _pOa.onclick=()=>{S.aiProvider='openai';save();_syncProvBtns();_populateModels();};
     _populateModels();
     const _btnRow=document.createElement('div');_btnRow.style.cssText='display:flex;gap:8px;justify-content:flex-end;';
     const _cancelB=document.createElement('button');_cancelB.textContent='Cancel';_cancelB.className='btn';
@@ -25348,6 +25616,8 @@ document.addEventListener('click',e=>{
     _testB.onclick=()=>{
       /* Apply selected model then run test */
       if(S.aiProvider==='openrouter')S.openrouterModel=_mSel.value;
+      else if(S.aiProvider==='anthropic')S.anthropicModel=_mSel.value;
+      else if(S.aiProvider==='openai')S.openaiModel=_mSel.value;
       else S.hbGeminiModel=_mSel.value;
       save();_ov.remove();testAIConnection();
     };
@@ -30714,7 +30984,7 @@ chat:()=>{
     ]},
     {cat:'JavaScript',items:[
       {lbl:'onclick handler',code:'<button onclick="handleClick(this)">Click</button>\n<script>\nfunction handleClick(btn){\n  alert(\'Clicked!\');\n}\n<\/script>'},
-      {lbl:'localStorage save/load',code:'<script>\nfunction save(key,val){localStorage.setItem(key,JSON.stringify(val));}\nfunction load(key,def){try{return JSON.parse(localStorage.getItem(key))??def;}catch{return def;}}\n<\/script>'},
+      {lbl:'localStorage save/load',code:'<script>\nfunction save(key,val){localStorage.setItem(key,JSON.stringify(val));}\nfunction load(key,def){try{var v=JSON.parse(localStorage.getItem(key));return v==null?def:v;}catch(e){return def;}}\n<\/script>'},
       {lbl:'Fetch JSON',code:'<script>\nasync function fetchData(url){\n  const r=await fetch(url);\n  const data=await r.json();\n  return data;\n}\n<\/script>'},
     ]},
     {cat:'Kindle-optimised',items:[
@@ -36006,7 +36276,7 @@ settings:()=>{
 "    if (!target) return new Response('Add ?url=', { status: 400, headers: cors(request) });\n"+
 "\n"+
 "    let t;\n"+
-"    try { t = new URL(target); } catch { return new Response('Bad url', { status: 400, headers: cors(request) }); }\n"+
+"    try { t = new URL(target); } catch(e) { return new Response('Bad url', { status: 400, headers: cors(request) }); }\n"+
 "    if (t.protocol !== 'https:') return new Response('HTTPS only', { status: 400, headers: cors(request) });\n"+
 "    if (isBlockedHost(t.hostname)) return new Response('Blocked host', { status: 403, headers: cors(request) });\n"+
 "\n"+
@@ -36018,7 +36288,7 @@ settings:()=>{
 "        redirect: 'follow',\n"+
 "        cf: { cacheTtl: 0 },\n"+
 "      });\n"+
-"    } catch { return new Response('Upstream fetch failed', { status: 502, headers: cors(request) }); }\n"+
+"    } catch(e) { return new Response('Upstream fetch failed', { status: 502, headers: cors(request) }); }\n"+
 "\n"+
 "    const len = +resp.headers.get('content-length') || 0;\n"+
 "    if (len > MAX_BYTES) return new Response('Too large', { status: 413, headers: cors(request) });\n"+
@@ -36109,6 +36379,35 @@ settings:()=>{
   };
   _sORSect.appendChild(orSave);
   c3.appendChild(_sORSect);
+  /* Claude (Anthropic) + GPT (OpenAI) — direct paid keys. Shown always (not
+     behind the Gemini/OpenRouter toggle) so they can be added any time; the
+     chat model picker switches between all providers per conversation. */
+  const _sAnSect=el('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'var(--thin)'}});
+  _sAnSect.appendChild(txt('p','Claude (Anthropic) — PAID. Key from console.anthropic.com (starts sk-ant-); billing required.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+  const anInp=el('input',{id:'settingsAnKey',type:'password',placeholder:'Paste Anthropic key (sk-ant-...)...',value:S.anthropicKey||''});
+  _sAnSect.appendChild(anInp);wrapEye(anInp);
+  const anSave=txt('button','Save Anthropic Key',{className:'btn',style:{marginTop:'6px'}});
+  anSave.onclick=()=>{
+    S.anthropicKey=anInp.value.trim();if(S.anthropicKey)S.aiProvider='anthropic';save();
+    const synced=(S.authToken&&S.syncEnabled&&navigator.onLine&&typeof scheduleCloudSync==='function');
+    if(synced)try{scheduleCloudSync(true);}catch(_){}
+    toast(S.anthropicKey?(synced?'Anthropic key saved · syncing to your other devices…':'Anthropic key saved (sign in to sync)'):'Key cleared.');
+  };
+  _sAnSect.appendChild(anSave);
+  c3.appendChild(_sAnSect);
+  const _sOaSect=el('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'var(--thin)'}});
+  _sOaSect.appendChild(txt('p','OpenAI (GPT) — PAID. Key from platform.openai.com (starts sk-); billing required.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+  const oaInp=el('input',{id:'settingsOaKey',type:'password',placeholder:'Paste OpenAI key (sk-...)...',value:S.openaiKey||''});
+  _sOaSect.appendChild(oaInp);wrapEye(oaInp);
+  const oaSave=txt('button','Save OpenAI Key',{className:'btn',style:{marginTop:'6px'}});
+  oaSave.onclick=()=>{
+    S.openaiKey=oaInp.value.trim();if(S.openaiKey)S.aiProvider='openai';save();
+    const synced=(S.authToken&&S.syncEnabled&&navigator.onLine&&typeof scheduleCloudSync==='function');
+    if(synced)try{scheduleCloudSync(true);}catch(_){}
+    toast(S.openaiKey?(synced?'OpenAI key saved · syncing to your other devices…':'OpenAI key saved (sign in to sync)'):'Key cleared.');
+  };
+  _sOaSect.appendChild(oaSave);
+  c3.appendChild(_sOaSect);
   g.appendChild(c3);
   });
   _defer(()=>{
@@ -36273,7 +36572,7 @@ settings:()=>{
   const khiProvRow=el('div',{style:{marginBottom:'10px',display:S.khIntelligence?'block':'none'}});
   khiProvRow.appendChild(txt('div','Provider:',{style:{fontSize:'11px',fontWeight:'700',marginBottom:'4px',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'0.4px'}}));
   const khiProvSel=el('select',{style:{fontSize:'12px',padding:'4px 6px',border:'var(--thin)',background:'var(--card)',color:'var(--fg)',borderRadius:'5px',width:'100%'}});
-  [['auto','Auto — use my key (Gemini, then OpenRouter)'],['gemini','Gemini — my key'],['openrouter','OpenRouter — my key'],['shared','Shared key — free, no setup (rate-limited)']].forEach(([v,lbl])=>{const o=el('option',{value:v});o.textContent=lbl;if((S.khiProvider||'auto')===v)o.selected=true;khiProvSel.appendChild(o);});
+  [['auto','Auto — use my key (Gemini, then OpenRouter)'],['gemini','Gemini — my key'],['anthropic','Claude — my key (paid)'],['openai','GPT — my key (paid)'],['openrouter','OpenRouter — my key'],['shared','Shared key — free, no setup (rate-limited)']].forEach(([v,lbl])=>{const o=el('option',{value:v});o.textContent=lbl;if((S.khiProvider||'auto')===v)o.selected=true;khiProvSel.appendChild(o);});
   khiProvSel.onchange=()=>{S.khiProvider=khiProvSel.value;save();toast('KHI provider: '+khiProvSel.value);if(typeof updateKhiStatus==='function')updateKhiStatus();};
   khiProvRow.appendChild(khiProvSel);
   khiSection.appendChild(khiProvRow);
@@ -37442,13 +37741,15 @@ feedback:()=>{
       const modelRow=el('div',{style:'display:flex;gap:6px;align-items:center;flex-wrap:wrap;'});
       modelRow.appendChild(txt('span','Model:',{style:'font-size:11px;font-weight:700;'}));
       const provSel=el('select',{style:'font-size:11px;padding:5px 8px;border:var(--border);border-radius:6px;background:var(--card);color:var(--fg);'});
-      [['shared','Shared (free)'],['gemini','Gemini'],['openrouter','OpenRouter']].forEach(p=>{const o=el('option',{value:p[0]});o.textContent=p[1];if(S.aiProvider===p[0])o.selected=true;provSel.appendChild(o);});
+      /* OpenRouter is intentionally EXCLUDED for code fixes — its free models
+         are too unreliable for patches. Gemini is recommended. */
+      [['gemini','Gemini (recommended)'],['shared','Shared (free)'],['anthropic','Claude (paid)'],['openai','GPT (paid)']].forEach(p=>{const o=el('option',{value:p[0]});o.textContent=p[1];if(S.aiProvider===p[0])o.selected=true;provSel.appendChild(o);});
       modelRow.appendChild(provSel);
       const modelSel=el('select',{style:'font-size:11px;padding:5px 8px;border:var(--border);border-radius:6px;background:var(--card);color:var(--fg);flex:1;min-width:140px;'});
       function _populateModels(){
         modelSel.innerHTML='';
-        const opts=provSel.value==='openrouter'
-          ?[['openrouter/free','Free Router (auto)'],['anthropic/claude-3.5-sonnet','Claude 3.5 Sonnet'],['openai/gpt-4o','GPT-4o'],['deepseek/deepseek-r1:free','DeepSeek R1 (free)']]
+        const opts=provSel.value==='anthropic'?ANTHROPIC_MODELS
+          :provSel.value==='openai'?OPENAI_MODELS
           :[['gemini-2.5-pro','Gemini 2.5 Pro (best for code)'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (fastest)']];
         opts.forEach(([id,name])=>{const o=el('option',{value:id});o.textContent=name;modelSel.appendChild(o);});
       }
@@ -37472,6 +37773,10 @@ feedback:()=>{
       cancelBtn.onclick=()=>ov.remove();
 
       genBtn.onclick=async()=>{
+        /* navigator.onLine is undefined->truthy on Kindle Silk, so only trust an
+           explicit ===false. A generated fix needs the cloud AI, so say so plainly
+           instead of the misleading "empty response, try a stronger model". */
+        if(navigator.onLine===false){status.textContent='You’re offline — connect to the internet to generate a fix.';return;}
         genBtn.disabled=true;status.textContent='Generating patch…';
         const prompt='You are a code-fix assistant for a single-file HTML app called KindleHub (~50,000-line index.html).\n'+
           'The user hit a runtime error. Write a SMALL monkey-patch in plain JavaScript that, when evaluated AFTER the page has loaded, defends against the error.\n'+
@@ -37486,16 +37791,17 @@ feedback:()=>{
           /* Use the user-selected provider for the fix call. Temporarily
              swap S.aiProvider so callAIStream routes correctly, then
              restore. */
-          const savedProvider=S.aiProvider, savedGem=S.hbGeminiModel, savedOR=S.openrouterModel;
+          const savedProvider=S.aiProvider, savedGem=S.hbGeminiModel, savedAn=S.anthropicModel, savedOa=S.openaiModel;
           S.aiProvider=provSel.value;
-          if(provSel.value==='openrouter')S.openrouterModel=modelSel.value;
-          else if(provSel.value==='gemini')S.hbGeminiModel=modelSel.value;
+          if(provSel.value==='gemini')S.hbGeminiModel=modelSel.value;
+          else if(provSel.value==='anthropic')S.anthropicModel=modelSel.value;
+          else if(provSel.value==='openai')S.openaiModel=modelSel.value;
           let patch='';
           await callAIStream([{role:'user',text:prompt}],t=>{patch=t;});
-          S.aiProvider=savedProvider;S.hbGeminiModel=savedGem;S.openrouterModel=savedOR;
+          S.aiProvider=savedProvider;S.hbGeminiModel=savedGem;S.anthropicModel=savedAn;S.openaiModel=savedOa;
           /* Strip markdown fences if the model ignored the instruction */
           patch=patch.replace(/^```[a-z]*\n/i,'').replace(/\n```\s*$/,'').trim();
-          if(!patch){status.textContent='Empty response — try a stronger model.';genBtn.disabled=false;return;}
+          if(!patch){status.textContent=(navigator.onLine===false?'You’re offline — connect to the internet and try again.':'Empty response — check your connection or try a stronger model.');genBtn.disabled=false;return;}
           patchEl.value=patch;
           patchEl.style.display='block';
           applyBtn.style.display='inline-block';
@@ -38594,7 +38900,7 @@ Deno.serve(async (req)=>{
     const pickRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}});
     pickRow.appendChild(txt('span','Provider:',{style:{fontSize:'11px',fontWeight:'700'}}));
     const provSel=el('select',{style:{fontSize:'11px',padding:'5px 8px',border:'var(--border)',borderRadius:'8px',background:'var(--card)',color:'var(--fg)'}});
-    [['gemini','Gemini'],['openrouter','OpenRouter']].forEach(([k,l])=>{
+    [['gemini','Gemini'],['anthropic','Claude (paid)'],['openai','GPT (paid)'],['openrouter','OpenRouter']].forEach(([k,l])=>{
       const o=document.createElement('option');o.value=k;o.textContent=l;
       if(S.aiProvider===k)o.selected=true;
       provSel.appendChild(o);
@@ -38604,8 +38910,8 @@ Deno.serve(async (req)=>{
     const modSel=el('select',{style:{fontSize:'11px',padding:'5px 8px',border:'var(--border)',borderRadius:'8px',background:'var(--card)',color:'var(--fg)',flex:'1',minWidth:'140px'}});
     function populateSupModels(){
       modSel.innerHTML='';
-      const groups=provSel.value==='openrouter'?SUP_OR:SUP_GEM;
-      const cur=provSel.value==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.hbGeminiModel||'gemini-3.1-flash-lite');
+      const groups=provSel.value==='openrouter'?SUP_OR:(provSel.value==='anthropic'?[{group:'Paid — needs billing',items:ANTHROPIC_MODELS}]:(provSel.value==='openai'?[{group:'Paid — needs billing',items:OPENAI_MODELS}]:SUP_GEM));
+      const cur=provSel.value==='openrouter'?(S.openrouterModel||'openrouter/free'):(provSel.value==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(provSel.value==='openai'?(S.openaiModel||'gpt-4o-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
       groups.forEach(g=>{
         const og=document.createElement('optgroup');og.label=g.group;
         g.items.forEach(([id,name])=>{
@@ -38620,6 +38926,8 @@ Deno.serve(async (req)=>{
     provSel.onchange=()=>{S.aiProvider=provSel.value;save();populateSupModels();updateBotStatus();};
     modSel.onchange=()=>{
       if(provSel.value==='openrouter')S.openrouterModel=modSel.value;
+      else if(provSel.value==='anthropic')S.anthropicModel=modSel.value;
+      else if(provSel.value==='openai')S.openaiModel=modSel.value;
       else S.hbGeminiModel=modSel.value;
       save();
     };
@@ -38629,7 +38937,7 @@ Deno.serve(async (req)=>{
     /* Key status / quick paste */
     const keyStatus=el('div',{style:{fontSize:'11px',color:'var(--muted)',padding:'4px 0'}});
     function updateBotStatus(){
-      const hasKey=provSel.value==='openrouter'?!!S.openrouterKey:!!S.geminiKey;
+      const hasKey=provSel.value==='openrouter'?!!S.openrouterKey:(provSel.value==='anthropic'?!!S.anthropicKey:(provSel.value==='openai'?!!S.openaiKey:!!S.geminiKey));
       if(hasKey){keyStatus.textContent='Key set for '+provSel.value+'. Ready to chat.';keyStatus.style.color='var(--muted)';}
       else{keyStatus.textContent='No '+provSel.value+' key set. Open Settings → AI Provider to add one (free at '+(provSel.value==='openrouter'?'openrouter.ai':'aistudio.google.com')+').';keyStatus.style.color='var(--danger)';}
     }
