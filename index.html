@@ -4959,6 +4959,7 @@ CRITICAL KINDLE WEBKIT COMPATIBILITY RULES (violating these will break the app):
 5. NEVER use CSS grid "subgrid" or "masonry".
 6. For square cells in a grid (e.g. game boards, calendar), ALWAYS use the padding-bottom hack instead of aspect-ratio.
 7. The preview box inside AI Builder is 340px tall. Design your app to work from 320px height upward.
+8. JAVASCRIPT must be old-WebKit (ES5/ES2015) safe — modern operators throw a SyntaxError that kills the WHOLE app on Kindle, yet run fine in a desktop preview so they are easy to miss. Do NOT use: optional chaining, nullish coalescing, logical-assignment operators, numeric separators, or top-level await. For a default value write (a != null ? a : b); for a safe property read write a && a.b. Every catch block MUST name its error, e.g. catch(e) — a parameterless catch is also unsupported. Stick to var/let/const, function, arrow functions, template strings; async/await is fine.
 
 GENERAL RULES:
 - Return ONLY valid JSON, no markdown, no preamble, no code fences.
@@ -30714,7 +30715,7 @@ chat:()=>{
     ]},
     {cat:'JavaScript',items:[
       {lbl:'onclick handler',code:'<button onclick="handleClick(this)">Click</button>\n<script>\nfunction handleClick(btn){\n  alert(\'Clicked!\');\n}\n<\/script>'},
-      {lbl:'localStorage save/load',code:'<script>\nfunction save(key,val){localStorage.setItem(key,JSON.stringify(val));}\nfunction load(key,def){try{return JSON.parse(localStorage.getItem(key))??def;}catch{return def;}}\n<\/script>'},
+      {lbl:'localStorage save/load',code:'<script>\nfunction save(key,val){localStorage.setItem(key,JSON.stringify(val));}\nfunction load(key,def){try{var v=JSON.parse(localStorage.getItem(key));return v==null?def:v;}catch(e){return def;}}\n<\/script>'},
       {lbl:'Fetch JSON',code:'<script>\nasync function fetchData(url){\n  const r=await fetch(url);\n  const data=await r.json();\n  return data;\n}\n<\/script>'},
     ]},
     {cat:'Kindle-optimised',items:[
@@ -36006,7 +36007,7 @@ settings:()=>{
 "    if (!target) return new Response('Add ?url=', { status: 400, headers: cors(request) });\n"+
 "\n"+
 "    let t;\n"+
-"    try { t = new URL(target); } catch { return new Response('Bad url', { status: 400, headers: cors(request) }); }\n"+
+"    try { t = new URL(target); } catch(e) { return new Response('Bad url', { status: 400, headers: cors(request) }); }\n"+
 "    if (t.protocol !== 'https:') return new Response('HTTPS only', { status: 400, headers: cors(request) });\n"+
 "    if (isBlockedHost(t.hostname)) return new Response('Blocked host', { status: 403, headers: cors(request) });\n"+
 "\n"+
@@ -36018,7 +36019,7 @@ settings:()=>{
 "        redirect: 'follow',\n"+
 "        cf: { cacheTtl: 0 },\n"+
 "      });\n"+
-"    } catch { return new Response('Upstream fetch failed', { status: 502, headers: cors(request) }); }\n"+
+"    } catch(e) { return new Response('Upstream fetch failed', { status: 502, headers: cors(request) }); }\n"+
 "\n"+
 "    const len = +resp.headers.get('content-length') || 0;\n"+
 "    if (len > MAX_BYTES) return new Response('Too large', { status: 413, headers: cors(request) });\n"+
