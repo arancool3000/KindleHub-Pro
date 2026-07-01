@@ -7189,7 +7189,15 @@ function _normLeet(w){
 }
 function _tokenProfane(norm){
   if(!norm||_PROFANITY_SAFE[norm])return false;
-  for(var i=0;i<_PROFANITY_SUBSTR.length;i++){if(norm.indexOf(_PROFANITY_SUBSTR[i])>=0)return true;}
+  /* Test the token AND a copy with runs of 3+ identical letters collapsed to one
+     ("fuuuck"→"fuck", "shiiiit"→"shit", "niiigger"→"nigger") to catch stretched
+     evasion. We test BOTH (never only the collapsed form) so intentionally-
+     doubled roots like the "ss" in "asshole" are never lost. */
+  var coll=norm.replace(/([a-z])\1{2,}/g,'$1');
+  for(var i=0;i<_PROFANITY_SUBSTR.length;i++){
+    var r=_PROFANITY_SUBSTR[i];
+    if(norm.indexOf(r)>=0||coll.indexOf(r)>=0)return true;
+  }
   return false;
 }
 function _censorText(s){
@@ -7224,8 +7232,9 @@ function _badUsername(name){
     .replace(/[0]/g,'o').replace(/[1!|]/g,'i').replace(/[3]/g,'e')
     .replace(/[4@]/g,'a').replace(/[5$]/g,'s').replace(/[7]/g,'t').replace(/[8]/g,'b')
     .replace(/[^a-z]/g,'');
+  var coll=norm.replace(/([a-z])\1{2,}/g,'$1');/* collapse 3+ repeats: "fuuuck"→"fuck" */
   for(var i=0;i<_PROFANITY_WORDS.length;i++){
-    if(norm.indexOf(_PROFANITY_WORDS[i])>=0)return _PROFANITY_WORDS[i];
+    if(norm.indexOf(_PROFANITY_WORDS[i])>=0||coll.indexOf(_PROFANITY_WORDS[i])>=0)return _PROFANITY_WORDS[i];
   }
   return '';
 }
@@ -13661,7 +13670,7 @@ const CrazyEights=(function(){
     _c8ChatLog.push({me:false,name:(env&&env.from&&env.from.name)||p.name||'Opponent',text:t,ts:Date.now()});
     if(_c8ChatLog.length>120)_c8ChatLog=_c8ChatLog.slice(-120);
     if(!_c8AppendChatLine(_c8ChatLog[_c8ChatLog.length-1])){_c8ChatUnread++;_c8RenderChatToggle();}
-    try{if(typeof toast==='function')toast((_c8ChatLog[_c8ChatLog.length-1].name)+': '+t.slice(0,40),3200);}catch(_){}
+    try{if(typeof toast==='function'){var _cm=_c8ChatLog[_c8ChatLog.length-1];toast((typeof _dispName==='function'?_dispName(_cm.name):_cm.name)+': '+(typeof _censorText==='function'?_censorText(t):t).slice(0,40),3200);}}catch(_){}
   }
   function _buildC8ChatPanel(){
     if(mode!=='online'||!mpSession)return null;
@@ -15394,7 +15403,7 @@ const Chess=(()=>{
             _chatUnread++;
             _renderChatToggle();
           }
-          try{if(typeof toast==='function')toast((_chatLog[_chatLog.length-1].name)+': '+t.slice(0,40),3500);}catch(_){}
+          try{if(typeof toast==='function'){var _cm=_chatLog[_chatLog.length-1];toast((typeof _dispName==='function'?_dispName(_cm.name):_cm.name)+': '+(typeof _censorText==='function'?_censorText(t):t).slice(0,40),3500);}}catch(_){}
           try{if(navigator.vibrate)navigator.vibrate(60);}catch(_){}
         }
       }else if(env.type==='STATE'){
@@ -15444,7 +15453,9 @@ const Chess=(()=>{
     if(!log)return false;/* panel not mounted — caller handles unread */
     const line=document.createElement('div');
     line.style.cssText='margin:2px 0;font-size:12px;line-height:1.4;word-break:break-word;'+(m.me?'text-align:right;':'');
-    line.innerHTML='<b style="color:var(--muted)">'+_esc2(m.me?'You':m.name)+':</b> '+_esc2(m.text);
+    /* Censor the opponent's name + message text — this in-game chat log was the
+       last place user text reached another player uncensored. */
+    line.innerHTML='<b style="color:var(--muted)">'+_esc2(m.me?'You':(typeof _dispName==='function'?_dispName(m.name):m.name))+':</b> '+_esc2(typeof _censorText==='function'?_censorText(m.text):m.text);
     log.appendChild(line);
     log.scrollTop=log.scrollHeight;
     return true;
@@ -38613,7 +38624,10 @@ Deno.serve(async (req)=>{
          the backend dashboard); the anon key is write-only on errors. */
       let cloudErrs=[];
       let sbReadDenied=false;
-      try{
+      /* Cloud errors (ALL devices) are ADMIN-ONLY — they can contain other
+         users' diagnostics. Regular users only see THIS device's session errors
+         + the AI-fix / Local Fixes tools. */
+      if(_isAdm)try{
         if(_sbActive()){
           try{
             const rows=await _sbSelect('kh_errors','select=id,text,date&order=date.desc&limit=50');
@@ -38795,9 +38809,12 @@ Deno.serve(async (req)=>{
        gate its admin-only cards — but the tab itself is now available to ALL
        users, so anyone can run the AI bug-fix on their own errors. */
     try{ await _checkAdmin(); }catch(e){}
-    /* Admin lockdown: the Errors / AI-Fix / Diagnostics tab is admin-only now —
-       only install it once admin status has resolved to true. */
-    try{ if(window._isAdminCached===true) _installAdminTab(); }catch(e){}
+    /* The Errors & AI-Fix tab is available to EVERYONE (renderErrPanel gates the
+       admin-only cards — cleanup / visits / insights / all-device cloud errors —
+       on _isAdm, so a regular user only gets their own device's errors + the
+       per-device AI bug-fix + Local Fixes). We resolve admin first so those
+       gates read the right value, then install the tab for all. */
+    try{ _installAdminTab(); }catch(e){}
   })();
 
   const boardSection=el('div');
