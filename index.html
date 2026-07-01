@@ -1388,11 +1388,27 @@ try{_writeBootHints();}catch(_){}
 (function applyLocalFixes(){
   try{
     const fixes=(S&&S.localFixes)||{};
+    const _broke=[];
     Object.keys(fixes).forEach(k=>{
       const f=fixes[k];
       if(!f||!f.code||f.disabled)return;
-      try{(new Function(f.code))();}catch(e){console.warn('[localFix] '+k+' failed:',e&&e.message);}
+      /* Old Kindle WebKit throws a SyntaxError on modern JS (?? ?. catch{}). A
+         saved AI patch containing that used to re-throw on EVERY boot ("syntax
+         error only on my Kindle, line 1:<col>"). Bind bare catch{}, then if the
+         patch STILL won't COMPILE on this engine, DISABLE it so it can't keep
+         breaking — and record it so it auto-reports instead of failing silently. */
+      const _code=String(f.code).replace(/([^A-Za-z0-9_$])catch\s*\{/g,'$1catch(_e){');
+      let _fn;
+      try{ _fn=new Function(_code); }
+      catch(se){ f.disabled=true; f.error='syntax: '+String((se&&se.message)||se).slice(0,120); _broke.push(k); console.warn('[localFix] '+k+' disabled — won’t compile here:',f.error); return; }
+      try{ _fn(); }catch(e){ console.warn('[localFix] '+k+' runtime error:',e&&e.message); }
     });
+    /* Persist the disable + auto-report AFTER boot (saveNow/_logError/_sbActive
+       aren't defined this early). One report, throttle-safe. */
+    if(_broke.length)setTimeout(function(){
+      try{ if(typeof saveNow==='function')saveNow(); else if(typeof save==='function')save(); }catch(_){}
+      try{ if(typeof console!=='undefined'&&console.error)console.error('KindleHub auto-disabled '+_broke.length+' saved AI patch(es) that fail to compile on this device — unsupported syntax on old Kindle WebKit.'); }catch(_){}
+    },4000);
   }catch(_){}
 })();
 /* GA promotion: KHI is no longer experimental — force-enable for all
@@ -37727,15 +37743,23 @@ feedback:()=>{
        generated it decides whether to push the fix to the canonical
        source separately (out of band). */
     function _openSelfFixModal(err){
+      err=err||{};
+      const _hasErr=!!(err.fullText||err.msg||err.stack);
       const ov=el('div',{style:'position:fixed;top:0;right:0;bottom:0;left:0;z-index:600000;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:14px;'});
       const box=el('div',{style:'background:var(--card);color:var(--fg);border:var(--border);border-radius:14px;padding:18px;max-width:680px;width:100%;display:flex;flex-direction:column;gap:10px;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-md);'});
-      box.appendChild(txt('h3','AI self-fix preview',{style:'margin:0;font-family:var(--title-font);font-size:16px;'}));
-      box.appendChild(txt('p','The AI will draft a JavaScript patch that monkey-patches the buggy code on YOUR device only. Nothing is pushed to other users — review the diff carefully, apply if it looks right, and use "Disable" or "Remove" to revert any time. The admin can decide separately whether to merge the fix into the canonical source.',{style:'font-size:11px;color:var(--muted);margin:0;line-height:1.55;'}));
+      box.appendChild(txt('h3',_hasErr?'AI self-fix preview':'AI edit — prompt a change',{style:'margin:0;font-family:var(--title-font);font-size:16px;'}));
+      box.appendChild(txt('p','The AI drafts a JavaScript patch that monkey-patches the code on YOUR device only — nothing is pushed to other users. Review it, apply if it looks right, and use "Disable"/"Remove" to revert any time. Patches must be Kindle-safe (old-WebKit JS) or they are auto-disabled on the Kindle.',{style:'font-size:11px;color:var(--muted);margin:0;line-height:1.55;'}));
 
-      /* Error context shown verbatim */
-      const ctx=el('pre',{style:'font-family:monospace;font-size:10px;background:var(--bg);border:var(--thin);border-radius:6px;padding:8px;max-height:120px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0;'});
-      ctx.textContent=err.fullText||((err.msg||'')+'\n'+(err.stack||''));
-      box.appendChild(ctx);
+      /* Error context (if opened from an error) shown verbatim */
+      if(_hasErr){
+        const ctx=el('pre',{style:'font-family:monospace;font-size:10px;background:var(--bg);border:var(--thin);border-radius:6px;padding:8px;max-height:120px;overflow:auto;white-space:pre-wrap;word-break:break-word;margin:0;'});
+        ctx.textContent=err.fullText||((err.msg||'')+'\n'+(err.stack||''));
+        box.appendChild(ctx);
+      }
+      /* Free-text instruction — PROMPT the AI for an edit in your own words. */
+      box.appendChild(txt('div',_hasErr?'Extra instructions for the fix (optional)':'Describe the change you want',{style:'font-size:11px;font-weight:700;'}));
+      const instrEl=el('textarea',{rows:2,placeholder:_hasErr?'e.g. also guard against an empty name':'e.g. Make the home clock widget show seconds',style:'width:100%;font-size:12px;padding:8px;border:var(--thin);border-radius:6px;background:var(--bg);color:var(--fg);box-sizing:border-box;resize:vertical;'});
+      box.appendChild(instrEl);
 
       /* Model picker */
       const modelRow=el('div',{style:'display:flex;gap:6px;align-items:center;flex-wrap:wrap;'});
@@ -37750,7 +37774,7 @@ feedback:()=>{
         modelSel.innerHTML='';
         const opts=provSel.value==='anthropic'?ANTHROPIC_MODELS
           :provSel.value==='openai'?OPENAI_MODELS
-          :[['gemini-2.5-pro','Gemini 2.5 Pro (best for code)'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (fastest)']];
+          :[['gemini-2.5-pro','Gemini 2.5 Pro — best for code'],['gemini-3.1-pro','Gemini 3.1 Pro (paid)'],['gemini-2.5-flash','Gemini 2.5 Flash (free)'],['gemini-3-flash','Gemini 3 Flash (free)'],['gemini-3.5-flash','Gemini 3.5 Flash (free)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — free, fastest'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (free)'],['gemma-4-26b-it','Gemma 4 26B (free)'],['gemma-4-31b-it','Gemma 4 31B (free)'],['gemini-2.0-flash','Gemini 2 Flash (paid)'],['gemini-2.0-flash-lite','Gemini 2 Flash Lite (paid)']];
         opts.forEach(([id,name])=>{const o=el('option',{value:id});o.textContent=name;modelSel.appendChild(o);});
       }
       _populateModels();
@@ -37777,16 +37801,20 @@ feedback:()=>{
            explicit ===false. A generated fix needs the cloud AI, so say so plainly
            instead of the misleading "empty response, try a stronger model". */
         if(navigator.onLine===false){status.textContent='You’re offline — connect to the internet to generate a fix.';return;}
+        const _instr=instrEl.value.trim();
+        if(!_hasErr&&!_instr){status.textContent='Describe the change you want first.';return;}
         genBtn.disabled=true;status.textContent='Generating patch…';
-        const prompt='You are a code-fix assistant for a single-file HTML app called KindleHub (~50,000-line index.html).\n'+
-          'The user hit a runtime error. Write a SMALL monkey-patch in plain JavaScript that, when evaluated AFTER the page has loaded, defends against the error.\n'+
+        const prompt='You are a code-fix and edit assistant for a single-file HTML app called KindleHub (~50,000-line index.html).\n'+
+          'Write a SMALL monkey-patch in plain JavaScript that, when evaluated AFTER the page has loaded, makes the requested change / defends against the error (reassign the relevant function or wire the behaviour).\n'+
           'Constraints:\n'+
           '- Output ONLY the JavaScript code. No markdown fences, no commentary, no explanation. The code will be run via `new Function(patch)()`.\n'+
           '- Wrap your changes in try/catch.\n'+
           '- Prefer overriding the buggy function via reassignment (e.g. const _orig = someFn; someFn = function(...a){...try{return _orig.apply(this,a);}catch(_){...}}).\n'+
           '- Do not require imports or top-level await.\n'+
+          '- CRITICAL: this runs on OLD Kindle WebKit. Do NOT use optional chaining, nullish coalescing, logical-assignment operators, numeric separators, or a parameterless catch — they throw a SyntaxError on Kindle and the fix will be auto-disabled. Use ES5/ES2015 only: write (a!=null?a:b) instead of nullish coalescing, a&&a.b instead of optional chaining, and always name the catch parameter.\n'+
           '- Aim for <30 lines.\n\n'+
-          'Error:\n'+(err.fullText||((err.msg||'')+'\n'+(err.stack||'')));
+          (_hasErr?('Error:\n'+(err.fullText||((err.msg||'')+'\n'+(err.stack||'')))+'\n'):'')+
+          (_instr?('What the user wants: '+_instr+'\n'):'');
         try{
           /* Use the user-selected provider for the fix call. Temporarily
              swap S.aiProvider so callAIStream routes correctly, then
@@ -37812,14 +37840,21 @@ feedback:()=>{
       };
 
       applyBtn.onclick=async()=>{
-        const code=patchEl.value.trim();
+        let code=patchEl.value.trim();
         if(!code)return;
         if(!await kindleConfirm('Apply this patch on this device? Patches run at every page load until you Disable or Remove them.'))return;
+        /* Old-WebKit safety: bind bare catch{} and block operators that compile in
+           this browser but throw a SyntaxError on Kindle (so the patch actually
+           WORKS on the target device instead of being auto-disabled there). */
+        code=code.replace(/([^A-Za-z0-9_$])catch\s*\{/g,'$1catch(_e){');
+        if(/[)\]\w$]\?\?(?!=)|[)\]\w$]\?\.\s*[A-Za-z_$([]|[)\]\w$]\s*(?:\|\||&&|\?\?)=/.test(code)){
+          if(!await kindleConfirm('This patch uses JavaScript (optional chaining / nullish coalescing / logical-assignment) that CRASHES on Kindle e-ink — it would be auto-disabled there. Regenerate for a Kindle-safe version, or apply anyway (works on this device only)?'))return;
+        }
         /* Smoke-test by running in a try/catch before persisting. */
         try{(new Function(code))();}
         catch(e){if(!await kindleConfirm('Patch threw on first run: '+e.message+'\n\nApply anyway?'))return;}
         if(!S.localFixes)S.localFixes={};
-        const id=err.id||(err.msg+'@'+(err.line||''));
+        const id=err.id||(err.msg?(err.msg+'@'+(err.line||'')):('edit_'+Date.now()));
         S.localFixes[id]={code,note:(err.msg||'').slice(0,140),model:provSel.value+'/'+modelSel.value,when:new Date().toISOString()};
         if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
         toast('Patch applied locally. Reload to confirm. Manage from Admin → Local Fixes.');
@@ -37838,6 +37873,9 @@ feedback:()=>{
     function buildLocalFixesCard(){
       const c=el('div',{style:'background:var(--card);border:var(--border);border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:var(--shadow);'});
       c.appendChild(txt('div','LOCAL FIXES (THIS DEVICE ONLY)',{style:'font-size:10px;font-weight:800;letter-spacing:0.7px;color:var(--muted);margin-bottom:6px;'}));
+      const _pmEditBtn=txt('button','+ Prompt an AI edit / fix',{className:'btn small primary',style:'margin-bottom:8px;'});
+      _pmEditBtn.onclick=()=>{try{_openSelfFixModal({});}catch(_e){if(typeof toast==='function')toast('Could not open the editor');}};
+      c.appendChild(_pmEditBtn);
       const fixes=(S&&S.localFixes)||{};
       const keys=Object.keys(fixes);
       if(!keys.length){
