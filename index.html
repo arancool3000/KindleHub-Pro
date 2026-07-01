@@ -46810,8 +46810,16 @@ mail:()=>{
             }
             if(folder!=='sent'){
               const draftBtn=txt('button','✦ Draft reply',{className:'btn small'});
-              draftBtn.onclick=async ev=>{ev.stopPropagation();draftBtn.disabled=true;draftBtn.textContent='✦ Drafting…';
-                try{const out=await khiCall('Write a short, friendly reply (2-4 sentences) to this mail. Output ONLY the reply body, no greeting-name placeholders, no signature.\n\nFrom: '+m.from+'\nSubject: '+(m.subject||'')+'\n\n'+(m.body||'').slice(0,3000),{maxTokens:260});
+              draftBtn.onclick=async ev=>{ev.stopPropagation();
+                /* Ask what the user actually wants to say first, then expand THAT
+                   into a full reply — instead of a one-size-fits-all draft. */
+                const intent=await kindlePrompt('What do you want to say back? A few words is enough — e.g. "yes, sounds good", "no thanks", "ask when it is". Leave blank for a friendly general reply.','');
+                if(intent===null)return;
+                draftBtn.disabled=true;draftBtn.textContent='✦ Drafting…';
+                const gist=String(intent||'').trim();
+                const instr=gist?('Write my reply so it conveys THIS: "'+gist+'". Expand it into a polite, natural 2-4 sentence reply that fits the mail.')
+                                :'Write a short, friendly reply (2-4 sentences) to this mail.';
+                try{const out=await khiCall(instr+' Output ONLY the reply body, no greeting-name placeholders, no signature.\n\nFrom: '+m.from+'\nSubject: '+(m.subject||'')+'\n\n'+(m.body||'').slice(0,3000),{maxTokens:280});
                   if(out)composeModal(m.from,'Re: '+(m.subject||''),out.trim()+'\n\n— On '+fmtTs(m.ts)+', '+m.from+' wrote —\n'+(m.body||'').split('\n').map(l=>'> '+l).join('\n'),m.id);}
                 catch(_){toast('Draft failed — try again');}
                 draftBtn.disabled=false;draftBtn.textContent='✦ Draft reply';};
@@ -56532,25 +56540,59 @@ window._showWelcome=function(){
     const ov=document.createElement('div');
     ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:600001;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:16px;';
     const card=document.createElement('div');
-    card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);max-width:460px;width:100%;max-height:80%;overflow:auto;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:var(--ui-font);';
+    card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);max-width:460px;width:100%;max-height:85%;overflow:auto;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:var(--ui-font);display:flex;flex-direction:column;';
     const q=document.createElement('div');
     q.style.cssText='font-size:11px;color:var(--muted);margin-bottom:8px;white-space:pre-wrap;word-break:break-word;';
-    q.textContent='Ask AI about: '+(text.length>200?text.slice(0,200)+'…':text);
+    q.textContent='About: '+(text.length>200?text.slice(0,200)+'…':text);
     const body=document.createElement('div');
-    body.style.cssText='font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word;min-height:40px;';
-    body.textContent='Thinking…';
+    body.style.cssText='font-size:14px;line-height:1.55;flex:1;';
+    /* The auto-summary lives in its OWN element so later Q&A blocks (appended to
+       body) aren't wiped when the summary resolves. */
+    const initEl=document.createElement('div');
+    initEl.style.cssText='white-space:pre-wrap;word-break:break-word;min-height:40px;';
+    initEl.textContent='Thinking…';
+    body.appendChild(initEl);
+    /* Follow-up question row — ask your OWN questions about the highlighted text. */
+    const askRow=document.createElement('div');
+    askRow.style.cssText='display:flex;gap:6px;margin-top:12px;';
+    const askIn=document.createElement('input');
+    askIn.type='text';askIn.placeholder='Ask a question about this text…';
+    askIn.style.cssText='flex:1;padding:8px 10px;border-radius:8px;border:var(--thin);background:var(--bg,#fff);color:var(--fg,#111);font-family:inherit;font-size:13px;';
+    const askBtn=document.createElement('button');
+    askBtn.textContent='Ask';askBtn.className='btn small primary';askBtn.style.cssText='flex-shrink:0;';
+    askRow.appendChild(askIn);askRow.appendChild(askBtn);
     const close=document.createElement('button');
-    close.textContent='Close';close.className='btn small';close.style.cssText='margin-top:12px;';
+    close.textContent='Close';close.className='btn small';close.style.cssText='margin-top:10px;';
     const shut=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     close.onclick=shut;
     ov.onclick=function(ev){if(ev.target===ov)shut();};
-    card.appendChild(q);card.appendChild(body);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    let _busy=false;
+    async function ask(userQ){
+      if(_busy)return;_busy=true;askBtn.disabled=true;
+      const qEl=document.createElement('div');
+      qEl.style.cssText='font-weight:700;margin-top:12px;padding-top:10px;border-top:var(--thin);';
+      qEl.textContent='You: '+userQ;
+      const aEl=document.createElement('div');
+      aEl.style.cssText='margin-top:4px;white-space:pre-wrap;word-break:break-word;';
+      aEl.textContent='Thinking…';
+      body.appendChild(qEl);body.appendChild(aEl);card.scrollTop=card.scrollHeight;
+      try{
+        const prompt='You are a concise, helpful assistant. Answer the user\'s QUESTION using the TEXT below as context. If the text does not contain the answer, say so briefly (then answer from general knowledge if you can). Keep it short and clear.\n\nTEXT:\n'+text+'\n\nQUESTION:\n'+userQ;
+        const ans=(typeof khiCall==='function')?await khiCall(prompt,{maxTokens:500,temperature:0.4}):'';
+        aEl.textContent=ans||'No response — check Settings → AI Features.';
+      }catch(err){aEl.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
+      _busy=false;askBtn.disabled=false;card.scrollTop=card.scrollHeight;
+    }
+    askBtn.onclick=function(){const v=askIn.value.trim();if(!v)return;askIn.value='';ask(v);};
+    askIn.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();askBtn.onclick();}});
+    /* Initial auto-answer (summary / define / answer). */
     (async function(){
       try{
-        const prompt='You are a concise, helpful assistant. The user selected the text below. If it is a question, answer it; if it is a word/term, define it; otherwise summarise or explain it. Keep it short and clear.\n\nTEXT:\n'+text;
+        const prompt='You are a concise, helpful assistant. The user selected the text below. If it is a question, answer it; if it is a word/term, define it; otherwise summarise or explain it. Keep it short and clear — the user can ask follow-up questions after.\n\nTEXT:\n'+text;
         const ans=(typeof khiCall==='function')?await khiCall(prompt,{maxTokens:400,temperature:0.5}):'';
-        body.textContent=ans||'No response — check Settings → AI Features.';
-      }catch(err){body.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
+        initEl.textContent=ans||'No response — check Settings → AI Features.';
+      }catch(err){initEl.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
     })();
   }
   if(cpAi)cpAi.onclick=function(e){
