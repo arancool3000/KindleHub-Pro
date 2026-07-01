@@ -12731,6 +12731,7 @@ const GAME_HELP={
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
+  eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
 };
 function _showGameHelp(g){
   const h=(typeof GAME_HELP!=='undefined'&&GAME_HELP[g])||null;
@@ -12821,7 +12822,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -13787,6 +13788,7 @@ function _doLaunch(g){
     case 'crossyroad': CrossyRoad.start();break;
     case 'anagrams': Anagrams.start();break;
     case 'nonogram': Nonogram.start();break;
+    case 'eightball': EightBall.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -18352,6 +18354,135 @@ const Nonogram=(()=>{
     setTimeout(function(){if(game&&game.done){game.idx=(game.idx+1)%PUZZLES.length;loadPuzzle(game.idx);}},1200);
   }
   function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── 8-Ball — a simple top-down pool table ──────────────────────────────
+   Drag back from the white cue ball and release to shoot (slingshot). Equal-
+   mass elastic ball collisions, wall bounces, friction, six pockets. Sink every
+   object ball to clear the table. Canvas + flat fills; the loop only redraws
+   while something is moving (or you're aiming) so it stays gentle on e-ink. */
+const EightBall=(()=>{
+  const W=280,H=452,R=9,POCK=15,FR=40;
+  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=8;
+  const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
+  let game=null,timer=null;
+  function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
+  function rack(){
+    var balls=[{x:W/2,y:H*0.72,vx:0,vy:0,cue:true,live:true}];
+    var apexY=H*0.24,gap=R*2+1,idx=0;
+    for(var row=0;row<4;row++){for(var k=0;k<=row;k++){
+      balls.push({x:W/2-row*R+k*gap,y:apexY+row*(gap*0.9),vx:0,vy:0,cue:false,live:true,eight:(idx===4)});
+      idx++;
+    }}
+    return balls;
+  }
+  function _cue(){for(var i=0;i<game.balls.length;i++)if(game.balls[i].cue)return game.balls[i];return null;}
+  function allStopped(){return game.balls.every(function(b){return !b.live||(Math.abs(b.vx)<MINV&&Math.abs(b.vy)<MINV);});}
+  function start(){
+    if(timer){clearInterval(timer);timer=null;}
+    game={balls:rack(),shots:0,sunk:0,aiming:false,ax:0,ay:0,over:false,moving:false};
+    enterImmersive('8-Ball','Sunk: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();
+    if(timer)clearInterval(timer);
+    timer=setInterval(function(){if(!document.hidden)tick();},FR);
+    draw();
+  }
+  function tick(){
+    if(!game)return;
+    var B=game.balls,i,j,moving=false;
+    for(i=0;i<B.length;i++){var b=B[i];if(!b.live)continue;
+      if(Math.abs(b.vx)>MINV||Math.abs(b.vy)>MINV){
+        b.x+=b.vx;b.y+=b.vy;b.vx*=FRICT;b.vy*=FRICT;moving=true;
+        if(Math.abs(b.vx)<MINV)b.vx=0;if(Math.abs(b.vy)<MINV)b.vy=0;
+        if(b.x<R){b.x=R;b.vx=-b.vx*WALL;}
+        if(b.x>W-R){b.x=W-R;b.vx=-b.vx*WALL;}
+        if(b.y<R){b.y=R;b.vy=-b.vy*WALL;}
+        if(b.y>H-R){b.y=H-R;b.vy=-b.vy*WALL;}
+      }
+    }
+    for(i=0;i<B.length;i++){for(j=i+1;j<B.length;j++){
+      var a=B[i],c=B[j];if(!a.live||!c.live)continue;
+      var dx=c.x-a.x,dy=c.y-a.y,d=Math.sqrt(dx*dx+dy*dy);
+      if(d>0.0001&&d<2*R){
+        var nx=dx/d,ny=dy/d,ov=(2*R-d)/2;
+        a.x-=nx*ov;a.y-=ny*ov;c.x+=nx*ov;c.y+=ny*ov;
+        var rvx=a.vx-c.vx,rvy=a.vy-c.vy,vn=rvx*nx+rvy*ny;
+        if(vn>0){a.vx-=vn*nx;a.vy-=vn*ny;c.vx+=vn*nx;c.vy+=vn*ny;moving=true;}
+      }
+    }}
+    for(i=0;i<B.length;i++){var bb=B[i];if(!bb.live)continue;
+      for(var pk=0;pk<POCKETS.length;pk++){
+        var px=bb.x-POCKETS[pk][0],py=bb.y-POCKETS[pk][1];
+        if(px*px+py*py<POCK*POCK){
+          if(bb.cue){bb.x=W/2;bb.y=H*0.72;bb.vx=0;bb.vy=0;toast('Scratch!');}
+          else{bb.live=false;game.sunk++;updateImmersiveScore('Sunk: '+game.sunk);var sb=$('ebScore');if(sb)sb.textContent='Sunk: '+game.sunk+'  |  Best: '+Math.max(_best(),game.sunk);}
+          break;
+        }
+      }
+    }
+    if(moving||game.aiming)draw(); else if(game.moving){draw();}
+    game.moving=moving;
+    if(!game.over&&B.filter(function(x){return x.live&&!x.cue;}).length===0){
+      game.over=true;
+      if(!S.games.eightball)S.games.eightball={best:0};
+      S.games.eightball.best=Math.max(S.games.eightball.best||0,game.sunk);
+      saveNow();try{_khSubmitScore('eightball',game.sunk);}catch(_){}recordStat('eightball',true);
+      toast('🎱 Table cleared in '+game.shots+' shots!');
+    }
+  }
+  function draw(){
+    var canvas=$('ebCanvas');if(!canvas||!game)return;
+    var ctx=canvas.getContext('2d'),dark=document.body.classList.contains('dark');
+    ctx.fillStyle=dark?'#14201a':'#dfeae0';ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle=dark?'#3a5a48':'#9db8a6';ctx.lineWidth=3;ctx.strokeRect(2,2,W-4,H-4);
+    var p;for(p=0;p<POCKETS.length;p++){ctx.beginPath();ctx.arc(POCKETS[p][0],POCKETS[p][1],POCK-2,0,7);ctx.fillStyle=dark?'#000':'#222';ctx.fill();}
+    var B=game.balls,i;
+    for(i=0;i<B.length;i++){var b=B[i];if(!b.live)continue;
+      ctx.beginPath();ctx.arc(b.x,b.y,R,0,7);
+      if(b.cue){ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=1.4;ctx.strokeStyle='#333';ctx.stroke();}
+      else if(b.eight){ctx.fillStyle='#111';ctx.fill();ctx.lineWidth=1;ctx.strokeStyle='#eee';ctx.stroke();}
+      else{ctx.fillStyle=dark?'#c7c7c7':'#555';ctx.fill();ctx.lineWidth=1;ctx.strokeStyle=dark?'#888':'#222';ctx.stroke();}
+    }
+    if(game.aiming&&allStopped()&&!game.over){
+      var cue=_cue();if(cue){
+        var ddx=cue.x-game.ax,ddy=cue.y-game.ay,dl=Math.sqrt(ddx*ddx+ddy*ddy);
+        if(dl>1){var ux=ddx/dl,uy=ddy/dl;
+          ctx.strokeStyle=dark?'#fff':'#111';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+          ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(cue.x+ux*Math.min(dl,90),cue.y+uy*Math.min(dl,90));ctx.stroke();ctx.setLineDash([]);
+        }
+      }
+    }
+  }
+  function _pt(e){var canvas=$('ebCanvas'),r=canvas.getBoundingClientRect();var t=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e;return {x:(t.clientX-r.left)*(W/r.width),y:(t.clientY-r.top)*(H/r.height)};}
+  function _down(e){if(!game||game.over||!allStopped())return;e.preventDefault();var p=_pt(e);game.aiming=true;game.ax=p.x;game.ay=p.y;draw();}
+  function _move(e){if(!game||!game.aiming)return;e.preventDefault();var p=_pt(e);game.ax=p.x;game.ay=p.y;draw();}
+  function _up(e){
+    if(!game||!game.aiming)return;e.preventDefault();
+    game.aiming=false;
+    var cue=_cue();if(!cue){draw();return;}
+    var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
+    if(dl>6){var pow=Math.min(MAXPOW,dl/12);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    draw();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Sunk: 0  |  Best: '+_best(),{id:'ebScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','Drag back from the white ball and release to shoot. Sink every ball.',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px'}}));
+    var canvas=el('canvas',{id:'ebCanvas',width:W,height:H});
+    canvas.style.cssText='display:block;margin:6px auto;max-width:100%;border:2px solid var(--fg);border-radius:6px;touch-action:none;';
+    canvas.addEventListener('touchstart',_down,{passive:false});
+    canvas.addEventListener('touchmove',_move,{passive:false});
+    canvas.addEventListener('touchend',_up,{passive:false});
+    canvas.addEventListener('mousedown',_down);canvas.addEventListener('mousemove',_move);canvas.addEventListener('mouseup',_up);
+    immersiveContent.appendChild(canvas);
+    var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',marginTop:'8px'}});
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(function(){return game&&!game.over&&game.shots>0;},start)}));
+    immersiveContent.appendChild(ctrl);
+  }
+  $('immersiveExit').addEventListener('click',function(){if(timer){clearInterval(timer);timer=null;}});
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
   return{start,stop};
 })();
 const G2048=(()=>{
@@ -24757,6 +24888,7 @@ const GAME_MAP=[
   {keys:['crossy road','crossyroad','crossy','crosser','frogger','cross the road','chicken road'],g:'crossyroad'},
   {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
+  {keys:['8 ball','8-ball','eight ball','eightball','pool','billiards','snooker','pool table'],g:'eightball'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -29211,6 +29343,13 @@ games:()=>{
     c.appendChild(txt('p','Hop the chicken across endless lanes of traffic. Tap to move, time the gaps, go as far as you can.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.crossyroad&&S.games.crossyroad.best||0)+'m',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'crossyroad',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('8-Ball',null,c=>{
+    c.appendChild(txt('p','Top-down pool — drag back from the cue ball and release to shoot. Sink every ball.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Best sunk: '+(S.games&&S.games.eightball&&S.games.eightball.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const ebBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    ebBtn.onclick=()=>launchGame('eightball');
+    c.appendChild(ebBtn);
   }));
   rowArc.appendChild(gc('Tetris',null,c=>{
     c.appendChild(txt('p','Stack falling pieces. Clear lines to score.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
