@@ -12732,6 +12732,7 @@ const GAME_HELP={
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
+  trivia:{name:'Trivia',how:'A multiple-choice general-knowledge quiz. Read the question, tap the answer you think is right. A correct answer scores a point and the right choice lights up; a wrong answer costs one of your three ♥ lives. Keep going until you run out of lives — then beat your best score. All questions are built in, so it works with no internet.'},
 };
 function _showGameHelp(g){
   const h=(typeof GAME_HELP!=='undefined'&&GAME_HELP[g])||null;
@@ -12822,7 +12823,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -13789,6 +13790,7 @@ function _doLaunch(g){
     case 'anagrams': Anagrams.start();break;
     case 'nonogram': Nonogram.start();break;
     case 'eightball': EightBall.start();break;
+    case 'trivia': Trivia.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -18485,6 +18487,152 @@ const EightBall=(()=>{
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
   return{start,stop};
 })();
+
+/* ── Trivia — offline multiple-choice quiz (3 lives) ────────────────────
+   Fully self-contained question bank so it works with no network (the old
+   API-based trivia was removed for being unreliable). Turn-based, e-ink safe. */
+const Trivia=(()=>{
+  const BANK=[
+    ['What is the capital of Japan?','Tokyo','Kyoto','Osaka','Seoul'],
+    ['How many continents are there?','Seven','Five','Six','Eight'],
+    ['What gas do plants absorb from the air?','Carbon dioxide','Oxygen','Nitrogen','Helium'],
+    ['Which planet is called the Red Planet?','Mars','Venus','Jupiter','Mercury'],
+    ['What is the largest ocean?','Pacific','Atlantic','Indian','Arctic'],
+    ['Who painted the Mona Lisa?','Leonardo da Vinci','Picasso','Van Gogh','Michelangelo'],
+    ['How many sides does a hexagon have?','Six','Five','Seven','Eight'],
+    ['What is the tallest land animal?','Giraffe','Elephant','Horse','Camel'],
+    ['Which language has the most native speakers?','Mandarin Chinese','English','Spanish','Hindi'],
+    ['What year did World War II end?','1945','1939','1918','1950'],
+    ['What is the smallest prime number?','2','1','3','0'],
+    ['Which metal is liquid at room temperature?','Mercury','Iron','Gold','Lead'],
+    ['What is the hardest natural substance?','Diamond','Gold','Iron','Quartz'],
+    ['What is the currency of Japan?','Yen','Won','Yuan','Rupee'],
+    ['Which planet has the most moons?','Saturn','Earth','Mars','Venus'],
+    ['What is the freezing point of water in Celsius?','0','32','100','-10'],
+    ['Who wrote Romeo and Juliet?','Shakespeare','Dickens','Twain','Austen'],
+    ['What is the largest planet in our solar system?','Jupiter','Saturn','Neptune','Earth'],
+    ['Which country is home to the kangaroo?','Australia','Brazil','India','Kenya'],
+    ['What is the chemical symbol for gold?','Au','Gd','Go','Ag'],
+    ['How many players from one soccer team are on the field?','Eleven','Ten','Nine','Twelve'],
+    ['What is the main ingredient in guacamole?','Avocado','Tomato','Pepper','Onion'],
+    ['Which ocean is the smallest?','Arctic','Indian','Atlantic','Southern'],
+    ['Which organ pumps blood around the body?','Heart','Liver','Lungs','Brain'],
+    ['How many colours are in a rainbow?','Seven','Five','Six','Eight'],
+    ['What is the largest mammal?','Blue whale','Elephant','Giraffe','Hippo'],
+    ['Which is the longest river in the world?','Nile','Amazon','Yangtze','Danube'],
+    ['What does CPU stand for?','Central Processing Unit','Computer Personal Unit','Central Print Unit','Core Power Unit'],
+    ['Which vitamin does sunlight help your body make?','Vitamin D','Vitamin C','Vitamin A','Vitamin K'],
+    ['What is the capital of Australia?','Canberra','Sydney','Melbourne','Perth'],
+    ['How many legs does a spider have?','Eight','Six','Ten','Four'],
+    ['What is the tallest mountain on Earth?','Everest','K2','Kilimanjaro','Denali'],
+    ['Which gas makes up most of Earth’s atmosphere?','Nitrogen','Oxygen','Carbon dioxide','Argon'],
+    ['What is the square root of 144?','12','14','11','24'],
+    ['Which artist is famous for the sunflowers paintings?','Van Gogh','Monet','Dali','Rembrandt'],
+    ['What is the fastest land animal?','Cheetah','Lion','Horse','Greyhound']
+  ];
+  let game=null;
+  function _best(){return (S.games&&S.games.trivia&&S.games.trivia.best)||0;}
+  function _shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+  function _hearts(){var h='';for(var i=0;i<3;i++)h+=(i<game.lives?'♥':'·');return h;}
+  function nextQ(){
+    if(!game.pool.length)game.pool=_shuffle(BANK.slice());
+    var q=game.pool.pop();
+    game.q=q[0];
+    game.opts=_shuffle([{t:q[1],ok:true},{t:q[2]},{t:q[3]},{t:q[4]}]);
+    game.answered=false;
+    render();
+  }
+  function start(){
+    game={score:0,lives:3,pool:_shuffle(BANK.slice()),q:'',opts:[],answered:false};
+    enterImmersive('Trivia','Score: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();nextQ();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Score: 0  |  ♥♥♥  |  Best: '+_best(),{id:'trScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','',{id:'trQ',style:{textAlign:'center',fontSize:'16px',fontWeight:'700',margin:'14px 16px',lineHeight:'1.4',minHeight:'44px'}}));
+    immersiveContent.appendChild(el('div',{id:'trOpts',style:{display:'flex',flexDirection:'column',gap:'8px',maxWidth:'340px',margin:'0 auto'}}));
+    immersiveContent.appendChild(el('div',{id:'trNext',style:{textAlign:'center',marginTop:'12px',minHeight:'40px'}}));
+  }
+  function render(){
+    var Q=$('trQ'),O=$('trOpts'),N=$('trNext'),sb=$('trScore');
+    if(!Q||!O)return;
+    if(sb)sb.textContent='Score: '+game.score+'  |  '+_hearts()+'  |  Best: '+Math.max(_best(),game.score);
+    Q.textContent=game.q;O.innerHTML='';if(N)N.innerHTML='';
+    game.opts.forEach(function(o){
+      var b=txt('button',o.t,{className:'btn',style:{width:'100%',padding:'12px',fontSize:'14px',textAlign:'left'}});
+      b.onclick=function(){answer(o,b);};
+      O.appendChild(b);
+    });
+  }
+  function answer(o,btn){
+    if(!game||game.answered)return;game.answered=true;
+    var O=$('trOpts');
+    Array.prototype.forEach.call(O.children,function(b,i){
+      if(game.opts[i]&&game.opts[i].ok){b.style.background='var(--fg)';b.style.color='var(--bg)';}
+      b.disabled=true;
+    });
+    if(o.ok){game.score++;toast('✓ Correct!');}
+    else{game.lives--;btn.style.textDecoration='line-through';toast('✗ Wrong');}
+    var sb=$('trScore');if(sb)sb.textContent='Score: '+game.score+'  |  '+_hearts()+'  |  Best: '+Math.max(_best(),game.score);
+    updateImmersiveScore('Score: '+game.score);
+    var N=$('trNext');if(!N)return;
+    if(game.lives<=0){
+      if(!S.games.trivia)S.games.trivia={best:0};
+      if(game.score>_best())S.games.trivia.best=game.score;
+      saveNow();try{_khSubmitScore('trivia',game.score);}catch(_){}recordStat('trivia',false);
+      N.appendChild(txt('div','Game over — final score '+game.score,{style:{fontWeight:'700',color:'var(--danger)',marginBottom:'8px'}}));
+      N.appendChild(Object.assign(txt('button','Play Again',{className:'btn primary'}),{onclick:start}));
+    } else {
+      N.appendChild(Object.assign(txt('button','Next →',{className:'btn primary'}),{onclick:nextQ}));
+    }
+  }
+  function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── Teleprompter — auto-scrolling script reader ────────────────────────
+   A full-screen overlay: paste your script, then it scrolls smoothly for
+   reading aloud. Speed + text-size controls; the script is remembered on the
+   device. Scroll loop pauses when the screen is off (e-ink + battery). */
+function khTeleprompter(){
+  var saved='';try{saved=localStorage.getItem('kh_teleprompter')||'';}catch(_){}
+  var text=saved||'Paste or type your script here.\n\nTap Edit to change it, then ▶ Play to start scrolling. Use Speed and A± to tune how fast it moves and how big the text is.\n\nGreat for reading a speech, a presentation, or lines aloud — the words come to you.';
+  var fontSize=32,speed=1.2,playing=false,pos=0,timer=null,editing=false;
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;z-index:600050;background:#000;color:#fff;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+  var bar=document.createElement('div');
+  bar.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:8px;background:#111;border-bottom:1px solid #333;flex-shrink:0;';
+  function mkBtn(label){var b=document.createElement('button');b.textContent=label;b.style.cssText='background:#222;color:#fff;border:1px solid #444;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700;min-height:40px;';return b;}
+  var playBtn=mkBtn('▶ Play'),spDn=mkBtn('Speed −'),spUp=mkBtn('Speed +'),fnDn=mkBtn('A−'),fnUp=mkBtn('A+'),rst=mkBtn('↺'),editBtn=mkBtn('Edit'),closeBtn=mkBtn('✕');
+  [playBtn,spDn,spUp,fnDn,fnUp,rst,editBtn,closeBtn].forEach(function(b){bar.appendChild(b);});
+  var body=document.createElement('div');
+  body.style.cssText='flex:1;overflow:hidden;position:relative;';
+  var inner=document.createElement('div');
+  inner.style.cssText='position:absolute;top:100%;left:0;width:100%;box-sizing:border-box;padding:0 20px;white-space:pre-wrap;word-break:break-word;text-align:center;line-height:1.5;';
+  function applyText(){inner.textContent=text;inner.style.fontSize=fontSize+'px';}
+  applyText();body.appendChild(inner);
+  var ta=document.createElement('textarea');
+  ta.style.cssText='width:100%;height:100%;box-sizing:border-box;background:#111;color:#fff;border:none;padding:16px;font-size:16px;line-height:1.5;font-family:inherit;resize:none;display:none;';
+  ta.value=text;body.appendChild(ta);
+  ov.appendChild(bar);ov.appendChild(body);document.body.appendChild(ov);
+  function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='▶ Play';}
+  function tick(){if(!playing||editing)return;pos+=speed;inner.style.transform='translateY('+(-pos)+'px)';if(pos>inner.offsetHeight+body.offsetHeight){pos=0;}}
+  playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='⏸ Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='▶ Play';}};
+  spDn.onclick=function(){speed=Math.max(0.3,speed-0.3);};
+  spUp.onclick=function(){speed=Math.min(6,speed+0.3);};
+  fnDn.onclick=function(){fontSize=Math.max(16,fontSize-4);applyText();};
+  fnUp.onclick=function(){fontSize=Math.min(72,fontSize+4);applyText();};
+  rst.onclick=function(){pos=0;inner.style.transform='translateY(0)';};
+  editBtn.onclick=function(){
+    editing=!editing;
+    if(editing){stopScroll();ta.value=text;ta.style.display='block';inner.style.display='none';editBtn.textContent='Done';try{ta.focus();}catch(_){}}
+    else{text=ta.value;try{localStorage.setItem('kh_teleprompter',text);}catch(_){}applyText();pos=0;inner.style.transform='translateY(0)';ta.style.display='none';inner.style.display='block';editBtn.textContent='Edit';}
+  };
+  closeBtn.onclick=function(){stopScroll();if(ov.parentNode)ov.parentNode.removeChild(ov);};
+}
+window.khTeleprompter=khTeleprompter;
 const G2048=(()=>{
   let G=null,saveTimer2048=null;
   const SZ=72, GAP=8, PAD=8; // tile size, gap, board padding
@@ -24889,6 +25037,7 @@ const GAME_MAP=[
   {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
   {keys:['8 ball','8-ball','eight ball','eightball','pool','billiards','snooker','pool table'],g:'eightball'},
+  {keys:['trivia','quiz','trivia quiz','general knowledge','quiz game','questions'],g:'trivia'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -29186,6 +29335,13 @@ games:()=>{
     const nonoBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
     nonoBtn.onclick=()=>launchGame('nonogram');
     c.appendChild(nonoBtn);
+  }));
+  rowWord.appendChild(gc('Trivia',null,c=>{
+    c.appendChild(txt('p','Multiple-choice general-knowledge quiz — 3 lives, all offline. Beat your best score.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.trivia&&S.games.trivia.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const trBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    trBtn.onclick=()=>launchGame('trivia');
+    c.appendChild(trBtn);
   }));
   rowWord.appendChild(gc('Crossword',null,c=>{
     c.appendChild(txt('p',getCROSSWORDS().length+' puzzles across '+[...new Set(getCROSSWORDS().map(p=>p.cat))].length+' categories.',{style:{fontSize:'11px',color:'var(--muted)'}}));
@@ -35075,6 +35231,15 @@ reading:()=>{
   flGo.onclick=()=>runFreeLib(flQ.value);
   flQ.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runFreeLib(flQ.value);}});
   g.appendChild(flCard);
+
+  /* ── Teleprompter tool ── */
+  const tpCard=el('div',{className:'card'});
+  tpCard.appendChild(txt('h2','Teleprompter'));
+  tpCard.appendChild(txt('p','Paste a script and it scrolls smoothly for reading aloud — adjustable speed and text size. Great for a speech, a presentation, or practising lines.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 8px'}}));
+  const tpBtn=txt('button','Open Teleprompter',{className:'btn primary'});
+  tpBtn.onclick=()=>{try{khTeleprompter();}catch(_e){if(typeof toast==='function')toast('Could not open the teleprompter');}};
+  tpCard.appendChild(tpBtn);
+  g.appendChild(tpCard);
 
   /* ── Add Book ── */
   const c1=el('div',{className:'card'});
