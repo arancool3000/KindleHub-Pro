@@ -6,8 +6,9 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>KindleHub Pro — notes, games, chat & tools for Kindle</title>
-<meta name="description" content="KindleHub Pro is a free all-in-one web app made for Kindle e-readers: notes, journal, calendar, games, group chat, RSS reader and AI tools — all in one fast, offline-friendly page."/>
+<title>KindleHub Pro — free apps, 30+ games, AI &amp; tools for your Kindle browser</title>
+<meta name="description" content="KindleHub Pro turns your Kindle's browser into a full mini-OS: a KindleOS desktop, 30+ e-ink games (chess, a real 3D flight sim, Slither, Geometry Dash, Crossy Road), an AI assistant + app builder, a free Project Gutenberg book reader, email, end-to-end-encrypted group chat, notes, journal, calendar, RSS, weather, maps and drawing — all free and offline-friendly on one fast page. A comprehensive free alternative to ReKindle."/>
+<meta name="keywords" content="Kindle apps, Kindle browser, Kindle games, ReKindle alternative, KindleOS, Kindle web app, e-ink games, Kindle AI, Kindle chat, Kindle book reader, Paperwhite apps, Kindle Scribe, e-reader apps"/>
 <meta name="robots" content="index, follow"/>
 <link rel="canonical" href="https://kindlehub.pro/"/>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23111'/%3E%3Cpath%20d='M16%2010.5C12%208.5%207.5%208.5%205%2010.5L5%2022C7.5%2020%2012%2020%2016%2022Z'%20fill='%23fff'/%3E%3Cpath%20d='M16%2010.5C20%208.5%2024.5%208.5%2027%2010.5L27%2022C24.5%2020%2020%2020%2016%2022Z'%20fill='%23fff'/%3E%3Crect%20x='15.2'%20y='10.8'%20width='1.6'%20height='11'%20rx='.8'%20fill='%23111'/%3E%3C/svg%3E"/>
@@ -16,14 +17,47 @@
 <!-- Open Graph / social link previews -->
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="KindleHub Pro"/>
-<meta property="og:title" content="KindleHub Pro"/>
-<meta property="og:description" content="A free all-in-one web app for Kindle e-readers — notes, journal, calendar, games, chat, RSS and AI tools, all in one fast page."/>
+<meta property="og:title" content="KindleHub Pro — a free everything-app for your Kindle browser"/>
+<meta property="og:description" content="A full mini-OS for Kindle: a KindleOS desktop, 30+ e-ink games (incl. a real 3D flight sim), an AI assistant + app builder, a free book reader, email, encrypted chat, notes, calendar, RSS, weather and more. Free, offline-friendly — a comprehensive alternative to ReKindle."/>
 <meta property="og:url" content="https://kindlehub.pro/"/>
 <meta property="og:image" content="https://kindlehub.pro/icon.svg"/>
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="KindleHub Pro"/>
 <meta name="twitter:description" content="A free all-in-one web app for Kindle e-readers — notes, games, chat, RSS and AI tools."/>
 <meta name="twitter:image" content="https://kindlehub.pro/icon.svg"/>
+<!-- Structured data so search engines & AI assistants describe KindleHub accurately
+     (the app itself is JS-rendered, so this + the <noscript> block below are what
+     crawlers read). -->
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"SoftwareApplication",
+  "name":"KindleHub Pro",
+  "alternateName":"KindleHub",
+  "url":"https://kindlehub.pro/",
+  "applicationCategory":"BrowserApplication",
+  "operatingSystem":"Any web browser (optimized for Kindle e-ink)",
+  "browserRequirements":"Runs in any browser, including the Kindle Experimental Browser. No install or jailbreak.",
+  "description":"KindleHub Pro turns a Kindle's built-in browser into a full mini-OS — a comprehensive, free alternative to ReKindle. It bundles a KindleOS desktop, 30+ e-ink games, an AI assistant and app builder, a free book reader, email, encrypted chat, and productivity tools on one page.",
+  "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
+  "featureList":[
+    "KindleOS desktop launcher with installable apps and home-screen widgets",
+    "30+ e-ink games: Chess, Checkers, a real 3D flight simulator, a Slither.io-style arena, Geometry Dash, Crossy Road, Tetris, 2048, Snake, Space Invaders, Minesweeper, Sudoku, Wordle, Solitaire, Tower Defence, Battleship and more",
+    "AI assistant (Gemini, Claude or GPT, or a free shared key) with an AI app builder",
+    "Free Project Gutenberg book reader — search and read full books, paginated, with saved position",
+    "Email — internal mail plus real internet email",
+    "End-to-end-encrypted group chat and a public global room",
+    "Notes with tags and a markdown journal",
+    "Calendar with events and ICS import, plus a Kanban to-do board",
+    "RSS reader and a Discover news feed",
+    "Weather, world clock, maps, star map and a dictionary",
+    "Drawing canvas tuned for e-ink",
+    "Split-screen multitasking (two pages at once)",
+    "Free, end-to-end-encrypted cloud sync across devices",
+    "Works offline once loaded; no install, no jailbreak"
+  ]
+}
+</script>
 <style>
 /* ── Design tokens ── */
 :root{
@@ -875,6 +909,25 @@ body.launcher-ui .view{padding-bottom:80px;}
      tab actually exports or imports — not on boot. -->
 </head>
 <body>
+<!-- Crawlable description for search engines / AI (hidden from real users — the
+     app below replaces the view once JS runs). Keeps KindleHub's real feature set
+     accurate wherever it's indexed or summarised. -->
+<noscript><div style="max-width:720px;margin:24px auto;padding:16px;font-family:sans-serif;line-height:1.6;color:#111;">
+<h1>KindleHub Pro — a free everything-app for your Kindle browser</h1>
+<p>KindleHub Pro turns your Kindle's built-in web browser into a full mini-OS — no jailbreak, no install, free forever. It's a comprehensive, free alternative to ReKindle, and includes:</p>
+<ul>
+<li><b>KindleOS desktop</b> — an app launcher with installable apps and home-screen widgets.</li>
+<li><b>30+ e-ink games</b> — Chess, Checkers, a real <b>3D flight simulator</b>, a Slither.io-style arena, Geometry Dash, Crossy Road, Tetris, 2048, Snake, Space Invaders, Minesweeper, Sudoku, Wordle, Solitaire, Tower Defence, Battleship and more.</li>
+<li><b>AI assistant + app builder</b> — chat with Gemini, Claude or GPT (or a free shared key) and generate working mini-apps.</li>
+<li><b>Free book reader</b> — search and read full Project Gutenberg books, paginated, with saved position.</li>
+<li><b>Email</b> — internal mail plus real internet email.</li>
+<li><b>Encrypted group chat</b> — private end-to-end-encrypted rooms and a public global chat.</li>
+<li><b>Productivity</b> — notes with tags, a markdown journal, a calendar with ICS import, and a to-do board.</li>
+<li><b>Info &amp; reference</b> — an RSS reader, news, weather, world clock, maps, star map and a dictionary.</li>
+<li><b>Creative &amp; multitasking</b> — an e-ink drawing canvas and split-screen (two pages at once).</li>
+</ul>
+<p>Free, offline-friendly, with optional encrypted cloud sync. <a href="/landing.html">Learn more about KindleHub Pro</a>.</p>
+</div></noscript>
 <!-- ────────────────────────────────────────────────────────────────
      UI MODE + THEME PRELOADER
      Runs synchronously during body parsing, BEFORE any visible
