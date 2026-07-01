@@ -20,11 +20,17 @@ protection:
 
 - `object-src 'none'` — no Flash/plugin XSS vector.
 - `base-uri 'self'` — blocks `<base>`-tag hijacking.
-- `script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net` — the only
-  external scripts we load are html2canvas + jszip from jsdelivr; an injected
-  `<script src="//evil">` is blocked. (`'unsafe-inline'` is required because the
-  single-file app uses inline `<script>` blocks and inline `onclick` handlers
-  throughout; nonces cannot cover inline event handlers.)
+- `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net` —
+  the only external scripts we load are html2canvas + jszip from jsdelivr; an
+  injected `<script src="//evil">` is blocked. (`'unsafe-inline'` is required
+  because the single-file app uses inline `<script>` blocks and inline `onclick`
+  handlers throughout; nonces cannot cover inline event handlers. `'unsafe-eval'`
+  is required because the in-app spreadsheet (Sheets) and calculator evaluate
+  user-entered formulas via `Function()`, and the app-patch feature runs via
+  `new Function()`; without it those core features break on CSP-enforcing
+  browsers. This means script-src is not a full XSS boundary — it blocks
+  external-origin script loads, not inline/eval — which is why the render paths
+  are DOM-built/escaped, below.)
 - `frame-ancestors 'none'` + `X-Frame-Options: DENY` — anti-clickjacking.
 - `connect-src`/`img-src`/`frame-src` are intentionally permissive over `https:`
   so the many real API integrations and sandboxed AI apps keep working.
@@ -62,12 +68,31 @@ they execute in an opaque origin and cannot read KindleHub's `localStorage`,
 auth token, cookies or DOM. That was fixed previously and is unchanged.
 
 The one place `new Function` *is* used is the optional **"local fixes / AI
-patch"** power feature (`applyLocalFixes`, `S.localFixes`). That runs code the
-signed-in user asked the AI to generate to patch their own client, stored only
-in their own end-to-end-encrypted state (AES key = SHA-256(username+password),
-which never leaves the device). It is self-authored code on your own device,
-not attacker-supplied input, and the admin panel can disable or wipe all
-patches. It is not reachable by other users.
+patch"** power feature (`applyLocalFixes`, `S.localFixes`) — code the signed-in
+user asked the AI to generate to patch their own client. It is **hardened** so
+the AI can't be used to escalate:
+
+- **Escalation deny-list** (`_khPatchDenyRE`): both the boot applier and the
+  "Apply patch" button refuse any patch whose code references admin/auth/
+  credential/backend/encryption internals (`_isAdminCached`, `_adminToken`,
+  `ADMIN_HASHES`, `authToken`, `kh_offline_cred`, `kh_users`, `SUPABASE_*`,
+  `service_role`, `_sbBase`/`_sbFetch`, `_encryptState`/`_msgEncrypt`, …). The
+  generator prompt is told the same. A blocked patch is disabled + recorded.
+  This also neutralises any *already-stored* malicious patch on next boot.
+- **Device-local only**: `S.localFixes` is stripped from the cloud blob on
+  upload (`_trimStateForCloud`) **and** discarded from any incoming cloud state
+  on merge (`mergeCloudState`), so a tampered/legacy synced state can never
+  inject a boot-time patch onto another device.
+- Client-side admin (`window._isAdminCached`) is only a **UI flag** — every
+  privileged action is re-verified server-side by the D1 worker against a token
+  whose SHA-256 must be in `ADMIN_HASHES` (a value derived from the admin's own
+  password). So even setting the flag or forging the token grants **no** real
+  cross-user power on D1 (verified by adversarial audit). The deny-list is
+  defence-in-depth, not the boundary.
+
+Note: the CSP carries `'unsafe-eval'` (the Sheets/calculator formula engine
+needs `Function()`), so it does not itself block `new Function`; the app-layer
+guards above do.
 
 ## localStorage contents  — mostly by design
 
@@ -86,14 +111,45 @@ patches. It is not reachable by other users.
   device access or XSS). Cross-device sync IS encrypted in transit and at rest
   in the cloud.
 
-## Backend / Supabase exposure  — addressed by the D1 migration
+## Backend / Supabase exposure  — CRITICAL, being closed
 
-All users are now routed to the Cloudflare D1 worker by default
-(`KH_DEFAULT_API_GATEWAY`), which enforces per-request auth, hashes/gates
-`kh_users` reads, requires exact-PK match for open-table writes, and never
-serves `owner_secret` on reads. The legacy Supabase path (public anon key +
-RLS) remains only as a fallback; decommission it by blanking/rotating the
-Supabase creds once migration is confirmed.
+**The real hole.** The legacy Supabase project shipped fully-open RLS
+(`kh_users_read`/`update` = `using (true)`). Because `kh_users.hash` =
+SHA-256(username+password) is BOTH the login secret AND the AES key for that
+user's `state`, anyone holding the (public) anon key could `SELECT` every
+account's hash+state (full data compromise + impersonation) and `UPDATE` any
+row (takeover, or inject a boot-time `localFix`). Cloudflare D1 was never
+affected — it enforces per-request auth server-side.
+
+What changed in the client (this repo):
+
+- **Hardcoded Supabase URL + anon key blanked** (`SUPABASE_URL=''`,
+  `SUPABASE_ANON_KEY=''`) — the shipped bundle no longer carries usable Supabase
+  creds. (They were already public in git history, so this is hygiene; the DB
+  fix is server-side, below.)
+- **`_sbBase()` never falls back to Supabase** — live REST/RPC/shared-AI traffic
+  goes only to the D1 gateway, or nowhere. The deprecated `kh_api_gateway='off'`
+  escape hatch (which used to force Supabase) now routes to D1.
+- **Realtime WS** paths require a real `supabase.co` URL, so a blank default
+  never attempts a Supabase socket.
+- The one-time **migration** tool still works if the admin pastes a Supabase
+  URL+key at runtime (`kh_sb_url_override`), but nothing sensitive ships.
+
+What YOU must still do on the server (the client change alone does not un-leak
+already-scraped data):
+
+1. **Run `supabase-lockdown.sql` now** (Supabase → SQL Editor). It revokes all
+   anon/authenticated access to every `kh_*` table and adds deny policies;
+   `service_role` still works for a final migration. Live traffic is on D1 so
+   this breaks nothing.
+2. **`schema.sql` was hardened** so re-running it can't reopen the hole —
+   `kh_users` read/update are now self-only (`hash = kh_request_secret()`).
+3. **Finish migrating** (via the service key, which bypasses RLS) and then
+   **delete the Supabase project**.
+4. **⚠ Rotate credentials.** The `hash` is the SAME auth secret on D1, so any
+   hash scraped while Supabase was open also unlocks that account on D1. Have
+   users **change their password** (regenerates the hash + re-keys state). Check
+   Supabase logs for large historical `kh_users` reads to gauge real exposure.
 
 ## Stored XSS on render  — already defended
 
