@@ -12729,6 +12729,8 @@ const GAME_HELP={
   blockblast:{name:'Block Blast',how:'Drag the block shapes onto the grid. Fill a full row or column to clear it. It ends when no piece can fit.'},
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
+  anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
+  nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
 };
 function _showGameHelp(g){
   const h=(typeof GAME_HELP!=='undefined'&&GAME_HELP[g])||null;
@@ -12819,7 +12821,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -13783,6 +13785,8 @@ function _doLaunch(g){
     case 'slither':    Slither.start();break;
     case 'geometrydash': GeometryDash.start();break;
     case 'crossyroad': CrossyRoad.start();break;
+    case 'anagrams': Anagrams.start();break;
+    case 'nonogram': Nonogram.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -18155,6 +18159,199 @@ const CrossyRoad=(()=>{
   document.addEventListener('keydown',keyH);
   $('immersiveExit').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;}});
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  return{start,stop};
+})();
+
+/* ── Anagrams — unscramble the letters into the word that fits the clue ──
+   Turn-based (no loop), so it's completely e-ink friendly: tap scrambled
+   tiles to build the answer, tap answer tiles to send them back. */
+const Anagrams=(()=>{
+  const BANK=[
+    ['PLANET','A world that orbits a star'],['GARDEN','Where flowers and veg grow'],
+    ['ROCKET','It blasts off into space'],['ISLAND','Land surrounded by sea'],
+    ['CANDLE','Wax with a wick, gives light'],['BRIDGE','Carries a road over a river'],
+    ['CASTLE','A king or queen lived here'],['DRAGON','A fire-breathing beast'],
+    ['FOREST','A big area of trees'],['GUITAR','A six-string instrument'],
+    ['HARBOR','Where boats shelter'],['JUNGLE','Dense tropical forest'],
+    ['KITTEN','A baby cat'],['LANTERN','A portable light'],
+    ['MARKET','Where you buy and sell'],['NEEDLE','You thread it to sew'],
+    ['ORANGE','A citrus fruit and a colour'],['PENCIL','You write with it'],
+    ['PUZZLE','A brain teaser'],['RABBIT','A long-eared hopper'],
+    ['SILVER','A shiny grey metal'],['TUNNEL','A passage under ground'],
+    ['VALLEY','Low land between hills'],['WINDOW','You look through it'],
+    ['ANCHOR','It holds a ship in place'],['BASKET','You carry shopping in it'],
+    ['CAMERA','It takes photos'],['DESERT','A dry, sandy place'],
+    ['ENGINE','It powers a car'],['FLOWER','A plant’s bloom'],
+    ['GLACIER','A slow river of ice'],['HAMMER','A tool for nails'],
+    ['JACKET','You wear it when cold'],['LADDER','You climb its rungs'],
+    ['MAGNET','It attracts iron'],['NAPKIN','You wipe your mouth on it'],
+    ['OYSTER','A shellfish with a pearl'],['PALACE','A grand royal home'],
+    ['RIBBON','A decorative strip'],['SADDLE','A seat on a horse'],
+    ['TICKET','It lets you in'],['VIOLIN','A bowed string instrument'],
+    ['WALNUT','A wrinkly brown nut'],['BREEZE','A gentle wind'],
+    ['COMPASS','It points north'],['DIAMOND','A hard, sparkling gem'],
+    ['FEATHER','A bird has many'],['MONKEY','A tree-swinging primate'],
+    ['THUNDER','It follows lightning'],['LIBRARY','Full of books to borrow']
+  ];
+  let game=null;
+  function _best(){return (S.games&&S.games.anagrams&&S.games.anagrams.best)||0;}
+  function _scramble(w){
+    var a=w.split(''),i,j,t;
+    for(var pass=0;pass<3;pass++){for(i=a.length-1;i>0;i--){j=Math.floor(Math.random()*(i+1));t=a[i];a[i]=a[j];a[j]=t;}}
+    if(a.join('')===w){t=a[0];a[0]=a[1];a[1]=t;}/* never hand them the answer already solved */
+    return a;
+  }
+  function nextWord(){
+    var pick=BANK[Math.floor(Math.random()*BANK.length)];
+    game.word=pick[0];game.hint=pick[1];
+    game.letters=_scramble(pick[0]).map(function(ch,i){return {ch:ch,id:i,inAns:false};});
+    game.answer=[];
+    render();
+  }
+  function start(){
+    game={solved:0,word:'',hint:'',letters:[],answer:[]};
+    enterImmersive('Anagrams','Solved: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();nextWord();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Solved: 0  |  Best: '+_best(),{id:'anaScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','',{id:'anaHint',style:{textAlign:'center',fontSize:'13px',color:'var(--muted)',margin:'8px 12px',minHeight:'18px',fontStyle:'italic'}}));
+    immersiveContent.appendChild(el('div',{id:'anaAnswer',style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',minHeight:'48px',margin:'6px auto',padding:'6px',border:'2px dashed var(--muted)',borderRadius:'8px',maxWidth:'340px'}}));
+    immersiveContent.appendChild(el('div',{id:'anaLetters',style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',minHeight:'48px',margin:'10px auto',maxWidth:'340px'}}));
+    var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',flexWrap:'wrap',gap:'6px',marginTop:'8px'}});
+    ctrl.appendChild(Object.assign(txt('button','Check',{className:'btn small primary'}),{onclick:check}));
+    ctrl.appendChild(Object.assign(txt('button','Clear',{className:'btn small'}),{onclick:function(){game.letters.forEach(function(l){l.inAns=false;});game.answer=[];render();}}));
+    ctrl.appendChild(Object.assign(txt('button','Shuffle',{className:'btn small'}),{onclick:function(){var av=game.letters.filter(function(l){return !l.inAns;});for(var i=av.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=av[i].ch;av[i].ch=av[j].ch;av[j].ch=t;}render();}}));
+    ctrl.appendChild(Object.assign(txt('button','Skip',{className:'btn small'}),{onclick:function(){toast('The word was '+game.word);nextWord();}}));
+    immersiveContent.appendChild(ctrl);
+  }
+  function _tile(ch,fn){var b=txt('button',ch,{className:'btn',style:{fontSize:'20px',fontWeight:'800',minWidth:'40px',minHeight:'44px',padding:'2px 8px'}});b.onclick=fn;return b;}
+  function render(){
+    var A=$('anaAnswer'),L=$('anaLetters'),H=$('anaHint');
+    if(!A||!L)return;
+    if(H)H.textContent='Clue: '+game.hint;
+    A.innerHTML='';
+    game.answer.forEach(function(id){var l=game.letters[id];A.appendChild(_tile(l.ch,function(){l.inAns=false;var k=game.answer.indexOf(id);if(k>=0)game.answer.splice(k,1);render();}));});
+    L.innerHTML='';
+    game.letters.forEach(function(l){if(l.inAns)return;L.appendChild(_tile(l.ch,function(){l.inAns=true;game.answer.push(l.id);render();}));});
+  }
+  function check(){
+    var guess=game.answer.map(function(id){return game.letters[id].ch;}).join('');
+    if(!guess){toast('Tap letters to build a word first');return;}
+    if(guess===game.word){
+      game.solved++;
+      var sb=$('anaScore');if(sb)sb.textContent='Solved: '+game.solved+'  |  Best: '+Math.max(_best(),game.solved);
+      updateImmersiveScore('Solved: '+game.solved);
+      toast('✓ Correct! '+game.word);
+      if(!S.games.anagrams)S.games.anagrams={best:0};
+      if(game.solved>_best())S.games.anagrams.best=game.solved;
+      saveNow();
+      try{_khSubmitScore('anagrams',game.solved);}catch(_){}
+      recordStat('anagrams',true);
+      nextWord();
+    } else { toast('Not it — try again, or Skip'); }
+  }
+  function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── Nonograms (Picross) — fill the grid to match the row & column clues ──
+   Turn-based logic puzzle. Each clue number is a run of consecutive filled
+   cells; the runs for a line appear in order. Solve the hidden picture. */
+const Nonogram=(()=>{
+  const PUZZLES=[
+    {name:'Heart',g:['01010','11111','11111','01110','00100']},
+    {name:'Diamond',g:['00100','01110','11111','01110','00100']},
+    {name:'Plus',g:['00100','00100','11111','00100','00100']},
+    {name:'Arrow',g:['00100','01110','10101','00100','00100']},
+    {name:'House',g:['00100','01110','11111','10101','11111']},
+    {name:'Smiley',g:['01010','01010','00000','10001','01110']},
+    {name:'Letter T',g:['11111','00100','00100','00100','00100']},
+    {name:'Boat',g:['00100','00100','11111','11111','01110']}
+  ];
+  const N=5;
+  let game=null,mode='fill';
+  function _best(){return (S.games&&S.games.nonogram&&S.games.nonogram.best)||0;}
+  function _clues(line){var runs=[],c=0;for(var i=0;i<line.length;i++){if(line[i])c++;else if(c){runs.push(c);c=0;}}if(c)runs.push(c);return runs.length?runs:[0];}
+  function loadPuzzle(idx){
+    var p=PUZZLES[idx%PUZZLES.length];
+    game.name=p.name;
+    game.sol=p.g.map(function(row){return row.split('').map(Number);});
+    game.grid=[];for(var r=0;r<N;r++)game.grid.push([0,0,0,0,0]);
+    game.rowClues=game.sol.map(_clues);
+    game.colClues=[];for(var col=0;col<N;col++){var line=[];for(var rr=0;rr<N;rr++)line.push(game.sol[rr][col]);game.colClues.push(_clues(line));}
+    game.done=false;
+    render();
+  }
+  function start(){
+    game={idx:Math.floor(Math.random()*PUZZLES.length),solved:0};
+    mode='fill';
+    enterImmersive('Nonograms','Solved: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();loadPuzzle(game.idx);
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Solved: 0  |  Best: '+_best(),{id:'nonoScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','Fill cells so each row & column matches its number clues (each number = a run of filled cells, in order).',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px',lineHeight:'1.4'}}));
+    var modeBtn=txt('button','Mode: Fill',{className:'btn small',id:'nonoMode',style:{display:'block',margin:'8px auto'}});
+    modeBtn.onclick=function(){mode=(mode==='fill')?'mark':'fill';modeBtn.textContent='Mode: '+(mode==='fill'?'Fill':'Mark ✕');};
+    immersiveContent.appendChild(modeBtn);
+    immersiveContent.appendChild(el('div',{id:'nonoGrid',style:{margin:'8px auto'}}));
+    var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',gap:'6px',marginTop:'10px'}});
+    ctrl.appendChild(Object.assign(txt('button','Clear',{className:'btn small'}),{onclick:function(){if(!game||game.done)return;for(var r=0;r<N;r++)for(var c=0;c<N;c++)game.grid[r][c]=0;render();}}));
+    ctrl.appendChild(Object.assign(txt('button','New Puzzle',{className:'btn small'}),{onclick:function(){if(!game)return;game.idx=(game.idx+1)%PUZZLES.length;loadPuzzle(game.idx);}}));
+    immersiveContent.appendChild(ctrl);
+  }
+  function render(){
+    var host=$('nonoGrid');if(!host||!game)return;
+    host.innerHTML='';
+    host.style.cssText='display:grid;grid-template-columns:minmax(48px,auto) repeat('+N+',40px);gap:2px;justify-content:center;margin:8px auto;';
+    var dark=document.body.classList.contains('dark');
+    host.appendChild(el('div'));/* corner */
+    for(var c=0;c<N;c++){
+      var cc=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',fontSize:'12px',fontWeight:'700',fontFamily:'monospace',lineHeight:'1.15',minHeight:'40px'}});
+      game.colClues[c].forEach(function(n){cc.appendChild(txt('div',String(n)));});
+      host.appendChild(cc);
+    }
+    for(var r=0;r<N;r++){
+      var rc=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'5px',fontSize:'13px',fontWeight:'700',fontFamily:'monospace',paddingRight:'5px'}});
+      game.rowClues[r].forEach(function(n){rc.appendChild(txt('span',String(n)));});
+      host.appendChild(rc);
+      for(var c2=0;c2<N;c2++){
+        (function(r,c){
+          var v=game.grid[r][c];
+          var cell=el('div',{style:{width:'40px',height:'40px',border:'1px solid '+(dark?'#555':'#bbb'),borderRadius:'3px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',fontWeight:'800',boxSizing:'border-box',color:dark?'#888':'#888',background:v===1?(dark?'#eee':'#222'):(dark?'#141414':'#fff')}});
+          if(v===2)cell.textContent='✕';
+          cell.onclick=function(){tap(r,c);};
+          host.appendChild(cell);
+        })(r,c2);
+      }
+    }
+  }
+  function tap(r,c){
+    if(!game||game.done)return;
+    var v=game.grid[r][c];
+    if(mode==='fill')game.grid[r][c]=(v===1)?0:1;
+    else game.grid[r][c]=(v===2)?0:2;
+    render();checkWin();
+  }
+  function checkWin(){
+    for(var r=0;r<N;r++)for(var c=0;c<N;c++){if((game.grid[r][c]===1)!==(game.sol[r][c]===1))return;}
+    game.done=true;game.solved++;
+    var sb=$('nonoScore');if(sb)sb.textContent='Solved: '+game.solved+'  |  Best: '+Math.max(_best(),game.solved);
+    updateImmersiveScore('Solved: '+game.solved);
+    toast('✓ Solved: '+game.name+'!');
+    if(!S.games.nonogram)S.games.nonogram={best:0};
+    if(game.solved>_best())S.games.nonogram.best=game.solved;
+    saveNow();
+    try{_khSubmitScore('nonogram',game.solved);}catch(_){}
+    recordStat('nonogram',true);
+    setTimeout(function(){if(game&&game.done){game.idx=(game.idx+1)%PUZZLES.length;loadPuzzle(game.idx);}},1200);
+  }
+  function stop(){game=null;}
   return{start,stop};
 })();
 const G2048=(()=>{
@@ -24558,6 +24755,8 @@ const GAME_MAP=[
   {keys:['tower defence','tower defense','towerdef'],g:'towerdef'},
   {keys:['geometry dash','geometrydash','geo dash','stereo madness','cube jump','rhythm runner'],g:'geometrydash'},
   {keys:['crossy road','crossyroad','crossy','crosser','frogger','cross the road','chicken road'],g:'crossyroad'},
+  {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
+  {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -28841,6 +29040,20 @@ games:()=>{
     const wsBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
     wsBtn.onclick=()=>launchGame('wordsearch');
     c.appendChild(wsBtn);
+  }));
+  rowWord.appendChild(gc('Anagrams',null,c=>{
+    c.appendChild(txt('p','Unscramble the jumbled letters into the word that fits the clue. Endless — beat your best streak.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.anagrams&&S.games.anagrams.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const anaBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    anaBtn.onclick=()=>launchGame('anagrams');
+    c.appendChild(anaBtn);
+  }));
+  rowWord.appendChild(gc('Nonograms',null,c=>{
+    c.appendChild(txt('p','Picross logic puzzles — use the row & column number clues to reveal the hidden picture.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Solved: '+(S.games&&S.games.nonogram&&S.games.nonogram.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const nonoBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    nonoBtn.onclick=()=>launchGame('nonogram');
+    c.appendChild(nonoBtn);
   }));
   rowWord.appendChild(gc('Crossword',null,c=>{
     c.appendChild(txt('p',getCROSSWORDS().length+' puzzles across '+[...new Set(getCROSSWORDS().map(p=>p.cat))].length+' categories.',{style:{fontSize:'11px',color:'var(--muted)'}}));
