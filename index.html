@@ -3217,6 +3217,10 @@ function launchKindleDesktop(){
     /* Remembers the wallpaper that was active before Simple Mode forced it to
        plain white, so turning Simple Mode off restores the user's choice. */
     ['wallBeforeSimple','kh_os_wallprev', '',                 's'],
+    /* When on, KindleOS opens on the WIDGET page (page 0) instead of the app
+       grid (page 1). Opt-in — a community request; default off so nothing
+       changes for existing users. */
+    ['widgetsFirst',  'kh_os_widgetsfirst',false,             'b'],
   ];
   let osState={};
   OS_SCHEMA.forEach(([k,ls,def,t])=>{
@@ -3772,7 +3776,7 @@ function launchKindleDesktop(){
   const kdPagesTrack=document.createElement('div');
   kdPagesTrack.style.cssText='display:flex;width:100%;height:100%;will-change:transform;transition:transform 0.32s cubic-bezier(0.4,0,0.2,1);';
   kdPagesOuter.appendChild(kdPagesTrack);
-  let _curPage=1;
+  let _curPage=osState.widgetsFirst?0:1;/* land on widgets (0) or apps (1) per user setting */
   /* 16 apps per page (4×4 in a 5-row grid). */
   function iconsPerPage(){return 16;}
   function numIconPages(){return Math.max(1,Math.ceil(allApps().length/iconsPerPage()));}
@@ -4255,6 +4259,7 @@ function launchKindleDesktop(){
   const SVG_SIMPLE='<svg '+ICON_22+' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
   const SVG_LITE ='<svg '+ICON_22+' fill="currentColor"><polygon points="13,2 3,14 11,14 9,22 21,9 13,9"/></svg>';
   const SVG_KBD ='<svg '+ICON_22+' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h0M10 10h0M14 10h0M18 10h0M8 14h8"/></svg>';
+  const SVG_WIDGETS='<svg '+ICON_22+' fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="14" y="13" width="7" height="8" rx="1.5"/></svg>';
   const WALL_MODES =['white','gradient','dark','photo'];
   const WALL_LABELS=['Plain White','Gradient','Dark','Photos'];
   const FONT_SIZES=['small','medium','large'];
@@ -4297,6 +4302,11 @@ function launchKindleDesktop(){
     {kind:'toggle',label:'Dark Mode',svg:SVG_DARK,
       get:()=>!!osState.darkMode,
       set:on=>{osState.darkMode=on;document.body.classList.toggle('dark',on);persistOS();}},
+    /* Land on the widget page instead of the app grid when KindleOS opens.
+       Persists + jumps there immediately so the toggle gives instant feedback. */
+    {kind:'toggle',label:'Widgets First',svg:SVG_WIDGETS,
+      get:()=>!!osState.widgetsFirst,
+      set:on=>{osState.widgetsFirst=on;persistOS();try{goToPage(on?0:1);}catch(_){}toast(on?'Widgets show first when KindleOS opens':'Apps show first',1700);}},
     {kind:'cycle',label:'Wallpaper',svg:SVG_WALL,
       build:setLb=>{
         const cur=WALL_MODES.indexOf(osState.wallpaperMode);
@@ -12647,6 +12657,7 @@ const GAME_HELP={
   candycrush:{name:'Match 3',how:'Swap adjacent pieces to line up three or more of a kind. Matches clear and score — set up chains for big combos.'},
   blockblast:{name:'Block Blast',how:'Drag the block shapes onto the grid. Fill a full row or column to clear it. It ends when no piece can fit.'},
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
+  crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
 };
 function _showGameHelp(g){
   const h=(typeof GAME_HELP!=='undefined'&&GAME_HELP[g])||null;
@@ -12737,7 +12748,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -13700,6 +13711,7 @@ function _doLaunch(g){
     case 'snake':      Snake.start();break;
     case 'slither':    Slither.start();break;
     case 'geometrydash': GeometryDash.start();break;
+    case 'crossyroad': CrossyRoad.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -17274,7 +17286,7 @@ const Snake=(()=>{
     ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>game&&game.active,start)}));
     immersiveContent.appendChild(ctrl);
     if(timer)clearInterval(timer);
-    timer=setInterval(tick,speed);
+    timer=setInterval(()=>{if(!document.hidden)tick();},speed);/* pause when screen off — don't crash unseen + save battery */
     draw();
   }
 
@@ -17323,7 +17335,7 @@ const Snake=(()=>{
         game.level++;
         if(timer){
           clearInterval(timer);
-          timer=setInterval(tick,Math.max(MIN_SPEED,game.speed-game.level*25));
+          timer=setInterval(()=>{if(!document.hidden)tick();},Math.max(MIN_SPEED,game.speed-game.level*25));
         }
       }
       const sb=$('snakeScoreBar');if(sb)sb.textContent=`Score: ${game.score}  |  Best: ${game.highScore}  |  Lvl: ${game.level}`;
@@ -17841,6 +17853,235 @@ const Slither=(()=>{
     if(_keyH){document.removeEventListener('keydown',_keyH);_keyH=null;}
     _lb=null;G=null;
   }
+  return{start,stop};
+})();
+
+/* ── Crossy Road — endless traffic-dodging crosser ─────────────────────
+   Hop your chicken UP across endless lanes of grass and traffic. Wait on
+   the grass, time the gaps and go as far as you can. Every road lane keeps
+   a >=2-cell hole between cars so it's ALWAYS crossable (provably fair);
+   grass "trees" (blocked cells) are capped at 3/row and never stacked
+   vertically, so there's always a clear path up. The camera only follows
+   the player (no forced scroll / eagle) — forgiving on laggy e-ink. Score
+   = rows crossed. Cars are PURELY procedural (a pure function of a clock),
+   so there's no per-car state to update each frame — cheap on Silk, like
+   Snake / Geometry Dash (canvas + flat fills + a modest framerate). */
+const CrossyRoad=(()=>{
+  const COLS=9,TILE=34,ROWS_VISIBLE=8;
+  const W=COLS*TILE,H=ROWS_VISIBLE*TILE,FR=60;
+  const PLAYER_FROM_TOP=ROWS_VISIBLE-3; /* pin player 5 from top -> 2 retreat rows below */
+  let game=null,timer=null,keyH=null,_submitted=false;
+
+  function _best(){return (S.games&&S.games.crossyroad&&S.games.crossyroad.best)||0;}
+
+  function genRow(r){
+    if(r<2)return {type:'grass',trees:[]}; /* safe start pad */
+    const below1=game.rows[r-1],below2=game.rows[r-2];
+    const twoRoads=below1&&below1.type==='road'&&below2&&below2.type==='road';
+    const road=!twoRoads&&Math.random()<0.62; /* never 3 roads in a row */
+    if(road){
+      const level=Math.floor(game.maxRow/8);
+      const dir=Math.random()<0.5?1:-1;
+      let speed=1.1+Math.random()*1.2+Math.min(1.6,level*0.12);
+      if(speed>3.8)speed=3.8; /* keep < ~1 cell/tick so a car can't tunnel over you */
+      const len=Math.random()<0.72?1:2;
+      const gap=2+Math.floor(Math.random()*3); /* >=2 clear cells between cars */
+      const spacing=len+gap;
+      return {type:'road',dir:dir,speed:speed,len:len,spacing:spacing,phase:Math.random()*spacing};
+    }
+    /* grass: <=3 trees, never stacked on a tree in the row below (no walls) */
+    const trees=[];
+    const belowTrees=(below1&&below1.type==='grass'&&below1.trees)?below1.trees:[];
+    for(let c=0;c<COLS;c++){
+      if(trees.length>=3)break;
+      if(belowTrees.indexOf(c)>=0)continue;
+      if(Math.random()<0.14)trees.push(c);
+    }
+    return {type:'grass',trees:trees};
+  }
+
+  function ensureRows(upto){
+    for(let r=game.gen+1;r<=upto;r++){ game.rows[r]=genRow(r); game.gen=r; }
+  }
+
+  function start(){
+    if(timer){clearInterval(timer);timer=null;}
+    _submitted=false;
+    game={rows:{},gen:-1,col:Math.floor(COLS/2),row:0,maxRow:0,camTop:PLAYER_FROM_TOP,clock:0,active:true,lastT:0};
+    ensureRows(game.camTop+2);
+    enterImmersive('Crossy Road','Score: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();
+    if(timer)clearInterval(timer);
+    timer=setInterval(()=>{if(!document.hidden)tick();},FR);
+    draw();
+  }
+
+  /* true if a car on road-row `rd` covers cell `col` at time `clock` */
+  function carsOccupy(rd,col,clock){
+    const base=rd.phase+rd.dir*rd.speed*clock;
+    const kLo=Math.floor((col-rd.len-base)/rd.spacing)-1;
+    const kHi=Math.ceil((col+1-base)/rd.spacing)+1;
+    for(let k=kLo;k<=kHi;k++){
+      const cx=base+k*rd.spacing;
+      if(cx<col+1&&cx+rd.len>col)return true;
+    }
+    return false;
+  }
+
+  function move(dx,dy){
+    if(!game||!game.active)return;
+    const t=Date.now();
+    if(game.lastT&&t-game.lastT<70)return; /* debounce touchstart+phantom-click / key auto-repeat */
+    let nc=game.col+dx; if(nc<0)nc=0; if(nc>COLS-1)nc=COLS-1;
+    let nr=game.row+dy; if(nr<0)nr=0;
+    const bottomRow=game.camTop-(ROWS_VISIBLE-1);
+    if(nr<bottomRow)return; /* can't retreat below the visible bottom */
+    ensureRows(nr+ROWS_VISIBLE);
+    const cell=game.rows[nr];
+    if(cell&&cell.type==='grass'&&cell.trees&&cell.trees.indexOf(nc)>=0)return; /* tree blocks */
+    game.lastT=t;
+    game.col=nc; game.row=nr;
+    if(game.row>game.maxRow){
+      game.maxRow=game.row;
+      updateImmersiveScore('Score: '+game.maxRow);
+      const sb=$('crossyScoreBar'); if(sb)sb.textContent='Score: '+game.maxRow+'  |  Best: '+Math.max(_best(),game.maxRow);
+    }
+    const want=game.row+PLAYER_FROM_TOP;
+    if(want>game.camTop)game.camTop=want; /* camera only rises */
+    ensureRows(game.camTop+2);
+    const rd=game.rows[game.row];
+    if(rd&&rd.type==='road'&&carsOccupy(rd,game.col,game.clock)){endGame();return;}
+    draw();
+  }
+
+  function tick(){
+    if(!game||!game.active)return;
+    game.clock+=FR/1000;
+    const rd=game.rows[game.row];
+    if(rd&&rd.type==='road'&&carsOccupy(rd,game.col,game.clock)){endGame();return;}
+    draw();
+  }
+
+  function _rr(ctx,x,y,w,h,r){
+    if(w<0)w=0; if(h<0)h=0; if(r>w/2)r=w/2; if(r>h/2)r=h/2;
+    ctx.beginPath(); ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function _drawChicken(ctx,x,y,dark){
+    const body=dark?'#f4f4f4':'#fff', line=dark?'#000':'#222';
+    ctx.fillStyle=line; _rr(ctx,x+5,y+6,TILE-10,TILE-10,6);
+    ctx.fillStyle=body; _rr(ctx,x+7,y+8,TILE-14,TILE-14,5);
+    ctx.fillStyle=line; ctx.fillRect(x+TILE-13,y+11,3,3); /* eye */
+    ctx.fillStyle=dark?'#999':'#666'; ctx.fillRect(x+TILE-9,y+15,4,3); /* beak */
+    ctx.fillStyle=dark?'#bbb':'#888'; ctx.fillRect(x+10,y+5,3,3); /* comb */
+  }
+
+  function draw(){
+    const canvas=$('crossyCanvas'); if(!canvas)return;
+    const ctx=canvas.getContext('2d');
+    const dark=document.body.classList.contains('dark');
+    const cTop=game.camTop;
+    for(let sy=0;sy<ROWS_VISIBLE;sy++){
+      const worldRow=cTop-sy, y=sy*TILE;
+      const rd=game.rows[worldRow];
+      const type=rd?rd.type:'grass';
+      ctx.fillStyle=type==='road'?(dark?'#0d0d0d':'#dedede'):(dark?'#1a1f1a':'#eef3ea');
+      ctx.fillRect(0,y,W,TILE);
+      if(type==='road'){
+        ctx.fillStyle=dark?'#333':'#bdbdbd';
+        for(let x=4;x<W;x+=18){ ctx.fillRect(x,y+TILE/2-1,10,2); } /* dashed centre line */
+        const base=rd.phase+rd.dir*rd.speed*game.clock;
+        const kLo=Math.floor((0-rd.len-base)/rd.spacing)-1;
+        const kHi=Math.ceil((COLS-base)/rd.spacing)+1;
+        for(let k=kLo;k<=kHi;k++){
+          const px=(base+k*rd.spacing)*TILE;
+          if(px>W||px+rd.len*TILE<0)continue;
+          ctx.fillStyle=dark?'#c9c9c9':'#3a3a3a';
+          _rr(ctx,px+2,y+5,rd.len*TILE-4,TILE-10,5);
+          ctx.fillStyle=dark?'#6f6f6f':'#8a8a8a';
+          ctx.fillRect(rd.dir>0?px+rd.len*TILE-10:px+4,y+8,6,TILE-16); /* window (front) */
+        }
+      } else if(rd&&rd.trees){
+        for(let ti=0;ti<rd.trees.length;ti++){
+          const px=rd.trees[ti]*TILE;
+          ctx.fillStyle=dark?'#4a3f2f':'#7a6a52'; ctx.fillRect(px+TILE/2-3,y+TILE-12,6,10); /* trunk */
+          ctx.fillStyle=dark?'#3d5a3d':'#5f8a5f'; _rr(ctx,px+4,y+3,TILE-8,TILE-12,6); /* canopy */
+        }
+      }
+    }
+    _drawChicken(ctx,game.col*TILE,(cTop-game.row)*TILE,dark);
+    ctx.fillStyle=dark?'#555':'#bbb'; ctx.font='10px monospace'; ctx.textAlign='left';
+    ctx.fillText(game.maxRow+'m',4,H-5);
+  }
+
+  function endGame(){
+    if(!game||!game.active)return;
+    game.active=false;
+    if(timer){clearInterval(timer);timer=null;}
+    if(_submitted)return;
+    _submitted=true;
+    if(!S.games.crossyroad)S.games.crossyroad={best:0};
+    S.games.crossyroad.best=Math.max(S.games.crossyroad.best||0,game.maxRow);
+    saveNow();
+    draw();
+    try{_khSubmitScore('crossyroad',game.maxRow);}catch(_){}
+    const msg=txt('div','Splat! You reached '+game.maxRow+'m',{style:{textAlign:'center',fontWeight:'bold',fontSize:'15px',color:'var(--danger)',margin:'8px'}});
+    const ctrl=immersiveContent.querySelector('.card-row');
+    if(ctrl)immersiveContent.insertBefore(msg,ctrl);else immersiveContent.appendChild(msg);
+    toast('Splat! Score: '+game.maxRow); recordStat('crossyroad',false);
+  }
+
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Score: 0  |  Best: '+_best(),{id:'crossyScoreBar',className:'snake-score-bar'}));
+    const canvas=el('canvas',{id:'crossyCanvas',width:W,height:H});
+    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;border:2px solid var(--fg);touch-action:none;';
+    immersiveContent.appendChild(canvas);
+    /* tap zones: left third -> left, right third -> right, middle -> hop up */
+    canvas.addEventListener('touchend',e=>{
+      e.preventDefault();
+      if(!game||!game.active)return;
+      const rect=canvas.getBoundingClientRect();
+      const rx=(e.changedTouches[0].clientX-rect.left)/rect.width;
+      if(rx<0.33)move(-1,0); else if(rx>0.67)move(1,0); else move(0,1);
+    },{passive:false});
+    const dpad=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,64px)',gridTemplateRows:'repeat(2,60px)',gap:'10px',width:'212px',margin:'12px auto'}});
+    dpad.appendChild(el('div'));
+    const uB=txt('button','↑',{className:'btn',style:{fontSize:'22px'}});
+    uB.ontouchstart=uB.onclick=(e)=>{e.preventDefault();move(0,1);};
+    dpad.appendChild(uB); dpad.appendChild(el('div'));
+    const lB=txt('button','←',{className:'btn',style:{fontSize:'22px'}});
+    lB.ontouchstart=lB.onclick=(e)=>{e.preventDefault();move(-1,0);};
+    dpad.appendChild(lB);
+    const dB=txt('button','↓',{className:'btn',style:{fontSize:'22px'}});
+    dB.ontouchstart=dB.onclick=(e)=>{e.preventDefault();move(0,-1);};
+    dpad.appendChild(dB);
+    const rB=txt('button','→',{className:'btn',style:{fontSize:'22px'}});
+    rB.ontouchstart=rB.onclick=(e)=>{e.preventDefault();move(1,0);};
+    dpad.appendChild(rB);
+    immersiveContent.appendChild(dpad);
+    const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center'}});
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(()=>game&&game.active,start)}));
+    immersiveContent.appendChild(ctrl);
+  }
+
+  keyH=function(e){
+    if(immersiveRoot.style.display!=='block'||!game||!game.active)return;
+    let handled=true;
+    if(e.key==='ArrowUp')move(0,1);
+    else if(e.key==='ArrowDown')move(0,-1);
+    else if(e.key==='ArrowLeft')move(-1,0);
+    else if(e.key==='ArrowRight')move(1,0);
+    else handled=false;
+    if(handled)e.preventDefault();
+  };
+  document.addEventListener('keydown',keyH);
+  $('immersiveExit').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;}});
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
   return{start,stop};
 })();
 const G2048=(()=>{
@@ -24209,6 +24450,7 @@ const GAME_MAP=[
   {keys:['word search','wordsearch'],g:'wordsearch'},
   {keys:['tower defence','tower defense','towerdef'],g:'towerdef'},
   {keys:['geometry dash','geometrydash','geo dash','stereo madness','cube jump','rhythm runner'],g:'geometrydash'},
+  {keys:['crossy road','crossyroad','crossy','crosser','frogger','cross the road','chicken road'],g:'crossyroad'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -28644,6 +28886,11 @@ games:()=>{
     c.appendChild(txt('p','One-button rhythm runner. Tap to jump the spikes, ride the blocks, reach 100% on "Stereo Madness".',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.geometrydash&&S.games.geometrydash.best||0)+'%',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'geometrydash',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('Crossy Road',null,c=>{
+    c.appendChild(txt('p','Hop the chicken across endless lanes of traffic. Tap to move, time the gaps, go as far as you can.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.crossyroad&&S.games.crossyroad.best||0)+'m',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'crossyroad',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('Tetris',null,c=>{
     c.appendChild(txt('p','Stack falling pieces. Clear lines to score.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
