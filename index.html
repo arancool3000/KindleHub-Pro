@@ -6864,6 +6864,12 @@ function _sbHeaders(extra){
     'Authorization':'Bearer '+SUPABASE_ANON_KEY,
     'Content-Type':'application/json',
   };
+  /* Admin identity flows to the D1 worker on EVERY request so admin-gated server
+     behaviour (changing a kh_feedback report's status, reading a user's full row)
+     is recognised. Only a real admin holds a token whose SHA-256 is in the
+     worker's ADMIN_HASHES; a forged one fails the server check, so always
+     attaching it when present is safe. */
+  if(typeof window!=='undefined'&&window._adminToken)h['X-KH-Admin']=window._adminToken;
   if(extra)for(const k in extra)h[k]=extra[k];
   return h;
 }

@@ -396,7 +396,12 @@ async function handlePost(table, url, request, env, DB){
   const rows = Array.isArray(payload)?payload:[payload];
   const cols = COLUMNS[table];
   const q = parseQuery(table, url.searchParams);
-  const conflict = q.onConflict; // upsert target columns
+  let conflict = q.onConflict; // upsert target columns
+  /* SECURITY: a non-admin must not UPSERT-overwrite an EXISTING kh_feedback row
+     (an abuse report) — that scrubs it exactly like the PATCH vector. The client
+     only ever plain-inserts feedback, so drop the conflict target for non-admins:
+     a colliding id now errors instead of overwriting. Admin bulk writes keep it. */
+  if(table==='kh_feedback' && !adminReq) conflict=null;
   const prefer = (request.headers.get('prefer')||'');
   const minimal = /return=minimal/i.test(prefer);
 
@@ -454,7 +459,17 @@ async function handlePatch(table, url, request, env, DB){
     binds = binds.concat([secret]);
   }
   const cols = COLUMNS[table];
-  const keys = Object.keys(patch).filter(k=>cols.indexOf(k)>=0);
+  let keys = Object.keys(patch).filter(k=>cols.indexOf(k)>=0);
+  /* SECURITY: kh_feedback holds abuse reports. A non-admin PATCH may ONLY bump
+     `votes` (upvoting a suggestion). Letting non-admins edit status/status_at/
+     text/author/date would let a reported user dismiss their own report
+     (status='ignored' hides it from the auto-mod cron + the human queue), strip
+     the [USERNAME] marker to dodge the auto-moderator, backdate status_at to
+     satisfy the 7-day delete guard, or forge `author`. Verified admins (the
+     x-kh-admin token the client now sends) may patch any column. */
+  if(table==='kh_feedback' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
+    keys = keys.filter(k=>k==='votes');
+  }
   if(!keys.length) return err('no valid columns to update',400,env);
   const setSql = keys.map(k=>QUOTE(k)+'=?').join(',');
   const setBinds = keys.map(k=>valIn(table,k,patch[k]));
