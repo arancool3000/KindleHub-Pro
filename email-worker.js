@@ -93,6 +93,23 @@ async function userExists(env, username) {
   return ((await r.json()) || []).length > 0;
 }
 
+/* Verify the caller actually OWNS `username`: look up the account by its auth
+   hash (the 64-hex secret only that account holder can produce) and check the
+   stored email — normalised the same way as from_user — matches. Prevents
+   sending mail "as" another user. */
+async function userOwns(env, secret, username) {
+  if (!/^[0-9a-f]{64}$/.test(secret || '')) return false;
+  const r = await fetch(
+    _base(env) + '/rest/v1/kh_users?hash=eq.' + encodeURIComponent(secret) + '&select=email',
+    { headers: _bhdr(env) },
+  );
+  if (!r.ok) return false;
+  const rows = (await r.json()) || [];
+  if (!rows.length) return false;
+  const email = String(rows[0].email || '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
+  return email === username;
+}
+
 const newId = () => 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const newSecret = () => [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
 
@@ -212,7 +229,12 @@ export default {
     const body = String(b.body || '').slice(0, 8000);
     if (!fromUser || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) return json({ error: 'bad addresses' }, 400);
     if (to.endsWith('@' + MAIL_DOMAIN)) return json({ error: 'internal mail does not use the gateway' }, 400);
-    if (!(await userExists(env, fromUser))) return json({ error: 'unknown sender account' }, 403);
+    /* SECURITY: require proof the caller OWNS `fromUser` (its account auth hash
+       in X-KH-Secret) — not merely that the username exists. Without this anyone
+       could send DKIM-signed mail AS any KindleHub user. */
+    const secret = req.headers.get('x-kh-secret') || '';
+    if (!(await userOwns(env, secret, fromUser)))
+      return json({ error: 'sender not verified — you can only send as your own account' }, 403);
 
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',

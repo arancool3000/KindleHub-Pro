@@ -6,8 +6,9 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<title>KindleHub Pro — notes, games, chat & tools for Kindle</title>
-<meta name="description" content="KindleHub Pro is a free all-in-one web app made for Kindle e-readers: notes, journal, calendar, games, group chat, RSS reader and AI tools — all in one fast, offline-friendly page."/>
+<title>KindleHub Pro — free apps, 30+ games, AI &amp; tools for your Kindle browser</title>
+<meta name="description" content="KindleHub Pro turns your Kindle's browser into a full mini-OS: a KindleOS desktop, 30+ e-ink games (chess, a real 3D flight sim, Slither, Geometry Dash, Crossy Road), an AI assistant + app builder, a free Project Gutenberg book reader, email, end-to-end-encrypted group chat, notes, journal, calendar, RSS, weather, maps and drawing — all free and offline-friendly on one fast page. A comprehensive free alternative to ReKindle."/>
+<meta name="keywords" content="Kindle apps, Kindle browser, Kindle games, ReKindle alternative, KindleOS, Kindle web app, e-ink games, Kindle AI, Kindle chat, Kindle book reader, Paperwhite apps, Kindle Scribe, e-reader apps"/>
 <meta name="robots" content="index, follow"/>
 <link rel="canonical" href="https://kindlehub.pro/"/>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23111'/%3E%3Cpath%20d='M16%2010.5C12%208.5%207.5%208.5%205%2010.5L5%2022C7.5%2020%2012%2020%2016%2022Z'%20fill='%23fff'/%3E%3Cpath%20d='M16%2010.5C20%208.5%2024.5%208.5%2027%2010.5L27%2022C24.5%2020%2020%2020%2016%2022Z'%20fill='%23fff'/%3E%3Crect%20x='15.2'%20y='10.8'%20width='1.6'%20height='11'%20rx='.8'%20fill='%23111'/%3E%3C/svg%3E"/>
@@ -16,14 +17,47 @@
 <!-- Open Graph / social link previews -->
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="KindleHub Pro"/>
-<meta property="og:title" content="KindleHub Pro"/>
-<meta property="og:description" content="A free all-in-one web app for Kindle e-readers — notes, journal, calendar, games, chat, RSS and AI tools, all in one fast page."/>
+<meta property="og:title" content="KindleHub Pro — a free everything-app for your Kindle browser"/>
+<meta property="og:description" content="A full mini-OS for Kindle: a KindleOS desktop, 30+ e-ink games (incl. a real 3D flight sim), an AI assistant + app builder, a free book reader, email, encrypted chat, notes, calendar, RSS, weather and more. Free, offline-friendly — a comprehensive alternative to ReKindle."/>
 <meta property="og:url" content="https://kindlehub.pro/"/>
 <meta property="og:image" content="https://kindlehub.pro/icon.svg"/>
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="KindleHub Pro"/>
 <meta name="twitter:description" content="A free all-in-one web app for Kindle e-readers — notes, games, chat, RSS and AI tools."/>
 <meta name="twitter:image" content="https://kindlehub.pro/icon.svg"/>
+<!-- Structured data so search engines & AI assistants describe KindleHub accurately
+     (the app itself is JS-rendered, so this + the <noscript> block below are what
+     crawlers read). -->
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"SoftwareApplication",
+  "name":"KindleHub Pro",
+  "alternateName":"KindleHub",
+  "url":"https://kindlehub.pro/",
+  "applicationCategory":"BrowserApplication",
+  "operatingSystem":"Any web browser (optimized for Kindle e-ink)",
+  "browserRequirements":"Runs in any browser, including the Kindle Experimental Browser. No install or jailbreak.",
+  "description":"KindleHub Pro turns a Kindle's built-in browser into a full mini-OS — a comprehensive, free alternative to ReKindle. It bundles a KindleOS desktop, 30+ e-ink games, an AI assistant and app builder, a free book reader, email, encrypted chat, and productivity tools on one page.",
+  "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
+  "featureList":[
+    "KindleOS desktop launcher with installable apps and home-screen widgets",
+    "30+ e-ink games: Chess, Checkers, a real 3D flight simulator, a Slither.io-style arena, Geometry Dash, Crossy Road, Tetris, 2048, Snake, Space Invaders, Minesweeper, Sudoku, Wordle, Solitaire, Tower Defence, Battleship and more",
+    "AI assistant (Gemini, Claude or GPT, or a free shared key) with an AI app builder",
+    "Free Project Gutenberg book reader — search and read full books, paginated, with saved position",
+    "Email — internal mail plus real internet email",
+    "End-to-end-encrypted group chat and a public global room",
+    "Notes with tags and a markdown journal",
+    "Calendar with events and ICS import, plus a Kanban to-do board",
+    "RSS reader and a Discover news feed",
+    "Weather, world clock, maps, star map and a dictionary",
+    "Drawing canvas tuned for e-ink",
+    "Split-screen multitasking (two pages at once)",
+    "Free, end-to-end-encrypted cloud sync across devices",
+    "Works offline once loaded; no install, no jailbreak"
+  ]
+}
+</script>
 <style>
 /* ── Design tokens ── */
 :root{
@@ -875,6 +909,25 @@ body.launcher-ui .view{padding-bottom:80px;}
      tab actually exports or imports — not on boot. -->
 </head>
 <body>
+<!-- Crawlable description for search engines / AI (hidden from real users — the
+     app below replaces the view once JS runs). Keeps KindleHub's real feature set
+     accurate wherever it's indexed or summarised. -->
+<noscript><div style="max-width:720px;margin:24px auto;padding:16px;font-family:sans-serif;line-height:1.6;color:#111;">
+<h1>KindleHub Pro — a free everything-app for your Kindle browser</h1>
+<p>KindleHub Pro turns your Kindle's built-in web browser into a full mini-OS — no jailbreak, no install, free forever. It's a comprehensive, free alternative to ReKindle, and includes:</p>
+<ul>
+<li><b>KindleOS desktop</b> — an app launcher with installable apps and home-screen widgets.</li>
+<li><b>30+ e-ink games</b> — Chess, Checkers, a real <b>3D flight simulator</b>, a Slither.io-style arena, Geometry Dash, Crossy Road, Tetris, 2048, Snake, Space Invaders, Minesweeper, Sudoku, Wordle, Solitaire, Tower Defence, Battleship and more.</li>
+<li><b>AI assistant + app builder</b> — chat with Gemini, Claude or GPT (or a free shared key) and generate working mini-apps.</li>
+<li><b>Free book reader</b> — search and read full Project Gutenberg books, paginated, with saved position.</li>
+<li><b>Email</b> — internal mail plus real internet email.</li>
+<li><b>Encrypted group chat</b> — private end-to-end-encrypted rooms and a public global chat.</li>
+<li><b>Productivity</b> — notes with tags, a markdown journal, a calendar with ICS import, and a to-do board.</li>
+<li><b>Info &amp; reference</b> — an RSS reader, news, weather, world clock, maps, star map and a dictionary.</li>
+<li><b>Creative &amp; multitasking</b> — an e-ink drawing canvas and split-screen (two pages at once).</li>
+</ul>
+<p>Free, offline-friendly, with optional encrypted cloud sync. <a href="/landing.html">Learn more about KindleHub Pro</a>.</p>
+</div></noscript>
 <!-- ────────────────────────────────────────────────────────────────
      UI MODE + THEME PRELOADER
      Runs synchronously during body parsing, BEFORE any visible
@@ -6788,7 +6841,7 @@ const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
    the literal 'off' to force that one device back onto the backend. Empty both =
    the backend, exactly as today. */
 const KH_DEFAULT_STATE_GATEWAY='';   /* e.g. 'https://kindlehub-state.you.workers.dev' */
-const KH_DEFAULT_API_GATEWAY='';     /* e.g. 'https://kindlehub-api.you.workers.dev'   */
+const KH_DEFAULT_API_GATEWAY='https://kindlehub-api.arancool3000.workers.dev';/* ALL users now route to the Cloudflare D1 worker (the audited, secure backend). Supabase is NOT used for live traffic anymore — it's only read by the one-time migration tool below until the data copy is confirmed, then the project can be deleted. */
 const KH_DEFAULT_MAIL_GATEWAY='';    /* e.g. 'https://kindlehub-mail.you.workers.dev' — real email for ALL users */
 function _apiGatewayUrl(){try{const v=(localStorage.getItem('kh_api_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_API_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');}}
 function _sbBase(){const gw=_apiGatewayUrl();return gw||(SUPABASE_URL||'').replace(/\/$/,'');}
@@ -10332,7 +10385,7 @@ async function _mailSend(toUser,subject,body,replyTo){
     const gw=_mailGatewayUrl();
     if(!gw)throw new Error('Sending to outside addresses isn\'t switched on yet for this KindleHub — the mail gateway (email-worker.js) needs to be deployed first.');
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to))throw new Error('"'+to+'" doesn\'t look like a valid email address.');
-    const r=await fetch(gw+'/send',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch(gw+'/send',{method:'POST',headers:{'Content-Type':'application/json','X-KH-Secret':(S.authToken||'')},
       body:JSON.stringify({to:to,from_user:_myMailUser(),subject:String(subject||'(no subject)').slice(0,160),body:String(body||'').slice(0,8000)})});
     if(!r.ok){let t='';try{t=(await r.json()).error||'';}catch(_){}throw new Error(t||('Gateway error '+r.status+' — mail not sent.'));}
   }else{
@@ -12676,6 +12729,9 @@ const GAME_HELP={
   blockblast:{name:'Block Blast',how:'Drag the block shapes onto the grid. Fill a full row or column to clear it. It ends when no piece can fit.'},
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
+  anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
+  nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
+  eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
 };
 function _showGameHelp(g){
   const h=(typeof GAME_HELP!=='undefined'&&GAME_HELP[g])||null;
@@ -12766,7 +12822,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -13730,6 +13786,9 @@ function _doLaunch(g){
     case 'slither':    Slither.start();break;
     case 'geometrydash': GeometryDash.start();break;
     case 'crossyroad': CrossyRoad.start();break;
+    case 'anagrams': Anagrams.start();break;
+    case 'nonogram': Nonogram.start();break;
+    case 'eightball': EightBall.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -18101,6 +18160,328 @@ const CrossyRoad=(()=>{
   };
   document.addEventListener('keydown',keyH);
   $('immersiveExit').addEventListener('click',()=>{if(timer){clearInterval(timer);timer=null;}});
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  return{start,stop};
+})();
+
+/* ── Anagrams — unscramble the letters into the word that fits the clue ──
+   Turn-based (no loop), so it's completely e-ink friendly: tap scrambled
+   tiles to build the answer, tap answer tiles to send them back. */
+const Anagrams=(()=>{
+  const BANK=[
+    ['PLANET','A world that orbits a star'],['GARDEN','Where flowers and veg grow'],
+    ['ROCKET','It blasts off into space'],['ISLAND','Land surrounded by sea'],
+    ['CANDLE','Wax with a wick, gives light'],['BRIDGE','Carries a road over a river'],
+    ['CASTLE','A king or queen lived here'],['DRAGON','A fire-breathing beast'],
+    ['FOREST','A big area of trees'],['GUITAR','A six-string instrument'],
+    ['HARBOR','Where boats shelter'],['JUNGLE','Dense tropical forest'],
+    ['KITTEN','A baby cat'],['LANTERN','A portable light'],
+    ['MARKET','Where you buy and sell'],['NEEDLE','You thread it to sew'],
+    ['ORANGE','A citrus fruit and a colour'],['PENCIL','You write with it'],
+    ['PUZZLE','A brain teaser'],['RABBIT','A long-eared hopper'],
+    ['SILVER','A shiny grey metal'],['TUNNEL','A passage under ground'],
+    ['VALLEY','Low land between hills'],['WINDOW','You look through it'],
+    ['ANCHOR','It holds a ship in place'],['BASKET','You carry shopping in it'],
+    ['CAMERA','It takes photos'],['DESERT','A dry, sandy place'],
+    ['ENGINE','It powers a car'],['FLOWER','A plant’s bloom'],
+    ['GLACIER','A slow river of ice'],['HAMMER','A tool for nails'],
+    ['JACKET','You wear it when cold'],['LADDER','You climb its rungs'],
+    ['MAGNET','It attracts iron'],['NAPKIN','You wipe your mouth on it'],
+    ['OYSTER','A shellfish with a pearl'],['PALACE','A grand royal home'],
+    ['RIBBON','A decorative strip'],['SADDLE','A seat on a horse'],
+    ['TICKET','It lets you in'],['VIOLIN','A bowed string instrument'],
+    ['WALNUT','A wrinkly brown nut'],['BREEZE','A gentle wind'],
+    ['COMPASS','It points north'],['DIAMOND','A hard, sparkling gem'],
+    ['FEATHER','A bird has many'],['MONKEY','A tree-swinging primate'],
+    ['THUNDER','It follows lightning'],['LIBRARY','Full of books to borrow']
+  ];
+  let game=null;
+  function _best(){return (S.games&&S.games.anagrams&&S.games.anagrams.best)||0;}
+  function _scramble(w){
+    var a=w.split(''),i,j,t;
+    for(var pass=0;pass<3;pass++){for(i=a.length-1;i>0;i--){j=Math.floor(Math.random()*(i+1));t=a[i];a[i]=a[j];a[j]=t;}}
+    if(a.join('')===w){t=a[0];a[0]=a[1];a[1]=t;}/* never hand them the answer already solved */
+    return a;
+  }
+  function nextWord(){
+    var pick=BANK[Math.floor(Math.random()*BANK.length)];
+    game.word=pick[0];game.hint=pick[1];
+    game.letters=_scramble(pick[0]).map(function(ch,i){return {ch:ch,id:i,inAns:false};});
+    game.answer=[];
+    render();
+  }
+  function start(){
+    game={solved:0,word:'',hint:'',letters:[],answer:[]};
+    enterImmersive('Anagrams','Solved: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();nextWord();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Solved: 0  |  Best: '+_best(),{id:'anaScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','',{id:'anaHint',style:{textAlign:'center',fontSize:'13px',color:'var(--muted)',margin:'8px 12px',minHeight:'18px',fontStyle:'italic'}}));
+    immersiveContent.appendChild(el('div',{id:'anaAnswer',style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',minHeight:'48px',margin:'6px auto',padding:'6px',border:'2px dashed var(--muted)',borderRadius:'8px',maxWidth:'340px'}}));
+    immersiveContent.appendChild(el('div',{id:'anaLetters',style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',minHeight:'48px',margin:'10px auto',maxWidth:'340px'}}));
+    var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',flexWrap:'wrap',gap:'6px',marginTop:'8px'}});
+    ctrl.appendChild(Object.assign(txt('button','Check',{className:'btn small primary'}),{onclick:check}));
+    ctrl.appendChild(Object.assign(txt('button','Clear',{className:'btn small'}),{onclick:function(){game.letters.forEach(function(l){l.inAns=false;});game.answer=[];render();}}));
+    ctrl.appendChild(Object.assign(txt('button','Shuffle',{className:'btn small'}),{onclick:function(){var av=game.letters.filter(function(l){return !l.inAns;});for(var i=av.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=av[i].ch;av[i].ch=av[j].ch;av[j].ch=t;}render();}}));
+    ctrl.appendChild(Object.assign(txt('button','Skip',{className:'btn small'}),{onclick:function(){toast('The word was '+game.word);nextWord();}}));
+    immersiveContent.appendChild(ctrl);
+  }
+  function _tile(ch,fn){var b=txt('button',ch,{className:'btn',style:{fontSize:'20px',fontWeight:'800',minWidth:'40px',minHeight:'44px',padding:'2px 8px'}});b.onclick=fn;return b;}
+  function render(){
+    var A=$('anaAnswer'),L=$('anaLetters'),H=$('anaHint');
+    if(!A||!L)return;
+    if(H)H.textContent='Clue: '+game.hint;
+    A.innerHTML='';
+    game.answer.forEach(function(id){var l=game.letters[id];A.appendChild(_tile(l.ch,function(){l.inAns=false;var k=game.answer.indexOf(id);if(k>=0)game.answer.splice(k,1);render();}));});
+    L.innerHTML='';
+    game.letters.forEach(function(l){if(l.inAns)return;L.appendChild(_tile(l.ch,function(){l.inAns=true;game.answer.push(l.id);render();}));});
+  }
+  function check(){
+    var guess=game.answer.map(function(id){return game.letters[id].ch;}).join('');
+    if(!guess){toast('Tap letters to build a word first');return;}
+    if(guess===game.word){
+      game.solved++;
+      var sb=$('anaScore');if(sb)sb.textContent='Solved: '+game.solved+'  |  Best: '+Math.max(_best(),game.solved);
+      updateImmersiveScore('Solved: '+game.solved);
+      toast('✓ Correct! '+game.word);
+      if(!S.games.anagrams)S.games.anagrams={best:0};
+      if(game.solved>_best())S.games.anagrams.best=game.solved;
+      saveNow();
+      try{_khSubmitScore('anagrams',game.solved);}catch(_){}
+      recordStat('anagrams',true);
+      nextWord();
+    } else { toast('Not it — try again, or Skip'); }
+  }
+  function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── Nonograms (Picross) — fill the grid to match the row & column clues ──
+   Turn-based logic puzzle. Each clue number is a run of consecutive filled
+   cells; the runs for a line appear in order. Solve the hidden picture. */
+const Nonogram=(()=>{
+  const PUZZLES=[
+    {name:'Heart',g:['01010','11111','11111','01110','00100']},
+    {name:'Diamond',g:['00100','01110','11111','01110','00100']},
+    {name:'Plus',g:['00100','00100','11111','00100','00100']},
+    {name:'Arrow',g:['00100','01110','10101','00100','00100']},
+    {name:'House',g:['00100','01110','11111','10101','11111']},
+    {name:'Smiley',g:['01010','01010','00000','10001','01110']},
+    {name:'Letter T',g:['11111','00100','00100','00100','00100']},
+    {name:'Boat',g:['00100','00100','11111','11111','01110']}
+  ];
+  const N=5;
+  let game=null,mode='fill';
+  function _best(){return (S.games&&S.games.nonogram&&S.games.nonogram.best)||0;}
+  function _clues(line){var runs=[],c=0;for(var i=0;i<line.length;i++){if(line[i])c++;else if(c){runs.push(c);c=0;}}if(c)runs.push(c);return runs.length?runs:[0];}
+  function loadPuzzle(idx){
+    var p=PUZZLES[idx%PUZZLES.length];
+    game.name=p.name;
+    game.sol=p.g.map(function(row){return row.split('').map(Number);});
+    game.grid=[];for(var r=0;r<N;r++)game.grid.push([0,0,0,0,0]);
+    game.rowClues=game.sol.map(_clues);
+    game.colClues=[];for(var col=0;col<N;col++){var line=[];for(var rr=0;rr<N;rr++)line.push(game.sol[rr][col]);game.colClues.push(_clues(line));}
+    game.done=false;
+    render();
+  }
+  function start(){
+    game={idx:Math.floor(Math.random()*PUZZLES.length),solved:0};
+    mode='fill';
+    enterImmersive('Nonograms','Solved: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();loadPuzzle(game.idx);
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Solved: 0  |  Best: '+_best(),{id:'nonoScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','Fill cells so each row & column matches its number clues (each number = a run of filled cells, in order).',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px',lineHeight:'1.4'}}));
+    var modeBtn=txt('button','Mode: Fill',{className:'btn small',id:'nonoMode',style:{display:'block',margin:'8px auto'}});
+    modeBtn.onclick=function(){mode=(mode==='fill')?'mark':'fill';modeBtn.textContent='Mode: '+(mode==='fill'?'Fill':'Mark ✕');};
+    immersiveContent.appendChild(modeBtn);
+    immersiveContent.appendChild(el('div',{id:'nonoGrid',style:{margin:'8px auto'}}));
+    var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',gap:'6px',marginTop:'10px'}});
+    ctrl.appendChild(Object.assign(txt('button','Clear',{className:'btn small'}),{onclick:function(){if(!game||game.done)return;for(var r=0;r<N;r++)for(var c=0;c<N;c++)game.grid[r][c]=0;render();}}));
+    ctrl.appendChild(Object.assign(txt('button','New Puzzle',{className:'btn small'}),{onclick:function(){if(!game)return;game.idx=(game.idx+1)%PUZZLES.length;loadPuzzle(game.idx);}}));
+    immersiveContent.appendChild(ctrl);
+  }
+  function render(){
+    var host=$('nonoGrid');if(!host||!game)return;
+    host.innerHTML='';
+    host.style.cssText='display:grid;grid-template-columns:minmax(48px,auto) repeat('+N+',40px);gap:2px;justify-content:center;margin:8px auto;';
+    var dark=document.body.classList.contains('dark');
+    host.appendChild(el('div'));/* corner */
+    for(var c=0;c<N;c++){
+      var cc=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',fontSize:'12px',fontWeight:'700',fontFamily:'monospace',lineHeight:'1.15',minHeight:'40px'}});
+      game.colClues[c].forEach(function(n){cc.appendChild(txt('div',String(n)));});
+      host.appendChild(cc);
+    }
+    for(var r=0;r<N;r++){
+      var rc=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:'5px',fontSize:'13px',fontWeight:'700',fontFamily:'monospace',paddingRight:'5px'}});
+      game.rowClues[r].forEach(function(n){rc.appendChild(txt('span',String(n)));});
+      host.appendChild(rc);
+      for(var c2=0;c2<N;c2++){
+        (function(r,c){
+          var v=game.grid[r][c];
+          var cell=el('div',{style:{width:'40px',height:'40px',border:'1px solid '+(dark?'#555':'#bbb'),borderRadius:'3px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',fontWeight:'800',boxSizing:'border-box',color:dark?'#888':'#888',background:v===1?(dark?'#eee':'#222'):(dark?'#141414':'#fff')}});
+          if(v===2)cell.textContent='✕';
+          cell.onclick=function(){tap(r,c);};
+          host.appendChild(cell);
+        })(r,c2);
+      }
+    }
+  }
+  function tap(r,c){
+    if(!game||game.done)return;
+    var v=game.grid[r][c];
+    if(mode==='fill')game.grid[r][c]=(v===1)?0:1;
+    else game.grid[r][c]=(v===2)?0:2;
+    render();checkWin();
+  }
+  function checkWin(){
+    for(var r=0;r<N;r++)for(var c=0;c<N;c++){if((game.grid[r][c]===1)!==(game.sol[r][c]===1))return;}
+    game.done=true;game.solved++;
+    var sb=$('nonoScore');if(sb)sb.textContent='Solved: '+game.solved+'  |  Best: '+Math.max(_best(),game.solved);
+    updateImmersiveScore('Solved: '+game.solved);
+    toast('✓ Solved: '+game.name+'!');
+    if(!S.games.nonogram)S.games.nonogram={best:0};
+    if(game.solved>_best())S.games.nonogram.best=game.solved;
+    saveNow();
+    try{_khSubmitScore('nonogram',game.solved);}catch(_){}
+    recordStat('nonogram',true);
+    setTimeout(function(){if(game&&game.done){game.idx=(game.idx+1)%PUZZLES.length;loadPuzzle(game.idx);}},1200);
+  }
+  function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── 8-Ball — a simple top-down pool table ──────────────────────────────
+   Drag back from the white cue ball and release to shoot (slingshot). Equal-
+   mass elastic ball collisions, wall bounces, friction, six pockets. Sink every
+   object ball to clear the table. Canvas + flat fills; the loop only redraws
+   while something is moving (or you're aiming) so it stays gentle on e-ink. */
+const EightBall=(()=>{
+  const W=280,H=452,R=9,POCK=15,FR=40;
+  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=8;
+  const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
+  let game=null,timer=null;
+  function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
+  function rack(){
+    var balls=[{x:W/2,y:H*0.72,vx:0,vy:0,cue:true,live:true}];
+    var apexY=H*0.24,gap=R*2+1,idx=0;
+    for(var row=0;row<4;row++){for(var k=0;k<=row;k++){
+      balls.push({x:W/2-row*R+k*gap,y:apexY+row*(gap*0.9),vx:0,vy:0,cue:false,live:true,eight:(idx===4)});
+      idx++;
+    }}
+    return balls;
+  }
+  function _cue(){for(var i=0;i<game.balls.length;i++)if(game.balls[i].cue)return game.balls[i];return null;}
+  function allStopped(){return game.balls.every(function(b){return !b.live||(Math.abs(b.vx)<MINV&&Math.abs(b.vy)<MINV);});}
+  function start(){
+    if(timer){clearInterval(timer);timer=null;}
+    game={balls:rack(),shots:0,sunk:0,aiming:false,ax:0,ay:0,over:false,moving:false};
+    enterImmersive('8-Ball','Sunk: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();
+    if(timer)clearInterval(timer);
+    timer=setInterval(function(){if(!document.hidden)tick();},FR);
+    draw();
+  }
+  function tick(){
+    if(!game)return;
+    var B=game.balls,i,j,moving=false;
+    for(i=0;i<B.length;i++){var b=B[i];if(!b.live)continue;
+      if(Math.abs(b.vx)>MINV||Math.abs(b.vy)>MINV){
+        b.x+=b.vx;b.y+=b.vy;b.vx*=FRICT;b.vy*=FRICT;moving=true;
+        if(Math.abs(b.vx)<MINV)b.vx=0;if(Math.abs(b.vy)<MINV)b.vy=0;
+        if(b.x<R){b.x=R;b.vx=-b.vx*WALL;}
+        if(b.x>W-R){b.x=W-R;b.vx=-b.vx*WALL;}
+        if(b.y<R){b.y=R;b.vy=-b.vy*WALL;}
+        if(b.y>H-R){b.y=H-R;b.vy=-b.vy*WALL;}
+      }
+    }
+    for(i=0;i<B.length;i++){for(j=i+1;j<B.length;j++){
+      var a=B[i],c=B[j];if(!a.live||!c.live)continue;
+      var dx=c.x-a.x,dy=c.y-a.y,d=Math.sqrt(dx*dx+dy*dy);
+      if(d>0.0001&&d<2*R){
+        var nx=dx/d,ny=dy/d,ov=(2*R-d)/2;
+        a.x-=nx*ov;a.y-=ny*ov;c.x+=nx*ov;c.y+=ny*ov;
+        var rvx=a.vx-c.vx,rvy=a.vy-c.vy,vn=rvx*nx+rvy*ny;
+        if(vn>0){a.vx-=vn*nx;a.vy-=vn*ny;c.vx+=vn*nx;c.vy+=vn*ny;moving=true;}
+      }
+    }}
+    for(i=0;i<B.length;i++){var bb=B[i];if(!bb.live)continue;
+      for(var pk=0;pk<POCKETS.length;pk++){
+        var px=bb.x-POCKETS[pk][0],py=bb.y-POCKETS[pk][1];
+        if(px*px+py*py<POCK*POCK){
+          if(bb.cue){bb.x=W/2;bb.y=H*0.72;bb.vx=0;bb.vy=0;toast('Scratch!');}
+          else{bb.live=false;game.sunk++;updateImmersiveScore('Sunk: '+game.sunk);var sb=$('ebScore');if(sb)sb.textContent='Sunk: '+game.sunk+'  |  Best: '+Math.max(_best(),game.sunk);}
+          break;
+        }
+      }
+    }
+    if(moving||game.aiming)draw(); else if(game.moving){draw();}
+    game.moving=moving;
+    if(!game.over&&B.filter(function(x){return x.live&&!x.cue;}).length===0){
+      game.over=true;
+      if(!S.games.eightball)S.games.eightball={best:0};
+      S.games.eightball.best=Math.max(S.games.eightball.best||0,game.sunk);
+      saveNow();try{_khSubmitScore('eightball',game.sunk);}catch(_){}recordStat('eightball',true);
+      toast('🎱 Table cleared in '+game.shots+' shots!');
+    }
+  }
+  function draw(){
+    var canvas=$('ebCanvas');if(!canvas||!game)return;
+    var ctx=canvas.getContext('2d'),dark=document.body.classList.contains('dark');
+    ctx.fillStyle=dark?'#14201a':'#dfeae0';ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle=dark?'#3a5a48':'#9db8a6';ctx.lineWidth=3;ctx.strokeRect(2,2,W-4,H-4);
+    var p;for(p=0;p<POCKETS.length;p++){ctx.beginPath();ctx.arc(POCKETS[p][0],POCKETS[p][1],POCK-2,0,7);ctx.fillStyle=dark?'#000':'#222';ctx.fill();}
+    var B=game.balls,i;
+    for(i=0;i<B.length;i++){var b=B[i];if(!b.live)continue;
+      ctx.beginPath();ctx.arc(b.x,b.y,R,0,7);
+      if(b.cue){ctx.fillStyle='#fff';ctx.fill();ctx.lineWidth=1.4;ctx.strokeStyle='#333';ctx.stroke();}
+      else if(b.eight){ctx.fillStyle='#111';ctx.fill();ctx.lineWidth=1;ctx.strokeStyle='#eee';ctx.stroke();}
+      else{ctx.fillStyle=dark?'#c7c7c7':'#555';ctx.fill();ctx.lineWidth=1;ctx.strokeStyle=dark?'#888':'#222';ctx.stroke();}
+    }
+    if(game.aiming&&allStopped()&&!game.over){
+      var cue=_cue();if(cue){
+        var ddx=cue.x-game.ax,ddy=cue.y-game.ay,dl=Math.sqrt(ddx*ddx+ddy*ddy);
+        if(dl>1){var ux=ddx/dl,uy=ddy/dl;
+          ctx.strokeStyle=dark?'#fff':'#111';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+          ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(cue.x+ux*Math.min(dl,90),cue.y+uy*Math.min(dl,90));ctx.stroke();ctx.setLineDash([]);
+        }
+      }
+    }
+  }
+  function _pt(e){var canvas=$('ebCanvas'),r=canvas.getBoundingClientRect();var t=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e;return {x:(t.clientX-r.left)*(W/r.width),y:(t.clientY-r.top)*(H/r.height)};}
+  function _down(e){if(!game||game.over||!allStopped())return;e.preventDefault();var p=_pt(e);game.aiming=true;game.ax=p.x;game.ay=p.y;draw();}
+  function _move(e){if(!game||!game.aiming)return;e.preventDefault();var p=_pt(e);game.ax=p.x;game.ay=p.y;draw();}
+  function _up(e){
+    if(!game||!game.aiming)return;e.preventDefault();
+    game.aiming=false;
+    var cue=_cue();if(!cue){draw();return;}
+    var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
+    if(dl>6){var pow=Math.min(MAXPOW,dl/12);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    draw();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Sunk: 0  |  Best: '+_best(),{id:'ebScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','Drag back from the white ball and release to shoot. Sink every ball.',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px'}}));
+    var canvas=el('canvas',{id:'ebCanvas',width:W,height:H});
+    canvas.style.cssText='display:block;margin:6px auto;max-width:100%;border:2px solid var(--fg);border-radius:6px;touch-action:none;';
+    canvas.addEventListener('touchstart',_down,{passive:false});
+    canvas.addEventListener('touchmove',_move,{passive:false});
+    canvas.addEventListener('touchend',_up,{passive:false});
+    canvas.addEventListener('mousedown',_down);canvas.addEventListener('mousemove',_move);canvas.addEventListener('mouseup',_up);
+    immersiveContent.appendChild(canvas);
+    var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',marginTop:'8px'}});
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(function(){return game&&!game.over&&game.shots>0;},start)}));
+    immersiveContent.appendChild(ctrl);
+  }
+  $('immersiveExit').addEventListener('click',function(){if(timer){clearInterval(timer);timer=null;}});
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
   return{start,stop};
 })();
@@ -24505,6 +24886,9 @@ const GAME_MAP=[
   {keys:['tower defence','tower defense','towerdef'],g:'towerdef'},
   {keys:['geometry dash','geometrydash','geo dash','stereo madness','cube jump','rhythm runner'],g:'geometrydash'},
   {keys:['crossy road','crossyroad','crossy','crosser','frogger','cross the road','chicken road'],g:'crossyroad'},
+  {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
+  {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
+  {keys:['8 ball','8-ball','eight ball','eightball','pool','billiards','snooker','pool table'],g:'eightball'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -28789,6 +29173,20 @@ games:()=>{
     wsBtn.onclick=()=>launchGame('wordsearch');
     c.appendChild(wsBtn);
   }));
+  rowWord.appendChild(gc('Anagrams',null,c=>{
+    c.appendChild(txt('p','Unscramble the jumbled letters into the word that fits the clue. Endless — beat your best streak.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.anagrams&&S.games.anagrams.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const anaBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    anaBtn.onclick=()=>launchGame('anagrams');
+    c.appendChild(anaBtn);
+  }));
+  rowWord.appendChild(gc('Nonograms',null,c=>{
+    c.appendChild(txt('p','Picross logic puzzles — use the row & column number clues to reveal the hidden picture.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Solved: '+(S.games&&S.games.nonogram&&S.games.nonogram.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const nonoBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    nonoBtn.onclick=()=>launchGame('nonogram');
+    c.appendChild(nonoBtn);
+  }));
   rowWord.appendChild(gc('Crossword',null,c=>{
     c.appendChild(txt('p',getCROSSWORDS().length+' puzzles across '+[...new Set(getCROSSWORDS().map(p=>p.cat))].length+' categories.',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('p','Science, History, Literature, Maths and more.',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
@@ -28945,6 +29343,13 @@ games:()=>{
     c.appendChild(txt('p','Hop the chicken across endless lanes of traffic. Tap to move, time the gaps, go as far as you can.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.crossyroad&&S.games.crossyroad.best||0)+'m',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'crossyroad',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('8-Ball',null,c=>{
+    c.appendChild(txt('p','Top-down pool — drag back from the cue ball and release to shoot. Sink every ball.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Best sunk: '+(S.games&&S.games.eightball&&S.games.eightball.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const ebBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    ebBtn.onclick=()=>launchGame('eightball');
+    c.appendChild(ebBtn);
   }));
   rowArc.appendChild(gc('Tetris',null,c=>{
     c.appendChild(txt('p','Stack falling pieces. Clear lines to score.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
@@ -46810,8 +47215,16 @@ mail:()=>{
             }
             if(folder!=='sent'){
               const draftBtn=txt('button','✦ Draft reply',{className:'btn small'});
-              draftBtn.onclick=async ev=>{ev.stopPropagation();draftBtn.disabled=true;draftBtn.textContent='✦ Drafting…';
-                try{const out=await khiCall('Write a short, friendly reply (2-4 sentences) to this mail. Output ONLY the reply body, no greeting-name placeholders, no signature.\n\nFrom: '+m.from+'\nSubject: '+(m.subject||'')+'\n\n'+(m.body||'').slice(0,3000),{maxTokens:260});
+              draftBtn.onclick=async ev=>{ev.stopPropagation();
+                /* Ask what the user actually wants to say first, then expand THAT
+                   into a full reply — instead of a one-size-fits-all draft. */
+                const intent=await kindlePrompt('What do you want to say back? A few words is enough — e.g. "yes, sounds good", "no thanks", "ask when it is". Leave blank for a friendly general reply.','');
+                if(intent===null)return;
+                draftBtn.disabled=true;draftBtn.textContent='✦ Drafting…';
+                const gist=String(intent||'').trim();
+                const instr=gist?('Write my reply so it conveys THIS: "'+gist+'". Expand it into a polite, natural 2-4 sentence reply that fits the mail.')
+                                :'Write a short, friendly reply (2-4 sentences) to this mail.';
+                try{const out=await khiCall(instr+' Output ONLY the reply body, no greeting-name placeholders, no signature.\n\nFrom: '+m.from+'\nSubject: '+(m.subject||'')+'\n\n'+(m.body||'').slice(0,3000),{maxTokens:280});
                   if(out)composeModal(m.from,'Re: '+(m.subject||''),out.trim()+'\n\n— On '+fmtTs(m.ts)+', '+m.from+' wrote —\n'+(m.body||'').split('\n').map(l=>'> '+l).join('\n'),m.id);}
                 catch(_){toast('Draft failed — try again');}
                 draftBtn.disabled=false;draftBtn.textContent='✦ Draft reply';};
@@ -56532,25 +56945,59 @@ window._showWelcome=function(){
     const ov=document.createElement('div');
     ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:600001;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;padding:16px;';
     const card=document.createElement('div');
-    card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);max-width:460px;width:100%;max-height:80%;overflow:auto;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:var(--ui-font);';
+    card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);max-width:460px;width:100%;max-height:85%;overflow:auto;border-radius:12px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.3);font-family:var(--ui-font);display:flex;flex-direction:column;';
     const q=document.createElement('div');
     q.style.cssText='font-size:11px;color:var(--muted);margin-bottom:8px;white-space:pre-wrap;word-break:break-word;';
-    q.textContent='Ask AI about: '+(text.length>200?text.slice(0,200)+'…':text);
+    q.textContent='About: '+(text.length>200?text.slice(0,200)+'…':text);
     const body=document.createElement('div');
-    body.style.cssText='font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word;min-height:40px;';
-    body.textContent='Thinking…';
+    body.style.cssText='font-size:14px;line-height:1.55;flex:1;';
+    /* The auto-summary lives in its OWN element so later Q&A blocks (appended to
+       body) aren't wiped when the summary resolves. */
+    const initEl=document.createElement('div');
+    initEl.style.cssText='white-space:pre-wrap;word-break:break-word;min-height:40px;';
+    initEl.textContent='Thinking…';
+    body.appendChild(initEl);
+    /* Follow-up question row — ask your OWN questions about the highlighted text. */
+    const askRow=document.createElement('div');
+    askRow.style.cssText='display:flex;gap:6px;margin-top:12px;';
+    const askIn=document.createElement('input');
+    askIn.type='text';askIn.placeholder='Ask a question about this text…';
+    askIn.style.cssText='flex:1;padding:8px 10px;border-radius:8px;border:var(--thin);background:var(--bg,#fff);color:var(--fg,#111);font-family:inherit;font-size:13px;';
+    const askBtn=document.createElement('button');
+    askBtn.textContent='Ask';askBtn.className='btn small primary';askBtn.style.cssText='flex-shrink:0;';
+    askRow.appendChild(askIn);askRow.appendChild(askBtn);
     const close=document.createElement('button');
-    close.textContent='Close';close.className='btn small';close.style.cssText='margin-top:12px;';
+    close.textContent='Close';close.className='btn small';close.style.cssText='margin-top:10px;';
     const shut=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     close.onclick=shut;
     ov.onclick=function(ev){if(ev.target===ov)shut();};
-    card.appendChild(q);card.appendChild(body);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    let _busy=false;
+    async function ask(userQ){
+      if(_busy)return;_busy=true;askBtn.disabled=true;
+      const qEl=document.createElement('div');
+      qEl.style.cssText='font-weight:700;margin-top:12px;padding-top:10px;border-top:var(--thin);';
+      qEl.textContent='You: '+userQ;
+      const aEl=document.createElement('div');
+      aEl.style.cssText='margin-top:4px;white-space:pre-wrap;word-break:break-word;';
+      aEl.textContent='Thinking…';
+      body.appendChild(qEl);body.appendChild(aEl);card.scrollTop=card.scrollHeight;
+      try{
+        const prompt='You are a concise, helpful assistant. Answer the user\'s QUESTION using the TEXT below as context. If the text does not contain the answer, say so briefly (then answer from general knowledge if you can). Keep it short and clear.\n\nTEXT:\n'+text+'\n\nQUESTION:\n'+userQ;
+        const ans=(typeof khiCall==='function')?await khiCall(prompt,{maxTokens:500,temperature:0.4}):'';
+        aEl.textContent=ans||'No response — check Settings → AI Features.';
+      }catch(err){aEl.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
+      _busy=false;askBtn.disabled=false;card.scrollTop=card.scrollHeight;
+    }
+    askBtn.onclick=function(){const v=askIn.value.trim();if(!v)return;askIn.value='';ask(v);};
+    askIn.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();askBtn.onclick();}});
+    /* Initial auto-answer (summary / define / answer). */
     (async function(){
       try{
-        const prompt='You are a concise, helpful assistant. The user selected the text below. If it is a question, answer it; if it is a word/term, define it; otherwise summarise or explain it. Keep it short and clear.\n\nTEXT:\n'+text;
+        const prompt='You are a concise, helpful assistant. The user selected the text below. If it is a question, answer it; if it is a word/term, define it; otherwise summarise or explain it. Keep it short and clear — the user can ask follow-up questions after.\n\nTEXT:\n'+text;
         const ans=(typeof khiCall==='function')?await khiCall(prompt,{maxTokens:400,temperature:0.5}):'';
-        body.textContent=ans||'No response — check Settings → AI Features.';
-      }catch(err){body.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
+        initEl.textContent=ans||'No response — check Settings → AI Features.';
+      }catch(err){initEl.textContent='AI error: '+((err&&err.message)||String(err)||'unknown');}
     })();
   }
   if(cpAi)cpAi.onclick=function(e){
