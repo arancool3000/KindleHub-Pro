@@ -6788,7 +6788,7 @@ const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
    the literal 'off' to force that one device back onto the backend. Empty both =
    the backend, exactly as today. */
 const KH_DEFAULT_STATE_GATEWAY='';   /* e.g. 'https://kindlehub-state.you.workers.dev' */
-const KH_DEFAULT_API_GATEWAY='';     /* e.g. 'https://kindlehub-api.you.workers.dev'   */
+const KH_DEFAULT_API_GATEWAY='https://kindlehub-api.arancool3000.workers.dev';/* ALL users now route to the Cloudflare D1 worker (the audited, secure backend). Supabase is NOT used for live traffic anymore — it's only read by the one-time migration tool below until the data copy is confirmed, then the project can be deleted. */
 const KH_DEFAULT_MAIL_GATEWAY='';    /* e.g. 'https://kindlehub-mail.you.workers.dev' — real email for ALL users */
 function _apiGatewayUrl(){try{const v=(localStorage.getItem('kh_api_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_API_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');}}
 function _sbBase(){const gw=_apiGatewayUrl();return gw||(SUPABASE_URL||'').replace(/\/$/,'');}
@@ -10332,7 +10332,7 @@ async function _mailSend(toUser,subject,body,replyTo){
     const gw=_mailGatewayUrl();
     if(!gw)throw new Error('Sending to outside addresses isn\'t switched on yet for this KindleHub — the mail gateway (email-worker.js) needs to be deployed first.');
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to))throw new Error('"'+to+'" doesn\'t look like a valid email address.');
-    const r=await fetch(gw+'/send',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch(gw+'/send',{method:'POST',headers:{'Content-Type':'application/json','X-KH-Secret':(S.authToken||'')},
       body:JSON.stringify({to:to,from_user:_myMailUser(),subject:String(subject||'(no subject)').slice(0,160),body:String(body||'').slice(0,8000)})});
     if(!r.ok){let t='';try{t=(await r.json()).error||'';}catch(_){}throw new Error(t||('Gateway error '+r.status+' — mail not sent.'));}
   }else{
