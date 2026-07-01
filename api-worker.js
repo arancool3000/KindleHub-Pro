@@ -554,7 +554,7 @@ async function ensureSchema(DB){
    Worker: GEMINI_KEY (required), DAILY_CAP (optional, default 3580). */
 const PROXY_MODELS = new Set([
   'gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash',
-  'gemini-3-flash','gemini-3.5-flash','gemma-4-26b-it','gemma-4-31b-it',
+  'gemini-3.5-flash','gemini-3.1-flash',
 ]);
 async function handleGeminiProxy(request, env, DB){
   if(request.method!=='POST') return err('method not allowed',405,env);

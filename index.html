@@ -1300,7 +1300,7 @@ const SK='kindlehub_v5';
 function defaultState(){
   return{user:'Reader',theme:'light',fontSize:16,lastPlay:null,
     userId:null,authToken:null,email:null,syncEnabled:false,lastSync:null,
-    games:{},notes:[],stats:{},books:[],flashDecks:[],badges:[],geminiKey:'',openrouterKey:'',anthropicKey:'',openaiKey:'',aiProvider:'gemini',openrouterModel:'meta-llama/llama-3.3-70b-instruct:free',anthropicModel:'claude-haiku-4-5-20251001',openaiModel:'gpt-4o-mini',proxyUrl:'',aiMsgDate:'',aiMsgCount:0,savedChatHistory:[],chatSessions:[],savedQuizzes:[],savedPlaces:[],srData:{},wallpaper:'none',
+    games:{},notes:[],stats:{},books:[],flashDecks:[],badges:[],geminiKey:'',openrouterKey:'',anthropicKey:'',openaiKey:'',aiProvider:'gemini',openrouterModel:'meta-llama/llama-3.3-70b-instruct:free',anthropicModel:'claude-haiku-4-5-20251001',openaiModel:'gpt-5.4-mini',proxyUrl:'',aiMsgDate:'',aiMsgCount:0,savedChatHistory:[],chatSessions:[],savedQuizzes:[],savedPlaces:[],srData:{},wallpaper:'none',
     focusLog:[],rssFeeds:[],rssCache:{},rssSaved:[],rssRead:{},mindJournal:[],mdJournals:[],smLat:51.5,smLon:-0.1,smCity:'London',
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
@@ -1420,13 +1420,18 @@ if(S.khIntelligence===false&&!S.khIntelligenceManualOff){S.khIntelligence=true;}
    20/day so it was rate-limited very quickly. */
 if(S.khiModel==='gemma-3-27b-it'
    ||S.khiModel==='gemini-3.1-flash-lite-preview'
-   ||S.khiModel==='gemini-2.5-flash-lite'){
+   ||S.khiModel==='gemini-3-flash'
+   ||(S.khiModel||'').indexOf('gemma-')===0){
   S.khiModel='gemini-3.1-flash-lite';
 }
 /* Same migration for the chat-model preference (S.hbGeminiModel)
-   used by AI chat / HTML builder / book maker / KindleHub Intelligence. */
+   used by AI chat / HTML builder / book maker / KindleHub Intelligence.
+   Also strips the never-real "gemini-3-flash" / "gemma-4-*" ids a previous
+   build wrongly offered, so a saved pref can't point at a 404 model. */
 if(S.hbGeminiModel==='gemma-3-27b-it'
-   ||S.hbGeminiModel==='gemini-3.1-flash-lite-preview'){
+   ||S.hbGeminiModel==='gemini-3.1-flash-lite-preview'
+   ||S.hbGeminiModel==='gemini-3-flash'
+   ||(S.hbGeminiModel||'').indexOf('gemma-')===0){
   S.hbGeminiModel='gemini-3.1-flash-lite';
 }
 /* (Legacy: an older migration pushed users from gemini-2.0-flash-lite
@@ -4570,19 +4575,17 @@ function launchKindleDesktop(){
   gemModelLbl.style.cssText='font-size:11px;font-weight:700;color:var(--muted,#888);text-transform:uppercase;letter-spacing:0.5px;';
   const GEMINI_GROUPS=[
     {group:'Free tier',items:[
-      ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — 15 RPM, 500/day'],
-      ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite — 10 RPM, 20/day'],
-      ['gemini-2.5-flash','Gemini 2.5 Flash — 5 RPM, 20/day'],
-      ['gemini-3-flash','Gemini 3 Flash — 5 RPM, 20/day'],
-      ['gemini-3.5-flash','Gemini 3.5 Flash — 5 RPM, 20/day'],
-      ['gemma-4-26b-it','Gemma 4 26B — open weights, 15 RPM, 1.5K/day'],
-      ['gemma-4-31b-it','Gemma 4 31B — open weights, 15 RPM, 1.5K/day'],
+      ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — most generous free tier'],
+      ['gemini-3.5-flash','Gemini 3.5 Flash — newest, most capable flash'],
+      ['gemini-3.1-flash','Gemini 3.1 Flash'],
+      ['gemini-2.5-flash','Gemini 2.5 Flash'],
+      ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],
+      ['gemini-2.0-flash','Gemini 2.0 Flash'],
+      ['gemini-2.0-flash-lite','Gemini 2.0 Flash Lite'],
     ]},
     {group:'Paid tier',items:[
-      ['gemini-2.5-pro','Gemini 2.5 Pro — most capable'],
       ['gemini-3.1-pro','Gemini 3.1 Pro — newest reasoning'],
-      ['gemini-2.0-flash','Gemini 2 Flash'],
-      ['gemini-2.0-flash-lite','Gemini 2 Flash Lite'],
+      ['gemini-2.5-pro','Gemini 2.5 Pro'],
     ]},
   ];
   const gemModelSel=document.createElement('select');
@@ -4703,7 +4706,7 @@ function launchKindleDesktop(){
   }
   modelPanels['anthropic']=_khBuildPaidPanel('anthropicKey','anthropicModel',ANTHROPIC_MODELS,'claude-haiku-4-5-20251001','Claude','console.anthropic.com');
   stSettings.appendChild(modelPanels['anthropic']);
-  modelPanels['openai']=_khBuildPaidPanel('openaiKey','openaiModel',OPENAI_MODELS,'gpt-4o-mini','OpenAI GPT','platform.openai.com');
+  modelPanels['openai']=_khBuildPaidPanel('openaiKey','openaiModel',OPENAI_MODELS,'gpt-5.4-mini','OpenAI GPT','platform.openai.com');
   stSettings.appendChild(modelPanels['openai']);
   kdStore.appendChild(stSettings);
 
@@ -4958,7 +4961,7 @@ function launchKindleDesktop(){
   async function callGeminiAPI(systemPrompt,userMsg){
     const key=S.geminiKey||'';
     if(!key)throw new Error('No Gemini key — tap the AI Provider card in Settings to add one.');
-    const gemModel=S.hbGeminiModel||'gemini-3.1-flash-lite';
+    const gemModel=_normGemModel(S.hbGeminiModel);
     const resp=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+gemModel+':generateContent?key='+encodeURIComponent(key),{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({system_instruction:{parts:[{text:systemPrompt}]},contents:[{role:'user',parts:[{text:userMsg}]}],generationConfig:{temperature:0.7,maxOutputTokens:4000}})
@@ -4997,7 +5000,7 @@ function launchKindleDesktop(){
   async function callOpenAIAPI(systemPrompt,userMsg){
     const key=S.openaiKey||'';
     if(!key)throw new Error('No OpenAI key — add one in Settings → AI (paid).');
-    const model=S.openaiModel||'gpt-4o-mini';
+    const model=S.openaiModel||'gpt-5.4-mini';
     const reasoning=/^o[0-9]/.test(model)||/^gpt-5/.test(model);
     const body={model:model,messages:[{role:'system',content:systemPrompt},{role:'user',content:userMsg}]};
     if(reasoning)body.max_completion_tokens=4000;else body.max_tokens=4000;
@@ -6004,7 +6007,7 @@ async function khiCall(prompt, opts){
   let maxTok=opts.maxTokens||640;
   const ABSOLUTE_CAP=2048;
   const temp=opts.temperature||0.7;
-  const model=opts.model||S.khiModel||'gemini-3.1-flash-lite';
+  const model=_normGemModel(opts.model||S.khiModel);
   const gKey=S.geminiKey;
   const oKey=S.openrouterKey;
   const prov=opts.provider||S.khiProvider||'auto';/* 'auto' | 'gemini' | 'openrouter' | 'shared' (per-call override via opts) */
@@ -23732,7 +23735,7 @@ async function callGeminiStream(messages, onChunk){
   }
   if(!contents.length||contents[0].role!=='user') contents.unshift({role:'user',parts:[{text:'Hello'}]});
   try{
-    const gemModel=S.hbGeminiModel||'gemini-3.1-flash-lite';
+    const gemModel=_normGemModel(S.hbGeminiModel);
     const isGemma=gemModel.startsWith('gemma');
     const reqBody={contents,generationConfig:{maxOutputTokens:16384}};
     if(!isGemma)reqBody.systemInstruction={parts:[{text:buildSYS()}]};
@@ -23750,7 +23753,7 @@ async function callGeminiStream(messages, onChunk){
            automatically. Only swap once per call to avoid burning
            the user\'s entire quota on a chain of 429s. */
         const _curModel=S.hbGeminiModel||'gemini-3.1-flash-lite';
-        const CHAIN=['gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-3-flash','gemini-3.5-flash','gemini-2.5-flash'];
+        const CHAIN=['gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-3.5-flash','gemini-3.1-flash','gemini-2.5-flash'];
         const idx=CHAIN.indexOf(_curModel);
         const next=idx>=0?CHAIN.find((m,i)=>i>idx):null;
         if(next&&!messages._gemFallback){
@@ -23765,6 +23768,10 @@ async function callGeminiStream(messages, onChunk){
         }
         if(!messages._gemRetry){messages._gemRetry=true;await new Promise(r=>setTimeout(r,5000));const res2=await callGeminiStream(messages,onChunk);messages._gemRetry=false;return res2;}
         return '(Gemini: Rate limit hit on every free model. Wait a moment, switch to OpenRouter, or add billing on your key.)';
+      }
+      if(res.status===503||res.status===500){
+        if(await _ai503Retry(messages,'_gem503','Gemini'))return await callGeminiStream(messages,onChunk);
+        return '(Gemini is overloaded (503) — it kept retrying but stayed busy. Please try again in a minute.)';
       }
       return '(Gemini error '+res.status+': '+(j.error&&j.error.message||'')+')';
     }
@@ -23858,16 +23865,40 @@ async function callOpenRouterStream(messages, onChunk){
    or the browser request is blocked by CORS — without it nothing works. */
 const ANTHROPIC_MODELS=[
   ['claude-opus-4-8','Claude Opus 4.8 — most capable (paid)'],
-  ['claude-sonnet-4-6','Claude Sonnet 4.6 — balanced (paid)'],
+  ['claude-sonnet-5','Claude Sonnet 5 — balanced (paid)'],
   ['claude-haiku-4-5-20251001','Claude Haiku 4.5 — fast & cheap (paid)'],
+  ['claude-fable-5','Claude Fable 5 — creative writing (paid)'],
 ];
 const OPENAI_MODELS=[
-  ['gpt-4o','GPT-4o (paid)'],
-  ['gpt-4o-mini','GPT-4o mini — cheap (paid)'],
-  ['gpt-4.1','GPT-4.1 (paid)'],
-  ['gpt-4.1-mini','GPT-4.1 mini — cheap (paid)'],
-  ['o4-mini','o4-mini — reasoning (paid)'],
+  ['gpt-5.5','GPT-5.5 — most capable (paid)'],
+  ['gpt-5.4','GPT-5.4 — current generation (paid)'],
+  ['gpt-5.4-mini','GPT-5.4 mini — cheaper (paid)'],
+  ['gpt-5.4-nano','GPT-5.4 nano — fastest, cheapest (paid)'],
 ];
+/* Map any retired / never-real Gemini id (a saved pref or a stale picker might
+   still hold one — e.g. the bogus "gemini-3-flash" or "gemma-4-*") onto a
+   current real model, so a bad id can never reach the Gemini API and 404. */
+function _normGemModel(m){
+  m=String(m||'');
+  if(m==='gemini-3-flash')return 'gemini-3.5-flash';
+  if(m.indexOf('gemma-')===0)return 'gemini-2.5-flash-lite';
+  if(m==='gemini-3.1-flash-lite-preview')return 'gemini-3.1-flash-lite';
+  return m||'gemini-3.1-flash-lite';
+}
+/* Shared 503/overload backoff: retry the SAME model up to 10 times with an
+   increasing delay (1s,2s,…,8s cap) before giving up — for when the model
+   provider is momentarily overloaded. `state` persists across the recursive
+   re-call (the messages array) + a unique key so each provider keeps its own
+   counter. Returns true = caller should retry (the backoff is already awaited),
+   false = give up. */
+async function _ai503Retry(state, key, label){
+  const n=(state&&state[key])||0;
+  if(n>=10)return false;
+  if(state)state[key]=n+1;
+  if(n===0&&typeof toast==='function')toast(label+' is busy (503) — retrying…',3000);
+  await new Promise(r=>setTimeout(r,Math.min(8000,1000*(n+1))));
+  return true;
+}
 async function callAnthropicStream(messages, onChunk){
   const key=S.anthropicKey; if(!key)return null;
   const model=S.anthropicModel||'claude-haiku-4-5-20251001';
@@ -23893,6 +23924,10 @@ async function callAnthropicStream(messages, onChunk){
       if(res.status===400&&/credit|balance|billing/i.test(em)) return '(Anthropic: this key has no credit. Add billing at console.anthropic.com.)';
       if(res.status===429) return '(Anthropic: rate limit — wait a moment and try again.)';
       if(res.status===404) return '(Anthropic: model "'+model+'" not found — pick another Claude model in AI Key settings.)';
+      if(res.status===503||res.status===500){
+        if(await _ai503Retry(messages,'_ant503','Claude'))return await callAnthropicStream(messages,onChunk);
+        return '(Claude is overloaded (503) — it kept retrying but stayed busy. Please try again shortly.)';
+      }
       return '(Anthropic error '+res.status+(em?' — '+em:'')+')';
     }
     const reader=res.body.getReader();const dec=new TextDecoder();
@@ -23921,7 +23956,7 @@ async function callAnthropicStream(messages, onChunk){
 }
 async function callOpenAIStream(messages, onChunk){
   const key=S.openaiKey; if(!key)return null;
-  const model=S.openaiModel||'gpt-4o-mini';
+  const model=S.openaiModel||'gpt-5.4-mini';
   const msgs=[{role:'system',content:buildSYS()}];
   for(const m of messages) msgs.push({role:m.role==='bot'?'assistant':'user',content:m.text});
   /* Reasoning models (o-series / gpt-5) use max_completion_tokens and reject a
@@ -23940,6 +23975,10 @@ async function callOpenAIStream(messages, onChunk){
       if(res.status===401) return '(OpenAI: invalid API key — it should start with sk- and be pasted in full. Get one at platform.openai.com)';
       if(res.status===429) return '(OpenAI: rate limit or no credit — check billing at platform.openai.com, or wait and retry.)';
       if(res.status===404) return '(OpenAI: model "'+model+'" not found — pick another in AI Key settings.)';
+      if(res.status===503||res.status===500){
+        if(await _ai503Retry(messages,'_oai503','GPT'))return await callOpenAIStream(messages,onChunk);
+        return '(GPT is overloaded (503) — it kept retrying but stayed busy. Please try again shortly.)';
+      }
       return '(OpenAI error '+res.status+(em?' — '+em:'')+')';
     }
     const reader=res.body.getReader();const dec=new TextDecoder();
@@ -23986,7 +24025,7 @@ async function callOpenAIStream(messages, onChunk){
 /* First-come, first-served global cap. Matches Gemini\'s actual
    free-tier daily limit for gemini-3.1-flash-lite (500/day).
    Override via the DAILY_CAP env on the Edge Function. */
-const SHARED_KEY_DAILY_CAP=500+4*20+2*1500;/* 3580 — sum of every free model's daily quota: flash-lite 500 + 4 flash @20 + 2 Gemma @1500 */
+const SHARED_KEY_DAILY_CAP=1000+4*250;/* 2000 — sum of every free model's daily-quota estimate (flash-lite 1000 + 4 flash @250) */
 function sharedKeyProxyUrl(){
   /* Route to the Cloudflare API gateway when one is set — its Worker now hosts the
      SAME /functions/v1/kh-gemini-proxy endpoint (ported off the backend Edge
@@ -24014,26 +24053,22 @@ async function readSharedKeyUsage(){
    have separate per-minute / per-day Gemini quotas, so when one
    exhausts, another often still has room. */
 const SHARED_KEY_FALLBACK_CHAIN=[
-  'gemini-3.1-flash-lite',  /* 500/day — most generous Gemini free tier */
-  'gemini-2.5-flash-lite',  /* 20/day */
-  'gemini-3-flash',         /* 20/day */
-  'gemini-3.5-flash',       /* 20/day */
-  'gemini-2.5-flash',       /* 20/day */
-  'gemma-4-26b-it',         /* 1500/day — open weights, biggest free quota */
-  'gemma-4-31b-it',         /* 1500/day */
+  'gemini-3.1-flash-lite',  /* most generous Gemini free tier */
+  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash',
+  'gemini-2.5-flash',
 ];
 /* Per-model daily free quotas — drives the "remaining on each model" breakdown.
    The shared pool is ONE counter drawn in the chain order above, so we allocate
    the total used across these in that order to estimate each model's remaining
    headroom (the caps sum to SHARED_KEY_DAILY_CAP = 3580). */
 const SHARED_MODEL_QUOTAS=[
-  {id:'gemini-3.1-flash-lite',name:'Gemini 3.1 Flash Lite',cap:500},
-  {id:'gemini-2.5-flash-lite',name:'Gemini 2.5 Flash Lite',cap:20},
-  {id:'gemini-3-flash',name:'Gemini 3 Flash',cap:20},
-  {id:'gemini-3.5-flash',name:'Gemini 3.5 Flash',cap:20},
-  {id:'gemini-2.5-flash',name:'Gemini 2.5 Flash',cap:20},
-  {id:'gemma-4-26b-it',name:'Gemma 4 26B',cap:1500},
-  {id:'gemma-4-31b-it',name:'Gemma 4 31B',cap:1500},
+  {id:'gemini-3.1-flash-lite',name:'Gemini 3.1 Flash Lite',cap:1000},
+  {id:'gemini-2.5-flash-lite',name:'Gemini 2.5 Flash Lite',cap:250},
+  {id:'gemini-3.5-flash',name:'Gemini 3.5 Flash',cap:250},
+  {id:'gemini-3.1-flash',name:'Gemini 3.1 Flash',cap:250},
+  {id:'gemini-2.5-flash',name:'Gemini 2.5 Flash',cap:250},
 ];
 function sharedPerModelRemaining(totalUsed){
   let left=Math.max(0,totalUsed||0);
@@ -24110,6 +24145,10 @@ async function callSharedGeminiStream(messages, onChunk){
       if(!res.ok){
         const txt=await res.text().catch(()=>'');
         /* Non-recoverable error — surface it */
+        if(res.status===503||res.status===500){
+          if(await _ai503Retry(messages,'_shr503','Public AI'))return await callSharedGeminiStream(messages,onChunk);
+          return '(Public AI is overloaded (503) — it kept retrying but stayed busy. Please try again in a minute.)';
+        }
         return '(Shared key error '+res.status+' on '+model+': '+txt.slice(0,140)+')';
       }
       /* Stream the response back */
@@ -24210,19 +24249,17 @@ function buildAIModelPicker(opts){
      most generous free option (15 RPM, 500/day). */
   const CHAT_GEMINI_GROUPS=[
     {group:'Free tier',items:[
-      ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (15 RPM, 500/day)'],
-      ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (10 RPM, 20/day)'],
-      ['gemini-2.5-flash','Gemini 2.5 Flash (5 RPM, 20/day)'],
-      ['gemini-3-flash','Gemini 3 Flash (5 RPM, 20/day)'],
-      ['gemini-3.5-flash','Gemini 3.5 Flash (5 RPM, 20/day)'],
-      ['gemma-4-26b-it','Gemma 4 26B (15 RPM, 1.5K/day, open weights)'],
-      ['gemma-4-31b-it','Gemma 4 31B (15 RPM, 1.5K/day, open weights)'],
+      ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (most generous free tier)'],
+      ['gemini-3.5-flash','Gemini 3.5 Flash (newest flash)'],
+      ['gemini-3.1-flash','Gemini 3.1 Flash'],
+      ['gemini-2.5-flash','Gemini 2.5 Flash'],
+      ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],
+      ['gemini-2.0-flash','Gemini 2.0 Flash'],
+      ['gemini-2.0-flash-lite','Gemini 2.0 Flash Lite'],
     ]},
     {group:'Paid tier',items:[
-      ['gemini-2.5-pro','Gemini 2.5 Pro'],
       ['gemini-3.1-pro','Gemini 3.1 Pro'],
-      ['gemini-2.0-flash','Gemini 2 Flash'],
-      ['gemini-2.0-flash-lite','Gemini 2 Flash Lite'],
+      ['gemini-2.5-pro','Gemini 2.5 Pro'],
     ]},
   ];
   const CHAT_OR_GROUPS=[
@@ -24259,7 +24296,7 @@ function buildAIModelPicker(opts){
     if(!hasAnyKey()) return 'Offline';
     if(S.aiProvider==='shared')return 'Shared (free)';
     if(S.aiProvider==='anthropic'){const m=S.anthropicModel||'claude-haiku-4-5-20251001';const f=ANTHROPIC_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
-    if(S.aiProvider==='openai'){const m=S.openaiModel||'gpt-4o-mini';const f=OPENAI_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
+    if(S.aiProvider==='openai'){const m=S.openaiModel||'gpt-5.4-mini';const f=OPENAI_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
     if(S.aiProvider==='openrouter'){
       const m=S.openrouterModel||'meta-llama/llama-3.3-70b-instruct:free';
       const found=CHAT_OR_MODELS.find(x=>x[0]===m);
@@ -24339,7 +24376,7 @@ function buildAIModelPicker(opts){
     else if(S.aiProvider==='openai')groups=[{group:'Paid — needs billing on your key',items:OPENAI_MODELS}];
     else groups=CHAT_GEMINI_GROUPS;
     if(S.aiProvider==='shared')groups=groups.filter(g=>!/paid/i.test(g.group));
-    const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.aiProvider==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(S.aiProvider==='openai'?(S.openaiModel||'gpt-4o-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
+    const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.aiProvider==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(S.aiProvider==='openai'?(S.openaiModel||'gpt-5.4-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
     const listEl=el('div',{style:{maxHeight:'280px',overflowY:'auto'}});
     groups.forEach(g=>{
       const hdr=txt('div',g.group,{style:{padding:'6px 12px 4px',fontSize:'9px',fontWeight:'800',letterSpacing:'0.8px',textTransform:'uppercase',color:'var(--muted)',background:'var(--highlight)',borderBottom:'var(--thin)',borderTop:'var(--thin)'}});
@@ -25861,10 +25898,10 @@ document.addEventListener('click',e=>{
       } else if(S.aiProvider==='anthropic'){
         _addGroup('Paid — needs billing',ANTHROPIC_MODELS,S.anthropicModel||'claude-haiku-4-5-20251001');
       } else if(S.aiProvider==='openai'){
-        _addGroup('Paid — needs billing',OPENAI_MODELS,S.openaiModel||'gpt-4o-mini');
+        _addGroup('Paid — needs billing',OPENAI_MODELS,S.openaiModel||'gpt-5.4-mini');
       } else {
         const cur=S.hbGeminiModel||'gemini-3.1-flash-lite';
-        _addGroup('Free tier',[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (15 RPM)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3-flash','Gemini 3 Flash'],['gemini-3.5-flash','Gemini 3.5 Flash'],['gemma-4-26b-it','Gemma 4 26B'],['gemma-4-31b-it','Gemma 4 31B']],cur);
+        _addGroup('Free tier',[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (15 RPM)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3.5-flash','Gemini 3.5 Flash'],['gemini-3.1-flash','Gemini 3.1 Flash']],cur);
         _addGroup('Paid tier',[['gemini-2.5-pro','Gemini 2.5 Pro'],['gemini-3.1-pro','Gemini 3.1 Pro'],['gemini-2.0-flash','Gemini 2 Flash'],['gemini-2.0-flash-lite','Gemini 2 Flash Lite']],cur);
       }
     }
@@ -31203,7 +31240,7 @@ chat:()=>{
   })();
   /* Gemini section — split by free / paid tier */
   hbModelDrop.appendChild(txt('div','Gemini — Free tier',{className:'hb-mdrop-section'}));
-  [['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite','Best free quota — 15 RPM, 500/day'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite','10 RPM, 20/day'],['gemini-2.5-flash','Gemini 2.5 Flash','5 RPM, 20/day'],['gemini-3-flash','Gemini 3 Flash','5 RPM, 20/day'],['gemini-3.5-flash','Gemini 3.5 Flash','5 RPM, 20/day'],['gemma-4-26b-it','Gemma 4 26B','Open weights, 15 RPM, 1.5K/day'],['gemma-4-31b-it','Gemma 4 31B','Open weights, 15 RPM, 1.5K/day']].forEach(([id,name,desc])=>{
+  [['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite','Best free quota — 15 RPM, 500/day'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite','10 RPM, 20/day'],['gemini-2.5-flash','Gemini 2.5 Flash','5 RPM, 20/day'],['gemini-3.5-flash','Gemini 3.5 Flash','newest flash'],['gemini-3.1-flash','Gemini 3.1 Flash','']].forEach(([id,name,desc])=>{
     const it=el('div',{className:'hb-mdrop-item','data-provider':'gemini','data-model':id});
     const dot=el('span',{className:'hb-mdrop-dot',style:{background:'#3c3'}});
     const lbl=el('span');lbl.innerHTML='<strong>'+name+'</strong><br><span style="font-size:10px;color:var(--muted)">'+desc+'</span>';
@@ -31296,10 +31333,8 @@ chat:()=>{
     else if(model==='gemini-2.5-flash-lite') shortName='2.5 Flash Lite';
     else if(model==='gemini-2.5-pro') shortName='2.5 Pro';
     else if(model==='gemini-3.1-pro') shortName='3.1 Pro';
-    else if(model==='gemini-3-flash') shortName='3 Flash';
     else if(model==='gemini-3.5-flash') shortName='3.5 Flash';
-    else if(model==='gemma-4-26b-it') shortName='Gemma 4 26B';
-    else if(model==='gemma-4-31b-it') shortName='Gemma 4 31B';
+    else if(model==='gemini-3.1-flash') shortName='3.1 Flash';
     else shortName=model.split('/').pop().replace(/-\d{3,}.*$/,'').replace('gemini-','G ').replace('claude-','C ').replace('llama-','Llama ');
     hbModelLabel.textContent=provider==='shared'?'Public AI (free)':(provider==='openrouter'?'OR: '+shortName:'Gemini: '+shortName);
     hbModelDrop.querySelectorAll('.hb-mdrop-item').forEach(it=>{
@@ -32143,7 +32178,7 @@ chat:()=>{
     hbLogMsg('ai','Generating…');
     async function hbCallGeminiHighToken(userMsg, onChunk){
       const key=S.geminiKey; if(!key) return null;
-      const gemModel=S.hbGeminiModel||'gemini-3.1-flash-lite';
+      const gemModel=_normGemModel(S.hbGeminiModel);
       const hbBody={contents:[{role:'user',parts:[{text:userMsg}]}],generationConfig:{maxOutputTokens:8192}};
       const res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+gemModel+':streamGenerateContent?alt=sse&key='+key,{
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -32274,10 +32309,8 @@ chat:()=>{
     ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (best free quota)'],
     ['gemini-2.5-flash','Gemini 2.5 Flash (Gemini key)'],
     ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (Gemini key)'],
-    ['gemini-3-flash','Gemini 3 Flash (Gemini key)'],
     ['gemini-3.5-flash','Gemini 3.5 Flash (Gemini key)'],
-    ['gemma-4-26b-it','Gemma 4 26B (Gemini key, open weights)'],
-    ['gemma-4-31b-it','Gemma 4 31B (Gemini key, open weights)'],
+    ['gemini-3.1-flash','Gemini 3.1 Flash (Gemini key)'],
     ['meta-llama/llama-3.3-70b-instruct:free','OR: Llama 3.3 70B (free)'],
     ['meta-llama/llama-4-maverick:free','OR: Llama 4 Maverick (free)'],
     ['deepseek/deepseek-chat-v3-0324:free','OR: DeepSeek V3 (free)'],
@@ -36853,10 +36886,8 @@ settings:()=>{
       ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — default, 15 RPM, 500/day'],
       ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite — 10 RPM, 20/day'],
       ['gemini-2.5-flash','Gemini 2.5 Flash — 5 RPM, 20/day'],
-      ['gemini-3-flash','Gemini 3 Flash — 5 RPM, 20/day'],
-      ['gemini-3.5-flash','Gemini 3.5 Flash — 5 RPM, 20/day'],
-      ['gemma-4-26b-it','Gemma 4 26B — open weights, 15 RPM, 1.5K/day'],
-      ['gemma-4-31b-it','Gemma 4 31B — open weights, 15 RPM, 1.5K/day'],
+      ['gemini-3.5-flash','Gemini 3.5 Flash — newest flash'],
+      ['gemini-3.1-flash','Gemini 3.1 Flash'],
     ]},
     {group:'Paid tier',items:[
       ['gemini-2.5-pro','Gemini 2.5 Pro — most capable'],
@@ -38027,7 +38058,7 @@ feedback:()=>{
         modelSel.innerHTML='';
         const opts=provSel.value==='anthropic'?ANTHROPIC_MODELS
           :provSel.value==='openai'?OPENAI_MODELS
-          :[['gemini-2.5-pro','Gemini 2.5 Pro — best for code'],['gemini-3.1-pro','Gemini 3.1 Pro (paid)'],['gemini-2.5-flash','Gemini 2.5 Flash (free)'],['gemini-3-flash','Gemini 3 Flash (free)'],['gemini-3.5-flash','Gemini 3.5 Flash (free)'],['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — free, fastest'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (free)'],['gemma-4-26b-it','Gemma 4 26B (free)'],['gemma-4-31b-it','Gemma 4 31B (free)'],['gemini-2.0-flash','Gemini 2 Flash (paid)'],['gemini-2.0-flash-lite','Gemini 2 Flash Lite (paid)']];
+          :[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — free, fastest'],['gemini-3.5-flash','Gemini 3.5 Flash (free, newest)'],['gemini-3.1-flash','Gemini 3.1 Flash (free)'],['gemini-2.5-flash','Gemini 2.5 Flash (free)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (free)'],['gemini-2.0-flash','Gemini 2.0 Flash (free)'],['gemini-2.0-flash-lite','Gemini 2.0 Flash Lite (free)'],['gemini-3.1-pro','Gemini 3.1 Pro — best for code (paid)'],['gemini-2.5-pro','Gemini 2.5 Pro (paid)']];
         opts.forEach(([id,name])=>{const o=el('option',{value:id});o.textContent=name;modelSel.appendChild(o);});
       }
       _populateModels();
@@ -38364,9 +38395,9 @@ const SUPA=Deno.env.get('SUPABASE_URL');
 const SRV =Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const ALLOWED_MODELS=new Set([
   'gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash',
-  'gemini-3-flash','gemini-3.5-flash','gemma-4-26b-it','gemma-4-31b-it',
+  'gemini-3.5-flash','gemini-3.1-flash',
 ]);
-const DAILY_CAP=parseInt(Deno.env.get('DAILY_CAP'))||3580;/* 500 + 4*20 + 2*1500 = total free quota across all allowed models */
+const DAILY_CAP=parseInt(Deno.env.get('DAILY_CAP'))||2000;/* sum of the free-model daily-quota estimates */
 const CORS={
   'Access-Control-Allow-Origin':'*',
   'Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type',
@@ -39148,10 +39179,8 @@ Deno.serve(async (req)=>{
         ['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — most generous free quota (15 RPM, 500/day)'],
         ['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite — 10 RPM, 20/day'],
         ['gemini-2.5-flash','Gemini 2.5 Flash — 5 RPM, 20/day'],
-        ['gemini-3-flash','Gemini 3 Flash — 5 RPM, 20/day'],
-        ['gemini-3.5-flash','Gemini 3.5 Flash — 5 RPM, 20/day'],
-        ['gemma-4-26b-it','Gemma 4 26B — 15 RPM, 1.5K/day, open weights'],
-        ['gemma-4-31b-it','Gemma 4 31B — 15 RPM, 1.5K/day, open weights'],
+        ['gemini-3.5-flash','Gemini 3.5 Flash — newest flash'],
+        ['gemini-3.1-flash','Gemini 3.1 Flash'],
       ]},
       {group:'Paid tier (requires billing)',items:[
         ['gemini-2.5-pro','Gemini 2.5 Pro'],
@@ -39202,7 +39231,7 @@ Deno.serve(async (req)=>{
     function populateSupModels(){
       modSel.innerHTML='';
       const groups=provSel.value==='openrouter'?SUP_OR:(provSel.value==='anthropic'?[{group:'Paid — needs billing',items:ANTHROPIC_MODELS}]:(provSel.value==='openai'?[{group:'Paid — needs billing',items:OPENAI_MODELS}]:SUP_GEM));
-      const cur=provSel.value==='openrouter'?(S.openrouterModel||'openrouter/free'):(provSel.value==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(provSel.value==='openai'?(S.openaiModel||'gpt-4o-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
+      const cur=provSel.value==='openrouter'?(S.openrouterModel||'openrouter/free'):(provSel.value==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(provSel.value==='openai'?(S.openaiModel||'gpt-5.4-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
       groups.forEach(g=>{
         const og=document.createElement('optgroup');og.label=g.group;
         g.items.forEach(([id,name])=>{
