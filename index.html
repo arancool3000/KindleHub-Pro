@@ -6,6 +6,18 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
+<!-- Content-Security-Policy. Tuned to what KindleHub actually needs — it is a
+     legitimate multi-API client (weather, maps tiles, news RSS, images,
+     translate, finance, geocoding) AND runs AI-built apps that fetch arbitrary
+     APIs, so a strict default-src 'self' would break the whole app. What this
+     still buys us: object-src 'none' (no plugin XSS), base-uri 'self' (no
+     <base> hijack), and script-src limited to inline + the two jsdelivr libs
+     we load (html2canvas, jszip) — so an injected <script src=//evil> is
+     blocked. Header-only directives (frame-ancestors, HSTS, X-Frame-Options,
+     X-Content-Type-Options) can't be set via <meta>; see _headers / SECURITY.md
+     for the Cloudflare setup that adds those. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; media-src 'self' data: blob: https:; frame-src 'self' data: blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'"/>
+<meta name="referrer" content="strict-origin-when-cross-origin"/>
 <title>KindleHub Pro — free apps, 30+ games, AI &amp; tools for your Kindle browser</title>
 <meta name="description" content="KindleHub Pro turns your Kindle's browser into a full mini-OS: a KindleOS desktop, 30+ e-ink games (chess, a real 3D flight sim, Slither, Geometry Dash, Crossy Road), an AI assistant + app builder, a free Project Gutenberg book reader, email, end-to-end-encrypted group chat, notes, journal, calendar, RSS, weather, maps and drawing — all free and offline-friendly on one fast page. A comprehensive free alternative to ReKindle."/>
 <meta name="keywords" content="Kindle apps, Kindle browser, Kindle games, ReKindle alternative, KindleOS, Kindle web app, e-ink games, Kindle AI, Kindle chat, Kindle book reader, Paperwhite apps, Kindle Scribe, e-reader apps"/>

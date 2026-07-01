@@ -1,0 +1,19 @@
+# KindleHub Pro — HTTP security headers
+#
+# This file is honoured automatically by Cloudflare Pages and Netlify. If the
+# site is served some other way (a plain static host proxied through
+# Cloudflare), set the same headers with a Cloudflare Transform Rule instead —
+# see SECURITY.md for the copy-paste steps. The <meta> CSP and referrer tags in
+# index.html already cover browsers regardless of host; the directives BELOW are
+# the ones a <meta> tag cannot express (HSTS, X-Frame-Options, nosniff,
+# Permissions-Policy, frame-ancestors), so they must be real response headers.
+
+/*
+  Content-Security-Policy: default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; media-src 'self' data: blob: https:; frame-src 'self' data: blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(self), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  X-Permitted-Cross-Domain-Policies: none
