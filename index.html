@@ -5003,6 +5003,9 @@ function launchKindleDesktop(){
     return String(code).replace(/([^A-Za-z0-9_$])catch\s*\{/g, '$1catch(_e){');
   }
   async function _khCallActiveAI(sys,msg){
+    /* Read the active model here — it used to reference an `activeModelId` from a
+       caller's scope that isn't in scope in this function (ReferenceError). */
+    const activeModelId=(typeof osState!=='undefined'&&osState.aiModel)||'gemini';
     if(activeModelId==='shared')return await callSharedAPI(sys,msg);
     if(activeModelId==='openrouter')return await callOpenRouterAPI(sys,msg);
     if(activeModelId==='anthropic')return await callAnthropicAPI(sys,msg);
@@ -6063,9 +6066,11 @@ async function khiCall(prompt, opts){
   const model=_normGemModel(opts.model||S.khiModel);
   const gKey=S.geminiKey;
   const oKey=S.openrouterKey;
-  const prov=opts.provider||S.khiProvider||'auto';/* 'auto' | 'gemini' | 'openrouter' | 'shared' (per-call override via opts) */
-  if(!gKey&&!oKey&&!S.anthropicKey&&!S.openaiKey&&prov!=='shared'){toast('KHI: no API key — add one in Settings, or switch KHI to the Shared key');return null;}
-  if(!navigator.onLine){toast('Offline — connect to Wi-Fi to use AI features');return null;}
+  let prov=opts.provider||S.khiProvider||'auto';/* 'auto' | 'gemini' | 'openrouter' | 'shared' (per-call override via opts) */
+  /* No personal key at all (e.g. a logged-out guest) → use the free shared /
+     public AI instead of bailing, so KHI features still work with no key. */
+  if(!gKey&&!oKey&&!S.anthropicKey&&!S.openaiKey)prov='shared';
+  if(navigator.onLine===false){toast('Offline — connect to Wi-Fi to use AI features');return null;}
   /* Shared bundled key — no personal key needed. Reuses the streaming shared
      caller and collects its final text (honours the auto-switch setting). */
   if(prov==='shared'){
@@ -24761,7 +24766,12 @@ async function callAIStream(messages, onChunk){
   if(S.anthropicKey) return callAnthropicStream(messages,onChunk);
   if(S.openaiKey) return callOpenAIStream(messages,onChunk);
   if(S.openrouterKey) return callOpenRouterStream(messages,onChunk);
-  return null;
+  /* No personal key at all (e.g. a logged-out guest) → use the free shared /
+     public AI, which needs no key of its own. Without this, every AI feature
+     silently returned null for keyless users ("barely works logged out").
+     callSharedGeminiStream never throws — it streams via onChunk and returns a
+     clear message if the pool is tapped out or the proxy isn't configured. */
+  return callSharedGeminiStream(messages,onChunk);
 }
 
 /* ── Non-streaming fallback (for test) ───────────────────── */
@@ -24974,12 +24984,12 @@ async function testAIConnection(){
   const pickerBtn=document.getElementById('chatModelPickerBtn');
   const origLabel=pickerBtn?pickerBtn.textContent:'';
   function setStatus(msg,c){if(pickerBtn){pickerBtn.textContent=msg;pickerBtn.style.color=c||'var(--muted)';} setTimeout(()=>{if(pickerBtn){pickerBtn.textContent=origLabel;pickerBtn.style.color='';}},3000);}
-  if(!hasAnyKey()){
+  if(!hasAnyKey()&&!sharedKeyProxyUrl()){
     setStatus('No API key.','var(--danger)');
-    addBotMsg(navigator.onLine?'No API key set. Open Settings → AI Provider to add a Gemini key (aistudio.google.com) or an OpenRouter key (openrouter.ai — free models available).':'You are offline. Connect to Wi-Fi to use AI features. (No API key needed for offline commands — type "help" to see them.)');
+    addBotMsg(navigator.onLine!==false?'No API key set. Open Settings → AI Provider to add a Gemini key (aistudio.google.com) or an OpenRouter key (openrouter.ai — free models available).':'You are offline. Connect to Wi-Fi to use AI features. (No API key needed for offline commands — type "help" to see them.)');
     return;
   }
-  if(!navigator.onLine){setStatus('Offline.','var(--danger)');addBotMsg('No internet connection.');return;}
+  if(navigator.onLine===false){setStatus('Offline.','var(--danger)');addBotMsg('No internet connection.');return;}
   const prov=S.aiProvider==='openrouter'?(S.openrouterModel==='openrouter/free'||!S.openrouterModel?'OpenRouter Free':'OpenRouter ('+S.openrouterModel+')'):'Gemini 2.5 Flash';
   setStatus('Testing '+prov+'…');
   const thinking=addBotMsg('Testing '+prov+' connection…',true);
@@ -25212,7 +25222,14 @@ async function sendChat(){
   const localResult=tryLocalCommand(t);
   if(localResult!==null){addBotMsg(localResult);chatHistory.push({role:'bot',text:localResult});updateAIMsgCounter();saveChatHistory();return;}
 
-  if(hasAnyKey()&&navigator.onLine){
+  /* Use the cloud AI when ONLINE and we have either a personal key OR the free
+     shared/public proxy (which needs no key). Two fixes here:
+       • keyless guests used to skip straight to offlineAI — now they get the
+         real shared/public AI ("public API barely works logged out").
+       • navigator.onLine is UNDEFINED on Kindle Silk, so the old raw-truthy test
+         wrongly sent even a key-holding Kindle user to the offline AI. Test
+         !==false (the lenient pattern used elsewhere) so Silk counts as online. */
+  if(navigator.onLine!==false&&(hasAnyKey()||sharedKeyProxyUrl())){
     S.aiMsgCount=(S.aiMsgCount||0)+1; saveNow();
     updateAIMsgCounter();
     const bubble=addBotMsg('',false);
@@ -25229,8 +25246,18 @@ async function sendChat(){
       });
       if(bubble){bubble.classList.remove('streaming');const l=$('chatLog');if(l)l.scrollTop=l.scrollHeight;}
       if(reply&&reply.startsWith('(')){
-        if(bubble)bubble.textContent=reply;
-        chatHistory.push({role:'bot',text:reply});
+        /* A "(…)" reply is a status note from the shared proxy (tapped out, not
+           deployed, unreachable…). For a keyless guest, a proxy CONFIG/REACH
+           failure should quietly degrade to the built-in offline AI rather than
+           show a scary setup message. Rate-limit / tapped-out notes still show. */
+        if(!hasAnyKey()&&/not deployed|not configured|Couldn't reach|not set|GEMINI_KEY/i.test(reply)){
+          const r=offlineAI(t);
+          if(bubble)bubble.textContent=r;
+          chatHistory.push({role:'bot',text:r});
+        }else{
+          if(bubble)bubble.textContent=reply;
+          chatHistory.push({role:'bot',text:reply});
+        }
       }else if(reply){
         const quiz=parseQuizBlock(reply);
         const flashDeck=parseFlashcardsBlock(reply);
