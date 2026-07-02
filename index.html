@@ -7031,8 +7031,13 @@ async function _sbFetch(path,opts){
   const ct=r.headers.get('content-type')||'';
   return ct.indexOf('application/json')>=0?r.json():r.text();
 }
-async function _sbSelect(table,query){
-  return _sbFetch('/'+table+(query?'?'+query:''),{method:'GET'});
+async function _sbSelect(table,query,secret){
+  /* Pass the caller's auth secret (X-KH-Secret) on reads that the worker
+     owner-gates (kh_mail) so a user can read their OWN mailbox but not anyone
+     else's. Harmless on ungated tables (the worker ignores it there). */
+  const opts={method:'GET'};
+  if(secret)opts.headers={'X-KH-Secret':secret};
+  return _sbFetch('/'+table+(query?'?'+query:''),opts);
 }
 /* ── the backend keep-alive ──────────────────────────────────────────────────
    the backend's free tier auto-pauses a project after ~7 days with no API
@@ -7188,7 +7193,13 @@ async function _msgEncrypt(groupCode,plain){
     }
     const buf=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,body);
     return prefix+_u8ToB64(iv)+'.'+_u8ToB64(new Uint8Array(buf));
-  }catch(e){return plain;}/* fail-open in case crypto unavailable */
+  }catch(e){
+    /* FAIL CLOSED: never silently store plaintext on the backend (where other
+       users can read it) just because WebCrypto was unavailable. On the live
+       HTTPS site crypto.subtle is always present, so this only trips in a broken/
+       insecure context — there we refuse to send rather than leak the message. */
+    throw new Error('Message encryption is unavailable — a secure (HTTPS) connection is required to send.');
+  }
 }
 async function _msgDecrypt(groupCode,cipher){
   if(typeof cipher!=='string')return cipher;
@@ -9806,19 +9817,30 @@ function _loginClearFailures(name){try{localStorage.removeItem(_loginFailKey(nam
    The blob is the same AES-GCM ciphertext the cloud holds — useless without
    the password (which alone derives the key), so it's safe at rest. Kept to
    the 3 most-recent accounts. */
-/* Saved sign-in credentials for automatic re-login. The user asked for the
-   username + password to be remembered on the device so nobody gets logged out,
-   so we store them in plaintext here (a deliberate convenience-over-secrecy
-   choice, on top of the encrypted offline-cred blob) and auto-login from them at
-   boot. Cleared on explicit logout. */
-function _saveCreds(u,p){try{if(u&&p)localStorage.setItem('kh_creds',JSON.stringify({u:u,p:p,at:Date.now()}));}catch(_){}}
-function _readCreds(){try{const o=JSON.parse(localStorage.getItem('kh_creds')||'null');return (o&&o.u&&o.p)?o:null;}catch(_){return null;}}
+/* SECURITY: KindleHub must NEVER store the plaintext password. It used to cache
+   {u,p} in localStorage ('kh_creds') for silent auto-relogin, but any localStorage
+   reader (an XSS, a shared/synced device, a browser extension) could then read the
+   password AND — because the auth hash = SHA-256(username+password) is ALSO the
+   AES key — decrypt the whole account. Staying logged in does NOT need it:
+   S.authToken (the hash, not the password) is already in the persisted state and
+   drives sync, so a normal reload keeps the session. We therefore no longer store
+   creds and proactively delete any legacy blob. After an explicit logout the user
+   re-enters the password (the browser/OS keychain autofills it). */
+function _saveCreds(u,p){try{localStorage.removeItem('kh_creds');}catch(_){}}
+function _readCreds(){try{localStorage.removeItem('kh_creds');}catch(_){}return null;}
 function _clearCreds(){try{localStorage.removeItem('kh_creds');}catch(_){}}
 function _cacheOfflineCred(key,email,packed){
   try{
     if(!key||typeof packed!=='string'||!packed)return;
+    /* SECURITY: key the store by a NON-secret 16-char handle, NOT the full auth
+       hash. The full hash IS the AES key, so using it as the map key meant anyone
+       who read localStorage held both the ciphertext AND its key. The handle can't
+       decrypt; the full hash (re-derived from the password at offline login) is
+       still required to open `packed`. Also drop any legacy full-hash entry. */
+    const handle=String(key).slice(0,16);
     let store={};try{store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');}catch(_){store={};}
-    store[key]={email:email||'',packed:packed,at:Date.now()};
+    try{if(store[key])delete store[key];}catch(_){}
+    store[handle]={email:email||'',packed:packed,at:Date.now()};
     /* Cap at the 2 most-recent accounts (was 3) — each entry is a whole
        encrypted state blob, so 3 of them could blow a ~5 MB localStorage on
        a heavy account and break the MAIN blob's write ("storage full"). */
@@ -9827,13 +9849,15 @@ function _cacheOfflineCred(key,email,packed){
     try{localStorage.setItem('kh_offline_cred',JSON.stringify(store));}
     catch(e){ /* No room for the others — keep just THIS account so offline
                  login still works, and don't let it nag (swallowed). */
-      if(typeof _isQuotaError!=='function'||_isQuotaError(e)){try{const only={};only[key]=store[key];localStorage.setItem('kh_offline_cred',JSON.stringify(only));}catch(_){}}
+      if(typeof _isQuotaError!=='function'||_isQuotaError(e)){try{const only={};only[handle]=store[handle];localStorage.setItem('kh_offline_cred',JSON.stringify(only));}catch(_){}}
     }
     if(email)try{localStorage.setItem('kh_last_user',email);}catch(_){}
   }catch(_){}
 }
 function _offlineCred(key){
-  try{const store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');return store[key]||null;}catch(_){return null;}
+  /* Look up by the 16-char handle; fall back to a legacy full-hash entry so a
+     device that cached under the old scheme still logs in until it re-caches. */
+  try{const store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');const h=String(key||'').slice(0,16);return store[h]||store[key]||null;}catch(_){return null;}
 }
 
 async function authRegister(email,password){
@@ -10159,7 +10183,15 @@ async function _groupCreate(name,codeOverride){
      the deterministic one, so the next _groupLookup never matched and a
      brand-new duplicate row was created on every login / join. That bug
      ballooned kh_groups to 582 orphaned "inbox-…" rows. */
-  const code=(codeOverride&&/^[0-9]{12}$/.test(codeOverride))?codeOverride:(function(){let c='';for(let i=0;i<12;i++)c+=Math.floor(Math.random()*10);return c;})();
+  const code=(codeOverride&&/^[0-9]{12}$/.test(codeOverride))?codeOverride:(function(){
+    /* CSPRNG digits — the 12-digit code is the room's shared secret AND the
+       material the message key is derived from, so it must be unguessable.
+       (Was Math.random, whose V8 state is recoverable from a few outputs.) */
+    let c='';
+    if(typeof crypto!=='undefined'&&crypto.getRandomValues){const b=new Uint8Array(12);crypto.getRandomValues(b);for(let i=0;i<12;i++)c+=(b[i]%10);}
+    else{for(let i=0;i<12;i++)c+=Math.floor(Math.random()*10);}
+    return c;
+  })();
   const creatorName=(S.email?S.email.split('@')[0]:(S.user||'Reader'));
   const createdAt=new Date().toISOString();
   if(_sbActive()){
@@ -10404,6 +10436,10 @@ async function _groupFetchMessages(code){
    and costs zero extra requests. */
 const KH_MAIL_DOMAIN='kindlehub.pro';
 function _mailNorm(u){return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40);}
+/* Open an EXTERNAL, possibly-untrusted URL safely: ONLY http/https (blocks a
+   javascript:/data: URL smuggled in via e.g. a malicious RSS <link>), always
+   with noopener,noreferrer. Hoisted, so all onclick closures can use it. */
+function _khOpenExt(u){try{if(/^https?:\/\//i.test(String(u||'')))return window.open(u,'_blank','noopener,noreferrer');if(typeof toast==='function')toast('Link blocked — only http/https links open.',2600);}catch(_){}return null;}
 /* External = a full address at any OTHER domain (alice@gmail.com). Internal
    = a bare username or username@kindlehub.pro. */
 function _mailIsExternal(addr){
@@ -10466,7 +10502,7 @@ async function _mailFetch(folder){
   let q;
   if(folder==='sent')q='from_id=eq.'+encodeURIComponent(S.userId||'')+'&order=ts.desc&limit=40&select=id,to_user,from_user,from_id,subject,body,ts,reply_to';
   else q='to_user=eq.'+encodeURIComponent(me)+'&order=ts.desc&limit=40&select=id,to_user,from_user,from_id,subject,body,ts,reply_to';
-  const rows=await _sbSelect('kh_mail',q);
+  const rows=await _sbSelect('kh_mail',q,S.authToken);
   if(!Array.isArray(rows))return[];
   const out=[];
   for(const r of rows){
@@ -10486,7 +10522,7 @@ async function _mailReplies(origId){
     if(!_sbActive()||!origId)return[];
     if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return[];
     const myId=S.userId||'';
-    const rows=await _sbSelect('kh_mail','reply_to=eq.'+encodeURIComponent(origId)+'&from_id=eq.'+encodeURIComponent(myId)+'&order=ts.asc&limit=20&select=id,to_user,body,ts');
+    const rows=await _sbSelect('kh_mail','reply_to=eq.'+encodeURIComponent(origId)+'&from_id=eq.'+encodeURIComponent(myId)+'&order=ts.asc&limit=20&select=id,to_user,body,ts',S.authToken);
     if(!Array.isArray(rows))return[];
     const out=[];
     for(const r of rows){
@@ -10506,7 +10542,7 @@ async function _mailUnsend(id){
 async function _mailUnreadProbe(){
   try{
     if(!_sbActive()||!S.authToken||!_myMailUser())return false;
-    const rows=await _sbSelect('kh_mail','to_user=eq.'+encodeURIComponent(_myMailUser())+'&order=ts.desc&limit=1&select=id,ts');
+    const rows=await _sbSelect('kh_mail','to_user=eq.'+encodeURIComponent(_myMailUser())+'&order=ts.desc&limit=1&select=id,ts',S.authToken);
     if(!Array.isArray(rows)||!rows.length)return false;
     const newest=rows[0].ts||'';
     const seen=localStorage.getItem('kh_mail_lastseen')||'';
@@ -29292,7 +29328,7 @@ home:()=>{
     bNews.appendChild(txt('div','Latest Headlines',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',marginBottom:'4px',fontFamily:'var(--ui-font)'}}));
     allItems.forEach(item=>{
       const h=txt('div','- '+(item.title||'').slice(0,80),{style:{fontSize:'12px',padding:'2px 0',lineHeight:'1.4',borderBottom:'var(--thin)',color:'var(--fg)',cursor:'pointer'}});
-      if(item.link)h.onclick=()=>window.open(item.link,'_blank','noopener,noreferrer');
+      if(item.link)h.onclick=()=>_khOpenExt(item.link);
       bNews.appendChild(h);
     });
     briefCard.appendChild(bNews);
@@ -44072,7 +44108,7 @@ rss:()=>{
           const linkEl=el('div',{style:'margin-top:10px;padding:8px;background:var(--highlight);border-radius:4px;font-size:11px;border:var(--thin);'});
           linkEl.appendChild(txt('div','Source: '+item.feedLabel,{style:'font-weight:700;margin-bottom:3px;'}));
           const openBtn=txt('button','Open original article',{className:'btn small',style:'width:100%;margin-top:4px;'});
-          openBtn.onclick=()=>window.open(item.link,'_blank','noopener,noreferrer');
+          openBtn.onclick=()=>_khOpenExt(item.link);
           linkEl.appendChild(openBtn);
           fullDiv.appendChild(linkEl);
         }
@@ -44088,7 +44124,7 @@ rss:()=>{
 
       if(item.link){
         const openBtn=txt('button','Open link',{className:'rss-act-btn'});
-        openBtn.onclick=()=>{if(!isRead){S.rssRead[id]=true;save();}window.open(item.link,'_blank','noopener,noreferrer');};
+        openBtn.onclick=()=>{if(!isRead){S.rssRead[id]=true;save();}_khOpenExt(item.link);};
         btnRow.appendChild(openBtn);
       }
 
@@ -44182,7 +44218,7 @@ rss:()=>{
       }
       const btnRow=el('div',{className:'rss-btn-row'});
       btnRow.appendChild(Object.assign(txt('button',isExpanded?'Collapse':'Read',{className:'rss-act-btn'+(isExpanded?' on':'')}),{onclick:()=>{expandedId=isExpanded?null:s.id;renderContent();}}));
-      if(s.link){btnRow.appendChild(Object.assign(txt('button','Open link',{className:'rss-act-btn'}),{onclick:()=>window.open(s.link,'_blank','noopener,noreferrer')}));}
+      if(s.link){btnRow.appendChild(Object.assign(txt('button','Open link',{className:'rss-act-btn'}),{onclick:()=>_khOpenExt(s.link)}));}
       btnRow.appendChild(Object.assign(txt('button','Remove',{className:'rss-act-btn',style:{color:'var(--danger)',borderColor:'var(--danger)'}}),{onclick:()=>{S.rssSaved=(S.rssSaved||[]).filter(x=>x.id!==s.id);save();refreshViewTabs();renderContent();}}));
       card.appendChild(btnRow);
       contentDiv.appendChild(card);
@@ -53292,13 +53328,17 @@ messages:()=>{
       let userRow=null;
       if(uid&&typeof _sbActive==='function'&&_sbActive()){
         try{
-          const rows=await _sbSelect('kh_users','hash=like.'+encodeURIComponent(uid+'*')+'&select=hash,email,updated_at,state&limit=1');
+          /* SECURITY: fetch only what the admin card shows. NEVER pull the target's
+             `state` (their encrypted blob) or full `hash` (which is their AES key +
+             login secret) to an admin's device — the card reasons over metadata, and
+             downloading the ciphertext+key would let a curious admin decrypt it. */
+          const rows=await _sbSelect('kh_users','hash=like.'+encodeURIComponent(uid+'*')+'&select=email,updated_at&limit=1');
           if(Array.isArray(rows)&&rows.length)userRow=rows[0];
         }catch(e){}
       }
       if(userRow){
         lines.push(['Username / email', userRow.email||'—']);
-        lines.push(['Full account hash', userRow.hash||'—']);
+        lines.push(['User ID (hash prefix)', uid||'—']);
         if(userRow.updated_at){
           const upd=new Date(userRow.updated_at);
           const mins=Math.floor((Date.now()-upd.getTime())/60000);

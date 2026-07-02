@@ -172,3 +172,75 @@ A scan for `innerHTML = ... + <user-variable>` sinks found none unescaped.
 - Turn on Cloudflare **Bot Fight Mode** for distributed abuse.
 - Subresource Integrity (SRI) on the jsdelivr `<script>` tags is a reasonable
   hardening if you pin exact versions (html2canvas, jszip@3.10.1).
+
+---
+
+# Full-stack audit (4 parallel auditors: worker / R2+email / crypto / client)
+
+The account-takeover and SQL-injection surfaces were verified **clean**. The
+remaining exploitable issues were cross-user *reads* and client credential
+handling. Fixes below are code-complete and tested (headless + a `node:sqlite`
+D1 shim for the worker ACLs).
+
+## Fixed — worker (`api-worker.js`)
+
+- **Mail owner-ACL (was: read anyone's mailbox).** Mail is encrypted under a key
+  derived from the recipient's public username and reads were ungated, so
+  `GET /kh_mail?to_user=eq.<victim>` returned decryptable ciphertext. The worker
+  now requires the caller's `X-KH-Secret`, looks up the owner, and **forces** the
+  query to that account's own mail (`to_user = me OR from_id = me`) regardless of
+  the client filter. The client sends the secret on all mail reads.
+- **Admin-only reads** for `kh_visits` (per-device geo/UA PII) and `kh_errors`
+  (diagnostic logs).
+- **`kh_feedback`**: `[USERNAME]` abuse reports are dropped and moderator
+  `comments` stripped for non-admin reads (they named the reporter and quoted the
+  reported user). Public suggestions/bugs still load.
+- **`kh_groups`**: removed from open UPDATE (kills anon room rename/hijack) and
+  reads now require a `code` filter (no bulk enumeration of room join-codes).
+- **`kh_set_reaction`**: capped keys/users per message (anti-bloat).
+- **owner_secret** must be ≥16 chars on secret-gated PATCH/DELETE.
+
+## Fixed — client (`index.html`)
+
+- **Removed `kh_creds`** — it stored the **plaintext password** in localStorage.
+  Staying logged in uses `S.authToken` (the hash) instead; legacy blobs are
+  wiped. After logout the password is re-entered (keychain autofills).
+- **Offline-cred store** is now keyed by a non-secret 16-char handle, not the
+  full hash (the AES key) — reading localStorage no longer yields both
+  ciphertext and its key.
+- **`_msgEncrypt` fails closed** — never silently stores plaintext if WebCrypto
+  is unavailable (only possible in a non-HTTPS context).
+- **CSPRNG** for group/DM codes (they are message-key material; was `Math.random`).
+- **Admin "ask about a user"** no longer fetches the target's `state` (ciphertext)
+  or displays the full `hash` (their key) — metadata only.
+- **`window.open`** on RSS/feed links is scheme-gated to http/https via `_khOpenExt`.
+
+## Verified SAFE
+
+No SQL injection (identifiers whitelisted, values bound); no `state`/full-hash
+leak or cross-user `state` write (both require the exact hash PK); `owner_secret`
+never served on reads; admin RPCs server-verified; AES-256-GCM with fresh random
+IVs; custom-app/AI iframes sandboxed without `allow-same-origin`; chat/mail/
+announcements/RSS render via `textContent`/escaped.
+
+## ⚠ Still open — needs a careful, staged MIGRATION (not a silent code change)
+
+1. **`hash = SHA-256(username+password)` is used as BOTH the account key AND the
+   AES key, with no salt and no slow KDF.** A database dump (or the historical
+   open-Supabase window) decrypts every account, and weak passwords crack fast.
+   *Plan:* add a per-user random `salt`; store the lookup/auth value as
+   `verifier = PBKDF2(password, salt, ≥200k)` (server can't decrypt) and derive
+   the state key separately as `PBKDF2/HKDF(password, salt, …, "state")` (never
+   sent to the server). Tag rows `kdf:2`; upgrade opportunistically on the next
+   successful login (client still holds the password) so nobody is locked out.
+2. **Mail/DM keys are derived from usernames/codes, not random per-conversation
+   keys.** The read-ACL above stops the live exploit, but the durable fix is a
+   per-account keypair + random per-conversation keys wrapped to the recipient.
+3. **`kh_messages.location_hint`/`device_hint`** are stored in plaintext — stop
+   sending them (or drop from non-owner reads).
+4. **state-worker GET** takes the hash in the query string (log exposure) — move
+   it to a header. **email-worker inbound** should check SPF/DKIM before storing
+   a `from`.
+
+These four require data migration / coordinated client+worker rollout and are
+deliberately left for a dedicated pass to avoid locking out the ~98 live users.

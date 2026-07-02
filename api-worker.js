@@ -102,9 +102,17 @@ const INT_COLS  = new Set(['score','votes','count','n']);
 const TS_COLS   = new Set(['updated_at','ts','created_at','date','last_seen']);
 /* RLS equivalents: which tables accept a direct (anon) INSERT / open UPDATE. */
 const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits']);
-const UPDATE_OK = new Set(['kh_users','kh_groups','kh_feedback','kh_presence']); // open update
+/* Open (anon) UPDATE. kh_groups was REMOVED: the client never PATCHes a group
+   (it only INSERTs on create), and an open update let anyone enumerate room
+   codes then rename / re-own every room. */
+const UPDATE_OK = new Set(['kh_users','kh_feedback','kh_presence']); // open update
 const SECRET_UPDATE = new Set(['kh_messages']);          // owner_secret-gated update
 const SECRET_DELETE = new Set(['kh_messages','kh_mail']); // owner_secret-gated delete
+/* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only. */
+const ADMIN_READ = new Set(['kh_visits','kh_errors']);
+/* Replicates the client's _mailNorm(email) → mail username, used to verify a
+   mail reader owns the mailbox it queries. Keep in sync with index.html. */
+function mailNorm(u){ return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40); }
 
 function cors(env){
   return {
@@ -320,7 +328,15 @@ async function handleRpc(fn, body, DB, env){
     if(!r) return json(null,204,env);
     let cur={}; try{ cur=JSON.parse(r.reactions||'{}')||{}; }catch(_){ cur={}; }
     let list = Array.isArray(cur[key])?cur[key]:[];
-    if(list.indexOf(uid)>=0) list = list.filter(v=>v!==uid); else list = list.concat([uid]);
+    const adding = list.indexOf(uid)<0;
+    if(adding){
+      /* Bound reaction bloat: an unauth caller could otherwise grow one row's
+         reactions JSON without limit (storage + egress abuse). Cap distinct
+         emoji keys per message and users per key. */
+      if(!cur[key] && Object.keys(cur).length>=40) return json(null,204,env);
+      if(list.length>=200) return json(null,204,env);
+      list = list.concat([uid]);
+    } else { list = list.filter(v=>v!==uid); }
     if(list.length===0) delete cur[key]; else cur[key]=list;
     await DB.prepare('UPDATE kh_messages SET reactions=? WHERE id=?').bind(JSON.stringify(cur), String(body.p_msg_id||'')).run();
     return json(null,204,env);
@@ -333,6 +349,33 @@ async function handleGet(table, url, request, env, DB, headOnly){
   const q = parseQuery(table, url.searchParams);
   const cols = q.selects && q.selects.length ? q.selects.map(QUOTE).join(',') : '*';
   let { sql:where, binds } = whereSql(table, q.filters);
+
+  /* ── Cross-user read gating ─────────────────────────────────────────────
+     The open-read model is acceptable for E2E-encrypted bodies, but several
+     tables expose PLAINTEXT cross-user data. Gate them. Compute admin once. */
+  const _needAdminCheck = ADMIN_READ.has(table) || table==='kh_mail' || table==='kh_groups';
+  const _adminGet = _needAdminCheck ? await isAdmin(request.headers.get('x-kh-admin')||'') : false;
+  if(ADMIN_READ.has(table) && !_adminGet){
+    return err('admin only', 403, env);   // kh_visits (geo/UA PII), kh_errors (logs)
+  }
+  if(table==='kh_groups' && !_adminGet){
+    /* Don't let anon dump every room's code+name (the code IS the join secret).
+       A real member already knows the code, so require a code filter. */
+    const hasCode = q.filters.some(f=>f.col==='code' && (f.op==='eq'||f.op==='in') && !f.neg);
+    if(!hasCode) return err('a code filter is required', 400, env);
+  }
+  if(table==='kh_mail' && !_adminGet){
+    /* Mail bodies are encrypted under a key derived from the recipient's public
+       username, so an ungated read = anyone reads anyone's mailbox. Require the
+       owner's auth secret and FORCE the query to the caller's own mail (received
+       OR sent), regardless of the client-supplied filter. */
+    const secret = (request.headers.get('x-kh-secret')||'').toLowerCase();
+    if(!/^[0-9a-f]{64}$/.test(secret)) return err('mail read requires the owner secret', 403, env);
+    const owner = await DB.prepare('SELECT email FROM kh_users WHERE hash=?').bind(secret).first();
+    if(!owner || !owner.email) return err('unknown owner', 403, env);
+    where += (where?' AND ':' WHERE ')+'(to_user = ? OR from_id = ?)';
+    binds = binds.concat([mailNorm(owner.email), secret.slice(0,16)]);
+  }
 
   /* count requested? (Prefer: count=exact, or a HEAD probe) */
   const prefer = (request.headers.get('prefer')||'');
@@ -379,6 +422,15 @@ async function handleGet(table, url, request, env, DB, headOnly){
         return o;
       });
     }
+  }
+  /* kh_feedback holds public suggestions/bugs AND [USERNAME] abuse reports (which
+     ride the bug board with a text marker). For non-admin reads, drop the abuse
+     reports entirely (they name the reporter in `author` and quote the reported
+     user) and strip moderator `comments`. Suggestions/bugs stay public. */
+  if(table==='kh_feedback' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
+    rows = rows
+      .filter(r=>!(typeof r.text==='string' && (/\[USERNAME\]/.test(r.text) || /\[REPORT\]/.test(r.text))))
+      .map(r=>{ const o=Object.assign({},r); delete o.comments; return o; });
   }
   const extra = contentRange?{'Content-Range':contentRange}:null;
   return json(rows, 200, env, extra);
@@ -455,6 +507,9 @@ async function handlePatch(table, url, request, env, DB){
   let { sql:where, binds } = whereSql(table, q.filters);
   if(secretGated){
     const secret = request.headers.get('x-kh-secret')||'';
+    /* Require a real secret. Without a min length, a row that somehow had an
+       empty owner_secret could be edited by anyone sending X-KH-Secret:''. */
+    if(secret.length < 16) return err('a valid owner secret is required', 403, env);
     where += (where?' AND ':' WHERE ')+'owner_secret IS NOT NULL AND owner_secret = ?';
     binds = binds.concat([secret]);
   }
@@ -489,6 +544,7 @@ async function handleDelete(table, url, request, env, DB){
   let { sql:where, binds } = whereSql(table, q.filters);
   if(secretGated){
     const secret = request.headers.get('x-kh-secret')||'';
+    if(secret.length < 16) return err('a valid owner secret is required', 403, env);
     where += (where?' AND ':' WHERE ')+'owner_secret IS NOT NULL AND owner_secret = ?';
     binds = binds.concat([secret]);
   } else if(table==='kh_feedback'){

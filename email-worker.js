@@ -217,11 +217,6 @@ export default {
     if (await rateLimited(req, 10, 3600))
       return json({ error: 'Rate limit: 10 external mails per hour per device.' }, 429);
 
-    /* global daily cap so a runaway client can never torch the Resend quota */
-    const cap = parseInt(env.DAILY_SEND_CAP || '80', 10);
-    if (await rateLimited({ headers: { get: () => 'GLOBAL-DAY' } }, cap, 86400))
-      return json({ error: 'Daily external-mail limit reached — try tomorrow.' }, 429);
-
     let b; try { b = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
     const fromUser = String(b.from_user || '').toLowerCase().replace(/[^a-z0-9._-]/g, '').slice(0, 40);
     const to = String(b.to || '').toLowerCase().trim().slice(0, 120);
@@ -235,6 +230,13 @@ export default {
     const secret = req.headers.get('x-kh-secret') || '';
     if (!(await userOwns(env, secret, fromUser)))
       return json({ error: 'sender not verified — you can only send as your own account' }, 403);
+
+    /* Global daily cap so a runaway (or hostile) client can't torch the shared
+       Resend quota. Counted only AFTER auth succeeds, so an UNauthenticated flood
+       (which 403s just above) can't exhaust the day's sends for everyone. */
+    const cap = parseInt(env.DAILY_SEND_CAP || '80', 10);
+    if (await rateLimited({ headers: { get: () => 'GLOBAL-DAY' } }, cap, 86400))
+      return json({ error: 'Daily external-mail limit reached — try tomorrow.' }, 429);
 
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
