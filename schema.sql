@@ -243,9 +243,23 @@ language sql stable as $$
   );
 $$;
 
-create policy "kh_users_read"   on kh_users          for select using (true);
+-- ⚠ SECURITY — DO NOT revert these to `using (true)`.
+-- kh_users.hash = SHA-256(username+password) is BOTH the login secret AND the
+-- AES key that decrypts that user's `state`. When these were `using (true)`,
+-- anyone with the (public) anon key could SELECT every user's hash+state (=
+-- full account + data compromise) and UPDATE any row (takeover / inject a
+-- boot-time localFix). These policies are now SELF-ONLY: a request may read or
+-- update ONLY the row whose hash it proves it knows, via the x-kh-secret header
+-- (kh_request_secret()). Bulk reads/overwrites by anon are impossible. Live
+-- traffic runs on the Cloudflare D1 worker (which gates kh_users identically);
+-- this legacy Supabase path is being decommissioned. A final migration must use
+-- the service_role key (it bypasses RLS). See supabase-lockdown.sql / SECURITY.md.
+create policy "kh_users_read"   on kh_users          for select
+  using       (hash = kh_request_secret());
 create policy "kh_users_insert" on kh_users          for insert with check (true);
-create policy "kh_users_update" on kh_users          for update using (true) with check (true);
+create policy "kh_users_update" on kh_users          for update
+  using       (hash = kh_request_secret())
+  with check  (hash = kh_request_secret());
 
 create policy "kh_groups_read"   on kh_groups        for select using (true);
 create policy "kh_groups_insert" on kh_groups        for insert with check (true);

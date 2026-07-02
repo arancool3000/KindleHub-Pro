@@ -6,6 +6,21 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
+<!-- Content-Security-Policy. Tuned to what KindleHub actually needs — it is a
+     legitimate multi-API client (weather, maps tiles, news RSS, images,
+     translate, finance, geocoding) AND runs AI-built apps that fetch arbitrary
+     APIs, so a strict default-src 'self' would break the whole app. What this
+     still buys us: object-src 'none' (no plugin XSS), base-uri 'self' (no
+     <base> hijack), and script-src limited to inline + the two jsdelivr libs
+     we load (html2canvas, jszip) — so an injected <script src=//evil> is
+     blocked. 'unsafe-eval' is required because the in-app spreadsheet (Sheets)
+     and calculator evaluate user formulas via Function(), and the app-patch
+     feature runs via new Function(); without it those core features break on
+     browsers that enforce CSP. Header-only directives (frame-ancestors, HSTS, X-Frame-Options,
+     X-Content-Type-Options) can't be set via <meta>; see _headers / SECURITY.md
+     for the Cloudflare setup that adds those. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https:; media-src 'self' data: blob: https:; frame-src 'self' data: blob: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'"/>
+<meta name="referrer" content="strict-origin-when-cross-origin"/>
 <title>KindleHub Pro — free apps, 30+ games, AI &amp; tools for your Kindle browser</title>
 <meta name="description" content="KindleHub Pro turns your Kindle's browser into a full mini-OS: a KindleOS desktop, 30+ e-ink games (chess, a real 3D flight sim, Slither, Geometry Dash, Crossy Road), an AI assistant + app builder, a free Project Gutenberg book reader, email, end-to-end-encrypted group chat, notes, journal, calendar, RSS, weather, maps and drawing — all free and offline-friendly on one fast page. A comprehensive free alternative to ReKindle."/>
 <meta name="keywords" content="Kindle apps, Kindle browser, Kindle games, ReKindle alternative, KindleOS, Kindle web app, e-ink games, Kindle AI, Kindle chat, Kindle book reader, Paperwhite apps, Kindle Scribe, e-reader apps"/>
@@ -1438,6 +1453,16 @@ try{_writeBootHints();}catch(_){}
    self-fix modal. We run them in order at boot, wrapped in
    try/catch so a bad fix can\'t kill the whole app. Users can
    disable individual fixes or wipe them all from the admin panel. */
+/* SECURITY: identifiers a local-fix / AI patch must never touch — admin flags,
+   the admin token + its hash allowlist, auth entry points + the credential/AES
+   secret, the raw kh_users table, backend base/fetch + Supabase creds, the
+   encryption primitives, and the localFixes store itself. Client-side admin is
+   only a UI flag (real authority is the server-side token), so this is not the
+   security boundary — it stops the AI-patch feature from generating or running
+   privilege-escalation / key-theft / data-exfil code. One shared regex is used
+   by BOTH the boot applier (below) and the generator's Apply button so they
+   can't drift. */
+const _khPatchDenyRE=/_isAdminCached|_adminToken|_ADMIN_HASHES|ADMIN_HASHES|_checkAdmin|X-KH-Admin|x-kh-admin|authToken|authRegister|authLogin|_offlineCred|kh_offline_cred|kh_users|SUPABASE_ANON_KEY|SUPABASE_URL|service_role|_sbFetch|_sbBase|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|localFixes/;
 (function applyLocalFixes(){
   try{
     const fixes=(S&&S.localFixes)||{};
@@ -1451,6 +1476,14 @@ try{_writeBootHints();}catch(_){}
          patch STILL won't COMPILE on this engine, DISABLE it so it can't keep
          breaking — and record it so it auto-reports instead of failing silently. */
       const _code=String(f.code).replace(/([^A-Za-z0-9_$])catch\s*\{/g,'$1catch(_e){');
+      /* SECURITY: never run a stored patch that references admin/auth/credential
+         internals — blocks privilege-escalation / key-theft patches, including any
+         that predate the generator-side guard. Client-side admin is only a UI flag
+         (real authority is the server-side token), so this isn't the security
+         boundary, but the AI-patch feature must not be a willing accomplice. */
+      if(_khPatchDenyRE.test(_code)){
+        f.disabled=true; f.error='blocked: references admin/auth internals'; _broke.push(k); return;
+      }
       let _fn;
       try{ _fn=new Function(_code); }
       catch(se){ f.disabled=true; f.error='syntax: '+String((se&&se.message)||se).slice(0,120); _broke.push(k); console.warn('[localFix] '+k+' disabled — won’t compile here:',f.error); return; }
@@ -5003,6 +5036,9 @@ function launchKindleDesktop(){
     return String(code).replace(/([^A-Za-z0-9_$])catch\s*\{/g, '$1catch(_e){');
   }
   async function _khCallActiveAI(sys,msg){
+    /* Read the active model here — it used to reference an `activeModelId` from a
+       caller's scope that isn't in scope in this function (ReferenceError). */
+    const activeModelId=(typeof osState!=='undefined'&&osState.aiModel)||'gemini';
     if(activeModelId==='shared')return await callSharedAPI(sys,msg);
     if(activeModelId==='openrouter')return await callOpenRouterAPI(sys,msg);
     if(activeModelId==='anthropic')return await callAnthropicAPI(sys,msg);
@@ -6063,9 +6099,11 @@ async function khiCall(prompt, opts){
   const model=_normGemModel(opts.model||S.khiModel);
   const gKey=S.geminiKey;
   const oKey=S.openrouterKey;
-  const prov=opts.provider||S.khiProvider||'auto';/* 'auto' | 'gemini' | 'openrouter' | 'shared' (per-call override via opts) */
-  if(!gKey&&!oKey&&!S.anthropicKey&&!S.openaiKey&&prov!=='shared'){toast('KHI: no API key — add one in Settings, or switch KHI to the Shared key');return null;}
-  if(!navigator.onLine){toast('Offline — connect to Wi-Fi to use AI features');return null;}
+  let prov=opts.provider||S.khiProvider||'auto';/* 'auto' | 'gemini' | 'openrouter' | 'shared' (per-call override via opts) */
+  /* No personal key at all (e.g. a logged-out guest) → use the free shared /
+     public AI instead of bailing, so KHI features still work with no key. */
+  if(!gKey&&!oKey&&!S.anthropicKey&&!S.openaiKey)prov='shared';
+  if(navigator.onLine===false){toast('Offline — connect to Wi-Fi to use AI features');return null;}
   /* Shared bundled key — no personal key needed. Reuses the streaming shared
      caller and collects its final text (honours the auto-switch setting). */
   if(prov==='shared'){
@@ -6803,8 +6841,15 @@ $('hideApiBar').onclick=()=>{ $('apiKeyBar').style.display='none'; };
        SECURITY DEFINER kh_check_rate() function can touch them, and it
        only returns a boolean.
 ─────────────────────────────────────────────────────────────────────────── */
-let SUPABASE_URL='https://hgqsugrcmdeoyedxobuj.supabase.co';
-let SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhncXN1Z3JjbWRlb3llZHhvYnVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyOTg5OTcsImV4cCI6MjA5NDg3NDk5N30.B9FzGOZjC55KJiAWkvgnzOd2pxxJJ3D2GAZXtIegJZw';
+/* Supabase creds are intentionally BLANK in the shipped bundle. Live traffic
+   runs entirely on the audited Cloudflare D1 worker (KH_DEFAULT_API_GATEWAY),
+   so the client never contacts Supabase. The old open-RLS Supabase project
+   exposed every user's hash+state to anyone holding the (public) anon key — see
+   supabase-lockdown.sql / SECURITY.md. To run the ONE-TIME migration you can
+   paste a Supabase URL + anon key at RUNTIME via the Admin "Backend" card
+   (kh_sb_url_override / kh_sb_key_override); nothing sensitive ships hardcoded. */
+let SUPABASE_URL='';
+let SUPABASE_ANON_KEY='';
 /* ── Per-deployment backend override ──────────────────────────────────────
    Point the app at YOUR OWN the backend project (URL + anon key) from the admin
    UI — no need to edit this file — so you can move off a shared or half-set-up
@@ -6813,7 +6858,7 @@ let SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 try{
   var _sbU=localStorage.getItem('kh_sb_url_override');
   var _sbK=localStorage.getItem('kh_sb_key_override');
-  if(_sbU&&_sbK&&/^https:\/\/[a-z0-9-]+\.the backend\.co\/?$/i.test(_sbU.trim())&&_sbK.trim().length>40){
+  if(_sbU&&_sbK&&/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(_sbU.trim())&&_sbK.trim().length>40){
     SUPABASE_URL=_sbU.trim().replace(/\/+$/,'');
     SUPABASE_ANON_KEY=_sbK.trim();
   }
@@ -6843,8 +6888,12 @@ const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
 const KH_DEFAULT_STATE_GATEWAY='';   /* e.g. 'https://kindlehub-state.you.workers.dev' */
 const KH_DEFAULT_API_GATEWAY='https://kindlehub-api.arancool3000.workers.dev';/* ALL users now route to the Cloudflare D1 worker (the audited, secure backend). Supabase is NOT used for live traffic anymore — it's only read by the one-time migration tool below until the data copy is confirmed, then the project can be deleted. */
 const KH_DEFAULT_MAIL_GATEWAY='';    /* e.g. 'https://kindlehub-mail.you.workers.dev' — real email for ALL users */
-function _apiGatewayUrl(){try{const v=(localStorage.getItem('kh_api_gateway')||'').trim();if(v==='off')return '';return (v||KH_DEFAULT_API_GATEWAY).replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');}}
-function _sbBase(){const gw=_apiGatewayUrl();return gw||(SUPABASE_URL||'').replace(/\/$/,'');}
+function _apiGatewayUrl(){try{const v=(localStorage.getItem('kh_api_gateway')||'').trim();/* 'off' USED to force this device back onto Supabase; Supabase is decommissioned and its RLS was open, so 'off'/blank/invalid now falls to the D1 default instead of leaking to (or being locked out of) Supabase. A real custom https gateway URL still overrides. */if(!v||v==='off'||!/^https?:\/\//i.test(v))return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');return v.replace(/\/+$/,'');}catch(_){return (KH_DEFAULT_API_GATEWAY||'').replace(/\/+$/,'');}}
+/* Live traffic base = the D1 gateway ONLY. Never fall back to Supabase (its RLS
+   was open and it is being decommissioned). No gateway → '' → the app runs
+   local/offline rather than leaking to Supabase. The migration tool reads
+   Supabase directly via SUPABASE_URL, independent of this chokepoint. */
+function _sbBase(){return _apiGatewayUrl();}
 /* One-click migration: copy ALL data from Supabase into the Cloudflare D1
    gateway. Reads each table DIRECTLY from Supabase (not via _sbBase, which may
    already point at D1) and upserts it to the gateway in pages — safe to re-run
@@ -6909,10 +6958,10 @@ async function _migrateToCloudflare(onProgress){
   return out;
 }
 function _sbActive(){
-  if(_apiGatewayUrl())return true;
-  return SUPABASE_URL&&SUPABASE_URL.indexOf('supabase.co')>0
-       &&SUPABASE_ANON_KEY&&SUPABASE_ANON_KEY.length>20
-       &&SUPABASE_URL.indexOf('YOUR_')<0;
+  /* A live backend exists iff the D1 gateway is set. Supabase is no longer a
+     live backend (severed above) so it never makes _sbActive true, even if an
+     admin has pasted a migration override. */
+  return !!_apiGatewayUrl();
 }
 function _sbHeaders(extra){
   const h={
@@ -6982,8 +7031,13 @@ async function _sbFetch(path,opts){
   const ct=r.headers.get('content-type')||'';
   return ct.indexOf('application/json')>=0?r.json():r.text();
 }
-async function _sbSelect(table,query){
-  return _sbFetch('/'+table+(query?'?'+query:''),{method:'GET'});
+async function _sbSelect(table,query,secret){
+  /* Pass the caller's auth secret (X-KH-Secret) on reads that the worker
+     owner-gates (kh_mail) so a user can read their OWN mailbox but not anyone
+     else's. Harmless on ungated tables (the worker ignores it there). */
+  const opts={method:'GET'};
+  if(secret)opts.headers={'X-KH-Secret':secret};
+  return _sbFetch('/'+table+(query?'?'+query:''),opts);
 }
 /* ── the backend keep-alive ──────────────────────────────────────────────────
    the backend's free tier auto-pauses a project after ~7 days with no API
@@ -7139,7 +7193,13 @@ async function _msgEncrypt(groupCode,plain){
     }
     const buf=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,body);
     return prefix+_u8ToB64(iv)+'.'+_u8ToB64(new Uint8Array(buf));
-  }catch(e){return plain;}/* fail-open in case crypto unavailable */
+  }catch(e){
+    /* FAIL CLOSED: never silently store plaintext on the backend (where other
+       users can read it) just because WebCrypto was unavailable. On the live
+       HTTPS site crypto.subtle is always present, so this only trips in a broken/
+       insecure context — there we refuse to send rather than leak the message. */
+    throw new Error('Message encryption is unavailable — a secure (HTTPS) connection is required to send.');
+  }
 }
 async function _msgDecrypt(groupCode,cipher){
   if(typeof cipher!=='string')return cipher;
@@ -9757,19 +9817,30 @@ function _loginClearFailures(name){try{localStorage.removeItem(_loginFailKey(nam
    The blob is the same AES-GCM ciphertext the cloud holds — useless without
    the password (which alone derives the key), so it's safe at rest. Kept to
    the 3 most-recent accounts. */
-/* Saved sign-in credentials for automatic re-login. The user asked for the
-   username + password to be remembered on the device so nobody gets logged out,
-   so we store them in plaintext here (a deliberate convenience-over-secrecy
-   choice, on top of the encrypted offline-cred blob) and auto-login from them at
-   boot. Cleared on explicit logout. */
-function _saveCreds(u,p){try{if(u&&p)localStorage.setItem('kh_creds',JSON.stringify({u:u,p:p,at:Date.now()}));}catch(_){}}
-function _readCreds(){try{const o=JSON.parse(localStorage.getItem('kh_creds')||'null');return (o&&o.u&&o.p)?o:null;}catch(_){return null;}}
+/* SECURITY: KindleHub must NEVER store the plaintext password. It used to cache
+   {u,p} in localStorage ('kh_creds') for silent auto-relogin, but any localStorage
+   reader (an XSS, a shared/synced device, a browser extension) could then read the
+   password AND — because the auth hash = SHA-256(username+password) is ALSO the
+   AES key — decrypt the whole account. Staying logged in does NOT need it:
+   S.authToken (the hash, not the password) is already in the persisted state and
+   drives sync, so a normal reload keeps the session. We therefore no longer store
+   creds and proactively delete any legacy blob. After an explicit logout the user
+   re-enters the password (the browser/OS keychain autofills it). */
+function _saveCreds(u,p){try{localStorage.removeItem('kh_creds');}catch(_){}}
+function _readCreds(){try{localStorage.removeItem('kh_creds');}catch(_){}return null;}
 function _clearCreds(){try{localStorage.removeItem('kh_creds');}catch(_){}}
 function _cacheOfflineCred(key,email,packed){
   try{
     if(!key||typeof packed!=='string'||!packed)return;
+    /* SECURITY: key the store by a NON-secret 16-char handle, NOT the full auth
+       hash. The full hash IS the AES key, so using it as the map key meant anyone
+       who read localStorage held both the ciphertext AND its key. The handle can't
+       decrypt; the full hash (re-derived from the password at offline login) is
+       still required to open `packed`. Also drop any legacy full-hash entry. */
+    const handle=String(key).slice(0,16);
     let store={};try{store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');}catch(_){store={};}
-    store[key]={email:email||'',packed:packed,at:Date.now()};
+    try{if(store[key])delete store[key];}catch(_){}
+    store[handle]={email:email||'',packed:packed,at:Date.now()};
     /* Cap at the 2 most-recent accounts (was 3) — each entry is a whole
        encrypted state blob, so 3 of them could blow a ~5 MB localStorage on
        a heavy account and break the MAIN blob's write ("storage full"). */
@@ -9778,13 +9849,15 @@ function _cacheOfflineCred(key,email,packed){
     try{localStorage.setItem('kh_offline_cred',JSON.stringify(store));}
     catch(e){ /* No room for the others — keep just THIS account so offline
                  login still works, and don't let it nag (swallowed). */
-      if(typeof _isQuotaError!=='function'||_isQuotaError(e)){try{const only={};only[key]=store[key];localStorage.setItem('kh_offline_cred',JSON.stringify(only));}catch(_){}}
+      if(typeof _isQuotaError!=='function'||_isQuotaError(e)){try{const only={};only[handle]=store[handle];localStorage.setItem('kh_offline_cred',JSON.stringify(only));}catch(_){}}
     }
     if(email)try{localStorage.setItem('kh_last_user',email);}catch(_){}
   }catch(_){}
 }
 function _offlineCred(key){
-  try{const store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');return store[key]||null;}catch(_){return null;}
+  /* Look up by the 16-char handle; fall back to a legacy full-hash entry so a
+     device that cached under the old scheme still logs in until it re-caches. */
+  try{const store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');const h=String(key||'').slice(0,16);return store[h]||store[key]||null;}catch(_){return null;}
 }
 
 async function authRegister(email,password){
@@ -10110,7 +10183,15 @@ async function _groupCreate(name,codeOverride){
      the deterministic one, so the next _groupLookup never matched and a
      brand-new duplicate row was created on every login / join. That bug
      ballooned kh_groups to 582 orphaned "inbox-…" rows. */
-  const code=(codeOverride&&/^[0-9]{12}$/.test(codeOverride))?codeOverride:(function(){let c='';for(let i=0;i<12;i++)c+=Math.floor(Math.random()*10);return c;})();
+  const code=(codeOverride&&/^[0-9]{12}$/.test(codeOverride))?codeOverride:(function(){
+    /* CSPRNG digits — the 12-digit code is the room's shared secret AND the
+       material the message key is derived from, so it must be unguessable.
+       (Was Math.random, whose V8 state is recoverable from a few outputs.) */
+    let c='';
+    if(typeof crypto!=='undefined'&&crypto.getRandomValues){const b=new Uint8Array(12);crypto.getRandomValues(b);for(let i=0;i<12;i++)c+=(b[i]%10);}
+    else{for(let i=0;i<12;i++)c+=Math.floor(Math.random()*10);}
+    return c;
+  })();
   const creatorName=(S.email?S.email.split('@')[0]:(S.user||'Reader'));
   const createdAt=new Date().toISOString();
   if(_sbActive()){
@@ -10355,6 +10436,10 @@ async function _groupFetchMessages(code){
    and costs zero extra requests. */
 const KH_MAIL_DOMAIN='kindlehub.pro';
 function _mailNorm(u){return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40);}
+/* Open an EXTERNAL, possibly-untrusted URL safely: ONLY http/https (blocks a
+   javascript:/data: URL smuggled in via e.g. a malicious RSS <link>), always
+   with noopener,noreferrer. Hoisted, so all onclick closures can use it. */
+function _khOpenExt(u){try{if(/^https?:\/\//i.test(String(u||'')))return window.open(u,'_blank','noopener,noreferrer');if(typeof toast==='function')toast('Link blocked — only http/https links open.',2600);}catch(_){}return null;}
 /* External = a full address at any OTHER domain (alice@gmail.com). Internal
    = a bare username or username@kindlehub.pro. */
 function _mailIsExternal(addr){
@@ -10417,7 +10502,7 @@ async function _mailFetch(folder){
   let q;
   if(folder==='sent')q='from_id=eq.'+encodeURIComponent(S.userId||'')+'&order=ts.desc&limit=40&select=id,to_user,from_user,from_id,subject,body,ts,reply_to';
   else q='to_user=eq.'+encodeURIComponent(me)+'&order=ts.desc&limit=40&select=id,to_user,from_user,from_id,subject,body,ts,reply_to';
-  const rows=await _sbSelect('kh_mail',q);
+  const rows=await _sbSelect('kh_mail',q,S.authToken);
   if(!Array.isArray(rows))return[];
   const out=[];
   for(const r of rows){
@@ -10437,7 +10522,7 @@ async function _mailReplies(origId){
     if(!_sbActive()||!origId)return[];
     if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return[];
     const myId=S.userId||'';
-    const rows=await _sbSelect('kh_mail','reply_to=eq.'+encodeURIComponent(origId)+'&from_id=eq.'+encodeURIComponent(myId)+'&order=ts.asc&limit=20&select=id,to_user,body,ts');
+    const rows=await _sbSelect('kh_mail','reply_to=eq.'+encodeURIComponent(origId)+'&from_id=eq.'+encodeURIComponent(myId)+'&order=ts.asc&limit=20&select=id,to_user,body,ts',S.authToken);
     if(!Array.isArray(rows))return[];
     const out=[];
     for(const r of rows){
@@ -10457,7 +10542,7 @@ async function _mailUnsend(id){
 async function _mailUnreadProbe(){
   try{
     if(!_sbActive()||!S.authToken||!_myMailUser())return false;
-    const rows=await _sbSelect('kh_mail','to_user=eq.'+encodeURIComponent(_myMailUser())+'&order=ts.desc&limit=1&select=id,ts');
+    const rows=await _sbSelect('kh_mail','to_user=eq.'+encodeURIComponent(_myMailUser())+'&order=ts.desc&limit=1&select=id,ts',S.authToken);
     if(!Array.isArray(rows)||!rows.length)return false;
     const newest=rows[0].ts||'';
     const seen=localStorage.getItem('kh_mail_lastseen')||'';
@@ -10689,6 +10774,11 @@ function mergeCloudState(cloudState,opts){
     try{_restoreLocalStorage(cloudState._lsBackup);}catch(_){}
   }
   if(cloudState&&cloudState._lsBackup)delete cloudState._lsBackup;
+  /* SECURITY: localFixes is executable JS run via new Function() at boot and is
+     DEVICE-LOCAL only (stripped on upload by _trimStateForCloud). Never import it
+     from a cloud blob — a tampered or legacy state must not be able to inject a
+     boot-time patch onto this device via a sync/merge. */
+  if(cloudState&&cloudState.localFixes)delete cloudState.localFixes;
   /* Build a tombstone set up front. The user's leftGroups list is
      authoritative — any group code in it must NEVER be re-added by a
      cloud pull, regardless of what the cloud copy says. Merge local
@@ -12732,6 +12822,7 @@ const GAME_HELP={
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
+  trivia:{name:'Trivia',how:'A multiple-choice general-knowledge quiz. Read the question, tap the answer you think is right. A correct answer scores a point and the right choice lights up; a wrong answer costs one of your three ♥ lives. Keep going until you run out of lives — then beat your best score. All questions are built in, so it works with no internet.'},
 };
 function _showGameHelp(g){
   const h=(typeof GAME_HELP!=='undefined'&&GAME_HELP[g])||null;
@@ -12822,7 +12913,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -13789,6 +13880,7 @@ function _doLaunch(g){
     case 'anagrams': Anagrams.start();break;
     case 'nonogram': Nonogram.start();break;
     case 'eightball': EightBall.start();break;
+    case 'trivia': Trivia.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -14713,7 +14805,7 @@ window.KH_MP=(function(){
     }
     /* Realtime websocket — mirrors the messages BUILDER pattern */
     let wsOpen=false;
-    if(typeof SUPABASE_URL!=='undefined'&&typeof SUPABASE_ANON_KEY!=='undefined'&&!(typeof _apiGatewayUrl==='function'&&_apiGatewayUrl())){
+    if(SUPABASE_URL&&SUPABASE_URL.indexOf('supabase.co')>0&&SUPABASE_ANON_KEY&&!(typeof _apiGatewayUrl==='function'&&_apiGatewayUrl())){
       try{
         const url=SUPABASE_URL.replace(/^https?:/,'wss:').replace(/\/$/,'')+'/realtime/v1/websocket?apikey='+encodeURIComponent(SUPABASE_ANON_KEY)+'&vsn=1.0.0';
         ws=new WebSocket(url);
@@ -18485,6 +18577,152 @@ const EightBall=(()=>{
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
   return{start,stop};
 })();
+
+/* ── Trivia — offline multiple-choice quiz (3 lives) ────────────────────
+   Fully self-contained question bank so it works with no network (the old
+   API-based trivia was removed for being unreliable). Turn-based, e-ink safe. */
+const Trivia=(()=>{
+  const BANK=[
+    ['What is the capital of Japan?','Tokyo','Kyoto','Osaka','Seoul'],
+    ['How many continents are there?','Seven','Five','Six','Eight'],
+    ['What gas do plants absorb from the air?','Carbon dioxide','Oxygen','Nitrogen','Helium'],
+    ['Which planet is called the Red Planet?','Mars','Venus','Jupiter','Mercury'],
+    ['What is the largest ocean?','Pacific','Atlantic','Indian','Arctic'],
+    ['Who painted the Mona Lisa?','Leonardo da Vinci','Picasso','Van Gogh','Michelangelo'],
+    ['How many sides does a hexagon have?','Six','Five','Seven','Eight'],
+    ['What is the tallest land animal?','Giraffe','Elephant','Horse','Camel'],
+    ['Which language has the most native speakers?','Mandarin Chinese','English','Spanish','Hindi'],
+    ['What year did World War II end?','1945','1939','1918','1950'],
+    ['What is the smallest prime number?','2','1','3','0'],
+    ['Which metal is liquid at room temperature?','Mercury','Iron','Gold','Lead'],
+    ['What is the hardest natural substance?','Diamond','Gold','Iron','Quartz'],
+    ['What is the currency of Japan?','Yen','Won','Yuan','Rupee'],
+    ['Which planet has the most moons?','Saturn','Earth','Mars','Venus'],
+    ['What is the freezing point of water in Celsius?','0','32','100','-10'],
+    ['Who wrote Romeo and Juliet?','Shakespeare','Dickens','Twain','Austen'],
+    ['What is the largest planet in our solar system?','Jupiter','Saturn','Neptune','Earth'],
+    ['Which country is home to the kangaroo?','Australia','Brazil','India','Kenya'],
+    ['What is the chemical symbol for gold?','Au','Gd','Go','Ag'],
+    ['How many players from one soccer team are on the field?','Eleven','Ten','Nine','Twelve'],
+    ['What is the main ingredient in guacamole?','Avocado','Tomato','Pepper','Onion'],
+    ['Which ocean is the smallest?','Arctic','Indian','Atlantic','Southern'],
+    ['Which organ pumps blood around the body?','Heart','Liver','Lungs','Brain'],
+    ['How many colours are in a rainbow?','Seven','Five','Six','Eight'],
+    ['What is the largest mammal?','Blue whale','Elephant','Giraffe','Hippo'],
+    ['Which is the longest river in the world?','Nile','Amazon','Yangtze','Danube'],
+    ['What does CPU stand for?','Central Processing Unit','Computer Personal Unit','Central Print Unit','Core Power Unit'],
+    ['Which vitamin does sunlight help your body make?','Vitamin D','Vitamin C','Vitamin A','Vitamin K'],
+    ['What is the capital of Australia?','Canberra','Sydney','Melbourne','Perth'],
+    ['How many legs does a spider have?','Eight','Six','Ten','Four'],
+    ['What is the tallest mountain on Earth?','Everest','K2','Kilimanjaro','Denali'],
+    ['Which gas makes up most of Earth’s atmosphere?','Nitrogen','Oxygen','Carbon dioxide','Argon'],
+    ['What is the square root of 144?','12','14','11','24'],
+    ['Which artist is famous for the sunflowers paintings?','Van Gogh','Monet','Dali','Rembrandt'],
+    ['What is the fastest land animal?','Cheetah','Lion','Horse','Greyhound']
+  ];
+  let game=null;
+  function _best(){return (S.games&&S.games.trivia&&S.games.trivia.best)||0;}
+  function _shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+  function _hearts(){var h='';for(var i=0;i<3;i++)h+=(i<game.lives?'♥':'·');return h;}
+  function nextQ(){
+    if(!game.pool.length)game.pool=_shuffle(BANK.slice());
+    var q=game.pool.pop();
+    game.q=q[0];
+    game.opts=_shuffle([{t:q[1],ok:true},{t:q[2]},{t:q[3]},{t:q[4]}]);
+    game.answered=false;
+    render();
+  }
+  function start(){
+    game={score:0,lives:3,pool:_shuffle(BANK.slice()),q:'',opts:[],answered:false};
+    enterImmersive('Trivia','Score: 0');
+    immersiveRoot._trackStop=stop;
+    buildUI();nextQ();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','Score: 0  |  ♥♥♥  |  Best: '+_best(),{id:'trScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','',{id:'trQ',style:{textAlign:'center',fontSize:'16px',fontWeight:'700',margin:'14px 16px',lineHeight:'1.4',minHeight:'44px'}}));
+    immersiveContent.appendChild(el('div',{id:'trOpts',style:{display:'flex',flexDirection:'column',gap:'8px',maxWidth:'340px',margin:'0 auto'}}));
+    immersiveContent.appendChild(el('div',{id:'trNext',style:{textAlign:'center',marginTop:'12px',minHeight:'40px'}}));
+  }
+  function render(){
+    var Q=$('trQ'),O=$('trOpts'),N=$('trNext'),sb=$('trScore');
+    if(!Q||!O)return;
+    if(sb)sb.textContent='Score: '+game.score+'  |  '+_hearts()+'  |  Best: '+Math.max(_best(),game.score);
+    Q.textContent=game.q;O.innerHTML='';if(N)N.innerHTML='';
+    game.opts.forEach(function(o){
+      var b=txt('button',o.t,{className:'btn',style:{width:'100%',padding:'12px',fontSize:'14px',textAlign:'left'}});
+      b.onclick=function(){answer(o,b);};
+      O.appendChild(b);
+    });
+  }
+  function answer(o,btn){
+    if(!game||game.answered)return;game.answered=true;
+    var O=$('trOpts');
+    Array.prototype.forEach.call(O.children,function(b,i){
+      if(game.opts[i]&&game.opts[i].ok){b.style.background='var(--fg)';b.style.color='var(--bg)';}
+      b.disabled=true;
+    });
+    if(o.ok){game.score++;toast('✓ Correct!');}
+    else{game.lives--;btn.style.textDecoration='line-through';toast('✗ Wrong');}
+    var sb=$('trScore');if(sb)sb.textContent='Score: '+game.score+'  |  '+_hearts()+'  |  Best: '+Math.max(_best(),game.score);
+    updateImmersiveScore('Score: '+game.score);
+    var N=$('trNext');if(!N)return;
+    if(game.lives<=0){
+      if(!S.games.trivia)S.games.trivia={best:0};
+      if(game.score>_best())S.games.trivia.best=game.score;
+      saveNow();try{_khSubmitScore('trivia',game.score);}catch(_){}recordStat('trivia',false);
+      N.appendChild(txt('div','Game over — final score '+game.score,{style:{fontWeight:'700',color:'var(--danger)',marginBottom:'8px'}}));
+      N.appendChild(Object.assign(txt('button','Play Again',{className:'btn primary'}),{onclick:start}));
+    } else {
+      N.appendChild(Object.assign(txt('button','Next →',{className:'btn primary'}),{onclick:nextQ}));
+    }
+  }
+  function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── Teleprompter — auto-scrolling script reader ────────────────────────
+   A full-screen overlay: paste your script, then it scrolls smoothly for
+   reading aloud. Speed + text-size controls; the script is remembered on the
+   device. Scroll loop pauses when the screen is off (e-ink + battery). */
+function khTeleprompter(){
+  var saved='';try{saved=localStorage.getItem('kh_teleprompter')||'';}catch(_){}
+  var text=saved||'Paste or type your script here.\n\nTap Edit to change it, then ▶ Play to start scrolling. Use Speed and A± to tune how fast it moves and how big the text is.\n\nGreat for reading a speech, a presentation, or lines aloud — the words come to you.';
+  var fontSize=32,speed=1.2,playing=false,pos=0,timer=null,editing=false;
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;z-index:600050;background:#000;color:#fff;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+  var bar=document.createElement('div');
+  bar.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:8px;background:#111;border-bottom:1px solid #333;flex-shrink:0;';
+  function mkBtn(label){var b=document.createElement('button');b.textContent=label;b.style.cssText='background:#222;color:#fff;border:1px solid #444;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700;min-height:40px;';return b;}
+  var playBtn=mkBtn('▶ Play'),spDn=mkBtn('Speed −'),spUp=mkBtn('Speed +'),fnDn=mkBtn('A−'),fnUp=mkBtn('A+'),rst=mkBtn('↺'),editBtn=mkBtn('Edit'),closeBtn=mkBtn('✕');
+  [playBtn,spDn,spUp,fnDn,fnUp,rst,editBtn,closeBtn].forEach(function(b){bar.appendChild(b);});
+  var body=document.createElement('div');
+  body.style.cssText='flex:1;overflow:hidden;position:relative;';
+  var inner=document.createElement('div');
+  inner.style.cssText='position:absolute;top:100%;left:0;width:100%;box-sizing:border-box;padding:0 20px;white-space:pre-wrap;word-break:break-word;text-align:center;line-height:1.5;';
+  function applyText(){inner.textContent=text;inner.style.fontSize=fontSize+'px';}
+  applyText();body.appendChild(inner);
+  var ta=document.createElement('textarea');
+  ta.style.cssText='width:100%;height:100%;box-sizing:border-box;background:#111;color:#fff;border:none;padding:16px;font-size:16px;line-height:1.5;font-family:inherit;resize:none;display:none;';
+  ta.value=text;body.appendChild(ta);
+  ov.appendChild(bar);ov.appendChild(body);document.body.appendChild(ov);
+  function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='▶ Play';}
+  function tick(){if(!playing||editing)return;pos+=speed;inner.style.transform='translateY('+(-pos)+'px)';if(pos>inner.offsetHeight+body.offsetHeight){pos=0;}}
+  playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='⏸ Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='▶ Play';}};
+  spDn.onclick=function(){speed=Math.max(0.3,speed-0.3);};
+  spUp.onclick=function(){speed=Math.min(6,speed+0.3);};
+  fnDn.onclick=function(){fontSize=Math.max(16,fontSize-4);applyText();};
+  fnUp.onclick=function(){fontSize=Math.min(72,fontSize+4);applyText();};
+  rst.onclick=function(){pos=0;inner.style.transform='translateY(0)';};
+  editBtn.onclick=function(){
+    editing=!editing;
+    if(editing){stopScroll();ta.value=text;ta.style.display='block';inner.style.display='none';editBtn.textContent='Done';try{ta.focus();}catch(_){}}
+    else{text=ta.value;try{localStorage.setItem('kh_teleprompter',text);}catch(_){}applyText();pos=0;inner.style.transform='translateY(0)';ta.style.display='none';inner.style.display='block';editBtn.textContent='Edit';}
+  };
+  closeBtn.onclick=function(){stopScroll();if(ov.parentNode)ov.parentNode.removeChild(ov);};
+}
+window.khTeleprompter=khTeleprompter;
 const G2048=(()=>{
   let G=null,saveTimer2048=null;
   const SZ=72, GAP=8, PAD=8; // tile size, gap, board padding
@@ -24613,7 +24851,12 @@ async function callAIStream(messages, onChunk){
   if(S.anthropicKey) return callAnthropicStream(messages,onChunk);
   if(S.openaiKey) return callOpenAIStream(messages,onChunk);
   if(S.openrouterKey) return callOpenRouterStream(messages,onChunk);
-  return null;
+  /* No personal key at all (e.g. a logged-out guest) → use the free shared /
+     public AI, which needs no key of its own. Without this, every AI feature
+     silently returned null for keyless users ("barely works logged out").
+     callSharedGeminiStream never throws — it streams via onChunk and returns a
+     clear message if the pool is tapped out or the proxy isn't configured. */
+  return callSharedGeminiStream(messages,onChunk);
 }
 
 /* ── Non-streaming fallback (for test) ───────────────────── */
@@ -24826,12 +25069,12 @@ async function testAIConnection(){
   const pickerBtn=document.getElementById('chatModelPickerBtn');
   const origLabel=pickerBtn?pickerBtn.textContent:'';
   function setStatus(msg,c){if(pickerBtn){pickerBtn.textContent=msg;pickerBtn.style.color=c||'var(--muted)';} setTimeout(()=>{if(pickerBtn){pickerBtn.textContent=origLabel;pickerBtn.style.color='';}},3000);}
-  if(!hasAnyKey()){
+  if(!hasAnyKey()&&!sharedKeyProxyUrl()){
     setStatus('No API key.','var(--danger)');
-    addBotMsg(navigator.onLine?'No API key set. Open Settings → AI Provider to add a Gemini key (aistudio.google.com) or an OpenRouter key (openrouter.ai — free models available).':'You are offline. Connect to Wi-Fi to use AI features. (No API key needed for offline commands — type "help" to see them.)');
+    addBotMsg(navigator.onLine!==false?'No API key set. Open Settings → AI Provider to add a Gemini key (aistudio.google.com) or an OpenRouter key (openrouter.ai — free models available).':'You are offline. Connect to Wi-Fi to use AI features. (No API key needed for offline commands — type "help" to see them.)');
     return;
   }
-  if(!navigator.onLine){setStatus('Offline.','var(--danger)');addBotMsg('No internet connection.');return;}
+  if(navigator.onLine===false){setStatus('Offline.','var(--danger)');addBotMsg('No internet connection.');return;}
   const prov=S.aiProvider==='openrouter'?(S.openrouterModel==='openrouter/free'||!S.openrouterModel?'OpenRouter Free':'OpenRouter ('+S.openrouterModel+')'):'Gemini 2.5 Flash';
   setStatus('Testing '+prov+'…');
   const thinking=addBotMsg('Testing '+prov+' connection…',true);
@@ -24889,6 +25132,7 @@ const GAME_MAP=[
   {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
   {keys:['8 ball','8-ball','eight ball','eightball','pool','billiards','snooker','pool table'],g:'eightball'},
+  {keys:['trivia','quiz','trivia quiz','general knowledge','quiz game','questions'],g:'trivia'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -25063,7 +25307,14 @@ async function sendChat(){
   const localResult=tryLocalCommand(t);
   if(localResult!==null){addBotMsg(localResult);chatHistory.push({role:'bot',text:localResult});updateAIMsgCounter();saveChatHistory();return;}
 
-  if(hasAnyKey()&&navigator.onLine){
+  /* Use the cloud AI when ONLINE and we have either a personal key OR the free
+     shared/public proxy (which needs no key). Two fixes here:
+       • keyless guests used to skip straight to offlineAI — now they get the
+         real shared/public AI ("public API barely works logged out").
+       • navigator.onLine is UNDEFINED on Kindle Silk, so the old raw-truthy test
+         wrongly sent even a key-holding Kindle user to the offline AI. Test
+         !==false (the lenient pattern used elsewhere) so Silk counts as online. */
+  if(navigator.onLine!==false&&(hasAnyKey()||sharedKeyProxyUrl())){
     S.aiMsgCount=(S.aiMsgCount||0)+1; saveNow();
     updateAIMsgCounter();
     const bubble=addBotMsg('',false);
@@ -25080,8 +25331,18 @@ async function sendChat(){
       });
       if(bubble){bubble.classList.remove('streaming');const l=$('chatLog');if(l)l.scrollTop=l.scrollHeight;}
       if(reply&&reply.startsWith('(')){
-        if(bubble)bubble.textContent=reply;
-        chatHistory.push({role:'bot',text:reply});
+        /* A "(…)" reply is a status note from the shared proxy (tapped out, not
+           deployed, unreachable…). For a keyless guest, a proxy CONFIG/REACH
+           failure should quietly degrade to the built-in offline AI rather than
+           show a scary setup message. Rate-limit / tapped-out notes still show. */
+        if(!hasAnyKey()&&/not deployed|not configured|Couldn't reach|not set|GEMINI_KEY/i.test(reply)){
+          const r=offlineAI(t);
+          if(bubble)bubble.textContent=r;
+          chatHistory.push({role:'bot',text:r});
+        }else{
+          if(bubble)bubble.textContent=reply;
+          chatHistory.push({role:'bot',text:reply});
+        }
       }else if(reply){
         const quiz=parseQuizBlock(reply);
         const flashDeck=parseFlashcardsBlock(reply);
@@ -29067,7 +29328,7 @@ home:()=>{
     bNews.appendChild(txt('div','Latest Headlines',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',marginBottom:'4px',fontFamily:'var(--ui-font)'}}));
     allItems.forEach(item=>{
       const h=txt('div','- '+(item.title||'').slice(0,80),{style:{fontSize:'12px',padding:'2px 0',lineHeight:'1.4',borderBottom:'var(--thin)',color:'var(--fg)',cursor:'pointer'}});
-      if(item.link)h.onclick=()=>window.open(item.link,'_blank','noopener,noreferrer');
+      if(item.link)h.onclick=()=>_khOpenExt(item.link);
       bNews.appendChild(h);
     });
     briefCard.appendChild(bNews);
@@ -29186,6 +29447,13 @@ games:()=>{
     const nonoBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
     nonoBtn.onclick=()=>launchGame('nonogram');
     c.appendChild(nonoBtn);
+  }));
+  rowWord.appendChild(gc('Trivia',null,c=>{
+    c.appendChild(txt('p','Multiple-choice general-knowledge quiz — 3 lives, all offline. Beat your best score.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.trivia&&S.games.trivia.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    const trBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
+    trBtn.onclick=()=>launchGame('trivia');
+    c.appendChild(trBtn);
   }));
   rowWord.appendChild(gc('Crossword',null,c=>{
     c.appendChild(txt('p',getCROSSWORDS().length+' puzzles across '+[...new Set(getCROSSWORDS().map(p=>p.cat))].length+' categories.',{style:{fontSize:'11px',color:'var(--muted)'}}));
@@ -35076,6 +35344,15 @@ reading:()=>{
   flQ.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runFreeLib(flQ.value);}});
   g.appendChild(flCard);
 
+  /* ── Teleprompter tool ── */
+  const tpCard=el('div',{className:'card'});
+  tpCard.appendChild(txt('h2','Teleprompter'));
+  tpCard.appendChild(txt('p','Paste a script and it scrolls smoothly for reading aloud — adjustable speed and text size. Great for a speech, a presentation, or practising lines.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 8px'}}));
+  const tpBtn=txt('button','Open Teleprompter',{className:'btn primary'});
+  tpBtn.onclick=()=>{try{khTeleprompter();}catch(_e){if(typeof toast==='function')toast('Could not open the teleprompter');}};
+  tpCard.appendChild(tpBtn);
+  g.appendChild(tpCard);
+
   /* ── Add Book ── */
   const c1=el('div',{className:'card'});
   c1.appendChild(txt('h2','Add Book'));
@@ -38512,7 +38789,8 @@ feedback:()=>{
           '- Prefer overriding the buggy function via reassignment (e.g. const _orig = someFn; someFn = function(...a){...try{return _orig.apply(this,a);}catch(_){...}}).\n'+
           '- Do not require imports or top-level await.\n'+
           '- CRITICAL: this runs on OLD Kindle WebKit. Do NOT use optional chaining, nullish coalescing, logical-assignment operators, numeric separators, or a parameterless catch — they throw a SyntaxError on Kindle and the fix will be auto-disabled. Use ES5/ES2015 only: write (a!=null?a:b) instead of nullish coalescing, a&&a.b instead of optional chaining, and always name the catch parameter.\n'+
-          '- Aim for <30 lines.\n\n'+
+          '- Aim for <30 lines.\n'+
+          '- SECURITY: never write code that reads or sets admin flags, auth tokens, credentials, or another user\'s data (e.g. _isAdminCached, _adminToken, ADMIN_HASHES, authToken, kh_offline_cred, SUPABASE keys, the kh_users table). Patches may change app BEHAVIOUR only; the app refuses to apply any patch that touches those.\n\n'+
           (_hasErr?('Error:\n'+(err.fullText||((err.msg||'')+'\n'+(err.stack||'')))+'\n'):'')+
           (_instr?('What the user wants: '+_instr+'\n'):'');
         try{
@@ -38547,6 +38825,14 @@ feedback:()=>{
            this browser but throw a SyntaxError on Kindle (so the patch actually
            WORKS on the target device instead of being auto-disabled there). */
         code=code.replace(/([^A-Za-z0-9_$])catch\s*\{/g,'$1catch(_e){');
+        /* SECURITY: refuse patches that touch admin/auth/credential internals.
+           A patch cannot grant real cross-user power (server enforces admin via a
+           password-derived token), but the AI must not help write escalation or
+           key-theft code. This mirrors the boot-time guard in applyLocalFixes. */
+        if(_khPatchDenyRE.test(code)){
+          await kindleAlert('Patch blocked','This patch references admin, authentication, credential, backend or encryption internals. KindleHub will not apply patches that touch those — ask for a fix that changes app behaviour only.');
+          return;
+        }
         if(/[)\]\w$]\?\?(?!=)|[)\]\w$]\?\.\s*[A-Za-z_$([]|[)\]\w$]\s*(?:\|\||&&|\?\?)=/.test(code)){
           if(!await kindleConfirm('This patch uses JavaScript (optional chaining / nullish coalescing / logical-assignment) that CRASHES on Kindle e-ink — it would be auto-disabled there. Regenerate for a Kindle-safe version, or apply anyway (works on this device only)?'))return;
         }
@@ -43822,7 +44108,7 @@ rss:()=>{
           const linkEl=el('div',{style:'margin-top:10px;padding:8px;background:var(--highlight);border-radius:4px;font-size:11px;border:var(--thin);'});
           linkEl.appendChild(txt('div','Source: '+item.feedLabel,{style:'font-weight:700;margin-bottom:3px;'}));
           const openBtn=txt('button','Open original article',{className:'btn small',style:'width:100%;margin-top:4px;'});
-          openBtn.onclick=()=>window.open(item.link,'_blank','noopener,noreferrer');
+          openBtn.onclick=()=>_khOpenExt(item.link);
           linkEl.appendChild(openBtn);
           fullDiv.appendChild(linkEl);
         }
@@ -43838,7 +44124,7 @@ rss:()=>{
 
       if(item.link){
         const openBtn=txt('button','Open link',{className:'rss-act-btn'});
-        openBtn.onclick=()=>{if(!isRead){S.rssRead[id]=true;save();}window.open(item.link,'_blank','noopener,noreferrer');};
+        openBtn.onclick=()=>{if(!isRead){S.rssRead[id]=true;save();}_khOpenExt(item.link);};
         btnRow.appendChild(openBtn);
       }
 
@@ -43932,7 +44218,7 @@ rss:()=>{
       }
       const btnRow=el('div',{className:'rss-btn-row'});
       btnRow.appendChild(Object.assign(txt('button',isExpanded?'Collapse':'Read',{className:'rss-act-btn'+(isExpanded?' on':'')}),{onclick:()=>{expandedId=isExpanded?null:s.id;renderContent();}}));
-      if(s.link){btnRow.appendChild(Object.assign(txt('button','Open link',{className:'rss-act-btn'}),{onclick:()=>window.open(s.link,'_blank','noopener,noreferrer')}));}
+      if(s.link){btnRow.appendChild(Object.assign(txt('button','Open link',{className:'rss-act-btn'}),{onclick:()=>_khOpenExt(s.link)}));}
       btnRow.appendChild(Object.assign(txt('button','Remove',{className:'rss-act-btn',style:{color:'var(--danger)',borderColor:'var(--danger)'}}),{onclick:()=>{S.rssSaved=(S.rssSaved||[]).filter(x=>x.id!==s.id);save();refreshViewTabs();renderContent();}}));
       card.appendChild(btnRow);
       contentDiv.appendChild(card);
@@ -53042,13 +53328,17 @@ messages:()=>{
       let userRow=null;
       if(uid&&typeof _sbActive==='function'&&_sbActive()){
         try{
-          const rows=await _sbSelect('kh_users','hash=like.'+encodeURIComponent(uid+'*')+'&select=hash,email,updated_at,state&limit=1');
+          /* SECURITY: fetch only what the admin card shows. NEVER pull the target's
+             `state` (their encrypted blob) or full `hash` (which is their AES key +
+             login secret) to an admin's device — the card reasons over metadata, and
+             downloading the ciphertext+key would let a curious admin decrypt it. */
+          const rows=await _sbSelect('kh_users','hash=like.'+encodeURIComponent(uid+'*')+'&select=email,updated_at&limit=1');
           if(Array.isArray(rows)&&rows.length)userRow=rows[0];
         }catch(e){}
       }
       if(userRow){
         lines.push(['Username / email', userRow.email||'—']);
-        lines.push(['Full account hash', userRow.hash||'—']);
+        lines.push(['User ID (hash prefix)', uid||'—']);
         if(userRow.updated_at){
           const upd=new Date(userRow.updated_at);
           const mins=Math.floor((Date.now()-upd.getTime())/60000);
