@@ -1466,6 +1466,16 @@ const _khPatchDenyRE=/_isAdminCached|_adminToken|_ADMIN_HASHES|ADMIN_HASHES|_che
 (function applyLocalFixes(){
   try{
     const fixes=(S&&S.localFixes)||{};
+    /* SECURITY: this runner uses new Function() to apply user-approved AI patches.
+       It is OFF BY DEFAULT — the new Function path runs ONLY for a user who
+       explicitly opted in (applying a patch sets S.allowLocalPatches), so a normal
+       or brand-new account never executes stored generated JS. A legacy user who
+       already has patches is auto-opted-in once so their existing fixes keep
+       working; everyone else stays dormant. */
+    if(S.allowLocalPatches!==true){
+      if(fixes&&Object.keys(fixes).length>0){S.allowLocalPatches=true;}
+      else return;
+    }
     const _broke=[];
     Object.keys(fixes).forEach(k=>{
       const f=fixes[k];
@@ -6866,9 +6876,15 @@ try{
 
 /* Legacy jsonstorage — kept as automatic fallback if the backend isn't set up,
    and as a one-time migration source for existing accounts. */
-const JS_COL='e116af42-736e-4437-ba6b-4d30e4d77094';
-const JS_API_KEY='3fc52043-9743-4000-ad5c-fdd615f4db4f';
-const KH_REG='9a40d7cc-4373-40eb-8c09-33a2a0d50516';
+/* Legacy jsonstorage.net backend — DISABLED. Its write API key used to ship in
+   the public bundle (anyone could write to the shared item). All live traffic
+   now runs on the Cloudflare D1 worker, and jsonstorage was only ever a legacy
+   fallback (reached solely when _sbActive() is false, which no longer happens
+   since KH_DEFAULT_API_GATEWAY is set). Blanking the key makes _masterRead/
+   _masterWrite no-op, so the client never contacts jsonstorage.net at all. */
+const JS_COL='';
+const JS_API_KEY='';
+const KH_REG='';
 const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
 
 /* ── the backend REST helpers (PostgREST) ──────────────────────────────── */
@@ -8190,6 +8206,9 @@ let _masterInFlight=null;    /* shared promise */
 const _MASTER_TTL_MS=5000;
 function _invalidateMasterCache(){_masterCache=null;}
 async function _masterRead(){
+  /* Legacy jsonstorage backend disabled (no API key) — never hit the network,
+     just serve an empty doc so callers degrade to the D1 backend + local state. */
+  if(!JS_API_KEY)return _blankDoc();
   const now=Date.now();
   if(_masterCache&&(now-_masterCache.ts)<_MASTER_TTL_MS)return _masterCache.doc;
   if(_masterInFlight)return _masterInFlight;
@@ -8226,6 +8245,7 @@ async function _bootstrapMaster(seedDoc){
   return created.itemId;
 }
 async function _masterWrite(fn){
+  if(!JS_API_KEY)return;/* legacy jsonstorage disabled — writes go to D1 + local */
   const doc=await _masterRead();
   await fn(doc);
   /* ── Global hard caps applied on every write ── */
@@ -18456,7 +18476,7 @@ const Nonogram=(()=>{
    while something is moving (or you're aiming) so it stays gentle on e-ink. */
 const EightBall=(()=>{
   const W=280,H=452,R=9,POCK=15,FR=40;
-  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=8;
+  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=15;
   const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
   let game=null,timer=null;
   function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
@@ -18555,7 +18575,7 @@ const EightBall=(()=>{
     game.aiming=false;
     var cue=_cue();if(!cue){draw();return;}
     var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
-    if(dl>6){var pow=Math.min(MAXPOW,dl/12);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    if(dl>6){var pow=Math.min(MAXPOW,dl/8);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
     draw();
   }
   function buildUI(){
@@ -37689,6 +37709,30 @@ settings:()=>{
   fbRow.append(tourBtn,welcomeBtn,fbBtn);cFb.appendChild(fbRow);
   g.appendChild(cFb);
 
+  /* ── Also by the creator ──────────────────────────────────────────────
+     Cross-promotes the creator's other projects. Links open externally via
+     the scheme-safe _khOpenExt (http/https only). */
+  const cAlso=el('div',{className:'card',style:{gridColumn:'1/-1'}});
+  cAlso.appendChild(txt('h2','Also by the creator'));
+  cAlso.appendChild(txt('p','Other projects by Aran, the creator of KindleHub:',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const alsoGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'8px'}});
+  [
+    {name:'EmberAI',desc:'An AI project — view the source on GitHub.',url:'https://github.com/arancool3000/emberai',cta:'Open on GitHub'},
+    {name:'DungeonQuest3D',desc:'A 3D dungeon-crawler game.',url:'',cta:''}
+  ].forEach(function(p){
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',background:'var(--highlight)',display:'flex',flexDirection:'column',gap:'4px'}});
+    card.appendChild(txt('div',p.name,{style:{fontSize:'14px',fontWeight:'800'}}));
+    card.appendChild(txt('div',p.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
+    if(p.url){
+      const b=txt('button',p.cta||'Open',{className:'btn small primary',style:{marginTop:'4px',alignSelf:'flex-start'}});
+      b.onclick=function(){_khOpenExt(p.url);};
+      card.appendChild(b);
+    }
+    alsoGrid.appendChild(card);
+  });
+  cAlso.appendChild(alsoGrid);
+  g.appendChild(cAlso);
+
   /* ── Contributors ─────────────────────────────────────────────────────
      Credits the AI collaborators that built KindleHub and every user who
      filed a bug report or feature suggestion. Human names are read from the
@@ -38821,6 +38865,9 @@ feedback:()=>{
         let code=patchEl.value.trim();
         if(!code)return;
         if(!await kindleConfirm('Apply this patch on this device? Patches run at every page load until you Disable or Remove them.'))return;
+        /* Explicit opt-in: enable the local-fix runner for THIS device (it is off
+           by default so normal accounts never execute stored generated JS). */
+        S.allowLocalPatches=true;
         /* Old-WebKit safety: bind bare catch{} and block operators that compile in
            this browser but throw a SyntaxError on Kindle (so the patch actually
            WORKS on the target device instead of being auto-disabled there). */
