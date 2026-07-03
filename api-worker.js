@@ -611,6 +611,14 @@ async function handlePost(table, url, request, env, DB){
       const _reg  = String(cf.region||'').slice(0,40);
       if(_city || _cc){ raw.location_hint = ((_city?_city+', ':(_reg?_reg+', ':''))+_cc).slice(0,120); }
     }
+    /* Leaderboard integrity: the score comes straight from the client, so clamp
+       it to a sane non-negative integer (blocks MAX_INT / absurd injected scores
+       that would permanently top every board) and bound the display name length
+       (blocks oversized-payload abuse). */
+    if(table==='kh_scores'){
+      if(raw.score!=null){ let sc=Math.floor(Number(raw.score)); if(!isFinite(sc)||sc<0)sc=0; if(sc>999999999)sc=999999999; raw.score=sc; }
+      if(typeof raw.display_name==='string') raw.display_name=raw.display_name.slice(0,40);
+    }
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
     for(const tc of TS_COLS){ if(cols.indexOf(tc)>=0 && keys.indexOf(tc)<0){ raw[tc]=nowIso(); keys.push(tc); } }

@@ -17352,7 +17352,28 @@ const Wordle=(()=>{
 })();
 
 const Sudoku=(()=>{
-  let G=null,selected=null;
+  let G=null,selected=null,_sdkCells=null;
+  /* Repaint ONLY the 81 cells' state (value / selected-row-col-box highlight /
+     conflict colour) on the existing DOM nodes — no innerHTML rebuild. Tapping a
+     cell or entering a number used to rebuild the whole board + numpad + controls
+     every time, a full e-ink flash on each interaction. */
+  function paintCells(){
+    if(!G||!_sdkCells)return;
+    const conflicts=getConflicts();
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+      const idx=r*9+c, cell=_sdkCells[idx];
+      if(!cell)continue;
+      const val=G.fixed[r][c]?G.puzzle[r][c]:(G.user[r][c]||0);
+      const isSel=selected&&selected[0]===r&&selected[1]===c;
+      const isHL=selected&&!isSel&&(selected[0]===r||selected[1]===c||(Math.floor(selected[0]/3)===Math.floor(r/3)&&Math.floor(selected[1]/3)===Math.floor(c/3)));
+      const cls='sdk-cell'+(G.fixed[r][c]?' fixed':' user-input')+(isSel?' selected':isHL?' highlight':'');
+      if(cell.className!==cls)cell.className=cls;
+      const tv=val?String(val):'';
+      if(cell.textContent!==tv)cell.textContent=tv;
+      const col=(conflicts.has(idx)&&!G.fixed[r][c])?'var(--danger)':'';
+      if(cell.style.color!==col)cell.style.color=col;
+    }
+  }
   function isValid(board,r,c,num){
     for(let i=0;i<9;i++)if(board[r][i]===num)return false;
     for(let i=0;i<9;i++)if(board[i][c]===num)return false;
@@ -17408,26 +17429,24 @@ const Sudoku=(()=>{
   }
   function render(){
     immersiveContent.innerHTML='';if(!G)return;
-    const conflicts=getConflicts();
     const board=el('div',{className:'sudoku-board',id:'sdkBoard'});
+    _sdkCells=new Array(81);
     for(let r=0;r<9;r++)for(let c=0;c<9;c++){
-      const val=G.fixed[r][c]?G.puzzle[r][c]:(G.user[r][c]||0);
       const idx=r*9+c;
-      const isSel=selected&&selected[0]===r&&selected[1]===c;
-      const isHL=selected&&!isSel&&(selected[0]===r||selected[1]===c||(Math.floor(selected[0]/3)===Math.floor(r/3)&&Math.floor(selected[1]/3)===Math.floor(c/3)));
-      let cls='sdk-cell'+(G.fixed[r][c]?' fixed':' user-input')+(isSel?' selected':isHL?' highlight':'');
-      const cell=el('div',{className:cls,'data-r':r,'data-c':c});
-      cell.textContent=val||'';
-      if(conflicts.has(idx)&&!G.fixed[r][c])cell.style.color='var(--danger)';
+      const cell=el('div',{className:'sdk-cell','data-r':r,'data-c':c});
+      /* Static box borders — depend only on position, so set once here. Cell
+         value / highlight / conflict colour are filled by paintCells(). */
       if((c+1)%3===0&&c<8)cell.style.borderRight='2px solid var(--fg)';
       if((r+1)%3===0&&r<8)cell.style.borderBottom='2px solid var(--fg)';
       if(c%3===0)cell.style.borderLeft='2px solid var(--fg)';
       if(r%3===0)cell.style.borderTop='2px solid var(--fg)';
+      _sdkCells[idx]=cell;
       board.appendChild(cell);
     }
     immersiveContent.appendChild(txt('p','Tap a cell, then a number. Red = conflict.',{style:{fontSize:'12px',color:'var(--muted)',margin:'2px 0 6px'}}));
     immersiveContent.appendChild(board);
-    board.onclick=e=>{const cell=e.target.closest('.sdk-cell');if(!cell)return;selected=[parseInt(cell.dataset.r),parseInt(cell.dataset.c)];render();};
+    /* tap = select only → repaint state, not a full rebuild */
+    board.onclick=e=>{const cell=e.target.closest('.sdk-cell');if(!cell)return;selected=[parseInt(cell.dataset.r),parseInt(cell.dataset.c)];paintCells();};
     const numpad=el('div',{className:'sudoku-numpad'});
     for(let n=1;n<=9;n++){
       const btn=txt('button',String(n),{className:'btn'});
@@ -17443,18 +17462,18 @@ const Sudoku=(()=>{
            exact match to one stored solution — puzzles aren't guaranteed unique,
            so a correct alternate fill must also count as solved. */
         if(complete&&getConflicts().size>0)complete=false;
-        if(complete){render();toast('Sudoku solved!');recordStat('sudoku',true,{time:Date.now()-G.startTime});}else render();
+        if(complete){paintCells();toast('Sudoku solved!');recordStat('sudoku',true,{time:Date.now()-G.startTime});}else paintCells();
       };
       numpad.appendChild(btn);
     }
     const clrBtn=txt('button','Del',{className:'btn',style:{gridColumn:'span 2'}});
-    clrBtn.onclick=()=>{if(selected&&!G.fixed[selected[0]][selected[1]]){G.user[selected[0]][selected[1]]=0;render();}};
+    clrBtn.onclick=()=>{if(selected&&!G.fixed[selected[0]][selected[1]]){G.user[selected[0]][selected[1]]=0;paintCells();}};
     numpad.appendChild(clrBtn);
     immersiveContent.appendChild(numpad);
     const ctrl=el('div',{className:'card-row',style:{marginTop:'8px',flexWrap:'wrap'}});
     ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:newGameGuard(()=>G&&G.user&&G.user.some(row=>row.some(Boolean)),start)}));
     const revBtn=txt('button','Reveal Cell',{className:'btn small'});
-    revBtn.onclick=()=>{if(!selected||G.fixed[selected[0]][selected[1]])return;G.user[selected[0]][selected[1]]=G.solution[selected[0]][selected[1]];render();toast('Cell revealed');};
+    revBtn.onclick=()=>{if(!selected||G.fixed[selected[0]][selected[1]])return;G.user[selected[0]][selected[1]]=G.solution[selected[0]][selected[1]];paintCells();toast('Cell revealed');};
     ctrl.appendChild(revBtn);
     /* ── Team Sudoku ── share the exact puzzle so friends solve the same
        board and race. The code is just the 81 givens; the loader re-solves
@@ -17481,6 +17500,7 @@ const Sudoku=(()=>{
     };
     ctrl.appendChild(shareBtn);ctrl.appendChild(loadBtn);
     immersiveContent.appendChild(ctrl);
+    paintCells(); // initial fill of the freshly-built board
   }
   /* Sudoku boards are never persisted mid-game, so there is nothing
      to restore. (The old version was a copy-paste of Mastermind's
