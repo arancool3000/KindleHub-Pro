@@ -1279,8 +1279,11 @@ body.launcher-ui .view{padding-bottom:80px;}
   <!-- Arrow pointer -->
   <div id="tourArrow" style="position:absolute;width:14px;height:14px;background:var(--card);transform:rotate(45deg);"></div>
 </div>
-</div><!-- /rotateRoot -->
+<!-- toasts live INSIDE rotateRoot so they inherit the 90° landscape rotation
+     (a fixed .toast under a transformed ancestor positions against that box);
+     when not rotated rotateRoot has no transform, so behaviour is unchanged. -->
 <div id="toastRoot"></div>
+</div><!-- /rotateRoot -->
 
 <script>
 'use strict';
@@ -1776,7 +1779,7 @@ function _khMessageUserPicker(onDone){
   card.appendChild(closeBtn);
   ov.appendChild(card);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   try{inp.focus();}catch(_){}
   async function _request(u){
     try{
@@ -1876,7 +1879,7 @@ async function _khAskAboutUser(question,opts){
   const out=el('div',{style:{fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',minHeight:'40px'}});
   out.textContent='Gathering data…'; card.appendChild(out);
   const cl=txt('button','Close',{className:'btn small'}); cl.onclick=()=>ov.remove(); card.appendChild(cl);
-  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   try{
     const ctx=await _khGatherUserContext(question,opts.targetName);
     if(!ctx){ out.textContent='No user matched that question. Try including their exact username.'; return; }
@@ -1904,7 +1907,7 @@ function _khAskUserDialog(prefillName){
   ask.onclick=()=>{const q=(qIn.value||'').trim();if(!q){if(typeof toast==='function')toast('Type a question.');return;}ov.remove();_khAskAboutUser(q,{targetName:(nameIn.value||'').trim()});};
   cl.onclick=()=>ov.remove();
   row.append(ask,cl); card.appendChild(row);
-  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   try{qIn.focus();}catch(_){}
 }
 window._khAskAboutUser=_khAskAboutUser;window._khAskUserDialog=_khAskUserDialog;window._khGatherUserContext=_khGatherUserContext;
@@ -3514,7 +3517,7 @@ function launchKindleDesktop(){
     list.style.cssText='max-height:54vh;overflow-y:auto;';
     box.appendChild(inp);box.appendChild(list);ov.appendChild(box);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     function render(){
       const q=inp.value.trim().toLowerCase();
       const apps=allApps().filter(a=>{const n=String(a.label||a.name||a.id||'').toLowerCase();return !q||n.indexOf(q)>=0;});
@@ -4532,7 +4535,7 @@ function launchKindleDesktop(){
     row.appendChild(cancel);row.appendChild(ok);
     box.appendChild(h);box.appendChild(ta);box.appendChild(row);
     ov.appendChild(box);
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     setTimeout(()=>ta.focus(),60);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   });
@@ -4962,7 +4965,7 @@ function launchKindleDesktop(){
     }
     card.appendChild(ttl);card.appendChild(hint);card.appendChild(ta);card.appendChild(btnRow);
     ov.appendChild(card);ov.onclick=function(ev){if(ev.target===ov)closeBtn.onclick();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function renderInstalled(){
     stInstalledList.innerHTML='';
@@ -5032,7 +5035,7 @@ function launchKindleDesktop(){
           ov.remove();
           toast('"'+app.label+'" updated!');
         };
-        document.body.appendChild(ov);
+        (document.getElementById('rotateRoot')||document.body).appendChild(ov);
       };
       const shareBtn=document.createElement('button');shareBtn.textContent='Share';shareBtn.className='btn small';
       shareBtn.onclick=()=>_khAppShareDialog('export',app);
@@ -5373,7 +5376,7 @@ WEB SEARCH & LIVE DATA:
       document.head.appendChild(st);
     }
     ov.appendChild(swipeHint);
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 
     /* Tag elements so selectors find them */
     if(typeof ccGrid!=='undefined')ccGrid.classList.add('kd-tour-cc-grid');
@@ -5557,7 +5560,7 @@ function kindlePrompt(message,defaultVal,cb){
   box.appendChild(lbl);box.appendChild(inp);box.appendChild(row);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)done(null);};
-  document.body.appendChild(ov);setTimeout(()=>{inp.focus();inp.select();},80);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>{inp.focus();inp.select();},80);
 }
 function kindleConfirm(message,cb){
   if(typeof cb!=='function')return new Promise(res=>kindleConfirm(message,res));
@@ -5576,7 +5579,7 @@ function kindleConfirm(message,cb){
   ov.onclick=e=>{if(e.target===ov)_done(false);};
   row.appendChild(cancelB);row.appendChild(okB);
   box.appendChild(lbl);box.appendChild(row);
-  ov.appendChild(box);document.body.appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
 }
 /* Global Kindle-safe alert(). A single OK button; resolves/each callback
    fires when dismissed. Title is optional. */
@@ -5593,7 +5596,7 @@ function kindleAlertGlobal(message,cb){
   okB.onclick=done;
   ov.onclick=e=>{if(e.target===ov)done();};
   row.appendChild(okB);box.appendChild(lbl);box.appendChild(row);
-  ov.appendChild(box);document.body.appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
 }
 /* Override the native blocking dialogs so ANY stray call anywhere in the
    app (including ones we didn't hand-convert) routes through the e-ink-safe
@@ -12731,7 +12734,7 @@ function _khOpenMultitask(){
   const close=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.appendChild(box);document.body.appendChild(ov);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 window.enterSplit=enterSplit;window.exitSplit=exitSplit;window._khOpenMultitask=_khOpenMultitask;
 
@@ -12876,7 +12879,7 @@ function _showGameHelp(g){
   box.appendChild(txt('div',(h&&h.how)||'Tap to play — figure it out as you go. Have fun!',{style:{fontSize:'13px',lineHeight:'1.7',whiteSpace:'pre-wrap'}}));
   const close=txt('button','Got it',{className:'btn small primary',style:{marginTop:'14px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 /* Shared leaderboard modal — used by every game via the immersive ★ button.
    Shows the player's best (local) + the global top scores (with avatars). */
@@ -12893,7 +12896,7 @@ function _gameScores(game){
   box.appendChild(listWrap);
   const close=txt('button','Close',{className:'btn small primary',style:{marginTop:'14px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   (async()=>{
     let rows=[];try{if(typeof _khFetchScores==='function')rows=await _khFetchScores(game,10);}catch(_){}
     listWrap.innerHTML='';
@@ -13479,7 +13482,7 @@ const Hanoi=(function(){
     const again=txt('button','Play again',{className:'btn small primary'});again.onclick=()=>{ov.remove();build(disks);};row.appendChild(again);
     if(disks<7){const more=txt('button','Harder (+1 disk)',{className:'btn small'});more.onclick=()=>{ov.remove();build(disks+1);};row.appendChild(more);}
     const back=txt('button','Back',{className:'btn small'});back.onclick=()=>{ov.remove();if(typeof exitImmersive==='function')exitImmersive();};row.appendChild(back);
-    box.appendChild(row);ov.appendChild(box);document.body.appendChild(ov);
+    box.appendChild(row);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function start(){enterImmersive('Tower of Hanoi','');const ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;build(3);}
   function stop(){selPeg=-1;}
@@ -13641,7 +13644,7 @@ const CrazyEights=(function(){
     box.appendChild(txt('h3','Choose a colour',{style:{margin:'0 0 12px',fontFamily:'var(--title-font)'}}));
     const row=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}});
     COLOURS.forEach(c=>{const b=txt('button',CNAME[c],{className:'btn',style:{background:CHEX[c],color:'#fff',border:'2px solid var(--fg)',minWidth:'92px',fontWeight:'800'}});b.onclick=()=>{ov.remove();cb(c);};row.appendChild(b);});
-    box.appendChild(row);ov.appendChild(box);document.body.appendChild(ov);
+    box.appendChild(row);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function pickColour(idx){chooseColour(c=>playFromYou(idx,c));}
   function cardEl(card,faceUp,onClick){
@@ -15506,7 +15509,7 @@ window.KH_MP.openLobby=function(opts){
   box.appendChild(codeSec);
   ov.appendChild(box);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   setTimeout(()=>sInp.focus(),80);
 };
 function _lobbyEsc(s){return String(s||'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -16503,7 +16506,7 @@ const Chess=(()=>{
       const closeB=txt('button','Close',{className:'btn small primary',style:'align-self:flex-end;'});
       closeB.onclick=()=>ov.remove();
       box.appendChild(closeB);
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
       setTimeout(()=>{ta.focus();ta.select();},40);
     }
     if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -17049,7 +17052,7 @@ const Chess=(()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     },200);
   }
 
@@ -18750,7 +18753,7 @@ function khTeleprompter(){
   var ta=document.createElement('textarea');
   ta.style.cssText='width:100%;height:100%;box-sizing:border-box;background:#111;color:#fff;border:none;padding:16px;font-size:16px;line-height:1.5;font-family:inherit;resize:none;display:none;';
   ta.value=text;body.appendChild(ta);
-  ov.appendChild(bar);ov.appendChild(body);document.body.appendChild(ov);
+  ov.appendChild(bar);ov.appendChild(body);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
   function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='▶ Play';}
   function tick(){if(!playing||editing)return;pos+=speed;inner.style.transform='translateY('+(-pos)+'px)';if(pos>inner.offsetHeight+body.offsetHeight){pos=0;}}
   playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='⏸ Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='▶ Play';}};
@@ -23484,7 +23487,7 @@ function _initFlightSim(){
         '<p style="margin:0 0 4px;color:var(--muted);font-size:12px;"><b>Tip:</b> the Cessna 172 is the most forgiving — start there. Buttons that stay lit are <b>held</b>; tap again to release.</p>';
       const cl=document.createElement('button');cl.className='btn small primary';cl.textContent='Got it';cl.style.marginTop='10px';cl.onclick=()=>ov.remove();
       box.appendChild(cl);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
     };
     immersiveContent.appendChild(helpBtn);
 
@@ -23701,18 +23704,22 @@ const Pomodoro=(()=>{
     }
     const maxMins=Math.max(...bars.map(b=>b.mins),25);
     const W=can.width,H=can.height,pad=24,barW=Math.floor((W-pad*2)/days)-4;
-    ctx.fillStyle='var(--fg)';
+    /* canvas ctx can't parse var(--fg)/var(--muted) — resolve to real colours,
+       else the bars/labels stay default black = invisible on dark themes. */
+    const _pfg=(getComputedStyle(document.body).getPropertyValue('--fg')||'#111').trim();
+    const _pmut=(getComputedStyle(document.body).getPropertyValue('--muted')||'#888').trim();
+    ctx.fillStyle=_pfg;
     ctx.font='9px monospace';
     ctx.textAlign='center';
     bars.forEach((b,i)=>{
       const x=pad+i*(barW+4);
       const bh=Math.round((b.mins/maxMins)*(H-pad-10));
-      if(bh>0){ctx.fillStyle='var(--fg)';ctx.fillRect(x,H-pad-bh,barW,bh);}
-      ctx.fillStyle='var(--fg)';
+      if(bh>0){ctx.fillStyle=_pfg;ctx.fillRect(x,H-pad-bh,barW,bh);}
+      ctx.fillStyle=_pfg;
       ctx.fillText(b.label,x+barW/2,H-6);
       if(b.mins>0)ctx.fillText(b.mins+'m',x+barW/2,H-pad-bh-3);
     });
-    ctx.strokeStyle='var(--muted)';ctx.lineWidth=1;
+    ctx.strokeStyle=_pmut;ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(pad,H-pad);ctx.lineTo(W-pad,H-pad);ctx.stroke();
   }
 
@@ -28920,7 +28927,7 @@ home:()=>{
       };
       closeBtn.onclick=_close;
       ov.addEventListener('click',e=>{if(e.target===ov)_close();});
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
     wrap.appendChild(grid);
     v.appendChild(wrap);
@@ -34060,13 +34067,15 @@ body.sepia #view-weather{--muted:#4a3a26;}
       const grad=mc.createLinearGradient(0,0,0,cH);
       grad.addColorStop(0,'rgba(80,120,200,0.25)');grad.addColorStop(1,'rgba(80,120,200,0)');
       mc.fillStyle=grad;mc.beginPath();mc.moveTo(pts[0].x,cH);pts.forEach(p=>mc.lineTo(p.x,p.y));mc.lineTo(pts[pts.length-1].x,cH);mc.closePath();mc.fill();
-      /* Line */
-      mc.strokeStyle='var(--fg)';mc.lineWidth=2;mc.lineJoin='round';
+      /* Line — resolve var(--fg): a canvas ctx can't parse it, so it stayed
+         default black = invisible on dark themes. */
+      const _mcfg=(getComputedStyle(document.body).getPropertyValue('--fg')||'#111').trim();
+      mc.strokeStyle=_mcfg;mc.lineWidth=2;mc.lineJoin='round';
       mc.beginPath();pts.forEach((p,i)=>i===0?mc.moveTo(p.x,p.y):mc.lineTo(p.x,p.y));mc.stroke();
       /* Temp labels at start/end and peak */
       const peakI=temps.indexOf(tMax);
       [[0,pts[0]],[peakI,pts[peakI]],[temps.length-1,pts[temps.length-1]]].forEach(([i,p])=>{
-        mc.fillStyle='var(--fg)';mc.font='bold 9px monospace';mc.textAlign='center';mc.fillText(T(temps[i])+U(),p.x,p.y-3);
+        mc.fillStyle=_mcfg;mc.font='bold 9px monospace';mc.textAlign='center';mc.fillText(T(temps[i])+U(),p.x,p.y-3);
       });
     }
     const hs=el('div',{style:'display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;'});
@@ -35579,7 +35588,7 @@ breathe:()=>{
       '.mf-ex-btn{padding:6px 10px;font-size:11px;font-weight:700;border:var(--thin);border-radius:20px;cursor:pointer;background:transparent;color:var(--fg);font-family:var(--ui-font);margin:3px;}',
       '.mf-ex-btn.on{background:var(--fg);color:var(--bg);}',
       '.mf-circle{width:160px;height:160px;border-radius:50%;border:4px solid var(--fg);display:flex;flex-direction:column;align-items:center;justify-content:center;margin:16px auto;cursor:pointer;user-select:none;position:relative;transition:transform .1s;}',
-      '.mf-ripple-ring{position:absolute;inset:-4px;border-radius:50%;border:3px solid var(--fg);pointer-events:none;}',
+      '.mf-ripple-ring{position:absolute;top:-4px;right:-4px;bottom:-4px;left:-4px;border-radius:50%;border:3px solid var(--fg);pointer-events:none;}',
       '.mf-stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0;}',
       '.mf-stat{border:var(--thin);border-radius:6px;padding:8px;text-align:center;}',
       '.mf-stat-n{font-size:24px;font-weight:900;font-family:monospace;}',
@@ -35656,7 +35665,7 @@ breathe:()=>{
     /* Animated circle */
     const circWrap=el('div',{style:{position:'relative',width:'180px',height:'180px',margin:'0 auto'}});
     /* Ripple ring */
-    const ripple=el('div',{id:'mfRipple',style:{position:'absolute',inset:'-10px',borderRadius:'50%',border:'3px solid var(--fg)',opacity:'0',pointerEvents:'none'}});
+    const ripple=el('div',{id:'mfRipple',style:{position:'absolute',top:'-10px',right:'-10px',bottom:'-10px',left:'-10px',borderRadius:'50%',border:'3px solid var(--fg)',opacity:'0',pointerEvents:'none'}});
     circWrap.appendChild(ripple);
     const circ=el('div',{className:'mf-circle',id:'mfCircle'});
     const stepLbl=txt('div','',{id:'mfStepLbl',style:{fontSize:'15px',fontWeight:'800',letterSpacing:'1px'}});
@@ -37364,7 +37373,7 @@ settings:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>document.body.removeChild(ov);
     row.append(cp,cl);box.appendChild(row);
     ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)document.body.removeChild(ov);};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   };
   proxRow.append(proxSave,proxTest,proxHelp);
   cProxy.appendChild(proxStatus);
@@ -38776,7 +38785,7 @@ feedback:()=>{
           const close=txt('button','Close',{className:'btn small',style:'margin-top:8px;'});close.onclick=()=>document.body.removeChild(ov);
           box.append(txt('p','Clipboard blocked — select all and copy manually.',{style:'margin:0 0 6px;font-size:12px;color:var(--muted);'}),ta,close);
           ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)document.body.removeChild(ov);};
-          document.body.appendChild(ov);ta.focus();ta.select();
+          (document.getElementById('rotateRoot')||document.body).appendChild(ov);ta.focus();ta.select();
         }
       };
       return c;
@@ -38920,7 +38929,7 @@ feedback:()=>{
 
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
     window._openSelfFixModal=_openSelfFixModal;
 
@@ -39866,7 +39875,7 @@ Deno.serve(async (req)=>{
     btnRow.append(close,post);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
 
   async function loadData(){
@@ -40592,7 +40601,7 @@ discover:()=>{
       row.appendChild(del);box.appendChild(row);
     });
     ov.appendChild(box);ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function _savedViewBtn(tag){const b=txt('button','Saved',{className:'btn small'});b.onclick=function(){_viewSavedDiscover(tag,_DISCOVER_LABELS[tag]||'items');};return b;}
 
@@ -41479,7 +41488,7 @@ starmap:()=>{
 
     refreshTabs();renderTab();
     ov.appendChild(modal);
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   }
   guideBtn.onclick=openSkyGuide;
@@ -45774,7 +45783,7 @@ sleeplog:()=>{
             const closeB=document.createElement('button');closeB.textContent='Close';closeB.className='btn';
             closeB.onclick=()=>ov.remove();
             ov.onclick=e=>{if(e.target===ov)ov.remove();};
-            box.append(lbl,closeB);ov.appendChild(box);document.body.appendChild(ov);
+            box.append(lbl,closeB);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
           };
           row.appendChild(dBtn);
         }
@@ -47702,7 +47711,7 @@ mail:()=>{
       };
       btns.append(cancel,send);box.appendChild(btns);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
       setTimeout(()=>{(toPre?subjPre?bodyIn:subjIn:toIn).focus();},60);
     }
     khCard.appendChild(bar);
@@ -47897,7 +47906,7 @@ screenshot:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>ov.remove();
     bar.append(dl,cl);
     ov.append(im,bar);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function busy(on){capPrev.disabled=on;capApp.disabled=on;}
   capApp.onclick=()=>{
@@ -48782,6 +48791,12 @@ wheel:()=>{
     const wrap=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'12px'}});
     const canvas=el('canvas',{id:'wheelCanvas',width:280,height:280,style:{borderRadius:'50%',border:'var(--thin)',boxShadow:'var(--shadow)',cursor:'pointer'}});
     let rotation=0,velocity=0,rafId=null;
+    /* Resolve theme colours ONCE. A canvas 2D context cannot parse `var(--fg)`
+       — the invalid colour is ignored and the context keeps its default black,
+       so the centre dot + pointer were invisible on dark themes. Hoisted out of
+       drawWheel so the spin RAF loop doesn't force a style recalc each frame. */
+    const _wfg=(getComputedStyle(document.body).getPropertyValue('--fg')||'#111').trim();
+    const _wcard=(getComputedStyle(document.body).getPropertyValue('--card')||'#fff').trim();
     function drawWheel(rot){
       const ctx=canvas.getContext('2d');const cx=140,cy=140,r=130;
       ctx.clearRect(0,0,280,280);
@@ -48797,11 +48812,11 @@ wheel:()=>{
         ctx.fillText(label,r-8,4);ctx.restore();
       });
       // Center dot
-      ctx.beginPath();ctx.arc(cx,cy,14,0,Math.PI*2);ctx.fillStyle='var(--card)';ctx.fill();
-      ctx.strokeStyle='var(--fg)';ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.arc(cx,cy,14,0,Math.PI*2);ctx.fillStyle=_wcard;ctx.fill();
+      ctx.strokeStyle=_wfg;ctx.lineWidth=2;ctx.stroke();
       // Pointer
       ctx.beginPath();ctx.moveTo(cx+r+10,cy);ctx.lineTo(cx+r-10,cy-10);ctx.lineTo(cx+r-10,cy+10);ctx.closePath();
-      ctx.fillStyle='var(--fg)';ctx.fill();
+      ctx.fillStyle=_wfg;ctx.fill();
     }
     drawWheel(rotation);
     function spin(){
@@ -49528,7 +49543,7 @@ function buildUI(){
     btnRow.appendChild(cancelBtn);btnRow.appendChild(goBtn);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);setTimeout(()=>inp.focus(),80);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>inp.focus(),80);
   };
   topBar.appendChild(aiSlideBtn);
 
@@ -49890,7 +49905,7 @@ function buildDeckList(){
     btnRow.appendChild(cancelBtn);btnRow.appendChild(goBtn);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);setTimeout(()=>topicInp.focus(),80);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>topicInp.focus(),80);
   };
   newBtnsRow.appendChild(aiDeckBtn);
 
@@ -51346,7 +51361,7 @@ calendar:()=>{
     if(delBtn)btnRow.insertBefore(delBtn,cancelBtn);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     titleInp.focus();
   }
 
@@ -51896,7 +51911,7 @@ calendar:()=>{
     box.appendChild(body);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     setTimeout(()=>{try{urlInp.focus();}catch(_){}},80);
   }
 
@@ -51990,7 +52005,7 @@ calendar:()=>{
     btnRow.append(cancB,okB);box.appendChild(btnRow);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     setTimeout(()=>{try{dateInp.focus();}catch(_){}},40);
     /* Enter on any field submits */
     [dateInp,yrInp,moSel,dyInp].forEach(inp=>{
@@ -52860,7 +52875,7 @@ messages:()=>{
       ov.appendChild(box);
       ov.addEventListener('click',e=>{if(e.target===ov){_editing=null;ov.remove();}});
       document.addEventListener('keydown',function _esc(e){if(e.key==='Escape'){_editing=null;ov.remove();document.removeEventListener('keydown',_esc);}});
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
       setTimeout(()=>{inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);},40);
     }
 
@@ -53143,7 +53158,7 @@ messages:()=>{
       const cls=txt('button','Close',{className:'btn primary small'});cls.onclick=()=>ov.remove();
       box.appendChild(cls);
       ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
 
     /* ── Local report ledger ──
@@ -53232,7 +53247,7 @@ messages:()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
 
     /* ── Report a USERNAME ──────────────────────────────────────────────
@@ -53315,7 +53330,7 @@ messages:()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
     window._khReportUsername=_openUsernameReportModal;
 
@@ -53367,7 +53382,7 @@ messages:()=>{
       }
       box.appendChild(btnBar);
       ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 
       /* Build profile rows */
       const uid=msg.userId||'';
@@ -56811,7 +56826,7 @@ window._showWelcome=function(){
   inner.append(stepHeading,dotRow,stepSub,contentWrap,btnRow);
   btnRow.append(skipBtn,nextBtn);
   ov.appendChild(inner);
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   render();
 };
 
@@ -57332,7 +57347,7 @@ window._showWelcome=function(){
     const shut=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     close.onclick=shut;
     ov.onclick=function(ev){if(ev.target===ov)shut();};
-    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
     let _busy=false;
     async function ask(userQ){
       if(_busy)return;_busy=true;askBtn.disabled=true;
