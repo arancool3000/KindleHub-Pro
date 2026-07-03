@@ -60,6 +60,18 @@
      needed. The key never reaches the client.
    • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
    • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
+   • KH_PEPPER   — (optional, RECOMMENDED) envelope-at-rest secret. When set, the
+     Worker wraps the sensitive ciphertext columns (kh_users.state, kh_mail
+     subject/body, kh_messages.text) with AES-GCM keyed by this value BEFORE
+     writing to D1, and unwraps on read. A STOLEN D1 database is then useless
+     without this secret (which never lives in the DB) — the "encrypted with a
+     key held outside the storage" model. It's an OUTER layer over the existing
+     client E2E encryption, so there is NO client change and NO account-lockout
+     risk. Opt-in: unset = exact previous behaviour. Legacy rows written before
+     you set it keep working (they're wrapped on their next write).
+     ⚠ Once set, KEEP IT PERMANENTLY. Losing or changing KH_PEPPER makes every
+     already-wrapped row (all state/mail/chat) permanently unreadable. Use a long
+     random value (e.g. `openssl rand -hex 32`) and store it somewhere safe.
 
    SECURITY (mirrors the Supabase RLS model it replaces)
    • Reads + most inserts are open — same as the public anon key + permissive
@@ -149,6 +161,55 @@ async function isAdmin(token){ return ADMIN_HASHES.indexOf(await sha256hex(token
 
 const QUOTE = id => '"'+String(id).replace(/"/g,'')+'"';
 function nowIso(){ return new Date().toISOString(); }
+
+/* ── envelope-at-rest (optional) ──────────────────────────────────────────────
+   Wraps the sensitive ciphertext columns with a server-held pepper (KH_PEPPER
+   env) so a STOLEN D1 database is useless without the Worker's secret. This is
+   an OUTER layer on top of the existing client E2E encryption: state stays
+   hash-encrypted, chat/mail stay group/recipient-encrypted — those inner keys
+   sit in the DB (hash, group_code) so the DB alone would otherwise decrypt. The
+   pepper does NOT live in the database, so an exfiltrated DB can't be unwrapped.
+   Opt-in: if KH_PEPPER is unset it's a pure no-op (zero behaviour change).
+   Backward-compatible: legacy un-prefixed rows pass through untouched on read,
+   and get wrapped the next time they're written. ⚠ Once KH_PEPPER is set it must
+   be kept PERMANENTLY — losing or changing it makes every wrapped row (state /
+   mail / messages) permanently unreadable. The inner E2E layer is unchanged, so
+   this adds no client change and no account-lockout risk. */
+const WRAP_COLS = { kh_users:['state'], kh_mail:['subject','body'], kh_messages:['text'] };
+const WRAP_PREFIX = 'KHW1:';
+let _wrapKeyP = null, _wrapKeyFor = null;
+function wrapKey(env){
+  const p = (env && env.KH_PEPPER) || '';
+  if(_wrapKeyFor===p && _wrapKeyP) return _wrapKeyP;
+  _wrapKeyFor = p;
+  _wrapKeyP = crypto.subtle.digest('SHA-256', new TextEncoder().encode('khpepper::'+p))
+    .then(raw=>crypto.subtle.importKey('raw', raw, {name:'AES-GCM'}, false, ['encrypt','decrypt']));
+  return _wrapKeyP;
+}
+function _b64enc(bytes){ let s=''; for(let i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+function _b64dec(str){ const bin=atob(str), out=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i); return out; }
+async function wrapCell(v, env){
+  if(!(env && env.KH_PEPPER) || typeof v!=='string' || v==='' || v.slice(0,5)===WRAP_PREFIX) return v;
+  const key = await wrapKey(env);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, new TextEncoder().encode(v)));
+  const buf = new Uint8Array(iv.length+ct.length); buf.set(iv,0); buf.set(ct,iv.length);
+  return WRAP_PREFIX+_b64enc(buf);
+}
+async function unwrapCell(v, env){
+  if(!(env && env.KH_PEPPER) || typeof v!=='string' || v.slice(0,5)!==WRAP_PREFIX) return v;
+  try{
+    const key = await wrapKey(env);
+    const buf = _b64dec(v.slice(5)), iv = buf.slice(0,12), ct = buf.slice(12);
+    return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv}, key, ct));
+  }catch(_){ return v; } // wrong pepper / corrupt → leave as-is rather than lose the row
+}
+async function unwrapRows(table, rows, env){
+  const cols = WRAP_COLS[table];
+  if(!(env && env.KH_PEPPER) || !cols) return rows;
+  for(const r of rows){ for(const c of cols){ if(typeof r[c]==='string') r[c] = await unwrapCell(r[c], env); } }
+  return rows;
+}
 
 /* ── type marshaling ─────────────────────────────────────────────────────── */
 function rowOut(table, row){
@@ -451,6 +512,9 @@ async function handleGet(table, url, request, env, DB, headOnly){
       .filter(r=>!(typeof r.text==='string' && (/\[USERNAME\]/.test(r.text) || /\[REPORT\]/.test(r.text))))
       .map(r=>{ const o=Object.assign({},r); delete o.comments; return o; });
   }
+  /* envelope: unwrap sensitive columns for owner/admin reads (redacted rows
+     already had the column deleted above, so this is a no-op for them). */
+  await unwrapRows(table, rows, env);
   const extra = contentRange?{'Content-Range':contentRange}:null;
   return json(rows, 200, env, extra);
 }
@@ -494,7 +558,13 @@ async function handlePost(table, url, request, env, DB){
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
     for(const tc of TS_COLS){ if(cols.indexOf(tc)>=0 && keys.indexOf(tc)<0){ raw[tc]=nowIso(); keys.push(tc); } }
-    const vals = keys.map(k=>valIn(table,k,raw[k]));
+    const _wc = WRAP_COLS[table];
+    const vals = [];
+    for(const k of keys){
+      let v = valIn(table,k,raw[k]);
+      if(_wc && _wc.indexOf(k)>=0) v = await wrapCell(v, env);
+      vals.push(v);
+    }
     const colSql = keys.map(QUOTE).join(',');
     const ph = keys.map(()=>'?').join(',');
     let sql = 'INSERT INTO '+QUOTE(table)+'('+colSql+') VALUES('+ph+')';
@@ -512,6 +582,7 @@ async function handlePost(table, url, request, env, DB){
     }
   }
   if(minimal) return new Response(null,{status:201,headers:cors(env)});
+  await unwrapRows(table, out, env); // representation must match a GET (plaintext)
   return json(out, 201, env);
 }
 
@@ -552,14 +623,22 @@ async function handlePatch(table, url, request, env, DB){
   }
   if(!keys.length) return err('no valid columns to update',400,env);
   const setSql = keys.map(k=>QUOTE(k)+'=?').join(',');
-  const setBinds = keys.map(k=>valIn(table,k,patch[k]));
+  const _wc = WRAP_COLS[table];
+  const setBinds = [];
+  for(const k of keys){
+    let v = valIn(table,k,patch[k]);
+    if(_wc && _wc.indexOf(k)>=0) v = await wrapCell(v, env);
+    setBinds.push(v);
+  }
   await DB.prepare('UPDATE '+QUOTE(table)+' SET '+setSql+where).bind(...setBinds, ...binds).run();
   const prefer = (request.headers.get('prefer')||'');
   if(/return=minimal/i.test(prefer)) return new Response(null,{status:204,headers:cors(env)});
   /* representation: re-read the affected rows with the same WHERE (minus secret) */
   const r2 = whereSql(table, q.filters);
   const res = await DB.prepare('SELECT * FROM '+QUOTE(table)+r2.sql).bind(...r2.binds).all();
-  return json((res.results||[]).map(x=>rowOut(table,x)), 200, env);
+  const outRows = (res.results||[]).map(x=>rowOut(table,x));
+  await unwrapRows(table, outRows, env); // representation must match a GET (plaintext)
+  return json(outRows, 200, env);
 }
 
 async function handleDelete(table, url, request, env, DB){

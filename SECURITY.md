@@ -199,6 +199,20 @@ D1 shim for the worker ACLs).
   reads now require a `code` filter (no bulk enumeration of room join-codes).
 - **`kh_set_reaction`**: capped keys/users per message (anti-bloat).
 - **owner_secret** must be ≥16 chars on secret-gated PATCH/DELETE.
+- **Envelope-at-rest (`KH_PEPPER`).** The Worker now wraps the sensitive
+  ciphertext columns — `kh_users.state`, `kh_mail` subject/body, `kh_messages.text`
+  — with AES-GCM keyed by a secret env var (`KH_PEPPER`) before writing to D1,
+  and unwraps on read. This is an **outer** layer on top of the existing client
+  E2E encryption: the inner keys (`hash`, `group_code`) sit in the DB, so a
+  stolen database would otherwise self-decrypt; the pepper does **not** live in
+  the DB, so an exfiltrated D1 file is useless without the Worker's secret
+  ("encrypted with a key held outside the storage" — the console model). It is
+  opt-in (unset = no change), backward-compatible (legacy rows pass through and
+  wrap on next write), and needs **no client change**, so there is no
+  account-lockout risk. Set `KH_PEPPER` in the Worker's Variables & Secrets to a
+  long random value and keep it permanently (losing it makes wrapped rows
+  unreadable). Round-trip + "raw dump is ciphertext-only" + legacy-passthrough
+  verified (`envelope_test.mjs`).
 
 ## Fixed — client (`index.html`)
 
@@ -233,6 +247,10 @@ announcements/RSS render via `textContent`/escaped.
    the state key separately as `PBKDF2/HKDF(password, salt, …, "state")` (never
    sent to the server). Tag rows `kdf:2`; upgrade opportunistically on the next
    successful login (client still holds the password) so nobody is locked out.
+   *Mitigated (defense-in-depth):* enabling `KH_PEPPER` (above) envelope-wraps
+   `state` at rest, so a stolen DB no longer decrypts even though `hash` sits
+   beside it — but the salted-KDF migration is still the durable fix for weak
+   passwords and for the historical open-Supabase window.
 2. **Mail/DM keys are derived from usernames/codes, not random per-conversation
    keys.** The read-ACL above stops the live exploit, but the durable fix is a
    per-account keypair + random per-conversation keys wrapped to the recipient.
