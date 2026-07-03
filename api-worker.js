@@ -141,7 +141,8 @@ function cors(env){
     'Access-Control-Allow-Origin': (env && env.ALLOW_ORIGIN) || '*',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'apikey, authorization, content-type, prefer, x-kh-secret, x-kh-admin, range, range-unit, accept',
-    'Access-Control-Expose-Headers': 'Content-Range, x-kh-count, x-kh-cap',  // _sbCount total + shared-AI cap headers
+    'Access-Control-Expose-Headers': 'Content-Range, x-kh-count, x-kh-cap, x-kh-load',  // _sbCount total + shared-AI cap + fleet-backoff load
+    'X-KH-Load': String(Math.min(100, Math.round(_loadFrac*100))),  // % of daily free budget used → clients self-throttle
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -751,6 +752,10 @@ async function handleGeminiProxy(request, env, DB){
    20s), reading back the global total. Writes are estimated at 2 row-writes per
    mutating request (the insert/update + an amortised cap-trim/GC delete). */
 let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+/* Latest share of the daily free-tier budget used (0..1), stamped onto every
+   response as X-KH-Load so clients can self-throttle their background polling
+   before anyone hits the hard cap (closed-loop capacity control). */
+let _loadFrac = 0;
 const REQ_HARD_CAP   = 90000;   // Workers free: 100k requests/day — stop 10% short
 const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short
 async function dailyUsed(DB, isWrite){
@@ -906,6 +911,8 @@ export default {
        Health check above is always allowed so uptime monitors keep working. */
     const _isWrite = request.method!=='GET' && request.method!=='HEAD';
     const _usage = await dailyUsed(DB, _isWrite);
+    /* Publish the higher of the request/write utilisation so clients back off. */
+    _loadFrac = Math.max(_usage.n/REQ_HARD_CAP, _usage.w/WRITE_HARD_CAP);
     if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){

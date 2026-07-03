@@ -1952,6 +1952,7 @@ function _startMessageNotifier(){
     if(typeof currentView!=='undefined'&&currentView==='messages')return;
     if(!navigator.onLine)return;/* offline — don't burn a failing fetch */
     if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat notifier polling during a CF limit */
+    if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
     if(!S.authToken)return;/* signed-out users shouldn't get Global Chat toasts */
     const groups=(S.msgGroups||[]).slice();
     if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&!groups.find(g=>g.code===KH_GLOBAL_GROUP_CODE)){
@@ -7037,6 +7038,24 @@ function _khCfBlocked(isWrite){
   if(isWrite&&window._khCfWriteUntil>now)return true;
   return false;
 }
+/* ── Adaptive fleet backoff (closed-loop capacity control) ─────────────────────
+   The Worker stamps every response with X-KH-Load = the day's share of the free
+   Cloudflare budget already used (0..100). As that climbs, every device
+   probabilistically SKIPS background poll ticks, so the whole fleet slows down
+   together and the shared daily cap is approached asymptotically — never tripped
+   into read-only. Below ~55% nothing changes; from 55%→100% the skip chance ramps
+   to ~85%. Only the always-on BACKGROUND timers (presence, chat notifier, room
+   poll, inbox) consult this — user actions (send, manual sync) never do, so the
+   app stays fully responsive. This is what lets many more users share one free
+   tier without anyone hitting the wall: latency degrades gracefully, service
+   doesn't. */
+window._khLoad=window._khLoad||0;   // server-reported daily budget fraction (0..1)
+function _khLoadSkip(){
+  const L=window._khLoad||0;
+  if(L<0.55)return false;
+  let p=(L-0.55)*1.9; if(p>0.85)p=0.85;
+  return Math.random()<p;
+}
 function _khCfNote(kind){
   const now=Date.now();
   if(now-_khCfNoticeAt<60000)return; _khCfNoticeAt=now;
@@ -7062,6 +7081,9 @@ async function _sbFetch(path,opts){
       signal:ac?ac.signal:undefined,
     }));
   }finally{clearTimeout(tid);}
+  /* Track the shared daily budget the Worker reports so background pollers can
+     self-throttle before anyone hits the hard cap (see _khLoadSkip). */
+  try{ const _ld=r&&r.headers&&r.headers.get('x-kh-load'); if(_ld!=null){ const _n=parseInt(_ld,10); if(!isNaN(_n))window._khLoad=_n/100; } }catch(_){}
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
     if(r.status===503)_khCfOn503(body);
@@ -8174,7 +8196,11 @@ async function _pingPresence(){
 function _startPresence(){
   if(_presenceTimer)return;
   _pingPresence();
-  _presenceTimer=setInterval(function(){ if(!document.hidden)_pingPresence(); },40000);
+  /* 70s base (was 40s) — presence is the single most frequent WRITE, and the
+     online window is now 150s so a 70s heartbeat (even if the odd tick is
+     skipped by the adaptive backoff) keeps "online" steady. Halving the
+     presence write rate is the biggest permanent cut to the shared budget. */
+  _presenceTimer=setInterval(function(){ if(document.hidden)return; if(typeof _khLoadSkip==='function'&&_khLoadSkip())return; _pingPresence(); },70000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden)_pingPresence(); });
 }
 
@@ -38134,7 +38160,7 @@ feedback:()=>{
       const onlineBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
       onlineBox.textContent='Loading…';
       c.appendChild(onlineBox);
-      const ONLINE_WINDOW_SECS=60;
+      const ONLINE_WINDOW_SECS=150;/* matches the 70s presence heartbeat (+skip headroom) */
       async function _renderOnline(){
         if(!document.body.contains(onlineBox))return false;/* panel gone — stop the loop */
         const since=new Date(Date.now()-ONLINE_WINDOW_SECS*1000).toISOString();
@@ -54087,6 +54113,7 @@ messages:()=>{
         if(!log2){stopPoll();cleanup();return;}
         if(typeof document!=='undefined'&&document.hidden)return;/* no point polling a backgrounded tab */
         if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat polling during a CF limit */
+        if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
         try{
           /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
              group this matches our current tail and we SKIP the full ~50-message
