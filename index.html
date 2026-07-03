@@ -1486,7 +1486,7 @@ try{_writeBootHints();}catch(_){}
    privilege-escalation / key-theft / data-exfil code. One shared regex is used
    by BOTH the boot applier (below) and the generator's Apply button so they
    can't drift. */
-const _khPatchDenyRE=/_isAdminCached|_adminToken|_ADMIN_HASHES|ADMIN_HASHES|_checkAdmin|X-KH-Admin|x-kh-admin|authToken|authRegister|authLogin|_offlineCred|kh_offline_cred|kh_users|SUPABASE_ANON_KEY|SUPABASE_URL|service_role|_sbFetch|_sbBase|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|localFixes/;
+const _khPatchDenyRE=/_isAdminCached|_adminToken|_ADMIN_HASHES|ADMIN_HASHES|_checkAdmin|X-KH-Admin|x-kh-admin|authToken|authRegister|authLogin|_offlineCred|kh_offline_cred|kh_users|SUPABASE_ANON_KEY|SUPABASE_URL|service_role|_sbFetch|_sbBase|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|localFixes|fetch|XMLHttpRequest|WebSocket|sendBeacon|EventSource|document\.cookie|localStorage|sessionStorage|indexedDB|\beval\b|importScripts/;
 (function applyLocalFixes(){
   try{
     const fixes=(S&&S.localFixes)||{};
