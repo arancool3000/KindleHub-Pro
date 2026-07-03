@@ -60,6 +60,18 @@
      needed. The key never reaches the client.
    • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
    • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
+   • KH_PEPPER   — (optional, RECOMMENDED) envelope-at-rest secret. When set, the
+     Worker wraps the sensitive ciphertext columns (kh_users.state, kh_mail
+     subject/body, kh_messages.text) with AES-GCM keyed by this value BEFORE
+     writing to D1, and unwraps on read. A STOLEN D1 database is then useless
+     without this secret (which never lives in the DB) — the "encrypted with a
+     key held outside the storage" model. It's an OUTER layer over the existing
+     client E2E encryption, so there is NO client change and NO account-lockout
+     risk. Opt-in: unset = exact previous behaviour. Legacy rows written before
+     you set it keep working (they're wrapped on their next write).
+     ⚠ Once set, KEEP IT PERMANENTLY. Losing or changing KH_PEPPER makes every
+     already-wrapped row (all state/mail/chat) permanently unreadable. Use a long
+     random value (e.g. `openssl rand -hex 32`) and store it somewhere safe.
 
    SECURITY (mirrors the Supabase RLS model it replaces)
    • Reads + most inserts are open — same as the public anon key + permissive
@@ -108,8 +120,18 @@ const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_fe
 const UPDATE_OK = new Set(['kh_users','kh_feedback','kh_presence']); // open update
 const SECRET_UPDATE = new Set(['kh_messages']);          // owner_secret-gated update
 const SECRET_DELETE = new Set(['kh_messages','kh_mail']); // owner_secret-gated delete
-/* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only. */
-const ADMIN_READ = new Set(['kh_visits','kh_errors']);
+/* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only.
+   kh_rate stores one bucket per room ('msg:'+group_code); an open read would
+   leak every active room's code (= its chat decryption key), so it's gated too.
+   The client never reads these tables via REST. */
+const ADMIN_READ = new Set(['kh_visits','kh_errors','kh_rate']);
+/* Tables a NON-admin may legitimately UPSERT (on_conflict). Any other table's
+   conflict target is stripped for non-admins so a colliding INSERT errors
+   instead of silently UPDATING an existing row — otherwise on_conflict is an
+   unauthenticated UPDATE primitive that bypasses owner_secret / the kh_groups
+   update lockdown. kh_groups/kh_messages upserts happen only in admin migration
+   (X-KH-Admin). Verified: the client only upserts these three. */
+const UPSERT_OK = new Set(['kh_users','kh_presence','kh_visits']);
 /* Replicates the client's _mailNorm(email) → mail username, used to verify a
    mail reader owns the mailbox it queries. Keep in sync with index.html. */
 function mailNorm(u){ return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40); }
@@ -119,7 +141,8 @@ function cors(env){
     'Access-Control-Allow-Origin': (env && env.ALLOW_ORIGIN) || '*',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'apikey, authorization, content-type, prefer, x-kh-secret, x-kh-admin, range, range-unit, accept',
-    'Access-Control-Expose-Headers': 'Content-Range, x-kh-count, x-kh-cap',  // _sbCount total + shared-AI cap headers
+    'Access-Control-Expose-Headers': 'Content-Range, x-kh-count, x-kh-cap, x-kh-load',  // _sbCount total + shared-AI cap + fleet-backoff load
+    'X-KH-Load': String(Math.min(100, Math.round(_loadFrac*100))),  // % of daily free budget used → clients self-throttle
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -139,6 +162,55 @@ async function isAdmin(token){ return ADMIN_HASHES.indexOf(await sha256hex(token
 
 const QUOTE = id => '"'+String(id).replace(/"/g,'')+'"';
 function nowIso(){ return new Date().toISOString(); }
+
+/* ── envelope-at-rest (optional) ──────────────────────────────────────────────
+   Wraps the sensitive ciphertext columns with a server-held pepper (KH_PEPPER
+   env) so a STOLEN D1 database is useless without the Worker's secret. This is
+   an OUTER layer on top of the existing client E2E encryption: state stays
+   hash-encrypted, chat/mail stay group/recipient-encrypted — those inner keys
+   sit in the DB (hash, group_code) so the DB alone would otherwise decrypt. The
+   pepper does NOT live in the database, so an exfiltrated DB can't be unwrapped.
+   Opt-in: if KH_PEPPER is unset it's a pure no-op (zero behaviour change).
+   Backward-compatible: legacy un-prefixed rows pass through untouched on read,
+   and get wrapped the next time they're written. ⚠ Once KH_PEPPER is set it must
+   be kept PERMANENTLY — losing or changing it makes every wrapped row (state /
+   mail / messages) permanently unreadable. The inner E2E layer is unchanged, so
+   this adds no client change and no account-lockout risk. */
+const WRAP_COLS = { kh_users:['state'], kh_mail:['subject','body'], kh_messages:['text'] };
+const WRAP_PREFIX = 'KHW1:';
+let _wrapKeyP = null, _wrapKeyFor = null;
+function wrapKey(env){
+  const p = (env && env.KH_PEPPER) || '';
+  if(_wrapKeyFor===p && _wrapKeyP) return _wrapKeyP;
+  _wrapKeyFor = p;
+  _wrapKeyP = crypto.subtle.digest('SHA-256', new TextEncoder().encode('khpepper::'+p))
+    .then(raw=>crypto.subtle.importKey('raw', raw, {name:'AES-GCM'}, false, ['encrypt','decrypt']));
+  return _wrapKeyP;
+}
+function _b64enc(bytes){ let s=''; for(let i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+function _b64dec(str){ const bin=atob(str), out=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i); return out; }
+async function wrapCell(v, env){
+  if(!(env && env.KH_PEPPER) || typeof v!=='string' || v==='' || v.slice(0,5)===WRAP_PREFIX) return v;
+  const key = await wrapKey(env);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, new TextEncoder().encode(v)));
+  const buf = new Uint8Array(iv.length+ct.length); buf.set(iv,0); buf.set(ct,iv.length);
+  return WRAP_PREFIX+_b64enc(buf);
+}
+async function unwrapCell(v, env){
+  if(!(env && env.KH_PEPPER) || typeof v!=='string' || v.slice(0,5)!==WRAP_PREFIX) return v;
+  try{
+    const key = await wrapKey(env);
+    const buf = _b64dec(v.slice(5)), iv = buf.slice(0,12), ct = buf.slice(12);
+    return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv}, key, ct));
+  }catch(_){ return v; } // wrong pepper / corrupt → leave as-is rather than lose the row
+}
+async function unwrapRows(table, rows, env){
+  const cols = WRAP_COLS[table];
+  if(!(env && env.KH_PEPPER) || !cols) return rows;
+  for(const r of rows){ for(const c of cols){ if(typeof r[c]==='string') r[c] = await unwrapCell(r[c], env); } }
+  return rows;
+}
 
 /* ── type marshaling ─────────────────────────────────────────────────────── */
 function rowOut(table, row){
@@ -353,16 +425,25 @@ async function handleGet(table, url, request, env, DB, headOnly){
   /* ── Cross-user read gating ─────────────────────────────────────────────
      The open-read model is acceptable for E2E-encrypted bodies, but several
      tables expose PLAINTEXT cross-user data. Gate them. Compute admin once. */
-  const _needAdminCheck = ADMIN_READ.has(table) || table==='kh_mail' || table==='kh_groups';
+  const _needAdminCheck = ADMIN_READ.has(table) || table==='kh_mail' || table==='kh_groups' || table==='kh_messages';
   const _adminGet = _needAdminCheck ? await isAdmin(request.headers.get('x-kh-admin')||'') : false;
   if(ADMIN_READ.has(table) && !_adminGet){
-    return err('admin only', 403, env);   // kh_visits (geo/UA PII), kh_errors (logs)
+    return err('admin only', 403, env);   // kh_visits (geo/UA PII), kh_errors (logs), kh_rate (leaks room codes)
   }
   if(table==='kh_groups' && !_adminGet){
     /* Don't let anon dump every room's code+name (the code IS the join secret).
        A real member already knows the code, so require a code filter. */
     const hasCode = q.filters.some(f=>f.col==='code' && (f.op==='eq'||f.op==='in') && !f.neg);
     if(!hasCode) return err('a code filter is required', 400, env);
+  }
+  if(table==='kh_messages' && !_adminGet){
+    /* Chat "E2E" keys are derived from the group_code alone, and every row pairs
+       group_code + ciphertext, so an ungated read = dump+decrypt every chat AND
+       harvest every room code. Require the query to be scoped to a specific room
+       (group_code) or a specific message (id) — a member already knows the code,
+       and the reaction path reads by id. Blocks only forged cross-room dumps. */
+    const scoped = q.filters.some(f=>(f.col==='group_code'||f.col==='id') && (f.op==='eq'||f.op==='in') && !f.neg);
+    if(!scoped) return err('a group_code or id filter is required', 400, env);
   }
   if(table==='kh_mail' && !_adminGet){
     /* Mail bodies are encrypted under a key derived from the recipient's public
@@ -432,6 +513,9 @@ async function handleGet(table, url, request, env, DB, headOnly){
       .filter(r=>!(typeof r.text==='string' && (/\[USERNAME\]/.test(r.text) || /\[REPORT\]/.test(r.text))))
       .map(r=>{ const o=Object.assign({},r); delete o.comments; return o; });
   }
+  /* envelope: unwrap sensitive columns for owner/admin reads (redacted rows
+     already had the column deleted above, so this is a no-op for them). */
+  await unwrapRows(table, rows, env);
   const extra = contentRange?{'Content-Range':contentRange}:null;
   return json(rows, 200, env, extra);
 }
@@ -453,7 +537,13 @@ async function handlePost(table, url, request, env, DB){
      (an abuse report) — that scrubs it exactly like the PATCH vector. The client
      only ever plain-inserts feedback, so drop the conflict target for non-admins:
      a colliding id now errors instead of overwriting. Admin bulk writes keep it. */
-  if(table==='kh_feedback' && !adminReq) conflict=null;
+  /* SECURITY: on_conflict is an UPDATE primitive. For a non-admin, only allow it
+     on tables that legitimately upsert (kh_users/kh_presence/kh_visits); for any
+     other table drop the conflict target so a colliding INSERT errors instead of
+     silently overwriting an existing row. Without this, POST ?on_conflict=code to
+     kh_groups re-owns any room, and ?on_conflict=id to kh_messages overwrites any
+     message + seizes its owner_secret — bypassing the owner_secret / update gates. */
+  if(!adminReq && !UPSERT_OK.has(table)) conflict=null;
   const prefer = (request.headers.get('prefer')||'');
   const minimal = /return=minimal/i.test(prefer);
 
@@ -469,7 +559,13 @@ async function handlePost(table, url, request, env, DB){
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
     for(const tc of TS_COLS){ if(cols.indexOf(tc)>=0 && keys.indexOf(tc)<0){ raw[tc]=nowIso(); keys.push(tc); } }
-    const vals = keys.map(k=>valIn(table,k,raw[k]));
+    const _wc = WRAP_COLS[table];
+    const vals = [];
+    for(const k of keys){
+      let v = valIn(table,k,raw[k]);
+      if(_wc && _wc.indexOf(k)>=0) v = await wrapCell(v, env);
+      vals.push(v);
+    }
     const colSql = keys.map(QUOTE).join(',');
     const ph = keys.map(()=>'?').join(',');
     let sql = 'INSERT INTO '+QUOTE(table)+'('+colSql+') VALUES('+ph+')';
@@ -487,6 +583,7 @@ async function handlePost(table, url, request, env, DB){
     }
   }
   if(minimal) return new Response(null,{status:201,headers:cors(env)});
+  await unwrapRows(table, out, env); // representation must match a GET (plaintext)
   return json(out, 201, env);
 }
 
@@ -527,14 +624,22 @@ async function handlePatch(table, url, request, env, DB){
   }
   if(!keys.length) return err('no valid columns to update',400,env);
   const setSql = keys.map(k=>QUOTE(k)+'=?').join(',');
-  const setBinds = keys.map(k=>valIn(table,k,patch[k]));
+  const _wc = WRAP_COLS[table];
+  const setBinds = [];
+  for(const k of keys){
+    let v = valIn(table,k,patch[k]);
+    if(_wc && _wc.indexOf(k)>=0) v = await wrapCell(v, env);
+    setBinds.push(v);
+  }
   await DB.prepare('UPDATE '+QUOTE(table)+' SET '+setSql+where).bind(...setBinds, ...binds).run();
   const prefer = (request.headers.get('prefer')||'');
   if(/return=minimal/i.test(prefer)) return new Response(null,{status:204,headers:cors(env)});
   /* representation: re-read the affected rows with the same WHERE (minus secret) */
   const r2 = whereSql(table, q.filters);
   const res = await DB.prepare('SELECT * FROM '+QUOTE(table)+r2.sql).bind(...r2.binds).all();
-  return json((res.results||[]).map(x=>rowOut(table,x)), 200, env);
+  const outRows = (res.results||[]).map(x=>rowOut(table,x));
+  await unwrapRows(table, outRows, env); // representation must match a GET (plaintext)
+  return json(outRows, 200, env);
 }
 
 async function handleDelete(table, url, request, env, DB){
@@ -647,6 +752,10 @@ async function handleGeminiProxy(request, env, DB){
    20s), reading back the global total. Writes are estimated at 2 row-writes per
    mutating request (the insert/update + an amortised cap-trim/GC delete). */
 let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+/* Latest share of the daily free-tier budget used (0..1), stamped onto every
+   response as X-KH-Load so clients can self-throttle their background polling
+   before anyone hits the hard cap (closed-loop capacity control). */
+let _loadFrac = 0;
 const REQ_HARD_CAP   = 90000;   // Workers free: 100k requests/day — stop 10% short
 const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short
 async function dailyUsed(DB, isWrite){
@@ -802,6 +911,8 @@ export default {
        Health check above is always allowed so uptime monitors keep working. */
     const _isWrite = request.method!=='GET' && request.method!=='HEAD';
     const _usage = await dailyUsed(DB, _isWrite);
+    /* Publish the higher of the request/write utilisation so clients back off. */
+    _loadFrac = Math.max(_usage.n/REQ_HARD_CAP, _usage.w/WRITE_HARD_CAP);
     if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){

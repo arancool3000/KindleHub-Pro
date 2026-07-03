@@ -339,7 +339,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .ms-cell.mine-hit{background:var(--fg);color:var(--bg)}
 .ms-cell.flagged{background:var(--unrev);font-weight:900}
 .sudoku-board{display:grid;grid-template-columns:repeat(9,1fr);gap:0;border:2px solid var(--fg);width:min(92vw,378px);margin:6px auto;border-radius:8px;overflow:hidden;}
-.sdk-cell{width:100%;aspect-ratio:1;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
+.sdk-cell{width:100%;height:40px;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
 .sdk-cell.fixed{color:var(--fg);background:var(--card)}
 .sdk-cell.user-input{color:var(--accent,#0055cc)}
 .sdk-cell.selected{background:var(--accent)!important;color:var(--accent-inv)!important}
@@ -464,13 +464,13 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
     grid-template-columns:repeat(3,1fr);
     gap:6px;
   }
-  .ttt-cell{width:auto;height:auto;aspect-ratio:1;font-size:32px;}
+  .ttt-cell{width:auto;height:76px;font-size:32px;}
 
   .wordle-cell{width:40px;height:40px;font-size:16px;}
   .wk{min-width:30px;height:44px;font-size:13px;}
 
   .sudoku-board{width:min(96vw,340px);}
-  .sdk-cell{font-size:13px;}
+  .sdk-cell{font-size:13px;height:36px;}
 
   .mem-card{width:56px;height:56px;font-size:17px;}
 
@@ -1279,8 +1279,11 @@ body.launcher-ui .view{padding-bottom:80px;}
   <!-- Arrow pointer -->
   <div id="tourArrow" style="position:absolute;width:14px;height:14px;background:var(--card);transform:rotate(45deg);"></div>
 </div>
-</div><!-- /rotateRoot -->
+<!-- toasts live INSIDE rotateRoot so they inherit the 90° landscape rotation
+     (a fixed .toast under a transformed ancestor positions against that box);
+     when not rotated rotateRoot has no transform, so behaviour is unchanged. -->
 <div id="toastRoot"></div>
+</div><!-- /rotateRoot -->
 
 <script>
 'use strict';
@@ -1363,6 +1366,30 @@ if(typeof Promise!=='undefined'&&!Promise.allSettled){
     }));
   };
 }
+/* ES2019/2020 built-ins missing on old Kindle Silk (WebKit predating optional
+   catch binding). Without these, features that use them throw on-device but run
+   fine in headless: matchAll (note #hashtag save), Object.fromEntries (related
+   pages, Settings nav, Star Map, Ciphers, Files), Array.flat (rail-fence cipher,
+   Slides stats, CandyCrush), trimStart/trimEnd (app-builder editor, journal AI). */
+if(!String.prototype.matchAll){
+  String.prototype.matchAll=function(re){
+    var flags=(re&&re.flags!==undefined)?re.flags:'g';
+    var r=new RegExp(re.source||String(re), flags.indexOf('g')>=0?flags:flags+'g');
+    var out=[],m;while((m=r.exec(this))){out.push(m);if(m.index===r.lastIndex)r.lastIndex++;}
+    return out;
+  };
+}
+if(!Object.fromEntries){
+  Object.fromEntries=function(iter){var o={};Array.from(iter).forEach(function(p){o[p[0]]=p[1];});return o;};
+}
+if(!Array.prototype.flat){
+  Array.prototype.flat=function(depth){
+    var d=depth===undefined?1:Number(depth);
+    return (function fl(a,dd){return a.reduce(function(acc,v){return acc.concat(Array.isArray(v)&&dd>0?fl(v,dd-1):[v]);},[]);})(this,d);
+  };
+}
+if(!String.prototype.trimStart){String.prototype.trimStart=String.prototype.trimLeft||function(){return this.replace(/^\s+/,'');};}
+if(!String.prototype.trimEnd){String.prototype.trimEnd=String.prototype.trimRight||function(){return this.replace(/\s+$/,'');};}
 
 const SK='kindlehub_v5';
 function defaultState(){
@@ -1462,10 +1489,20 @@ try{_writeBootHints();}catch(_){}
    privilege-escalation / key-theft / data-exfil code. One shared regex is used
    by BOTH the boot applier (below) and the generator's Apply button so they
    can't drift. */
-const _khPatchDenyRE=/_isAdminCached|_adminToken|_ADMIN_HASHES|ADMIN_HASHES|_checkAdmin|X-KH-Admin|x-kh-admin|authToken|authRegister|authLogin|_offlineCred|kh_offline_cred|kh_users|SUPABASE_ANON_KEY|SUPABASE_URL|service_role|_sbFetch|_sbBase|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|localFixes/;
+const _khPatchDenyRE=/_isAdminCached|_adminToken|_ADMIN_HASHES|ADMIN_HASHES|_checkAdmin|X-KH-Admin|x-kh-admin|authToken|authRegister|authLogin|_offlineCred|kh_offline_cred|kh_users|SUPABASE_ANON_KEY|SUPABASE_URL|service_role|_sbFetch|_sbBase|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|localFixes|fetch|XMLHttpRequest|WebSocket|sendBeacon|EventSource|document\.cookie|localStorage|sessionStorage|indexedDB|\beval\b|importScripts/;
 (function applyLocalFixes(){
   try{
     const fixes=(S&&S.localFixes)||{};
+    /* SECURITY: this runner uses new Function() to apply user-approved AI patches.
+       It is OFF BY DEFAULT — the new Function path runs ONLY for a user who
+       explicitly opted in (applying a patch sets S.allowLocalPatches), so a normal
+       or brand-new account never executes stored generated JS. A legacy user who
+       already has patches is auto-opted-in once so their existing fixes keep
+       working; everyone else stays dormant. */
+    if(S.allowLocalPatches!==true){
+      if(fixes&&Object.keys(fixes).length>0){S.allowLocalPatches=true;}
+      else return;
+    }
     const _broke=[];
     Object.keys(fixes).forEach(k=>{
       const f=fixes[k];
@@ -1742,7 +1779,7 @@ function _khMessageUserPicker(onDone){
   card.appendChild(closeBtn);
   ov.appendChild(card);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   try{inp.focus();}catch(_){}
   async function _request(u){
     try{
@@ -1842,7 +1879,7 @@ async function _khAskAboutUser(question,opts){
   const out=el('div',{style:{fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',minHeight:'40px'}});
   out.textContent='Gathering data…'; card.appendChild(out);
   const cl=txt('button','Close',{className:'btn small'}); cl.onclick=()=>ov.remove(); card.appendChild(cl);
-  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   try{
     const ctx=await _khGatherUserContext(question,opts.targetName);
     if(!ctx){ out.textContent='No user matched that question. Try including their exact username.'; return; }
@@ -1870,7 +1907,7 @@ function _khAskUserDialog(prefillName){
   ask.onclick=()=>{const q=(qIn.value||'').trim();if(!q){if(typeof toast==='function')toast('Type a question.');return;}ov.remove();_khAskAboutUser(q,{targetName:(nameIn.value||'').trim()});};
   cl.onclick=()=>ov.remove();
   row.append(ask,cl); card.appendChild(row);
-  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   try{qIn.focus();}catch(_){}
 }
 window._khAskAboutUser=_khAskAboutUser;window._khAskUserDialog=_khAskUserDialog;window._khGatherUserContext=_khGatherUserContext;
@@ -1915,6 +1952,7 @@ function _startMessageNotifier(){
     if(typeof currentView!=='undefined'&&currentView==='messages')return;
     if(!navigator.onLine)return;/* offline — don't burn a failing fetch */
     if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat notifier polling during a CF limit */
+    if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
     if(!S.authToken)return;/* signed-out users shouldn't get Global Chat toasts */
     const groups=(S.msgGroups||[]).slice();
     if(typeof KH_GLOBAL_GROUP_CODE!=='undefined'&&!groups.find(g=>g.code===KH_GLOBAL_GROUP_CODE)){
@@ -3480,7 +3518,7 @@ function launchKindleDesktop(){
     list.style.cssText='max-height:54vh;overflow-y:auto;';
     box.appendChild(inp);box.appendChild(list);ov.appendChild(box);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     function render(){
       const q=inp.value.trim().toLowerCase();
       const apps=allApps().filter(a=>{const n=String(a.label||a.name||a.id||'').toLowerCase();return !q||n.indexOf(q)>=0;});
@@ -4498,7 +4536,7 @@ function launchKindleDesktop(){
     row.appendChild(cancel);row.appendChild(ok);
     box.appendChild(h);box.appendChild(ta);box.appendChild(row);
     ov.appendChild(box);
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     setTimeout(()=>ta.focus(),60);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   });
@@ -4928,7 +4966,7 @@ function launchKindleDesktop(){
     }
     card.appendChild(ttl);card.appendChild(hint);card.appendChild(ta);card.appendChild(btnRow);
     ov.appendChild(card);ov.onclick=function(ev){if(ev.target===ov)closeBtn.onclick();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function renderInstalled(){
     stInstalledList.innerHTML='';
@@ -4998,7 +5036,7 @@ function launchKindleDesktop(){
           ov.remove();
           toast('"'+app.label+'" updated!');
         };
-        document.body.appendChild(ov);
+        (document.getElementById('rotateRoot')||document.body).appendChild(ov);
       };
       const shareBtn=document.createElement('button');shareBtn.textContent='Share';shareBtn.className='btn small';
       shareBtn.onclick=()=>_khAppShareDialog('export',app);
@@ -5339,7 +5377,7 @@ WEB SEARCH & LIVE DATA:
       document.head.appendChild(st);
     }
     ov.appendChild(swipeHint);
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 
     /* Tag elements so selectors find them */
     if(typeof ccGrid!=='undefined')ccGrid.classList.add('kd-tour-cc-grid');
@@ -5523,7 +5561,7 @@ function kindlePrompt(message,defaultVal,cb){
   box.appendChild(lbl);box.appendChild(inp);box.appendChild(row);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)done(null);};
-  document.body.appendChild(ov);setTimeout(()=>{inp.focus();inp.select();},80);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>{inp.focus();inp.select();},80);
 }
 function kindleConfirm(message,cb){
   if(typeof cb!=='function')return new Promise(res=>kindleConfirm(message,res));
@@ -5542,7 +5580,7 @@ function kindleConfirm(message,cb){
   ov.onclick=e=>{if(e.target===ov)_done(false);};
   row.appendChild(cancelB);row.appendChild(okB);
   box.appendChild(lbl);box.appendChild(row);
-  ov.appendChild(box);document.body.appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
 }
 /* Global Kindle-safe alert(). A single OK button; resolves/each callback
    fires when dismissed. Title is optional. */
@@ -5559,7 +5597,7 @@ function kindleAlertGlobal(message,cb){
   okB.onclick=done;
   ov.onclick=e=>{if(e.target===ov)done();};
   row.appendChild(okB);box.appendChild(lbl);box.appendChild(row);
-  ov.appendChild(box);document.body.appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
 }
 /* Override the native blocking dialogs so ANY stray call anywhere in the
    app (including ones we didn't hand-convert) routes through the e-ink-safe
@@ -6866,9 +6904,15 @@ try{
 
 /* Legacy jsonstorage — kept as automatic fallback if the backend isn't set up,
    and as a one-time migration source for existing accounts. */
-const JS_COL='e116af42-736e-4437-ba6b-4d30e4d77094';
-const JS_API_KEY='3fc52043-9743-4000-ad5c-fdd615f4db4f';
-const KH_REG='9a40d7cc-4373-40eb-8c09-33a2a0d50516';
+/* Legacy jsonstorage.net backend — DISABLED. Its write API key used to ship in
+   the public bundle (anyone could write to the shared item). All live traffic
+   now runs on the Cloudflare D1 worker, and jsonstorage was only ever a legacy
+   fallback (reached solely when _sbActive() is false, which no longer happens
+   since KH_DEFAULT_API_GATEWAY is set). Blanking the key makes _masterRead/
+   _masterWrite no-op, so the client never contacts jsonstorage.net at all. */
+const JS_COL='';
+const JS_API_KEY='';
+const KH_REG='';
 const JS_BASE='https://api.jsonstorage.net/v1/json/'+JS_COL+'/';
 
 /* ── the backend REST helpers (PostgREST) ──────────────────────────────── */
@@ -6994,6 +7038,24 @@ function _khCfBlocked(isWrite){
   if(isWrite&&window._khCfWriteUntil>now)return true;
   return false;
 }
+/* ── Adaptive fleet backoff (closed-loop capacity control) ─────────────────────
+   The Worker stamps every response with X-KH-Load = the day's share of the free
+   Cloudflare budget already used (0..100). As that climbs, every device
+   probabilistically SKIPS background poll ticks, so the whole fleet slows down
+   together and the shared daily cap is approached asymptotically — never tripped
+   into read-only. Below ~55% nothing changes; from 55%→100% the skip chance ramps
+   to ~85%. Only the always-on BACKGROUND timers (presence, chat notifier, room
+   poll, inbox) consult this — user actions (send, manual sync) never do, so the
+   app stays fully responsive. This is what lets many more users share one free
+   tier without anyone hitting the wall: latency degrades gracefully, service
+   doesn't. */
+window._khLoad=window._khLoad||0;   // server-reported daily budget fraction (0..1)
+function _khLoadSkip(){
+  const L=window._khLoad||0;
+  if(L<0.55)return false;
+  let p=(L-0.55)*1.9; if(p>0.85)p=0.85;
+  return Math.random()<p;
+}
 function _khCfNote(kind){
   const now=Date.now();
   if(now-_khCfNoticeAt<60000)return; _khCfNoticeAt=now;
@@ -7019,6 +7081,9 @@ async function _sbFetch(path,opts){
       signal:ac?ac.signal:undefined,
     }));
   }finally{clearTimeout(tid);}
+  /* Track the shared daily budget the Worker reports so background pollers can
+     self-throttle before anyone hits the hard cap (see _khLoadSkip). */
+  try{ const _ld=r&&r.headers&&r.headers.get('x-kh-load'); if(_ld!=null){ const _n=parseInt(_ld,10); if(!isNaN(_n))window._khLoad=_n/100; } }catch(_){}
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
     if(r.status===503)_khCfOn503(body);
@@ -8131,7 +8196,11 @@ async function _pingPresence(){
 function _startPresence(){
   if(_presenceTimer)return;
   _pingPresence();
-  _presenceTimer=setInterval(function(){ if(!document.hidden)_pingPresence(); },40000);
+  /* 70s base (was 40s) — presence is the single most frequent WRITE, and the
+     online window is now 150s so a 70s heartbeat (even if the odd tick is
+     skipped by the adaptive backoff) keeps "online" steady. Halving the
+     presence write rate is the biggest permanent cut to the shared budget. */
+  _presenceTimer=setInterval(function(){ if(document.hidden)return; if(typeof _khLoadSkip==='function'&&_khLoadSkip())return; _pingPresence(); },70000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden)_pingPresence(); });
 }
 
@@ -8190,6 +8259,9 @@ let _masterInFlight=null;    /* shared promise */
 const _MASTER_TTL_MS=5000;
 function _invalidateMasterCache(){_masterCache=null;}
 async function _masterRead(){
+  /* Legacy jsonstorage backend disabled (no API key) — never hit the network,
+     just serve an empty doc so callers degrade to the D1 backend + local state. */
+  if(!JS_API_KEY)return _blankDoc();
   const now=Date.now();
   if(_masterCache&&(now-_masterCache.ts)<_MASTER_TTL_MS)return _masterCache.doc;
   if(_masterInFlight)return _masterInFlight;
@@ -8226,6 +8298,7 @@ async function _bootstrapMaster(seedDoc){
   return created.itemId;
 }
 async function _masterWrite(fn){
+  if(!JS_API_KEY)return;/* legacy jsonstorage disabled — writes go to D1 + local */
   const doc=await _masterRead();
   await fn(doc);
   /* ── Global hard caps applied on every write ── */
@@ -8565,7 +8638,7 @@ async function _decryptState(hexKey64,ciphertext){
 async function _jsGet(itemId){
   let r;
   try{
-    r=await fetch(_jsReadUrl(itemId),{signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined});
+    r=await fetch(_jsReadUrl(itemId),{signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined});
   }catch(e){throw new Error('Network error fetching '+itemId+': '+e.message);}
   if(r.status===404)return null;
   if(!r.ok){
@@ -8589,7 +8662,7 @@ async function _jsPut(itemId,data){
     method:'PUT',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   if(r.status===404){
     /* Item missing — caller may want to recreate */
@@ -8609,7 +8682,7 @@ async function _jsCreate(data){
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
@@ -8634,7 +8707,7 @@ async function _jsPatch(itemId,data){
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
@@ -8646,7 +8719,7 @@ async function _jsPatch(itemId,data){
 async function _jsDelete(itemId){
   const r=await fetch(_jsWriteUrl(itemId),{
     method:'DELETE',
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   /* 404 = already gone, count as success */
   if(!r.ok&&r.status!==404){
@@ -12687,7 +12760,7 @@ function _khOpenMultitask(){
   const close=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.appendChild(box);document.body.appendChild(ov);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 window.enterSplit=enterSplit;window.exitSplit=exitSplit;window._khOpenMultitask=_khOpenMultitask;
 
@@ -12832,7 +12905,7 @@ function _showGameHelp(g){
   box.appendChild(txt('div',(h&&h.how)||'Tap to play — figure it out as you go. Have fun!',{style:{fontSize:'13px',lineHeight:'1.7',whiteSpace:'pre-wrap'}}));
   const close=txt('button','Got it',{className:'btn small primary',style:{marginTop:'14px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 /* Shared leaderboard modal — used by every game via the immersive ★ button.
    Shows the player's best (local) + the global top scores (with avatars). */
@@ -12849,7 +12922,7 @@ function _gameScores(game){
   box.appendChild(listWrap);
   const close=txt('button','Close',{className:'btn small primary',style:{marginTop:'14px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   (async()=>{
     let rows=[];try{if(typeof _khFetchScores==='function')rows=await _khFetchScores(game,10);}catch(_){}
     listWrap.innerHTML='';
@@ -13435,7 +13508,7 @@ const Hanoi=(function(){
     const again=txt('button','Play again',{className:'btn small primary'});again.onclick=()=>{ov.remove();build(disks);};row.appendChild(again);
     if(disks<7){const more=txt('button','Harder (+1 disk)',{className:'btn small'});more.onclick=()=>{ov.remove();build(disks+1);};row.appendChild(more);}
     const back=txt('button','Back',{className:'btn small'});back.onclick=()=>{ov.remove();if(typeof exitImmersive==='function')exitImmersive();};row.appendChild(back);
-    box.appendChild(row);ov.appendChild(box);document.body.appendChild(ov);
+    box.appendChild(row);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function start(){enterImmersive('Tower of Hanoi','');const ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;build(3);}
   function stop(){selPeg=-1;}
@@ -13597,7 +13670,7 @@ const CrazyEights=(function(){
     box.appendChild(txt('h3','Choose a colour',{style:{margin:'0 0 12px',fontFamily:'var(--title-font)'}}));
     const row=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}});
     COLOURS.forEach(c=>{const b=txt('button',CNAME[c],{className:'btn',style:{background:CHEX[c],color:'#fff',border:'2px solid var(--fg)',minWidth:'92px',fontWeight:'800'}});b.onclick=()=>{ov.remove();cb(c);};row.appendChild(b);});
-    box.appendChild(row);ov.appendChild(box);document.body.appendChild(ov);
+    box.appendChild(row);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function pickColour(idx){chooseColour(c=>playFromYou(idx,c));}
   function cardEl(card,faceUp,onClick){
@@ -15462,7 +15535,7 @@ window.KH_MP.openLobby=function(opts){
   box.appendChild(codeSec);
   ov.appendChild(box);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   setTimeout(()=>sInp.focus(),80);
 };
 function _lobbyEsc(s){return String(s||'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -16459,7 +16532,7 @@ const Chess=(()=>{
       const closeB=txt('button','Close',{className:'btn small primary',style:'align-self:flex-end;'});
       closeB.onclick=()=>ov.remove();
       box.appendChild(closeB);
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
       setTimeout(()=>{ta.focus();ta.select();},40);
     }
     if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -17005,7 +17078,7 @@ const Chess=(()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     },200);
   }
 
@@ -18456,7 +18529,7 @@ const Nonogram=(()=>{
    while something is moving (or you're aiming) so it stays gentle on e-ink. */
 const EightBall=(()=>{
   const W=280,H=452,R=9,POCK=15,FR=40;
-  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=8;
+  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=15;
   const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
   let game=null,timer=null;
   function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
@@ -18555,7 +18628,7 @@ const EightBall=(()=>{
     game.aiming=false;
     var cue=_cue();if(!cue){draw();return;}
     var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
-    if(dl>6){var pow=Math.min(MAXPOW,dl/12);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    if(dl>6){var pow=Math.min(MAXPOW,dl/8);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
     draw();
   }
   function buildUI(){
@@ -18706,7 +18779,7 @@ function khTeleprompter(){
   var ta=document.createElement('textarea');
   ta.style.cssText='width:100%;height:100%;box-sizing:border-box;background:#111;color:#fff;border:none;padding:16px;font-size:16px;line-height:1.5;font-family:inherit;resize:none;display:none;';
   ta.value=text;body.appendChild(ta);
-  ov.appendChild(bar);ov.appendChild(body);document.body.appendChild(ov);
+  ov.appendChild(bar);ov.appendChild(body);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
   function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='▶ Play';}
   function tick(){if(!playing||editing)return;pos+=speed;inner.style.transform='translateY('+(-pos)+'px)';if(pos>inner.offsetHeight+body.offsetHeight){pos=0;}}
   playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='⏸ Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='▶ Play';}};
@@ -23428,7 +23501,7 @@ function _initFlightSim(){
     helpBtn.style.cssText='width:100%;margin-bottom:8px;font-weight:700;';
     helpBtn.onclick=()=>{
       const ov=document.createElement('div');
-      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:600300;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:600300;display:flex;align-items:center;justify-content:center;padding:16px;';
       const box=document.createElement('div');
       box.style.cssText='background:var(--card);color:var(--fg);border-radius:12px;padding:16px 18px;max-width:420px;max-height:88vh;overflow-y:auto;font-size:13px;line-height:1.6;box-shadow:var(--shadow-md);';
       box.innerHTML='<h3 style="margin:0 0 10px;font-family:var(--title-font);">How to fly</h3>'+
@@ -23440,7 +23513,7 @@ function _initFlightSim(){
         '<p style="margin:0 0 4px;color:var(--muted);font-size:12px;"><b>Tip:</b> the Cessna 172 is the most forgiving — start there. Buttons that stay lit are <b>held</b>; tap again to release.</p>';
       const cl=document.createElement('button');cl.className='btn small primary';cl.textContent='Got it';cl.style.marginTop='10px';cl.onclick=()=>ov.remove();
       box.appendChild(cl);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
     };
     immersiveContent.appendChild(helpBtn);
 
@@ -23570,17 +23643,39 @@ const Pomodoro=(()=>{
     return S.focusLog.filter(e=>new Date(e.ts).toDateString()===d);
   }
 
-  function render(){
+  /* Per-second update — ONLY the countdown + progress bar (the values that
+     actually change each tick). Guarded writes avoid redundant e-ink repaints. */
+  function tick(){
     const disp=$('pomodoroDisplay');if(!disp)return;
     const m=Math.floor(timeLeft/60),s=timeLeft%60;
-    disp.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-    const lbl=$('pomodoroMode');
-    if(lbl)lbl.textContent={work:'Work',short:'Short Break',long:'Long Break'}[mode]+' — Today: '+todayLog().length+' sessions';
+    const v=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    if(disp.textContent!==v)disp.textContent=v;
     const pct=((MODES[mode]*60-timeLeft)/(MODES[mode]*60))*100;
     const fill=$('pomodoroProg');if(fill)fill.style.width=pct+'%';
-    const btn=$('pomodoroBtn');if(btn)btn.textContent=timer?'Pause':'Start';
+    const btn=$('pomodoroBtn');if(btn){const bl=timer?'Pause':'Start';if(btn.textContent!==bl)btn.textContent=bl;}
+  }
+  /* Full render — adds the session-count label + log list + 7-day chart. These
+     only change on a user action or when a session completes, so it must NOT run
+     every second (rebuilding the list + repainting the canvas each tick was a
+     full e-ink flash per second). Called from start/pause/reset/build + on the
+     completion tick only. */
+  function render(){
+    tick();
+    const lbl=$('pomodoroMode');
+    if(lbl)lbl.textContent={work:'Work',short:'Short Break',long:'Long Break'}[mode]+' — Today: '+todayLog().length+' sessions';
     renderFocusLog();
     drawFocusChart();
+  }
+  function onTick(){
+    timeLeft--;
+    if(timeLeft<=0){
+      clearInterval(timer);timer=null;
+      if(mode==='work')finishWorkSession();
+      else toast('Break over — ready for next session?');
+      render(); // session count + log + chart changed on completion
+    } else {
+      tick();   // cheap per-second update only
+    }
   }
 
   function finishWorkSession(){
@@ -23601,26 +23696,14 @@ const Pomodoro=(()=>{
     mode=m;timeLeft=MODES[m]*60;
     if(timer){clearInterval(timer);timer=null;}
     sessionStart=Date.now();
-    timer=setInterval(()=>{
-      timeLeft--;
-      if(timeLeft<=0){
-        clearInterval(timer);timer=null;
-        if(mode==='work')finishWorkSession();
-        else toast('Break over — ready for next session?');
-      }
-      render();
-    },1000);
+    timer=setInterval(onTick,1000);
     render();
   }
 
   function togglePause(){
     if(timer){clearInterval(timer);timer=null;}
     else if(timeLeft>0){
-      timer=setInterval(()=>{
-        timeLeft--;
-        if(timeLeft<=0){clearInterval(timer);timer=null;if(mode==='work')finishWorkSession();else toast('Break over!');}
-        render();
-      },1000);
+      timer=setInterval(onTick,1000);
     }
     render();
   }
@@ -23657,18 +23740,22 @@ const Pomodoro=(()=>{
     }
     const maxMins=Math.max(...bars.map(b=>b.mins),25);
     const W=can.width,H=can.height,pad=24,barW=Math.floor((W-pad*2)/days)-4;
-    ctx.fillStyle='var(--fg)';
+    /* canvas ctx can't parse var(--fg)/var(--muted) — resolve to real colours,
+       else the bars/labels stay default black = invisible on dark themes. */
+    const _pfg=(getComputedStyle(document.body).getPropertyValue('--fg')||'#111').trim();
+    const _pmut=(getComputedStyle(document.body).getPropertyValue('--muted')||'#888').trim();
+    ctx.fillStyle=_pfg;
     ctx.font='9px monospace';
     ctx.textAlign='center';
     bars.forEach((b,i)=>{
       const x=pad+i*(barW+4);
       const bh=Math.round((b.mins/maxMins)*(H-pad-10));
-      if(bh>0){ctx.fillStyle='var(--fg)';ctx.fillRect(x,H-pad-bh,barW,bh);}
-      ctx.fillStyle='var(--fg)';
+      if(bh>0){ctx.fillStyle=_pfg;ctx.fillRect(x,H-pad-bh,barW,bh);}
+      ctx.fillStyle=_pfg;
       ctx.fillText(b.label,x+barW/2,H-6);
       if(b.mins>0)ctx.fillText(b.mins+'m',x+barW/2,H-pad-bh-3);
     });
-    ctx.strokeStyle='var(--muted)';ctx.lineWidth=1;
+    ctx.strokeStyle=_pmut;ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(pad,H-pad);ctx.lineTo(W-pad,H-pad);ctx.stroke();
   }
 
@@ -27260,7 +27347,7 @@ function mathEval(raw,vars){
   const decls=Object.entries(vars).map(([k,v])=>'const '+k+'=('+v+')').join(';');
   try{
     return Function(
-      '"use strict";const Math=globalThis.Math;'+
+      '"use strict";var Math=window.Math;'+
       'const _sin='+_sin+',_cos='+_cos+',_tan='+_tan+
       ',_asin='+_asin+',_acos='+_acos+',_atan='+_atan+
       ',_sqrt='+_sqrt+',_abs='+_abs+',_log10='+_log10+
@@ -28876,7 +28963,7 @@ home:()=>{
       };
       closeBtn.onclick=_close;
       ov.addEventListener('click',e=>{if(e.target===ov)_close();});
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
     wrap.appendChild(grid);
     v.appendChild(wrap);
@@ -34016,13 +34103,15 @@ body.sepia #view-weather{--muted:#4a3a26;}
       const grad=mc.createLinearGradient(0,0,0,cH);
       grad.addColorStop(0,'rgba(80,120,200,0.25)');grad.addColorStop(1,'rgba(80,120,200,0)');
       mc.fillStyle=grad;mc.beginPath();mc.moveTo(pts[0].x,cH);pts.forEach(p=>mc.lineTo(p.x,p.y));mc.lineTo(pts[pts.length-1].x,cH);mc.closePath();mc.fill();
-      /* Line */
-      mc.strokeStyle='var(--fg)';mc.lineWidth=2;mc.lineJoin='round';
+      /* Line — resolve var(--fg): a canvas ctx can't parse it, so it stayed
+         default black = invisible on dark themes. */
+      const _mcfg=(getComputedStyle(document.body).getPropertyValue('--fg')||'#111').trim();
+      mc.strokeStyle=_mcfg;mc.lineWidth=2;mc.lineJoin='round';
       mc.beginPath();pts.forEach((p,i)=>i===0?mc.moveTo(p.x,p.y):mc.lineTo(p.x,p.y));mc.stroke();
       /* Temp labels at start/end and peak */
       const peakI=temps.indexOf(tMax);
       [[0,pts[0]],[peakI,pts[peakI]],[temps.length-1,pts[temps.length-1]]].forEach(([i,p])=>{
-        mc.fillStyle='var(--fg)';mc.font='bold 9px monospace';mc.textAlign='center';mc.fillText(T(temps[i])+U(),p.x,p.y-3);
+        mc.fillStyle=_mcfg;mc.font='bold 9px monospace';mc.textAlign='center';mc.fillText(T(temps[i])+U(),p.x,p.y-3);
       });
     }
     const hs=el('div',{style:'display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;'});
@@ -35535,7 +35624,7 @@ breathe:()=>{
       '.mf-ex-btn{padding:6px 10px;font-size:11px;font-weight:700;border:var(--thin);border-radius:20px;cursor:pointer;background:transparent;color:var(--fg);font-family:var(--ui-font);margin:3px;}',
       '.mf-ex-btn.on{background:var(--fg);color:var(--bg);}',
       '.mf-circle{width:160px;height:160px;border-radius:50%;border:4px solid var(--fg);display:flex;flex-direction:column;align-items:center;justify-content:center;margin:16px auto;cursor:pointer;user-select:none;position:relative;transition:transform .1s;}',
-      '.mf-ripple-ring{position:absolute;inset:-4px;border-radius:50%;border:3px solid var(--fg);pointer-events:none;}',
+      '.mf-ripple-ring{position:absolute;top:-4px;right:-4px;bottom:-4px;left:-4px;border-radius:50%;border:3px solid var(--fg);pointer-events:none;}',
       '.mf-stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0;}',
       '.mf-stat{border:var(--thin);border-radius:6px;padding:8px;text-align:center;}',
       '.mf-stat-n{font-size:24px;font-weight:900;font-family:monospace;}',
@@ -35612,7 +35701,7 @@ breathe:()=>{
     /* Animated circle */
     const circWrap=el('div',{style:{position:'relative',width:'180px',height:'180px',margin:'0 auto'}});
     /* Ripple ring */
-    const ripple=el('div',{id:'mfRipple',style:{position:'absolute',inset:'-10px',borderRadius:'50%',border:'3px solid var(--fg)',opacity:'0',pointerEvents:'none'}});
+    const ripple=el('div',{id:'mfRipple',style:{position:'absolute',top:'-10px',right:'-10px',bottom:'-10px',left:'-10px',borderRadius:'50%',border:'3px solid var(--fg)',opacity:'0',pointerEvents:'none'}});
     circWrap.appendChild(ripple);
     const circ=el('div',{className:'mf-circle',id:'mfCircle'});
     const stepLbl=txt('div','',{id:'mfStepLbl',style:{fontSize:'15px',fontWeight:'800',letterSpacing:'1px'}});
@@ -37320,7 +37409,7 @@ settings:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>document.body.removeChild(ov);
     row.append(cp,cl);box.appendChild(row);
     ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)document.body.removeChild(ov);};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   };
   proxRow.append(proxSave,proxTest,proxHelp);
   cProxy.appendChild(proxStatus);
@@ -37689,6 +37778,30 @@ settings:()=>{
   fbRow.append(tourBtn,welcomeBtn,fbBtn);cFb.appendChild(fbRow);
   g.appendChild(cFb);
 
+  /* ── Also by the creator ──────────────────────────────────────────────
+     Cross-promotes the creator's other projects. Links open externally via
+     the scheme-safe _khOpenExt (http/https only). */
+  const cAlso=el('div',{className:'card',style:{gridColumn:'1/-1'}});
+  cAlso.appendChild(txt('h2','Also by the creator'));
+  cAlso.appendChild(txt('p','Other projects by Aran, the creator of KindleHub:',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const alsoGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'8px'}});
+  [
+    {name:'EmberAI',desc:'An AI project — view the source on GitHub.',url:'https://github.com/arancool3000/emberai',cta:'Open on GitHub'},
+    {name:'DungeonQuest3D',desc:'A 3D dungeon-crawler game.',url:'',cta:''}
+  ].forEach(function(p){
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',background:'var(--highlight)',display:'flex',flexDirection:'column',gap:'4px'}});
+    card.appendChild(txt('div',p.name,{style:{fontSize:'14px',fontWeight:'800'}}));
+    card.appendChild(txt('div',p.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
+    if(p.url){
+      const b=txt('button',p.cta||'Open',{className:'btn small primary',style:{marginTop:'4px',alignSelf:'flex-start'}});
+      b.onclick=function(){_khOpenExt(p.url);};
+      card.appendChild(b);
+    }
+    alsoGrid.appendChild(card);
+  });
+  cAlso.appendChild(alsoGrid);
+  g.appendChild(cAlso);
+
   /* ── Contributors ─────────────────────────────────────────────────────
      Credits the AI collaborators that built KindleHub and every user who
      filed a bug report or feature suggestion. Human names are read from the
@@ -38047,7 +38160,7 @@ feedback:()=>{
       const onlineBox=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px 12px',marginBottom:'14px',fontSize:'12px',lineHeight:'1.6'}});
       onlineBox.textContent='Loading…';
       c.appendChild(onlineBox);
-      const ONLINE_WINDOW_SECS=60;
+      const ONLINE_WINDOW_SECS=150;/* matches the 70s presence heartbeat (+skip headroom) */
       async function _renderOnline(){
         if(!document.body.contains(onlineBox))return false;/* panel gone — stop the loop */
         const since=new Date(Date.now()-ONLINE_WINDOW_SECS*1000).toISOString();
@@ -38708,7 +38821,7 @@ feedback:()=>{
           const close=txt('button','Close',{className:'btn small',style:'margin-top:8px;'});close.onclick=()=>document.body.removeChild(ov);
           box.append(txt('p','Clipboard blocked — select all and copy manually.',{style:'margin:0 0 6px;font-size:12px;color:var(--muted);'}),ta,close);
           ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)document.body.removeChild(ov);};
-          document.body.appendChild(ov);ta.focus();ta.select();
+          (document.getElementById('rotateRoot')||document.body).appendChild(ov);ta.focus();ta.select();
         }
       };
       return c;
@@ -38821,6 +38934,9 @@ feedback:()=>{
         let code=patchEl.value.trim();
         if(!code)return;
         if(!await kindleConfirm('Apply this patch on this device? Patches run at every page load until you Disable or Remove them.'))return;
+        /* Explicit opt-in: enable the local-fix runner for THIS device (it is off
+           by default so normal accounts never execute stored generated JS). */
+        S.allowLocalPatches=true;
         /* Old-WebKit safety: bind bare catch{} and block operators that compile in
            this browser but throw a SyntaxError on Kindle (so the patch actually
            WORKS on the target device instead of being auto-disabled there). */
@@ -38849,7 +38965,7 @@ feedback:()=>{
 
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
     window._openSelfFixModal=_openSelfFixModal;
 
@@ -39795,7 +39911,7 @@ Deno.serve(async (req)=>{
     btnRow.append(close,post);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
 
   async function loadData(){
@@ -40521,7 +40637,7 @@ discover:()=>{
       row.appendChild(del);box.appendChild(row);
     });
     ov.appendChild(box);ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function _savedViewBtn(tag){const b=txt('button','Saved',{className:'btn small'});b.onclick=function(){_viewSavedDiscover(tag,_DISCOVER_LABELS[tag]||'items');};return b;}
 
@@ -40670,7 +40786,7 @@ discover:()=>{
       const url=boredFilter==='Any'
         ?'https://bored-api.appbrewery.com/random'
         :'https://bored-api.appbrewery.com/filter?type='+boredFilter.toLowerCase();
-      const r=await fetch(url,{signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
+      const r=await fetch(url,{signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(5000):undefined});
       if(!r.ok)throw new Error('API down');
       const d=await r.json();
       const item=Array.isArray(d)?d[Math.floor(Math.random()*d.length)]:d;
@@ -41408,7 +41524,7 @@ starmap:()=>{
 
     refreshTabs();renderTab();
     ov.appendChild(modal);
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   }
   guideBtn.onclick=openSkyGuide;
@@ -44072,7 +44188,7 @@ rss:()=>{
 
           /* Use allorigins CORS proxy to fetch the actual article page */
           const proxyUrl='https://api.allorigins.win/get?url='+encodeURIComponent(item.link);
-          fetch(proxyUrl,{signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined})
+          fetch(proxyUrl,{signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined})
             .then(r=>r.json())
             .then(data=>{
               if(!data.contents){loadingEl.textContent='Could not load full article.';return;}
@@ -45703,7 +45819,7 @@ sleeplog:()=>{
             const closeB=document.createElement('button');closeB.textContent='Close';closeB.className='btn';
             closeB.onclick=()=>ov.remove();
             ov.onclick=e=>{if(e.target===ov)ov.remove();};
-            box.append(lbl,closeB);ov.appendChild(box);document.body.appendChild(ov);
+            box.append(lbl,closeB);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
           };
           row.appendChild(dBtn);
         }
@@ -47631,7 +47747,7 @@ mail:()=>{
       };
       btns.append(cancel,send);box.appendChild(btns);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      ov.appendChild(box);document.body.appendChild(ov);
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
       setTimeout(()=>{(toPre?subjPre?bodyIn:subjIn:toIn).focus();},60);
     }
     khCard.appendChild(bar);
@@ -47826,7 +47942,7 @@ screenshot:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>ov.remove();
     bar.append(dl,cl);
     ov.append(im,bar);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
   function busy(on){capPrev.disabled=on;capApp.disabled=on;}
   capApp.onclick=()=>{
@@ -48711,6 +48827,12 @@ wheel:()=>{
     const wrap=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'12px'}});
     const canvas=el('canvas',{id:'wheelCanvas',width:280,height:280,style:{borderRadius:'50%',border:'var(--thin)',boxShadow:'var(--shadow)',cursor:'pointer'}});
     let rotation=0,velocity=0,rafId=null;
+    /* Resolve theme colours ONCE. A canvas 2D context cannot parse `var(--fg)`
+       — the invalid colour is ignored and the context keeps its default black,
+       so the centre dot + pointer were invisible on dark themes. Hoisted out of
+       drawWheel so the spin RAF loop doesn't force a style recalc each frame. */
+    const _wfg=(getComputedStyle(document.body).getPropertyValue('--fg')||'#111').trim();
+    const _wcard=(getComputedStyle(document.body).getPropertyValue('--card')||'#fff').trim();
     function drawWheel(rot){
       const ctx=canvas.getContext('2d');const cx=140,cy=140,r=130;
       ctx.clearRect(0,0,280,280);
@@ -48726,11 +48848,11 @@ wheel:()=>{
         ctx.fillText(label,r-8,4);ctx.restore();
       });
       // Center dot
-      ctx.beginPath();ctx.arc(cx,cy,14,0,Math.PI*2);ctx.fillStyle='var(--card)';ctx.fill();
-      ctx.strokeStyle='var(--fg)';ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.arc(cx,cy,14,0,Math.PI*2);ctx.fillStyle=_wcard;ctx.fill();
+      ctx.strokeStyle=_wfg;ctx.lineWidth=2;ctx.stroke();
       // Pointer
       ctx.beginPath();ctx.moveTo(cx+r+10,cy);ctx.lineTo(cx+r-10,cy-10);ctx.lineTo(cx+r-10,cy+10);ctx.closePath();
-      ctx.fillStyle='var(--fg)';ctx.fill();
+      ctx.fillStyle=_wfg;ctx.fill();
     }
     drawWheel(rotation);
     function spin(){
@@ -49457,7 +49579,7 @@ function buildUI(){
     btnRow.appendChild(cancelBtn);btnRow.appendChild(goBtn);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);setTimeout(()=>inp.focus(),80);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>inp.focus(),80);
   };
   topBar.appendChild(aiSlideBtn);
 
@@ -49819,7 +49941,7 @@ function buildDeckList(){
     btnRow.appendChild(cancelBtn);btnRow.appendChild(goBtn);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);setTimeout(()=>topicInp.focus(),80);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>topicInp.focus(),80);
   };
   newBtnsRow.appendChild(aiDeckBtn);
 
@@ -51275,7 +51397,7 @@ calendar:()=>{
     if(delBtn)btnRow.insertBefore(delBtn,cancelBtn);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     titleInp.focus();
   }
 
@@ -51825,7 +51947,7 @@ calendar:()=>{
     box.appendChild(body);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     setTimeout(()=>{try{urlInp.focus();}catch(_){}},80);
   }
 
@@ -51919,7 +52041,7 @@ calendar:()=>{
     btnRow.append(cancB,okB);box.appendChild(btnRow);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    document.body.appendChild(ov);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     setTimeout(()=>{try{dateInp.focus();}catch(_){}},40);
     /* Enter on any field submits */
     [dateInp,yrInp,moSel,dyInp].forEach(inp=>{
@@ -52789,7 +52911,7 @@ messages:()=>{
       ov.appendChild(box);
       ov.addEventListener('click',e=>{if(e.target===ov){_editing=null;ov.remove();}});
       document.addEventListener('keydown',function _esc(e){if(e.key==='Escape'){_editing=null;ov.remove();document.removeEventListener('keydown',_esc);}});
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
       setTimeout(()=>{inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);},40);
     }
 
@@ -53072,7 +53194,7 @@ messages:()=>{
       const cls=txt('button','Close',{className:'btn primary small'});cls.onclick=()=>ov.remove();
       box.appendChild(cls);
       ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
 
     /* ── Local report ledger ──
@@ -53161,7 +53283,7 @@ messages:()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
 
     /* ── Report a USERNAME ──────────────────────────────────────────────
@@ -53244,7 +53366,7 @@ messages:()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     }
     window._khReportUsername=_openUsernameReportModal;
 
@@ -53296,7 +53418,7 @@ messages:()=>{
       }
       box.appendChild(btnBar);
       ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      document.body.appendChild(ov);
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 
       /* Build profile rows */
       const uid=msg.userId||'';
@@ -53991,6 +54113,7 @@ messages:()=>{
         if(!log2){stopPoll();cleanup();return;}
         if(typeof document!=='undefined'&&document.hidden)return;/* no point polling a backgrounded tab */
         if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat polling during a CF limit */
+        if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
         try{
           /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
              group this matches our current tail and we SKIP the full ~50-message
@@ -56740,7 +56863,7 @@ window._showWelcome=function(){
   inner.append(stepHeading,dotRow,stepSub,contentWrap,btnRow);
   btnRow.append(skipBtn,nextBtn);
   ov.appendChild(inner);
-  document.body.appendChild(ov);
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   render();
 };
 
@@ -57261,7 +57384,7 @@ window._showWelcome=function(){
     const shut=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     close.onclick=shut;
     ov.onclick=function(ev){if(ev.target===ov)shut();};
-    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);document.body.appendChild(ov);
+    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
     let _busy=false;
     async function ask(userQ){
       if(_busy)return;_busy=true;askBtn.disabled=true;

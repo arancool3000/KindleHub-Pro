@@ -131,22 +131,29 @@ function decodePart(headers, body) {
   if (enc === 'quoted-printable') return decodeQP(body);
   return body;
 }
-function extractText(raw) {
+function extractText(raw, depth) {
+  depth = depth || 0;
   const headerEnd = raw.search(/\r?\n\r?\n/);
   const topHeaders = headerEnd > 0 ? raw.slice(0, headerEnd) : '';
   const topBody = headerEnd > 0 ? raw.slice(headerEnd).replace(/^\r?\n\r?\n/, '') : raw;
   const ctype = /content-type:\s*([^;\r\n]+)/i.exec(topHeaders)?.[1]?.toLowerCase() || 'text/plain';
   const boundary = /boundary="?([^";\r\n]+)"?/i.exec(topHeaders)?.[1];
 
-  if (ctype.startsWith('multipart/') && boundary) {
-    const parts = topBody.split(new RegExp('--' + boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:--)?\\r?\\n?'));
-    let plain = null, html = null, nested = null;
-    for (const p of parts) {
+  if (ctype.startsWith('multipart/') && boundary && depth < 4) {
+    /* SECURITY: split on the boundary as a LITERAL STRING (String.split), never a
+       RegExp built from attacker-controlled input — a dynamically assembled regex
+       is a ReDoS / injection risk. Also cap the part count and recursion depth so
+       a boundary-spammed or deeply-nested message can't pin the worker's CPU. */
+    const rawParts = topBody.split('--' + boundary);
+    let plain = null, html = null, nested = null, seen = 0;
+    for (let p of rawParts) {
+      if (++seen > 60) break;
+      p = p.replace(/^--/, '').replace(/^\r?\n/, '');   // strip closing marker + leading CRLF
       const he = p.search(/\r?\n\r?\n/);
       if (he < 0) continue;
       const ph = p.slice(0, he), pb = p.slice(he).replace(/^\r?\n\r?\n/, '');
       const pct = /content-type:\s*([^;\r\n]+)/i.exec(ph)?.[1]?.toLowerCase() || '';
-      if (pct.startsWith('multipart/') && nested === null) nested = extractText(p);
+      if (pct.startsWith('multipart/') && nested === null) nested = extractText(p, depth + 1);
       else if (pct.startsWith('text/plain') && plain === null) plain = decodePart(ph, pb);
       else if (pct.startsWith('text/html') && html === null) html = decodePart(ph, pb);
     }
