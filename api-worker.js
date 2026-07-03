@@ -60,6 +60,12 @@
      needed. The key never reaches the client.
    • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
    • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
+   • MOD_HASHES   — (optional) comma-separated SHA-256 hashes of moderator codes.
+     A moderator code unlocks ONLY the kh_mod_stats RPC (aggregate community
+     COUNTS — never rows, user data, mail or message bodies) and nothing else.
+     Grant a moderator: pick a random code, put SHA-256(code) here, give them the
+     code (they paste it into Settings → Account → Moderator tools). REVOKE
+     instantly by removing the hash — no code deploy. Admins are always mods.
    • KH_PEPPER   — (optional, RECOMMENDED) envelope-at-rest secret. When set, the
      Worker wraps the sensitive ciphertext columns (kh_users.state, kh_mail
      subject/body, kh_messages.text) with AES-GCM keyed by this value BEFORE
@@ -159,6 +165,19 @@ async function sha256hex(s){
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 async function isAdmin(token){ return ADMIN_HASHES.indexOf(await sha256hex(token||'')) >= 0; }
+/* Limited MODERATOR role. A mod token unlocks ONLY the kh_mod_stats RPC
+   (aggregate counts — never rows, user data, mail or message bodies) and
+   nothing else; every privileged path still checks isAdmin. Mod hashes live in
+   the Worker env `MOD_HASHES` (comma-separated SHA-256 of each mod's code), so
+   the admin can grant OR instantly revoke a moderator by editing one env var —
+   no code deploy. Admins are implicitly mods. */
+async function isMod(token, env){
+  if(await isAdmin(token)) return true;
+  const raw = (env && env.MOD_HASHES) || '';
+  if(!raw) return false;
+  const h = await sha256hex(token||'');
+  return raw.split(',').map(s=>s.trim()).filter(Boolean).indexOf(h) >= 0;
+}
 
 const QUOTE = id => '"'+String(id).replace(/"/g,'')+'"';
 function nowIso(){ return new Date().toISOString(); }
@@ -358,6 +377,28 @@ async function selectByPk(DB, table, pkVals){
 /* ── RPCs (ported from the SECURITY DEFINER functions) ───────────────────── */
 async function handleRpc(fn, body, DB, env){
   body = body||{};
+  if(fn==='kh_mod_stats'){
+    /* Limited moderator dashboard: aggregate COUNTS only. Returns numbers, never
+       rows — no usernames, emails, message/mail bodies or state blobs — so a
+       moderator can see how the community is doing without any access to user or
+       cloud data. Gated by isMod (admins included). */
+    if(!await isMod(body.p_token, env)) return err('unauthorized',403,env);
+    const one = async (sql, binds) => { try{ const r = await DB.prepare(sql).bind(...(binds||[])).first(); return (r && typeof r.c==='number') ? r.c : 0; }catch(_){ return 0; } };
+    const today = nowIso().slice(0,10);
+    const d7 = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+    const onlineSince = new Date(Date.now()-150000).toISOString();
+    return json({
+      users:        await one('SELECT COUNT(*) c FROM kh_users'),
+      messages:     await one('SELECT COUNT(*) c FROM kh_messages'),
+      groups:       await one('SELECT COUNT(*) c FROM kh_groups'),
+      mail:         await one('SELECT COUNT(*) c FROM kh_mail'),
+      visitsToday:  await one('SELECT COUNT(*) c FROM kh_visits WHERE day=?',[today]),
+      visitors7d:   await one('SELECT COUNT(DISTINCT device_id) c FROM kh_visits WHERE day>=?',[d7]),
+      onlineNow:    await one("SELECT COUNT(*) c FROM kh_presence WHERE last_seen>=? AND user_id NOT LIKE 'sl\\_%' ESCAPE '\\'",[onlineSince]),
+      feedbackOpen: await one("SELECT COUNT(*) c FROM kh_feedback WHERE status='open' OR status IS NULL"),
+      day: today,
+    }, 200, env);
+  }
   if(fn==='kh_post_announcement'){
     if(!await isAdmin(body.p_token)) return err('unauthorized',403,env);
     if(!body.p_text) return err('empty text',400,env);

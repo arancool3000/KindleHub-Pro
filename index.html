@@ -7695,6 +7695,53 @@ async function _adminRpc(fn,body){
     return{ok:false,body:t,status:r.status};
   }catch(e){return{ok:false,body:String(e&&e.message||e)};}
 }
+/* ── Limited MODERATOR role (aggregate community stats only) ───────────────────
+   A moderator enters a code the admin gave them (the admin adds its SHA-256 to
+   the Worker's MOD_HASHES env). The code unlocks ONLY kh_mod_stats — community
+   COUNTS, never any user, message, mail or cloud data. Instantly revocable by
+   the admin (remove the hash from the env). Admins are implicitly moderators. */
+function _modCode(){ try{ return (localStorage.getItem('kh_mod_code')||'').trim(); }catch(_){ return ''; } }
+async function _khModStats(tok){
+  tok = tok || _modCode() || (window._adminToken||'');
+  if(!tok) return {ok:false,status:401};
+  try{
+    const r=await fetch(_sbBase()+'/rest/v1/rpc/kh_mod_stats',{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_token:tok})});
+    if(!r.ok) return {ok:false,status:r.status};
+    return {ok:true,data:await r.json()};
+  }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
+}
+function _khBuildModCard(){
+  const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginTop:'12px',boxShadow:'var(--shadow)'}});
+  c.appendChild(txt('div','MODERATOR TOOLS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
+  c.appendChild(txt('div','Have a moderator code from the admin? Enter it to see community stats. This shows COUNTS only — never any names, messages, mail or personal data.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}});
+  const inp=el('input',{type:'password',placeholder:'moderator code',autocomplete:'off',style:{flex:'1',minWidth:'140px',fontSize:'13px',padding:'8px 10px',border:'var(--border)',borderRadius:'8px',background:'var(--bg)',color:'var(--fg)',boxSizing:'border-box'}});
+  inp.value=_modCode();
+  const btn=txt('button','View stats',{className:'btn primary small'});
+  row.appendChild(inp);row.appendChild(btn);c.appendChild(row);
+  const out=el('div',{style:{fontSize:'12px',lineHeight:'1.7'}});c.appendChild(out);
+  async function load(saveIt){
+    const code=(inp.value||'').trim();
+    if(saveIt){ try{ if(code)localStorage.setItem('kh_mod_code',code); else localStorage.removeItem('kh_mod_code'); }catch(_){} }
+    out.textContent='Loading…';
+    const res=await _khModStats(code);
+    if(!res.ok){ out.textContent=(res.status===401?'Enter a moderator code above.':(res.status===403?'That code isn’t a valid moderator code.':'Couldn’t load stats — check your connection.')); return; }
+    const d=res.data||{};
+    out.innerHTML='';
+    const stat=function(label,val){ const rr=el('div',{style:{display:'flex',justifyContent:'space-between',padding:'3px 0',borderBottom:'1px dashed var(--muted)'}}); rr.appendChild(txt('span',label,{})); rr.appendChild(txt('strong',String(val==null?'—':val),{})); out.appendChild(rr); };
+    stat('Total users', d.users);
+    stat('Online now', d.onlineNow);
+    stat('Visitors today', d.visitsToday);
+    stat('Unique visitors (7d)', d.visitors7d);
+    stat('Messages in cloud', d.messages);
+    stat('Chat rooms', d.groups);
+    stat('Open feedback / reports', d.feedbackOpen);
+    out.appendChild(txt('div','Counts only — no names, messages, mail or personal data are reachable from this role.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px'}}));
+  }
+  btn.onclick=function(){ load(true); };
+  if(_modCode()||window._adminToken) setTimeout(function(){load(false);},60);
+  return c;
+}
 async function _khBanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
@@ -36864,6 +36911,8 @@ settings:()=>{
     function _onTierChange(){ if(_ultraBox&&_ultraBox.isConnected)_renderUltra(); else try{window.removeEventListener('kh-tier-changed',_onTierChange);}catch(_){} }
     try{window.addEventListener('kh-tier-changed',_onTierChange);}catch(_){}
     cAccount.appendChild(_ultraBox);
+    /* Limited moderator stats card — code-gated, counts only (see _khBuildModCard). */
+    try{ if(typeof _khBuildModCard==='function') cAccount.appendChild(_khBuildModCard()); }catch(_){}
   }catch(_){}
 
   /* Two modes: login (username+pw) and register (username+pw+confirm).
@@ -37962,7 +38011,16 @@ feedback:()=>{
       /* Active backend status */
       const beRow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',marginBottom:'10px',fontSize:'11px',fontFamily:'monospace'}});
       if(_sbActive()){
-        beRow.innerHTML='<strong>Backend:</strong> Supabase (active)<br>URL: '+SUPABASE_URL;
+        /* Report the REAL backend. Live traffic now routes through the
+           Cloudflare D1 worker (_apiGatewayUrl); Supabase is only shown if no
+           gateway is configured. The old hardcoded "Supabase (active)" label was
+           stale after the D1 migration. */
+        const _gw=(typeof _apiGatewayUrl==='function'?_apiGatewayUrl():'')||'';
+        if(_gw){
+          beRow.innerHTML='<strong>Backend:</strong> Cloudflare D1 (active)<br>URL: '+_gw;
+        } else {
+          beRow.innerHTML='<strong>Backend:</strong> Supabase (active)<br>URL: '+SUPABASE_URL;
+        }
       } else {
         beRow.innerHTML='<strong>Backend:</strong> jsonstorage.net (legacy)<br>Set SUPABASE_URL + SUPABASE_ANON_KEY in the source to upgrade.';
       }
