@@ -5712,6 +5712,28 @@ function applyTheme(t){
 const KH_ACCENTS=[['Ink','#111111'],['Ocean','#1f6f8b'],['Forest','#2f7d4f'],['Plum','#7d3f8f'],['Rust','#b5532a'],['Berry','#b03a5b'],['Slate','#41506b'],['Gold','#8a6d12']];
 const KH_FONTS={system:['System',"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"],serif:['Serif',"Georgia,'Times New Roman',serif"],mono:['Mono',"'SF Mono',Menlo,Consolas,monospace"],rounded:['Rounded',"'Trebuchet MS','Segoe UI',Verdana,sans-serif"]};
 function _contrastColor(hex){try{var h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*g+0.114*b)>140?'#111111':'#ffffff';}catch(_){return '#ffffff';}}
+/* Keep an accent VISIBLE against the current theme background. --accent is used
+   as foreground on links / the active nav tab, so a near-black accent (e.g. the
+   "Ink" swatch #111) on a dark theme rendered invisible. If the accent's
+   luminance is within ~40 of the background's (genuinely low contrast) we blend
+   it toward white (on a dark bg) or black (on a light bg) just enough to show.
+   Accents that already contrast — the mid-tone swatches — are returned
+   unchanged, so a deliberate colour choice is never overridden. */
+function _accentForBg(hex){
+  try{
+    var m=(getComputedStyle(document.body).backgroundColor||'').match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if(!m)return hex;
+    var bl=0.299*+m[1]+0.587*+m[2]+0.114*+m[3];
+    var h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');
+    if(h.length!==6)return hex;
+    var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+    var al=0.299*r+0.587*g+0.114*b;
+    if(Math.abs(al-bl)>=40)return hex; // enough contrast — leave the chosen colour alone
+    var toward=bl<128?255:0, k=0.55;
+    r=Math.round(r+(toward-r)*k);g=Math.round(g+(toward-g)*k);b=Math.round(b+(toward-b)*k);
+    return '#'+[r,g,b].map(function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
+  }catch(_){return hex;}
+}
 function applyCustomisation(){
   try{
     /* Set the vars on BOTH <html> and <body>. The dark/sepia theme classes
@@ -5721,7 +5743,7 @@ function applyCustomisation(){
        "did nothing" outside light mode. Inline-on-body outranks the class. */
     var targets=[document.documentElement,document.body].filter(Boolean);
     targets.forEach(function(t){
-      if(S.accent){t.style.setProperty('--accent',S.accent);t.style.setProperty('--accent-inv',_contrastColor(S.accent));}
+      if(S.accent){var _acc=_accentForBg(S.accent);t.style.setProperty('--accent',_acc);t.style.setProperty('--accent-inv',_contrastColor(_acc));}
       else{t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');}
       var f=S.uiFont&&KH_FONTS[S.uiFont];
       if(f){
