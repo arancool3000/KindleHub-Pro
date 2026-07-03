@@ -339,7 +339,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .ms-cell.mine-hit{background:var(--fg);color:var(--bg)}
 .ms-cell.flagged{background:var(--unrev);font-weight:900}
 .sudoku-board{display:grid;grid-template-columns:repeat(9,1fr);gap:0;border:2px solid var(--fg);width:min(92vw,378px);margin:6px auto;border-radius:8px;overflow:hidden;}
-.sdk-cell{width:100%;aspect-ratio:1;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
+.sdk-cell{width:100%;height:40px;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
 .sdk-cell.fixed{color:var(--fg);background:var(--card)}
 .sdk-cell.user-input{color:var(--accent,#0055cc)}
 .sdk-cell.selected{background:var(--accent)!important;color:var(--accent-inv)!important}
@@ -464,13 +464,13 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
     grid-template-columns:repeat(3,1fr);
     gap:6px;
   }
-  .ttt-cell{width:auto;height:auto;aspect-ratio:1;font-size:32px;}
+  .ttt-cell{width:auto;height:76px;font-size:32px;}
 
   .wordle-cell{width:40px;height:40px;font-size:16px;}
   .wk{min-width:30px;height:44px;font-size:13px;}
 
   .sudoku-board{width:min(96vw,340px);}
-  .sdk-cell{font-size:13px;}
+  .sdk-cell{font-size:13px;height:36px;}
 
   .mem-card{width:56px;height:56px;font-size:17px;}
 
@@ -1363,6 +1363,30 @@ if(typeof Promise!=='undefined'&&!Promise.allSettled){
     }));
   };
 }
+/* ES2019/2020 built-ins missing on old Kindle Silk (WebKit predating optional
+   catch binding). Without these, features that use them throw on-device but run
+   fine in headless: matchAll (note #hashtag save), Object.fromEntries (related
+   pages, Settings nav, Star Map, Ciphers, Files), Array.flat (rail-fence cipher,
+   Slides stats, CandyCrush), trimStart/trimEnd (app-builder editor, journal AI). */
+if(!String.prototype.matchAll){
+  String.prototype.matchAll=function(re){
+    var flags=(re&&re.flags!==undefined)?re.flags:'g';
+    var r=new RegExp(re.source||String(re), flags.indexOf('g')>=0?flags:flags+'g');
+    var out=[],m;while((m=r.exec(this))){out.push(m);if(m.index===r.lastIndex)r.lastIndex++;}
+    return out;
+  };
+}
+if(!Object.fromEntries){
+  Object.fromEntries=function(iter){var o={};Array.from(iter).forEach(function(p){o[p[0]]=p[1];});return o;};
+}
+if(!Array.prototype.flat){
+  Array.prototype.flat=function(depth){
+    var d=depth===undefined?1:Number(depth);
+    return (function fl(a,dd){return a.reduce(function(acc,v){return acc.concat(Array.isArray(v)&&dd>0?fl(v,dd-1):[v]);},[]);})(this,d);
+  };
+}
+if(!String.prototype.trimStart){String.prototype.trimStart=String.prototype.trimLeft||function(){return this.replace(/^\s+/,'');};}
+if(!String.prototype.trimEnd){String.prototype.trimEnd=String.prototype.trimRight||function(){return this.replace(/\s+$/,'');};}
 
 const SK='kindlehub_v5';
 function defaultState(){
@@ -8585,7 +8609,7 @@ async function _decryptState(hexKey64,ciphertext){
 async function _jsGet(itemId){
   let r;
   try{
-    r=await fetch(_jsReadUrl(itemId),{signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined});
+    r=await fetch(_jsReadUrl(itemId),{signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined});
   }catch(e){throw new Error('Network error fetching '+itemId+': '+e.message);}
   if(r.status===404)return null;
   if(!r.ok){
@@ -8609,7 +8633,7 @@ async function _jsPut(itemId,data){
     method:'PUT',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   if(r.status===404){
     /* Item missing — caller may want to recreate */
@@ -8629,7 +8653,7 @@ async function _jsCreate(data){
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
@@ -8654,7 +8678,7 @@ async function _jsPatch(itemId,data){
     method:'PATCH',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data),
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   if(!r.ok){
     let body='';try{body=await r.text();}catch(e){}
@@ -8666,7 +8690,7 @@ async function _jsPatch(itemId,data){
 async function _jsDelete(itemId){
   const r=await fetch(_jsWriteUrl(itemId),{
     method:'DELETE',
-    signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined
+    signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined
   });
   /* 404 = already gone, count as success */
   if(!r.ok&&r.status!==404){
@@ -23448,7 +23472,7 @@ function _initFlightSim(){
     helpBtn.style.cssText='width:100%;margin-bottom:8px;font-weight:700;';
     helpBtn.onclick=()=>{
       const ov=document.createElement('div');
-      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:600300;display:flex;align-items:center;justify-content:center;padding:16px;';
+      ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:600300;display:flex;align-items:center;justify-content:center;padding:16px;';
       const box=document.createElement('div');
       box.style.cssText='background:var(--card);color:var(--fg);border-radius:12px;padding:16px 18px;max-width:420px;max-height:88vh;overflow-y:auto;font-size:13px;line-height:1.6;box-shadow:var(--shadow-md);';
       box.innerHTML='<h3 style="margin:0 0 10px;font-family:var(--title-font);">How to fly</h3>'+
@@ -27280,7 +27304,7 @@ function mathEval(raw,vars){
   const decls=Object.entries(vars).map(([k,v])=>'const '+k+'=('+v+')').join(';');
   try{
     return Function(
-      '"use strict";const Math=globalThis.Math;'+
+      '"use strict";var Math=window.Math;'+
       'const _sin='+_sin+',_cos='+_cos+',_tan='+_tan+
       ',_asin='+_asin+',_acos='+_acos+',_atan='+_atan+
       ',_sqrt='+_sqrt+',_abs='+_abs+',_log10='+_log10+
@@ -40717,7 +40741,7 @@ discover:()=>{
       const url=boredFilter==='Any'
         ?'https://bored-api.appbrewery.com/random'
         :'https://bored-api.appbrewery.com/filter?type='+boredFilter.toLowerCase();
-      const r=await fetch(url,{signal:AbortSignal.timeout?AbortSignal.timeout(5000):undefined});
+      const r=await fetch(url,{signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(5000):undefined});
       if(!r.ok)throw new Error('API down');
       const d=await r.json();
       const item=Array.isArray(d)?d[Math.floor(Math.random()*d.length)]:d;
@@ -44119,7 +44143,7 @@ rss:()=>{
 
           /* Use allorigins CORS proxy to fetch the actual article page */
           const proxyUrl='https://api.allorigins.win/get?url='+encodeURIComponent(item.link);
-          fetch(proxyUrl,{signal:AbortSignal.timeout?AbortSignal.timeout(12000):undefined})
+          fetch(proxyUrl,{signal:(typeof AbortSignal!=='undefined'&&AbortSignal.timeout)?AbortSignal.timeout(12000):undefined})
             .then(r=>r.json())
             .then(data=>{
               if(!data.contents){loadingEl.textContent='Could not load full article.';return;}

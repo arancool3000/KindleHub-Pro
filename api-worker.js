@@ -108,8 +108,18 @@ const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_fe
 const UPDATE_OK = new Set(['kh_users','kh_feedback','kh_presence']); // open update
 const SECRET_UPDATE = new Set(['kh_messages']);          // owner_secret-gated update
 const SECRET_DELETE = new Set(['kh_messages','kh_mail']); // owner_secret-gated delete
-/* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only. */
-const ADMIN_READ = new Set(['kh_visits','kh_errors']);
+/* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only.
+   kh_rate stores one bucket per room ('msg:'+group_code); an open read would
+   leak every active room's code (= its chat decryption key), so it's gated too.
+   The client never reads these tables via REST. */
+const ADMIN_READ = new Set(['kh_visits','kh_errors','kh_rate']);
+/* Tables a NON-admin may legitimately UPSERT (on_conflict). Any other table's
+   conflict target is stripped for non-admins so a colliding INSERT errors
+   instead of silently UPDATING an existing row — otherwise on_conflict is an
+   unauthenticated UPDATE primitive that bypasses owner_secret / the kh_groups
+   update lockdown. kh_groups/kh_messages upserts happen only in admin migration
+   (X-KH-Admin). Verified: the client only upserts these three. */
+const UPSERT_OK = new Set(['kh_users','kh_presence','kh_visits']);
 /* Replicates the client's _mailNorm(email) → mail username, used to verify a
    mail reader owns the mailbox it queries. Keep in sync with index.html. */
 function mailNorm(u){ return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40); }
@@ -353,16 +363,25 @@ async function handleGet(table, url, request, env, DB, headOnly){
   /* ── Cross-user read gating ─────────────────────────────────────────────
      The open-read model is acceptable for E2E-encrypted bodies, but several
      tables expose PLAINTEXT cross-user data. Gate them. Compute admin once. */
-  const _needAdminCheck = ADMIN_READ.has(table) || table==='kh_mail' || table==='kh_groups';
+  const _needAdminCheck = ADMIN_READ.has(table) || table==='kh_mail' || table==='kh_groups' || table==='kh_messages';
   const _adminGet = _needAdminCheck ? await isAdmin(request.headers.get('x-kh-admin')||'') : false;
   if(ADMIN_READ.has(table) && !_adminGet){
-    return err('admin only', 403, env);   // kh_visits (geo/UA PII), kh_errors (logs)
+    return err('admin only', 403, env);   // kh_visits (geo/UA PII), kh_errors (logs), kh_rate (leaks room codes)
   }
   if(table==='kh_groups' && !_adminGet){
     /* Don't let anon dump every room's code+name (the code IS the join secret).
        A real member already knows the code, so require a code filter. */
     const hasCode = q.filters.some(f=>f.col==='code' && (f.op==='eq'||f.op==='in') && !f.neg);
     if(!hasCode) return err('a code filter is required', 400, env);
+  }
+  if(table==='kh_messages' && !_adminGet){
+    /* Chat "E2E" keys are derived from the group_code alone, and every row pairs
+       group_code + ciphertext, so an ungated read = dump+decrypt every chat AND
+       harvest every room code. Require the query to be scoped to a specific room
+       (group_code) or a specific message (id) — a member already knows the code,
+       and the reaction path reads by id. Blocks only forged cross-room dumps. */
+    const scoped = q.filters.some(f=>(f.col==='group_code'||f.col==='id') && (f.op==='eq'||f.op==='in') && !f.neg);
+    if(!scoped) return err('a group_code or id filter is required', 400, env);
   }
   if(table==='kh_mail' && !_adminGet){
     /* Mail bodies are encrypted under a key derived from the recipient's public
@@ -453,7 +472,13 @@ async function handlePost(table, url, request, env, DB){
      (an abuse report) — that scrubs it exactly like the PATCH vector. The client
      only ever plain-inserts feedback, so drop the conflict target for non-admins:
      a colliding id now errors instead of overwriting. Admin bulk writes keep it. */
-  if(table==='kh_feedback' && !adminReq) conflict=null;
+  /* SECURITY: on_conflict is an UPDATE primitive. For a non-admin, only allow it
+     on tables that legitimately upsert (kh_users/kh_presence/kh_visits); for any
+     other table drop the conflict target so a colliding INSERT errors instead of
+     silently overwriting an existing row. Without this, POST ?on_conflict=code to
+     kh_groups re-owns any room, and ?on_conflict=id to kh_messages overwrites any
+     message + seizes its owner_secret — bypassing the owner_secret / update gates. */
+  if(!adminReq && !UPSERT_OK.has(table)) conflict=null;
   const prefer = (request.headers.get('prefer')||'');
   const minimal = /return=minimal/i.test(prefer);
 
