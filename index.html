@@ -23617,17 +23617,39 @@ const Pomodoro=(()=>{
     return S.focusLog.filter(e=>new Date(e.ts).toDateString()===d);
   }
 
-  function render(){
+  /* Per-second update — ONLY the countdown + progress bar (the values that
+     actually change each tick). Guarded writes avoid redundant e-ink repaints. */
+  function tick(){
     const disp=$('pomodoroDisplay');if(!disp)return;
     const m=Math.floor(timeLeft/60),s=timeLeft%60;
-    disp.textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-    const lbl=$('pomodoroMode');
-    if(lbl)lbl.textContent={work:'Work',short:'Short Break',long:'Long Break'}[mode]+' — Today: '+todayLog().length+' sessions';
+    const v=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    if(disp.textContent!==v)disp.textContent=v;
     const pct=((MODES[mode]*60-timeLeft)/(MODES[mode]*60))*100;
     const fill=$('pomodoroProg');if(fill)fill.style.width=pct+'%';
-    const btn=$('pomodoroBtn');if(btn)btn.textContent=timer?'Pause':'Start';
+    const btn=$('pomodoroBtn');if(btn){const bl=timer?'Pause':'Start';if(btn.textContent!==bl)btn.textContent=bl;}
+  }
+  /* Full render — adds the session-count label + log list + 7-day chart. These
+     only change on a user action or when a session completes, so it must NOT run
+     every second (rebuilding the list + repainting the canvas each tick was a
+     full e-ink flash per second). Called from start/pause/reset/build + on the
+     completion tick only. */
+  function render(){
+    tick();
+    const lbl=$('pomodoroMode');
+    if(lbl)lbl.textContent={work:'Work',short:'Short Break',long:'Long Break'}[mode]+' — Today: '+todayLog().length+' sessions';
     renderFocusLog();
     drawFocusChart();
+  }
+  function onTick(){
+    timeLeft--;
+    if(timeLeft<=0){
+      clearInterval(timer);timer=null;
+      if(mode==='work')finishWorkSession();
+      else toast('Break over — ready for next session?');
+      render(); // session count + log + chart changed on completion
+    } else {
+      tick();   // cheap per-second update only
+    }
   }
 
   function finishWorkSession(){
@@ -23648,26 +23670,14 @@ const Pomodoro=(()=>{
     mode=m;timeLeft=MODES[m]*60;
     if(timer){clearInterval(timer);timer=null;}
     sessionStart=Date.now();
-    timer=setInterval(()=>{
-      timeLeft--;
-      if(timeLeft<=0){
-        clearInterval(timer);timer=null;
-        if(mode==='work')finishWorkSession();
-        else toast('Break over — ready for next session?');
-      }
-      render();
-    },1000);
+    timer=setInterval(onTick,1000);
     render();
   }
 
   function togglePause(){
     if(timer){clearInterval(timer);timer=null;}
     else if(timeLeft>0){
-      timer=setInterval(()=>{
-        timeLeft--;
-        if(timeLeft<=0){clearInterval(timer);timer=null;if(mode==='work')finishWorkSession();else toast('Break over!');}
-        render();
-      },1000);
+      timer=setInterval(onTick,1000);
     }
     render();
   }
