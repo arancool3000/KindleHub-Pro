@@ -597,6 +597,20 @@ async function handlePost(table, url, request, env, DB){
 
   const out=[];
   for(const raw of rows){
+    /* Stamp an approximate location on chat messages from Cloudflare's own edge
+       geo (request.cf) — reliable, free, always present on the edge, and
+       authoritative (the client can't spoof it, unlike a self-reported value).
+       This replaces the flaky client-side ipapi.co lookup that returned empty on
+       the first send of every session, which is why locations were usually
+       blank. City granularity only. No cf (local/non-CF) → leave whatever the
+       client sent as a fallback. */
+    if(table==='kh_messages'){
+      const cf = request.cf || {};
+      const _city = String(cf.city||'').slice(0,60);
+      const _cc   = String(cf.country||'').slice(0,4);
+      const _reg  = String(cf.region||'').slice(0,40);
+      if(_city || _cc){ raw.location_hint = ((_city?_city+', ':(_reg?_reg+', ':''))+_cc).slice(0,120); }
+    }
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
     for(const tc of TS_COLS){ if(cols.indexOf(tc)>=0 && keys.indexOf(tc)<0){ raw[tc]=nowIso(); keys.push(tc); } }

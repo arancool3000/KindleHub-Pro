@@ -10452,10 +10452,10 @@ async function _groupSend(code,msg){
     try{
       row.device_hint=(typeof _khDeviceLabel==='function'?_khDeviceLabel():'').slice(0,80);
     }catch(_){}
-    try{
-      const loc=(typeof _khCachedLocationLabel==='function')?_khCachedLocationLabel():'';
-      if(loc)row.location_hint=loc.slice(0,120);
-    }catch(_){}
+    /* location_hint is now stamped SERVER-SIDE from Cloudflare's edge geo
+       (request.cf) on insert — reliable and spoof-proof. We no longer ping a
+       third-party IP-geo API from the client on send (it was empty on the first
+       send of every session anyway, and leaked the user's IP to ipapi.co). */
     try{
       await _sbInsert('kh_messages',row);
     }catch(eFirst){
@@ -53497,7 +53497,7 @@ messages:()=>{
         const vpnMatch=/VPN:\s*(yes|no)/.exec(msg.location);
         if(vpnMatch)lines.push(['VPN', vpnMatch[1]+(vpnMatch[1]==='yes'?' (datacenter / hosting ASN — likely)':'')]);
       } else {
-        lines.push(['Approx. location', '(not recorded — pre-v7.9.50 message or column missing)']);
+        lines.push(['Approx. location', '(not recorded — older message, or the sender’s network couldn’t be geolocated)']);
       }
       lines.push(['Message text', '"'+(msg.text||'').slice(0,300)+'"']);
 
