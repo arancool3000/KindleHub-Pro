@@ -5867,6 +5867,19 @@ function applyCustomisation(){
       }
     });
     if(typeof _applyLang==='function')_applyLang();
+    /* Jailbroken Layout persists across reloads: re-apply the immersive CSS
+       class (this runs at boot + on every settings change). Fullscreen/audio
+       need a user gesture, so arm a ONE-TIME re-enter on the next tap. */
+    try{
+      var _jb=!!S.jailbrokenLayout;
+      document.body.classList.toggle('jailbroken-layout',_jb);
+      if(_jb&&!window._khJbArmed){
+        window._khJbArmed=true;
+        var _re=function(){try{document.removeEventListener('click',_re,true);document.removeEventListener('touchend',_re,true);}catch(_){}try{if(S.jailbrokenLayout&&typeof _khJbRequestFs==='function'){_khJbRequestFs();_khJbUnlockAudio();}}catch(_){}};
+        document.addEventListener('click',_re,true);
+        document.addEventListener('touchend',_re,true);
+      }
+    }catch(_){}
   }catch(_){}
 }
 /* Language preference. The app ships in English; this saves the user's choice
@@ -25500,6 +25513,66 @@ function _khiOptsFromPicker(){
   return {provider:prov,model:model};
 }
 
+/* ── Jailbroken Layout — premium immersive mode ──────────────────────
+   A single toggle that, where the engine supports it, enters the modern
+   Fullscreen API (hides the browser bars) and unlocks the standard Web
+   Audio API (resumes a shared AudioContext so sound works on unlocked /
+   jailbroken e-ink browser engines), plus a full-bleed immersive CSS
+   layout. Every capability is feature-detected and degrades gracefully —
+   on engines without Fullscreen or Web Audio (e.g. KOReader's browser) the
+   CSS immersive layout still applies, so the toggle is never a dead end.
+   All vendor-prefixed so it works on old WebKit as well as modern engines. */
+(function _khInjectJbCss(){
+  try{
+    if(document.getElementById('jb-css'))return;
+    var st=document.createElement('style');st.id='jb-css';
+    st.textContent=[
+      '.kh-switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;}',
+      '.kh-switch input{opacity:0;width:0;height:0;position:absolute;margin:0;}',
+      '.kh-switch .kh-sl{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--muted);border-radius:26px;-webkit-transition:background .15s;transition:background .15s;}',
+      '.kh-switch .kh-sl:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:var(--card);border-radius:50%;-webkit-transition:-webkit-transform .15s;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3);}',
+      '.kh-switch input:checked + .kh-sl{background:var(--accent);}',
+      '.kh-switch input:checked + .kh-sl:before{-webkit-transform:translateX(20px);transform:translateX(20px);}',
+      'body.jailbroken-layout #app{max-width:none;}',
+      'body.jailbroken-layout .view{max-width:100%;}',
+      'body.jailbroken-layout.kh-fs #app{min-height:100vh;}',
+    ].join('');
+    (document.head||document.documentElement).appendChild(st);
+  }catch(_){}
+})();
+function _khJbCaps(){
+  var d=document.documentElement||{};
+  var fs=!!(d.requestFullscreen||d.webkitRequestFullscreen||d.mozRequestFullScreen||d.msRequestFullscreen);
+  var au=!!(window.AudioContext||window.webkitAudioContext);
+  return {fullscreen:fs,webAudio:au};
+}
+function _khJbRequestFs(){
+  try{var d=document.documentElement;var fn=d.requestFullscreen||d.webkitRequestFullscreen||d.mozRequestFullScreen||d.msRequestFullscreen;if(fn){var r=fn.call(d);if(r&&r.catch)r.catch(function(){});return true;}}catch(_){}
+  return false;
+}
+function _khJbExitFs(){
+  try{if(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement){var fn=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen||document.msExitFullscreen;if(fn){var r=fn.call(document);if(r&&r.catch)r.catch(function(){});}}}catch(_){}
+}
+function _khJbUnlockAudio(){
+  try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;if(!window._khAudioCtx)window._khAudioCtx=new AC();if(window._khAudioCtx.state==='suspended'&&window._khAudioCtx.resume)window._khAudioCtx.resume().catch(function(){});return window._khAudioCtx;}catch(_){return null;}
+}
+function _khJbBeep(){
+  try{var ctx=_khJbUnlockAudio();if(!ctx||!ctx.createOscillator)return false;var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=660;g.gain.value=0.06;o.connect(g);g.connect(ctx.destination);o.start();setTimeout(function(){try{o.stop();}catch(_){}},180);return true;}catch(_){return false;}
+}
+/* Mirror real fullscreen state onto a body class so the CSS can react and the
+   Settings toggle can reflect reality if the user exits via a device button. */
+function _khJbSyncFs(){try{var on=!!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement);document.body.classList.toggle('kh-fs',on);}catch(_){}}
+try{document.addEventListener('fullscreenchange',_khJbSyncFs);document.addEventListener('webkitfullscreenchange',_khJbSyncFs);}catch(_){}
+function _khJbApply(on,fromGesture){
+  try{S.jailbrokenLayout=!!on;}catch(_){}
+  try{document.body.classList.toggle('jailbroken-layout',!!on);}catch(_){}
+  if(on){ if(fromGesture){_khJbRequestFs();_khJbUnlockAudio();} }
+  else{ _khJbExitFs(); }
+  try{_khJbSyncFs();}catch(_){}
+  try{if(typeof save==='function')save();}catch(_){}
+}
+window._khJbApply=_khJbApply;
+
 /* ── Test connection ──────────────────────────────────────── */
 async function testAIConnection(){
   const pickerBtn=document.getElementById('chatModelPickerBtn');
@@ -37853,6 +37926,49 @@ settings:()=>{
   });
   cKbd.appendChild(modeRow);
   g.appendChild(cKbd);
+
+  /* ── Jailbroken Layout (premium immersive mode) ── */
+  const cJb=el('div',{className:'card'});
+  const _jbHdr=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}});
+  _jbHdr.appendChild(txt('h2','Jailbroken Layout',{style:{margin:'0'}}));
+  _jbHdr.appendChild(txt('span','PREMIUM',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',background:'var(--accent)',color:'var(--accent-inv)',padding:'2px 6px',borderRadius:'4px'}}));
+  cJb.appendChild(_jbHdr);
+  cJb.appendChild(txt('p','An immersive, edge-to-edge mode: enters true fullscreen (hides the browser bars) and unlocks the Web Audio engine for sound, where your device supports it. Built for unlocked / jailbroken e-ink browsers and KOReader — falls back to a full-bleed layout on engines without fullscreen.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',margin:'6px 0 10px'}}));
+  const _jbCaps=_khJbCaps();
+  const _jbCapLine=el('div',{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'10px',fontFamily:'monospace',lineHeight:'1.6'}});
+  _jbCapLine.textContent='This engine — Fullscreen: '+(_jbCaps.fullscreen?'✓ supported':'✗ not supported')+'  ·  Web Audio: '+(_jbCaps.webAudio?'✓ supported':'✗ not supported');
+  cJb.appendChild(_jbCapLine);
+  const _jbCtl=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}});
+  const _jbSwitch=el('label',{className:'kh-switch'});
+  const _jbInput=el('input',{type:'checkbox'});
+  _jbInput.checked=!!S.jailbrokenLayout;
+  const _jbSl=el('span',{className:'kh-sl'});
+  _jbSwitch.appendChild(_jbInput);_jbSwitch.appendChild(_jbSl);
+  _jbCtl.appendChild(_jbSwitch);
+  const _jbState=txt('span',S.jailbrokenLayout?'On':'Off',{style:{fontSize:'13px',fontWeight:'700'}});
+  _jbCtl.appendChild(_jbState);
+  cJb.appendChild(_jbCtl);
+  _jbInput.onchange=function(){
+    const want=_jbInput.checked;
+    if(want){
+      /* Premium gate — Ultra / Creator only, same as online multiplayer. */
+      if(typeof _khRequireUltra==='function'&&!_khRequireUltra('Jailbroken Layout')){_jbInput.checked=false;return;}
+      _khJbApply(true,true);/* the toggle click IS the user gesture fullscreen/audio need */
+      _jbState.textContent='On';
+      const _c=_khJbCaps();
+      toast(_c.fullscreen?('Jailbroken Layout on — fullscreen'+(_c.webAudio?' + audio unlocked':'')):'Jailbroken Layout on — immersive layout (fullscreen not supported on this engine)',4500);
+    } else {
+      _khJbApply(false,false);
+      _jbState.textContent='Off';
+      toast('Jailbroken Layout off');
+    }
+  };
+  if(_jbCaps.webAudio){
+    const _jbBeep=txt('button','🔊 Test sound',{className:'btn small',style:{marginTop:'10px'}});
+    _jbBeep.onclick=function(){toast(_khJbBeep()?'Played a test tone':'Audio could not start on this engine');};
+    cJb.appendChild(_jbBeep);
+  }
+  g.appendChild(cJb);
   /* NOTE: this used to close the _defer here and reopen a new one, which
      left `c5` (declared above) out of scope below — so the Keyboard
      Shortcuts AND Top Menu Pages cards both threw 'c5 is not defined' and
