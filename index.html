@@ -9256,13 +9256,13 @@ function _trimStateForCloud(stateObj){
    notes, books, journals, flashcards, calendar or recipes). */
 let STORAGE_LIMIT_BYTES=1.5*1024*1024;   /* tier-driven: Pro 1.5MB · Ultra 3MB · Creator 12MB — kept current by _khUltraTick */
 /* ── KindleHub Ultra — a tier you EARN by using KindleHub ──────────────────
-   Any day you're active for ≥10 minutes is a "qualifying day". Keep ≥3
+   Any day you're SIGNED IN and active for ≥15 minutes is a "qualifying day". Keep ≥3
    qualifying days inside the trailing 7-day window and Ultra stays on — a
    rolling, licence-points-style window, so a steady 3×/week user never drops a
    day. The Creator (the admin) has it permanently. State lives in S.ultra so it
    rides the normal cloud-sync pipeline; while OFFLINE we keep the last-known
    status so a connectivity blip can never revoke it. */
-const ULTRA_MIN_SEC=600,ULTRA_DAYS_NEEDED=3,ULTRA_WINDOW_DAYS=7;
+const ULTRA_MIN_SEC=900,ULTRA_DAYS_NEEDED=3,ULTRA_WINDOW_DAYS=7; /* 15 min/day × 3 days/week */
 function _ultraState(){
   if(!S.ultra||typeof S.ultra!=='object')S.ultra={days:[],acc:{d:'',sec:0},active:false,since:0};
   if(!Array.isArray(S.ultra.days))S.ultra.days=[];
@@ -9287,6 +9287,18 @@ function _khUltraActive(){
   return _ultraWindowDays().length>=ULTRA_DAYS_NEEDED;
 }
 function _khTier(){return _isCreator()?'creator':(_khUltraActive()?'ultra':'pro');}
+/* Gate a premium feature behind the Ultra (or Creator) tier. Returns true when
+   allowed; otherwise shows a friendly, free-to-unlock upsell and returns false. */
+function _khRequireUltra(label){
+  if(_khTier()!=='pro')return true; // ultra or creator → allowed
+  const what=label||'This';
+  const msg=(typeof S!=='undefined'&&S.authToken)
+    ? (what+' is a KindleHub Ultra feature. Unlock it FREE — just use KindleHub 15+ min a day on any 3 days this week.')
+    : (what+' is a KindleHub Ultra feature. Sign in (Settings), then use KindleHub 15+ min a day on 3 days this week to unlock it — free.');
+  try{if(typeof toast==='function')toast(msg,5500);}catch(_){}
+  return false;
+}
+window._khRequireUltra=_khRequireUltra;
 function _storageLimit(){const t=_khTier();return t==='creator'?(12*1024*1024):(t==='ultra'?(3*1024*1024):(1.5*1024*1024));}
 function _khBadgeInfo(tier){tier=tier||_khTier();
   if(tier==='creator')return{label:'Creator',title:'Creator — the one who built KindleHub'};
@@ -9345,7 +9357,9 @@ function _khUltraTick(addSec){
     if(u.acc.d!==today)u.acc={d:today,sec:0};
     let changed=false;
     if(addSec>0){u.acc.sec+=addSec;
-      if(u.acc.sec>=ULTRA_MIN_SEC&&u.days.indexOf(today)<0){u.days.push(today);changed=true;}}
+      /* Only a SIGNED-IN day counts toward Ultra — guest usage never accrues
+         qualifying days (Ultra is an account tier). */
+      if(u.acc.sec>=ULTRA_MIN_SEC&&S.authToken&&u.days.indexOf(today)<0){u.days.push(today);changed=true;}}
     const keepFrom=new Date(NOW().getTime()-2*ULTRA_WINDOW_DAYS*86400000).toISOString().slice(0,10);
     const n0=u.days.length;u.days=u.days.filter(function(d){return d>=keepFrom;});if(u.days.length!==n0)changed=true;
     const nowActive=_khUltraActive();
@@ -15359,6 +15373,9 @@ window._khInviteDismissed=_khInviteDismissed;window._khDismissInvite=_khDismissI
    closes. This is what every 2-player game ties into. */
 window.KH_MP.openLobby=function(opts){
   opts=opts||{};
+  /* Online multiplayer is an Ultra feature — this is the single entry every
+     "Play Online" button routes through, so gating here covers them all. */
+  if(typeof _khRequireUltra==='function'&&!_khRequireUltra('Online multiplayer'))return;
   const gameName=opts.gameName||'game';
   const onConnected=opts.onConnected||function(){};
   const old=document.getElementById('kh-mp-lobby');if(old)old.remove();
@@ -36926,15 +36943,16 @@ settings:()=>{
       _ultraBox.appendChild(hdr);
       /* Plain-language answer to "am I an admin?" so users can self-check
          instead of asking. Admins are the `creator` tier. */
+      /* Don't surface "admin" wording to normal users — it confused them. The
+         creator just sees an "everything unlocked" line; everyone else sees only
+         their Ultra status below. */
       if(p.tier==='creator'){
-        _ultraBox.appendChild(txt('div','✓ You ARE an admin — you have the moderation + admin tools.',{style:{fontSize:'12px',fontWeight:'800',color:'var(--success)',marginBottom:'4px'}}));
-      }else{
-        _ultraBox.appendChild(txt('div','You are a standard member — not an admin.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
+        _ultraBox.appendChild(txt('div','✓ You are the Creator — every feature is unlocked, permanently.',{style:{fontSize:'12px',fontWeight:'800',color:'var(--success)',marginBottom:'4px'}}));
       }
       const tierName=p.tier==='creator'?'Creator (permanent)':(p.tier==='ultra'?'Ultra — active':'Pro');
       _ultraBox.appendChild(txt('div','Your tier: '+tierName,{style:{fontSize:'12px',fontWeight:'700',marginBottom:'4px'}}));
       if(p.tier!=='creator'){
-        _ultraBox.appendChild(txt('div','Active days this week: '+p.windowDays+'/'+p.need+(p.todayQualified?' · today counts ✓':(' · today '+p.todayMin+'/10 min')),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
+        _ultraBox.appendChild(txt('div','Active days this week: '+p.windowDays+'/'+p.need+(p.todayQualified?' · today counts ✓':(' · today '+p.todayMin+'/15 min')),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
         /* Visual progress toward Ultra — fills as qualifying days accrue so
            the path to unlocking is obvious at a glance, not buried in text. */
         const barOuter=el('div',{style:{height:'10px',borderRadius:'999px',background:'var(--card)',border:'var(--thin)',overflow:'hidden',margin:'2px 0 6px'}});
@@ -36944,11 +36962,11 @@ settings:()=>{
         if(p.tier!=='ultra'){
           const need=Math.max(0,p.need-p.windowDays);
           const cta=el('div',{style:{fontSize:'12px',fontWeight:'700',color:'var(--fg)',background:'var(--card)',border:'var(--thin)',borderRadius:'8px',padding:'8px 10px',margin:'2px 0 6px',lineHeight:'1.5'}});
-          cta.textContent=need<=0?'You qualify — Ultra unlocks shortly!':('Unlock Ultra: be active '+need+' more day'+(need===1?'':'s')+' this week (just 10+ minutes each).');
+          cta.textContent=need<=0?'You qualify — Ultra unlocks shortly!':('Unlock Ultra: be active '+need+' more day'+(need===1?'':'s')+' this week (just 15+ minutes each).');
           _ultraBox.appendChild(cta);
         }
       }
-      _ultraBox.appendChild(txt('div',p.tier==='creator'?'Unlimited storage, full AI, and the Creator badge — forever.':(p.tier==='ultra'?'You have Ultra: first-come AI + KHI, 3 MB cloud storage, and the Big Contributor badge. Use KindleHub 3 days a week (10+ min each) to keep it — it rolls, so a steady week never lets it lapse.':'Ultra perks: more AI + KHI, 3 MB cloud storage, and a Big Contributor badge. It works like a rolling points system — stay active 3×/week (10+ min each) and you never lose it. No payment, ever.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+      _ultraBox.appendChild(txt('div',p.tier==='creator'?'Unlimited storage, full AI, and the Creator badge — forever.':(p.tier==='ultra'?'You have Ultra: first-come AI + KHI, 3 MB cloud storage, and the Big Contributor badge. Use KindleHub 3 days a week (15+ min each) to keep it — it rolls, so a steady week never lets it lapse.':'Ultra perks: more AI + KHI, 3 MB cloud storage, and a Big Contributor badge. It works like a rolling points system — stay active 3×/week (15+ min each) and you never lose it. No payment, ever.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
       const rf=txt('button','Refresh',{className:'btn small',style:{marginTop:'8px',fontSize:'10px'}});rf.onclick=function(){try{if(typeof _khUltraTick==='function')_khUltraTick(0);}catch(_){}_renderUltra();};
       _ultraBox.appendChild(rf);
     }
