@@ -24030,10 +24030,35 @@ const Pomodoro=(()=>{
           }
         }
       }catch(_){}
+      /* Custom "set a timer for N minutes" — reuses the countdown machinery. */
+      var cb=$('pomoCustomStart');if(cb)cb.onclick=function(){var mins=parseInt(($('pomoCustom')||{}).value,10);if(mins>0)startCustom(mins);else if(typeof toast==='function')toast('Enter minutes (1–180).');};
+      var ss=$('swStart');if(ss)ss.onclick=swToggle;
+      var sr=$('swReset');if(sr)sr.onclick=swReset;
+      _swPaint();
       render();
     },0);
   }
-  return{init,render};
+  function startCustom(mins){
+    var m=Math.max(1,Math.min(180,Math.round(mins||0)));
+    mode='work';timeLeft=m*60;
+    if(timer){clearInterval(timer);timer=null;}
+    sessionStart=Date.now();
+    timer=setInterval(onTick,1000);
+    render();
+    if(typeof toast==='function')toast('Timer started: '+m+' min');
+  }
+  /* Self-contained STOPWATCH (counts UP), independent of the countdown loop so it
+     can't interfere with the Pomodoro. Ticks only the #swDisplay text; the
+     interval self-clears once the Tools view (and #swDisplay) is gone. */
+  var _swTimer=null,_swBase=0,_swElapsed=0;
+  function _swFmt(ms){var s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);s=s%60;m=m%60;return (h>0?(h+':'+String(m).padStart(2,'0')):String(m))+':'+String(s).padStart(2,'0');}
+  function _swPaint(){var d=$('swDisplay');if(!d)return;var v=_swFmt(_swElapsed+(_swTimer?(Date.now()-_swBase):0));if(d.textContent!==v)d.textContent=v;}
+  function swToggle(){
+    if(_swTimer){_swElapsed+=Date.now()-_swBase;clearInterval(_swTimer);_swTimer=null;var b=$('swStart');if(b)b.textContent='Start';}
+    else{_swBase=Date.now();_swTimer=setInterval(function(){if(!$('swDisplay')){clearInterval(_swTimer);_swTimer=null;return;}_swPaint();},250);var b2=$('swStart');if(b2)b2.textContent='Pause';}
+  }
+  function swReset(){if(_swTimer){clearInterval(_swTimer);_swTimer=null;}_swElapsed=0;var b=$('swStart');if(b)b.textContent='Start';_swPaint();}
+  return{init,render,startCustom};
 })();
 
 /* Turn a note's text into an AI-generated flashcard deck (saved to
@@ -35135,7 +35160,7 @@ tools:()=>{
   wc.appendChild(wcBtn);
   g.appendChild(wc);
   const pom=el('div',{className:'card',style:{gridColumn:'1/-1'}});
-  pom.appendChild(txt('h2','Pomodoro + Focus Journal'));
+  pom.appendChild(txt('h2','⏱ Timer, Stopwatch & Pomodoro'));
   pom.appendChild(txt('div','',{id:'pomodoroMode',style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
   const pomTask=el('input',{id:'pomoTask',placeholder:'What are you working on? (optional)',style:{marginBottom:'6px',fontSize:'12px'}});
   pom.appendChild(pomTask);
@@ -35148,6 +35173,19 @@ tools:()=>{
   pr.appendChild(txt('button','Short 5',{className:'btn small',id:'pomo_short'}));
   pr.appendChild(txt('button','Long 15',{className:'btn small',id:'pomo_long'}));
   pom.appendChild(pr);
+  /* Custom "set a timer for N minutes" — makes a plain timer obvious to find. */
+  const _ctRow=el('div',{className:'card-row',style:{marginTop:'8px',flexWrap:'wrap',alignItems:'center',gap:'6px'}});
+  _ctRow.appendChild(txt('span','Custom timer:',{style:{fontSize:'12px',color:'var(--muted)'}}));
+  _ctRow.appendChild(el('input',{id:'pomoCustom',type:'number',min:'1',max:'180',placeholder:'min',inputmode:'numeric',style:{width:'72px',fontSize:'13px'}}));
+  _ctRow.appendChild(txt('button','Start timer',{className:'btn small',id:'pomoCustomStart'}));
+  pom.appendChild(_ctRow);
+  /* Stopwatch — counts UP. A separate, clearly-labelled tool. */
+  pom.appendChild(txt('div','STOPWATCH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginTop:'12px'}}));
+  pom.appendChild(txt('div','0:00',{id:'swDisplay',className:'pomodoro-ring',style:{fontSize:'34px'}}));
+  const _swRow=el('div',{className:'card-row',style:{flexWrap:'wrap'}});
+  _swRow.appendChild(txt('button','Start',{className:'btn small primary',id:'swStart'}));
+  _swRow.appendChild(txt('button','Reset',{className:'btn small',id:'swReset'}));
+  pom.appendChild(_swRow);
   const pomNote=el('textarea',{id:'pomoNote',rows:'2',placeholder:'Reflection note for this session...',style:{display:'none',width:'100%',marginTop:'8px',fontSize:'12px',padding:'6px',border:'var(--thin)',borderRadius:'4px',background:'var(--card)',color:'var(--fg)',resize:'vertical'}});
   pom.appendChild(pomNote);
   const pomNoteSave=txt('button','Save note',{className:'btn small primary',id:'pomoNoteSave',style:{display:'none',marginTop:'4px'}});
