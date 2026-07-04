@@ -1182,6 +1182,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="files">Files</div>
     <div class="tab" data-view="screenshot">Screenshot</div>
     <div class="tab" data-view="mail">Mail</div>
+    <div class="tab" data-view="imagesearch">Images</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -2536,7 +2537,8 @@ const NAV_TABS=[
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
-  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail']
+  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
+  ['imagesearch','Images']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -46152,6 +46154,78 @@ sleeplog:()=>{
 },
 
 /* ─── CHESS CLOCK ────────────────────────────────────── */
+imagesearch:()=>{
+  /* Image search over Openverse — ~800M free, openly-licensed images (Flickr,
+     Wikimedia, museums). CORS-open + no API key needed. Great for Kindles that
+     can't reach Google/Pinterest. mature=false keeps it family-safe. */
+  const v=el('section',{id:'view-imagesearch',className:'view'});
+  v.appendChild(txt('h2','Image Search',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  v.appendChild(txt('div','Search millions of free, openly-licensed images — works even where Google or Pinterest don’t.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const bar=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+  const inp=el('input',{id:'imgqInput',type:'text',placeholder:'Search images…',style:{flex:'1',fontSize:'14px',padding:'9px 11px'}});
+  const btn=txt('button','Search',{className:'btn primary'});
+  bar.appendChild(inp);bar.appendChild(btn);v.appendChild(bar);
+  const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px',minHeight:'16px'}});
+  v.appendChild(status);
+  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(96px,1fr))',gap:'6px'}});
+  v.appendChild(grid);
+  let _q='',_page=1,_busy=false;
+  function _openImage(im){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.86)',zIndex:'999999',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'12px',boxSizing:'border-box'}});
+    const big=new Image();big.src=im.url||im.thumbnail;big.alt=im.title||'image';big.style.cssText='max-width:100%;max-height:76vh;object-fit:contain;border-radius:6px;background:#fff;';
+    big.onerror=()=>{big.src=im.thumbnail||'';big.onerror=null;};
+    ov.appendChild(big);
+    const cap=el('div',{style:{color:'#fff',fontSize:'12px',textAlign:'center',marginTop:'8px',maxWidth:'92vw',lineHeight:'1.4'}});
+    cap.textContent=(im.title||'Untitled')+(im.creator?(' · '+im.creator):'')+(im.license?(' · '+String(im.license).toUpperCase()):'');
+    ov.appendChild(cap);
+    const row=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',flexWrap:'wrap',justifyContent:'center'}});
+    if(im.foreign_landing_url){const src=txt('button','Open source page',{className:'btn small'});src.onclick=()=>{if(typeof _khOpenExt==='function')_khOpenExt(im.foreign_landing_url);};row.appendChild(src);}
+    const cls=txt('button','Close',{className:'btn small primary'});cls.onclick=()=>ov.remove();row.appendChild(cls);
+    ov.appendChild(row);
+    ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
+  async function run(q,page){
+    if(_busy)return;
+    _q=q;_page=page||1;
+    const oldMore=v.querySelector('.imgMore');if(oldMore)oldMore.remove();
+    if(_page===1)grid.innerHTML='';
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to search images.';return;}
+    _busy=true;status.textContent=_page===1?'Searching…':'Loading more…';
+    try{
+      const url='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
+      const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
+      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
+      clearTimeout(tid);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const data=await r.json();
+      const results=(data&&data.results)||[];
+      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”.';_busy=false;return;}
+      status.textContent=(data.result_count?(data.result_count.toLocaleString()+' results'):'')+' — tap an image to view it larger.';
+      results.forEach(im=>{
+        const thumb=im.thumbnail||im.url;if(!thumb)return;
+        const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'6px',background:'var(--card)',border:'var(--thin)',cursor:'pointer'}});
+        const img=new Image();img.alt=im.title||'image';img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+        img.onerror=()=>{cell.style.display='none';};
+        img.src=thumb;cell.appendChild(img);
+        cell.onclick=()=>_openImage(im);
+        grid.appendChild(cell);
+      });
+      if(results.length>=24){
+        const more=txt('button','Load more',{className:'btn small imgMore',style:{display:'block',margin:'12px auto 0'}});
+        more.onclick=()=>run(_q,_page+1);
+        v.appendChild(more);
+      }
+    }catch(e){
+      status.textContent='Couldn’t load images (network issue). Please try again.';
+    }
+    _busy=false;
+  }
+  btn.onclick=()=>{const q=inp.value.trim();if(q)run(q,1);else{status.textContent='Type something to search for.';}};
+  inp.addEventListener('keydown',(e)=>{if(e.key==='Enter'){const q=inp.value.trim();if(q)run(q,1);}});
+  return v;
+},
 qrgen:()=>{
   const v=el('section',{id:'view-qrgen',className:'view'});
   /* QR codes are still generated by the api.qrserver.com endpoint (text-in,
