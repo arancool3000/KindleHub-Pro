@@ -1194,6 +1194,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="feedback">Feedback</div>
     <div class="tab" data-view="dictionary">Dict</div>
     <div class="tab" data-view="maps">Maps</div>
+    <div class="tab" data-view="dashboard">Dashboard</div>
     <div class="tab" data-view="rss">News</div>
     <div class="tab" data-view="gazette">Gazette</div>
     <div class="tab" data-view="stocks">Stocks</div>
@@ -2562,7 +2563,7 @@ function applyHomeCity(city){
    Users who reordered get their saved order; getNavOrder() appends any
    tabs missing from saved order so updates still surface them. */
 const NAV_TABS=[
-  ['games','Arcade'],['chat','Assistant'],['tools','Tools'],['calc','Calc'],
+  ['games','Arcade'],['chat','Assistant'],['dashboard','Dashboard'],['tools','Tools'],['calc','Calc'],
   ['reading','Reading'],['draw','Draw'],
   ['breathe','Mindfulness'],['kanban','To-Do'],
   ['messages','Messages'],['calendar','Calendar'],['weather','Weather'],
@@ -12973,7 +12974,7 @@ function appendRelatedPages(viewId,viewEl){
        has its own internal render() that mutates on demand; full
        rebuild is wasted work. They use ON_SHOW handlers (or
        per-action refreshes) to stay current. */
-const ALWAYS_REBUILD=new Set(['games','messages','pet']);
+const ALWAYS_REBUILD=new Set(['games','messages','pet','dashboard']);
 
 /* ════════════════════════════════════════════════════════════════════
    Split screen — "2 pages in 1" multitasking. mainHost normally holds ONE
@@ -45210,6 +45211,132 @@ gazette:()=>{
   const cache=_gzLoad();
   if(cache.date===_gzToday()&&cache[mode]){renderEdition(cache[mode]);status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');}
   else generate(false);
+  return v;
+},
+
+/* ── Dashboard — a personalised, tailored-to-you home ────────────────
+   A fast, build-once overview: a greeting, your daily goal + streak,
+   at-a-glance tappable stat tiles, a "continue reading" nudge, today's
+   Gazette headline, and quick actions. All data is read defensively from
+   existing state (no new storage); it's in ALWAYS_REBUILD so counts are
+   always fresh, and it uses only theme vars so it looks right in every
+   theme incl. Retro/dark/sepia. */
+dashboard:()=>{
+  const v=el('section',{id:'view-dashboard',className:'view'});
+  if(!document.getElementById('dash-css')){
+    const st=document.createElement('style');st.id='dash-css';
+    st.textContent=[
+      '.dash-hero{padding:4px 2px 14px;}',
+      '.dash-hi{font-family:var(--title-font);font-size:24px;font-weight:800;line-height:1.12;}',
+      '.dash-date{font-size:12px;color:var(--muted);margin-top:4px;}',
+      '.dash-card{background:var(--card);border:var(--thin);border-radius:12px;padding:14px;margin-bottom:12px;}',
+      '.dash-card h3{margin:0 0 8px;font-size:13px;font-family:var(--title-font);}',
+      '.dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;}',
+      '@media(max-width:380px){.dash-grid{grid-template-columns:repeat(2,1fr);}}',
+      '.dash-tile{background:var(--card);border:var(--thin);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:76px;justify-content:center;}',
+      '.dash-tile:active{background:var(--highlight);}',
+      '.dash-tile-ic{font-size:18px;line-height:1;}',
+      '.dash-tile-num{font-size:22px;font-weight:900;font-family:var(--title-font);line-height:1;color:var(--accent);}',
+      '.dash-tile-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;}',
+      '.dash-qa{display:flex;flex-wrap:wrap;gap:8px;}',
+      '.dash-goal-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  function _num(a){return Array.isArray(a)?a.length:0;}
+  function _go(view){var t=document.querySelector('nav .tab[data-view="'+view+'"]');if(t){t.style.display='';t.click();}else{try{showView(view);}catch(_){}}}
+  function _gamesPlayed(){try{var s=S.stats||{},t=0;Object.keys(s).forEach(function(k){t+=(s[k]&&s[k].played)||0;});return t;}catch(_){return 0;}}
+  const now=new Date(NOW());
+  const hr=now.getHours();
+  const greet=hr<12?'Good morning':(hr<18?'Good afternoon':'Good evening');
+  const nm=S.user||(S.email?S.email.split('@')[0]:'');
+
+  /* Hero greeting */
+  const hero=el('div',{className:'dash-hero'});
+  hero.appendChild(txt('div',greet+(nm?(', '+nm):'')+'.',{className:'dash-hi'}));
+  try{hero.appendChild(txt('div',now.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}),{className:'dash-date'}));}catch(_){}
+  v.appendChild(hero);
+
+  /* Daily goal + streak (shares S.dailyGoal with the Home widget). */
+  const dg=S.dailyGoal||(S.dailyGoal={text:'',doneDate:'',streak:0});
+  const _today=(function(){try{return now.toISOString().slice(0,10);}catch(_){return '';}})();
+  const goalCard=el('div',{className:'dash-card'});
+  goalCard.appendChild(txt('h3','🎯 Daily goal'));
+  if(dg.text){
+    const gr=el('div',{className:'dash-goal-row'});
+    gr.appendChild(txt('span',dg.text,{style:{flex:'1',minWidth:'140px',fontSize:'14px',fontWeight:'700'}}));
+    if(dg.doneDate===_today){
+      gr.appendChild(txt('span','✓ Done today',{style:{fontSize:'12px',color:'var(--success)',fontWeight:'800'}}));
+    } else {
+      const done=txt('button','Mark done',{className:'btn small primary'});
+      done.onclick=()=>{const y=new Date(NOW().getTime()-86400000).toISOString().slice(0,10);dg.streak=(dg.doneDate===y?(dg.streak||0)+1:1);dg.doneDate=_today;if(typeof saveNow==='function')saveNow();delete VIEWS['dashboard'];delete VIEWS['home'];showView('dashboard');};
+      gr.appendChild(done);
+    }
+    goalCard.appendChild(gr);
+    goalCard.appendChild(txt('div','🔥 Streak: '+(dg.streak||0)+' day'+((dg.streak||0)===1?'':'s'),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'6px',fontWeight:'700'}}));
+  } else {
+    const gr=el('div',{className:'dash-goal-row'});
+    const gin=el('input',{type:'text',placeholder:'Set today’s goal…'});
+    gin.style.cssText='flex:1;min-width:150px;font-size:13px;padding:7px 9px;border:var(--thin);border-radius:8px;background:var(--bg);color:var(--fg);';
+    const gsave=txt('button','Save',{className:'btn small primary'});
+    gsave.onclick=()=>{const t=(gin.value||'').trim();if(!t)return;dg.text=t.slice(0,120);if(typeof saveNow==='function')saveNow();delete VIEWS['dashboard'];delete VIEWS['home'];showView('dashboard');};
+    gr.appendChild(gin);gr.appendChild(gsave);
+    goalCard.appendChild(gr);
+  }
+  v.appendChild(goalCard);
+
+  /* At-a-glance stat tiles — tappable, jump to the relevant view. */
+  const grid=el('div',{className:'dash-grid'});
+  [
+    {ic:'📚',num:_num(S.books),lbl:'Books',view:'reading'},
+    {ic:'📝',num:_num(S.notes),lbl:'Notes',view:'notes'},
+    {ic:'📔',num:_num(S.mdJournals),lbl:'Journal',view:'mdjournal'},
+    {ic:'💬',num:_num(S.msgGroups),lbl:'Chats',view:'messages'},
+    {ic:'🗓',num:_num(S.calEvents),lbl:'Events',view:'calendar'},
+    {ic:'🎮',num:_gamesPlayed(),lbl:'Games',view:'games'}
+  ].forEach(t=>{
+    const tile=el('div',{className:'dash-tile'});
+    tile.appendChild(txt('div',t.ic,{className:'dash-tile-ic'}));
+    tile.appendChild(txt('div',String(t.num),{className:'dash-tile-num'}));
+    tile.appendChild(txt('div',t.lbl,{className:'dash-tile-lbl'}));
+    tile.onclick=()=>_go(t.view);
+    grid.appendChild(tile);
+  });
+  v.appendChild(grid);
+
+  /* Continue reading — most recent book, if any. */
+  const _books=Array.isArray(S.books)?S.books:[];
+  if(_books.length){
+    const b=_books[_books.length-1];
+    const _bt=String((b&&(b.title||b.name))||'').trim();
+    if(_bt){
+      const rc=el('div',{className:'dash-card',style:{cursor:'pointer'}});
+      rc.appendChild(txt('h3','📖 Continue reading'));
+      rc.appendChild(txt('div',_bt,{style:{fontSize:'14px',fontWeight:'700'}}));
+      rc.onclick=()=>_go('reading');
+      v.appendChild(rc);
+    }
+  }
+
+  /* Today's Gazette headline (from the per-day cache, if generated). */
+  const _gazHead=(function(){try{var o=JSON.parse(localStorage.getItem('kh_gazette')||'null');if(!o)return null;var key=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');if(o.date!==key)return null;return (o.public&&o.public.headline)||(o.custom&&o.custom.headline)||null;}catch(_){return null;}})();
+  const gc=el('div',{className:'dash-card',style:{cursor:'pointer'}});
+  gc.appendChild(txt('h3','🗞 The Kindle Gazette'));
+  gc.appendChild(txt('div',_gazHead?_gazHead:'Tap to read today’s edition — a free daily digest of world headlines.',{style:{fontSize:'14px',fontWeight:_gazHead?'700':'400',color:_gazHead?'var(--fg)':'var(--muted)',lineHeight:'1.4'}}));
+  gc.onclick=()=>_go('gazette');
+  v.appendChild(gc);
+
+  /* Quick actions. */
+  const qaCard=el('div',{className:'dash-card'});
+  qaCard.appendChild(txt('h3','⚡ Quick actions'));
+  const qa=el('div',{className:'dash-qa'});
+  [['🤖 Assistant','chat'],['🗞 Gazette','gazette'],['📖 Reading','reading'],['✎ Draw','draw'],['📝 Notes','notes']].forEach(a=>{
+    const bq=txt('button',a[0],{className:'btn small'});
+    bq.onclick=()=>_go(a[1]);
+    qa.appendChild(bq);
+  });
+  qaCard.appendChild(qa);
+  v.appendChild(qaCard);
   return v;
 },
 
