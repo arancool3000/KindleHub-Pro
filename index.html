@@ -623,28 +623,42 @@ body.simple-ui input,body.simple-ui textarea,body.simple-ui select{
 body.simple-ui .toast{background:#000;color:#fff;border:2px solid #000;border-radius:4px;box-shadow:3px 3px 0 #fff,3px 3px 0 1px #000;}
 body.simple-ui .header-sub{color:#444;}
 
-/* Retro-mode home grid */
-.simple-home{padding:14px 16px 20px;color:#000;}
+/* ── Retro-mode home grid — a boxy, print-shop "desktop" aesthetic ──
+   Serif titles + monospace labels, chunky drop-shadows, framed app tiles
+   and a windowed masthead. All static (no per-tick repaint) so it's easy on
+   e-ink; the black-on-white boxes read beautifully on e-paper. */
+.simple-home{padding:14px 16px 22px;color:#000;}
+/* Masthead — a windowed "title bar" gives the retro home a strong identity. */
+.simple-masthead{border:2px solid #000;border-radius:4px;box-shadow:4px 4px 0 #000;background:#fff;margin-bottom:20px;overflow:hidden;}
+.simple-masthead .smh-bar{display:flex;align-items:center;gap:7px;background:#000;color:#fff;padding:5px 9px;font-family:'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;}
+.simple-masthead .smh-dot{width:9px;height:9px;border:1.5px solid #fff;border-radius:50%;display:inline-block;flex-shrink:0;}
+.simple-masthead .smh-spacer{flex:1;}
+.simple-masthead .smh-body{padding:13px 15px 14px;}
+.simple-masthead .smh-title{font-family:'Times New Roman',serif;font-weight:800;font-size:28px;line-height:1;letter-spacing:.5px;color:#000;}
+.simple-masthead .smh-sub{font-family:'Courier New',monospace;font-size:11px;color:#444;margin-top:6px;letter-spacing:.4px;}
 .simple-feat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}
-.simple-feat-card{background:#fff;border:2px solid #000;border-radius:4px;padding:13px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;box-shadow:3px 3px 0 #000;position:relative;}
-.simple-feat-card:active{transform:translate(1px,1px);box-shadow:2px 2px 0 #000;}
-.simple-feat-icon{width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.simple-feat-card{background:#fff;border:2px solid #000;border-radius:4px;padding:13px 14px 15px;display:flex;align-items:center;gap:11px;cursor:pointer;box-shadow:3px 3px 0 #000;position:relative;}
+.simple-feat-card:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000;}
+.simple-feat-icon{width:32px;height:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:2px solid #000;border-radius:7px;padding:4px;background:#fff;box-sizing:border-box;}
 .simple-feat-icon svg{width:100%;height:100%;}
 .simple-feat-body{flex:1;min-width:0;}
-.simple-feat-title{font-weight:800;font-size:13px;line-height:1.2;color:#000;}
-.simple-feat-sub{font-size:10.5px;color:#555;margin-top:2px;font-style:italic;}
+.simple-feat-title{font-family:'Times New Roman',serif;font-weight:800;font-size:15px;line-height:1.15;color:#000;}
+.simple-feat-sub{font-family:'Courier New',monospace;font-size:10px;color:#555;margin-top:3px;letter-spacing:.3px;text-transform:uppercase;}
 .simple-feat-plus{position:absolute;top:5px;right:6px;width:16px;height:16px;border:1.5px solid #000;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:#fff;}
-.simple-section-hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:14px;}
-.simple-section-hdr h2{font-family:'Times New Roman',serif;font-weight:700;font-size:22px;margin:0;color:#000;}
-.simple-edit-btn{background:#fff;color:#000;border:2px solid #000;border-radius:4px;padding:4px 11px;font-weight:700;font-size:11px;cursor:pointer;box-shadow:2px 2px 0 #000;}
-.simple-app-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:16px 10px;}
+.simple-section-hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:3px double #000;padding-bottom:6px;margin-bottom:16px;}
+.simple-section-hdr h2{font-family:'Times New Roman',serif;font-weight:700;font-size:22px;margin:0;color:#000;letter-spacing:.5px;}
+.simple-edit-btn{background:#fff;color:#000;border:2px solid #000;border-radius:4px;padding:4px 11px;font-weight:700;font-size:11px;cursor:pointer;box-shadow:2px 2px 0 #000;font-family:'Courier New',monospace;text-transform:uppercase;letter-spacing:.5px;}
+.simple-edit-btn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 #000;}
+.simple-app-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:18px 12px;}
 @media (max-width:640px){.simple-app-grid{grid-template-columns:repeat(4,1fr);}.simple-feat-row{grid-template-columns:1fr;gap:10px;}}
-.simple-app{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;padding:5px 3px;position:relative;}
-.simple-app-icon{width:38px;height:38px;display:flex;align-items:center;justify-content:center;color:#000;}
+.simple-app{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:2px;position:relative;}
+/* Framed icon tiles — each icon sits in a bordered "app tile" like a classic
+   desktop launcher, replacing the old bare floating glyphs. */
+.simple-app-icon{width:54px;height:54px;display:flex;align-items:center;justify-content:center;color:#000;border:2px solid #000;border-radius:9px;background:#fff;box-shadow:2px 2px 0 #000;padding:12px;box-sizing:border-box;}
 .simple-app-icon svg{width:100%;height:100%;stroke:#000;fill:none;stroke-width:2;}
-.simple-app-label{font-size:11px;font-weight:600;text-align:center;color:#000;line-height:1.2;}
+.simple-app-label{font-size:11px;font-weight:700;text-align:center;color:#000;line-height:1.15;font-family:'Courier New',monospace;letter-spacing:.2px;}
 .simple-app-plus{position:absolute;top:0;right:4px;width:14px;height:14px;border:1.5px solid #000;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:#fff;}
-.simple-app:active{transform:translate(1px,1px);}
+.simple-app:active .simple-app-icon{transform:translate(2px,2px);box-shadow:0 0 0 #000;}
 
 /* Retro-UI readability fixes — give content surfaces a solid white
    background so the dot pattern doesn't bleed through underneath text.
@@ -728,6 +742,14 @@ body.simple-ui.dark #view-home{background:transparent;border:none;box-shadow:non
 body.simple-ui.dark .simple-feat-card,
 body.simple-ui.dark .simple-app{background:#15151f;}
 body.simple-ui.dark .view{border-color:#f0f0f0;box-shadow:3px 3px 0 #f0f0f0;}
+/* Retro dark — frame the app + feature tiles and the masthead to match. */
+body.simple-ui.dark .simple-app-icon{color:#f0f0f0;background:#15151f;border-color:#f0f0f0;box-shadow:2px 2px 0 #f0f0f0;}
+body.simple-ui.dark .simple-feat-icon{background:#15151f;border-color:#f0f0f0;}
+body.simple-ui.dark .simple-masthead{background:#15151f;border-color:#f0f0f0;box-shadow:4px 4px 0 #f0f0f0;}
+body.simple-ui.dark .simple-masthead .smh-bar{background:#f0f0f0;color:#0a0a12;}
+body.simple-ui.dark .simple-masthead .smh-dot{border-color:#0a0a12;}
+body.simple-ui.dark .simple-masthead .smh-title{color:#f0f0f0;}
+body.simple-ui.dark .simple-masthead .smh-sub{color:#c8c8d0;}
 /* Sepia + Retro — similar treatment, parchment-coloured page with
    dark sepia ink. Less drastic than dark; mostly already worked. */
 body.simple-ui.sepia{
@@ -742,6 +764,17 @@ body.simple-ui.sepia{
 body.simple-ui.sepia header,body.simple-ui.sepia nav{background:#f0e8d3;border-color:#3a2a14;}
 body.simple-ui.sepia .card,body.simple-ui.sepia .btn{background:#f8efd6;color:#3a2a14;border-color:#3a2a14;box-shadow:3px 3px 0 #3a2a14;}
 body.simple-ui.sepia .simple-feat-card,body.simple-ui.sepia .simple-app{background:#f8efd6;}
+/* Retro sepia — parchment-framed tiles + masthead. */
+body.simple-ui.sepia .simple-app-icon{color:#3a2a14;background:#f8efd6;border-color:#3a2a14;box-shadow:2px 2px 0 #3a2a14;}
+body.simple-ui.sepia .simple-app-icon svg{stroke:#3a2a14;}
+body.simple-ui.sepia .simple-feat-icon{background:#f8efd6;border-color:#3a2a14;}
+body.simple-ui.sepia .simple-masthead{background:#f8efd6;border-color:#3a2a14;box-shadow:4px 4px 0 #3a2a14;}
+body.simple-ui.sepia .simple-masthead .smh-bar{background:#3a2a14;color:#f8efd6;}
+body.simple-ui.sepia .simple-masthead .smh-dot{border-color:#f8efd6;}
+body.simple-ui.sepia .simple-masthead .smh-title{color:#3a2a14;}
+body.simple-ui.sepia .simple-masthead .smh-sub{color:#6b5230;}
+body.simple-ui.sepia .simple-section-hdr{border-bottom-color:#3a2a14;}
+body.simple-ui.sepia .simple-section-hdr h2,body.simple-ui.sepia .simple-app-label,body.simple-ui.sepia .simple-feat-title{color:#3a2a14;}
 
 /* ── SIMPLE MODE — e-ink / oversimplified skin ──────────────────────────
    Toggled from the Control Center ("Simple" tile). Independent of the
@@ -29177,6 +29210,21 @@ home:()=>{
      app grid with featured cards above it. */
   if(uiMode==='simple'){
     const wrap=el('div',{className:'simple-home'});
+    /* Windowed masthead — a title bar + personal greeting gives the retro
+       home a strong, cohesive identity (uses NOW() for clock-offset safety). */
+    const _mast=el('div',{className:'simple-masthead'});
+    const _mbar=el('div',{className:'smh-bar'});
+    _mbar.appendChild(el('span',{className:'smh-dot'}));
+    _mbar.appendChild(txt('span','KindleHub'));
+    _mbar.appendChild(el('span',{className:'smh-spacer'}));
+    try{_mbar.appendChild(txt('span',new Date(NOW()).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toUpperCase()));}catch(_){}
+    _mast.appendChild(_mbar);
+    const _mbody=el('div',{className:'smh-body'});
+    const _nm=S.user||(S.email?S.email.split('@')[0]:'');
+    _mbody.appendChild(txt('div',_nm?('Hello, '+_nm):'KindleHub',{className:'smh-title'}));
+    _mbody.appendChild(txt('div',(function(){var h=new Date(NOW()).getHours();var g=h<12?'Good morning':(h<18?'Good afternoon':'Good evening');var wd='';try{wd=' · '+new Date(NOW()).toLocaleDateString(undefined,{weekday:'long'});}catch(_){}return g+wd;})(),{className:'smh-sub'}));
+    _mast.appendChild(_mbody);
+    wrap.appendChild(_mast);
     /* Featured row — three highlight cards across the top */
     const FEAT=[
       {view:'rss',     label:'News Reader',     sub:'Stay informed',
