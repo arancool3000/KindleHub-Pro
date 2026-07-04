@@ -345,6 +345,46 @@ COLUMNS/JSON_COLS/UPDATE_OK for kh_announcements + a handlePatch rule filtering 
 only (text/active/targets untouchable from the client — verified vs a mixed-PATCH piggyback attack). SCHEMA_DDL
 + best-effort ALTER add the column (`'[]'`). The two announcement loaders now `select=...,comments`. Tests:
 `/tmp/anncomment_test.mjs` (worker, 8/8) + `/tmp/anncomment_client.cjs` (client UI).
+
+## ⚡ Round: Gazette + unified pickers + Jailbroken Layout + Retro + Dashboard + perf
+Six-part user request, each its own tested+committed batch on `claude/keen-tesla-n73rpc`:
+- **The Kindle Gazette** (`BUILDERS.gazette`, nav tab + `['gazette','Gazette']`): AI daily newspaper. Default
+  "Daily" edition = **shared/public key** (`khiCall(prompt,{provider:'shared',temperature:0,maxTokens:1500})`)
+  so it's free + effectively same-for-all (fixed public feeds + shared model + temp 0); cached per-day in
+  `localStorage['kh_gazette']` (`{date,public:{headline,lead,stories,model,at},custom:{…}}`) — NEVER in S.
+  "✎ Custom" edition = the **canonical model picker** (`buildAIModelPicker`) → own API or shared + reader
+  interests (`S.gazetteTopics`) + followed feeds, via `khiCall(prompt,_khiOptsFromPicker())`. Headlines from
+  a fixed `GAZETTE_FEEDS` set via rss2json (CORS-open, same plumbing as News). Offline→saved edition; AI-down→
+  raw wire fallback. Newspaper layout (serif masthead, `column-count` 2-up on wide, 1 on e-ink). Test:
+  `/tmp/gazette_test.cjs`.
+- **Unified model pickers**: the Assistant's `buildAIModelPicker` (returns `{btn,drop,label,rebuild}`, writes
+  S.aiProvider/hbGeminiModel/openrouterModel/anthropicModel/openaiModel) now also powers the **Test AI
+  Connection** dialog (chat "Test" btn) and the **AI self-fix / prompt-an-edit** dialog (dropped its OpenRouter-
+  omitting provSel/modelSel + the temp S-swap; picker persists the choice). LEFT specialized (documented):
+  KindleOS support bot (manual-grounded bespoke send path — stream fns bake in `buildSYS()`, can't take the
+  support system prompt) + KindleOS store per-provider key-entry panels. Test: `/tmp/picker_test.cjs`.
+- **Jailbroken Layout** (premium, Ultra/Creator-gated via `_khRequireUltra`): Settings toggle (`.kh-switch`,
+  `S.jailbrokenLayout`) → Fullscreen API (vendor-prefixed `_khJbRequestFs/_khJbExitFs`) + Web Audio unlock
+  (`_khJbUnlockAudio` resumes a shared `window._khAudioCtx`; `_khJbBeep` test tone) + immersive `body.jailbroken-
+  layout` full-bleed CSS. All feature-detected (`_khJbCaps`) + try/catch → on KOReader/no-fullscreen engines the
+  CSS layout still applies (never a dead end); a live capability readout shows what the engine supports. Persist:
+  `applyCustomisation` re-applies the class at boot + arms a one-time next-tap re-enter (fullscreen/audio need a
+  gesture); `fullscreenchange`→`.kh-fs` body class. Helpers are top-level after `_khiOptsFromPicker`. Test:
+  `/tmp/jailbroken_test.cjs`.
+- **Retro UI polish** (`body.simple-ui`): app icons now framed "desktop tiles" (54px bordered+shadow), new
+  windowed masthead (`.simple-masthead` monospace title bar + serif "Hello, <name>" greeting via NOW()), framed
+  feature icons, serif titles + Courier labels, double-rule section header. Full dark+sepia parity. All static
+  (e-ink-safe). CSS in the main `<style>` (~627+); masthead built in the `uiMode==='simple'` home branch. Test:
+  `/tmp/retro_test.cjs`.
+- **Personalized Dashboard** (`BUILDERS.dashboard`, nav tab near front + `ALWAYS_REBUILD` so counts stay fresh):
+  greeting+date (NOW()), daily-goal card sharing `S.dailyGoal` w/ the Home widget (set inline / Mark done /
+  🔥streak, same yesterday-carry logic), 6 tappable stat tiles (Books/Notes/Journal/Chats/Events/Games-played →
+  jump to view), continue-reading (last `S.books`), today's Gazette headline (from `kh_gazette` cache), quick
+  actions. Defensive reads, theme-var CSS (works in Retro/dark/sepia). Test: `/tmp/dashboard_test.cjs`.
+- **Perf**: `@supports (content-visibility:auto)` hint (+`contain-intrinsic-size`) on `.simple-app`/`.dash-tile`
+  grids (`perf-css` IIFE) — skips off-screen paint on modern engines, no-op on Silk. (App already view-cached +
+  tick-guarded; deep Kindle-parse perf is a separate effort.)
+NB: `S.jailbrokenLayout`/`S.gazetteMode`/`S.gazetteTopics`/`S.dailyGoal` are small S fields (auto-persist).
 **Timer/Stopwatch:** Pomodoro card retitled "⏱ Timer, Stopwatch & Pomodoro"; added `startCustom(mins)` +
 a self-contained count-up stopwatch (`swToggle`/`swReset`/`#swDisplay`).
 **Restart-logout fix:** the gzip state blob can fail to inflate on a cold Kindle boot (→ logged-out default);
