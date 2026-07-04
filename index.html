@@ -1472,7 +1472,19 @@ let S=(()=>{try{
    theme / uiMode / lite-mode WITHOUT parsing the whole state blob (saves one
    full JSON.parse before first paint on a loaded account). Written here once at
    boot and again from save()/saveNow() whenever state is persisted. */
-function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode}));}catch(_){}}
+function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode}));}catch(_){}
+  /* Tiny, UNCOMPRESSED session mirror. The big kindlehub_v5 blob is gzip-packed,
+     and on a cold Kindle boot the inflate can fail under memory pressure — which
+     dropped the user to defaultState() (logged OUT) even though their data was
+     still on disk. This mirror lets us restore the sign-in independently of the
+     blob, then a cloud pull re-hydrates their data. Device-local; the hash is
+     already stored in plain inside the main blob, so this adds no new exposure. */
+  try{ if(S.authToken){localStorage.setItem('kh_session',JSON.stringify({t:S.authToken,u:S.userId||'',e:S.email||'',s:S.syncEnabled!==false?1:0}));} else {localStorage.removeItem('kh_session');} }catch(_){}
+}
+/* Restore the sign-in from the tiny mirror if the main blob loaded without it
+   (inflate failure / partial eviction) — this is the "logged out when I restart
+   my Kindle" fix. Runs BEFORE _writeBootHints so a recovered token is re-mirrored. */
+try{ if(!S.authToken){ var _ks=JSON.parse(localStorage.getItem('kh_session')||'null'); if(_ks&&_ks.t){ S.authToken=_ks.t; S.userId=_ks.u||String(_ks.t).slice(0,16); S.email=_ks.e||''; S.syncEnabled=_ks.s!==0; } } }catch(_){}
 try{_writeBootHints();}catch(_){}
 /* ── Local AI fixes (per-user) ──
    Stored as a dict S.localFixes = {errorId: {code, note, model, when}}.
@@ -40074,6 +40086,33 @@ Deno.serve(async (req)=>{
           actRow.appendChild(banBtn);
         }
       }
+      /* Message-content reports ([REPORT] …) name the offender as
+         `By: <username> (uid=…)`. Give the admin the SAME Warn / Ban actions so
+         EVERY report is actionable, not just the [USERNAME] ban-requests. */
+      if(isAdmin&&/\[REPORT\]/.test(item.text||'')&&!/\[USERNAME\]/.test(item.text||'')){
+        const _rm=/By:\s*([^()]+?)\s*\(uid=/.exec(item.text||'');
+        const _rName=_rm?_rm[1].trim():'';
+        const _rDisp=(typeof _dispName==='function'?_dispName(_rName):_rName);
+        if(_rName){
+          const rWarn=txt('button','⚠ Warn '+_rDisp.slice(0,18),{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+          rWarn.onclick=async()=>{
+            rWarn.disabled=true;
+            const ok=await _khWarnUsername(_rName);
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
+            else { rWarn.disabled=false; }
+          };
+          actRow.appendChild(rWarn);
+          const rBan=txt('button','Ban "'+_rDisp.slice(0,18)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
+          rBan.onclick=async()=>{
+            if(!await kindleConfirm('Ban "'+_rDisp+'"? They can no longer sign in or post, and the name shows as [removed] in chat. This resolves the report.'))return;
+            rBan.disabled=true;rBan.textContent='Banning…';
+            const ok=await _khBanUsername(_rName);
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Banned "'+_rDisp+'".',3500); renderItems(); }
+            else { rBan.disabled=false;rBan.textContent='Ban "'+_rDisp.slice(0,18)+'"'; }
+          };
+          actRow.appendChild(rBan);
+        }
+      }
       /* Admin status controls — gated on _schemaHasStatus so the admin
          doesn\'t see Mark Done / Ignore buttons that 400 when tapped. */
       if(isAdmin&&_schemaHasStatus!==false){
@@ -58164,6 +58203,12 @@ function _attachToTarget(el){
     el.dataset.khOrigInputmode=el.getAttribute('inputmode')||'__none__';
   }
   el.setAttribute('inputmode','none');
+  /* readOnly reliably suppresses the native keyboard on EVERY engine (old
+     Kindle WebKit ignores inputmode=none) while typeChar() still writes the
+     value programmatically. Set here too so a tap that fires pointerdown/focusin
+     before the bulk pass is still covered. Original readOnly restored on disable. */
+  if(el.dataset.khOrigRo==null){el.dataset.khOrigRo=el.readOnly?'1':'0';}
+  el.readOnly=true;
   /* Stop the soft keyboard summons */
   try{el.setAttribute('autocomplete','off');}catch(e){}
   _target=el;
@@ -58248,6 +58293,13 @@ function applyInputmodeAll(mode){
         el.dataset.khOrigInputmode=el.getAttribute('inputmode')||'__none__';
       }
       el.setAttribute('inputmode','none');
+      /* inputmode='none' is IGNORED by old Kindle WebKit, so the native
+         keyboard popped up alongside the KindleHub keyboard ("two keyboards").
+         readOnly is honoured by every engine and still lets typeChar() write the
+         value programmatically, so it reliably suppresses the native keyboard.
+         The ORIGINAL readOnly is remembered and restored on disable. */
+      if(el.dataset.khOrigRo==null){el.dataset.khOrigRo=el.readOnly?'1':'0';}
+      el.readOnly=true;
     } else {
       if(el.dataset.khOrigInputmode){
         var orig=el.dataset.khOrigInputmode;
@@ -58255,6 +58307,7 @@ function applyInputmodeAll(mode){
         else{el.setAttribute('inputmode',orig);}
         delete el.dataset.khOrigInputmode;
       }
+      if(el.dataset.khOrigRo!=null){el.readOnly=(el.dataset.khOrigRo==='1');delete el.dataset.khOrigRo;}
     }
   }
 }
@@ -58321,6 +58374,10 @@ function init(){
             elx.dataset.khOrigInputmode=elx.getAttribute('inputmode')||'__none__';
           }
           elx.setAttribute('inputmode','none');
+          /* Also suppress the native keyboard via readOnly (see applyInputmodeAll)
+             so inputs created while the KH keyboard is on never summon it. */
+          if(elx.dataset.khOrigRo==null){elx.dataset.khOrigRo=elx.readOnly?'1':'0';}
+          elx.readOnly=true;
         }
       }
     }

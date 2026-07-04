@@ -676,14 +676,17 @@ async function handlePatch(table, url, request, env, DB){
   const cols = COLUMNS[table];
   let keys = Object.keys(patch).filter(k=>cols.indexOf(k)>=0);
   /* SECURITY: kh_feedback holds abuse reports. A non-admin PATCH may ONLY bump
-     `votes` (upvoting a suggestion). Letting non-admins edit status/status_at/
-     text/author/date would let a reported user dismiss their own report
-     (status='ignored' hides it from the auto-mod cron + the human queue), strip
-     the [USERNAME] marker to dodge the auto-moderator, backdate status_at to
-     satisfy the 7-day delete guard, or forge `author`. Verified admins (the
-     x-kh-admin token the client now sends) may patch any column. */
+     `votes` (upvoting a suggestion) or append to `comments` (the public
+     discussion thread on a bug/suggestion). Letting non-admins edit status/
+     status_at/text/author/date would let a reported user dismiss their own
+     report (status='ignored' hides it from the auto-mod cron + the human queue),
+     strip the [USERNAME] marker to dodge the auto-moderator, backdate status_at
+     to satisfy the 7-day delete guard, or forge `author` — those stay locked.
+     `comments` is a discussion array, not a moderation signal, so allowing it is
+     safe and restores commenting on your own bug report. Verified admins (the
+     x-kh-admin token) may patch any column. */
   if(table==='kh_feedback' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
-    keys = keys.filter(k=>k==='votes');
+    keys = keys.filter(k=>k==='votes'||k==='comments');
   }
   if(!keys.length) return err('no valid columns to update',400,env);
   const setSql = keys.map(k=>QUOTE(k)+'=?').join(',');
