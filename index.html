@@ -1182,6 +1182,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="files">Files</div>
     <div class="tab" data-view="screenshot">Screenshot</div>
     <div class="tab" data-view="mail">Mail</div>
+    <div class="tab" data-view="imagesearch">Images</div>
+    <div class="tab" data-view="sports">Sports</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -1472,7 +1474,19 @@ let S=(()=>{try{
    theme / uiMode / lite-mode WITHOUT parsing the whole state blob (saves one
    full JSON.parse before first paint on a loaded account). Written here once at
    boot and again from save()/saveNow() whenever state is persisted. */
-function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode}));}catch(_){}}
+function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode}));}catch(_){}
+  /* Tiny, UNCOMPRESSED session mirror. The big kindlehub_v5 blob is gzip-packed,
+     and on a cold Kindle boot the inflate can fail under memory pressure — which
+     dropped the user to defaultState() (logged OUT) even though their data was
+     still on disk. This mirror lets us restore the sign-in independently of the
+     blob, then a cloud pull re-hydrates their data. Device-local; the hash is
+     already stored in plain inside the main blob, so this adds no new exposure. */
+  try{ if(S.authToken){localStorage.setItem('kh_session',JSON.stringify({t:S.authToken,u:S.userId||'',e:S.email||'',s:S.syncEnabled!==false?1:0}));} else {localStorage.removeItem('kh_session');} }catch(_){}
+}
+/* Restore the sign-in from the tiny mirror if the main blob loaded without it
+   (inflate failure / partial eviction) — this is the "logged out when I restart
+   my Kindle" fix. Runs BEFORE _writeBootHints so a recovered token is re-mirrored. */
+try{ if(!S.authToken){ var _ks=JSON.parse(localStorage.getItem('kh_session')||'null'); if(_ks&&_ks.t){ S.authToken=_ks.t; S.userId=_ks.u||String(_ks.t).slice(0,16); S.email=_ks.e||''; S.syncEnabled=_ks.s!==0; } } }catch(_){}
 try{_writeBootHints();}catch(_){}
 /* ── Local AI fixes (per-user) ──
    Stored as a dict S.localFixes = {errorId: {code, note, model, when}}.
@@ -2524,7 +2538,8 @@ const NAV_TABS=[
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
-  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail']
+  ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
+  ['imagesearch','Images'],['sports','Sports']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -3203,7 +3218,101 @@ function notifyMsg(name,text,ms,msgId,groupCode){
      chat directly (the messages builder reads window._khPendingOpenGroup). */
   const opts=groupCode?{onClick:()=>{try{window._khPendingOpenGroup=groupCode;if(typeof showView==='function')showView('messages');}catch(_){}}}:undefined;
   toast(safeName+': '+truncated,ms||5000,opts);
+  try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'💬',title:safeName,body:truncated,group:groupCode||'',view:'messages'});}catch(_){}
 }
+
+/* ── Notification Center — swipe-up bottom sheet ──────────────────────────────
+   A practical, reviewable list of recent notifications (chat messages, invites,
+   announcements), reachable by swiping UP from the bottom edge or tapping the
+   handle. Replaces relying on transient toasts. Device-local (localStorage
+   'kh_notifs', newest-first, capped) — never written to S. */
+(function(){
+  var KEY='kh_notifs', CAP=25;
+  var _unread=0, panel=null, listEl=null, handle=null, badge=null, backdrop=null, isOpen=false;
+  function _load(){try{var a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[];}catch(_){return [];}}
+  function _save(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(0,CAP)));}catch(_){}}
+  window._khNotifs=_load();
+  function _el(tag,css,txt){var e=document.createElement(tag);if(css)e.style.cssText=css;if(txt!=null)e.textContent=txt;return e;}
+  function _ago(ts){var s=Math.floor((Date.now()-ts)/1000);if(s<60)return 'now';var m=Math.floor(s/60);if(m<60)return m+'m';var h=Math.floor(m/60);if(h<24)return h+'h';return Math.floor(h/24)+'d';}
+
+  window._khPushNotif=function(n){
+    try{
+      n=n||{};
+      window._khNotifs.unshift({icon:String(n.icon||'🔔').slice(0,4),title:String(n.title||'').slice(0,60),body:String(n.body||'').slice(0,140),at:Date.now(),view:n.view||'',group:n.group||''});
+      window._khNotifs=window._khNotifs.slice(0,CAP);_save(window._khNotifs);
+      if(!isOpen)_unread++;
+      _build();_badge();
+      if(handle)handle.style.display='flex';
+      if(isOpen)_list();
+    }catch(_){}
+  };
+  function _badge(){if(!badge)return;if(_unread>0){badge.style.display='flex';badge.textContent=_unread>9?'9+':String(_unread);}else{badge.style.display='none';}}
+  function _list(){
+    if(!listEl)return;listEl.innerHTML='';
+    var a=window._khNotifs||[];
+    if(!a.length){listEl.appendChild(_el('div','padding:26px 12px;text-align:center;color:var(--muted);font-size:13px;','No notifications yet.'));return;}
+    for(var i=0;i<a.length;i++){(function(n){
+      var row=_el('div','display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid rgba(128,128,128,.2);');
+      row.appendChild(_el('div','font-size:18px;flex:0 0 auto;line-height:1.2;',n.icon));
+      var mid=_el('div','flex:1;min-width:0;');
+      if(n.title)mid.appendChild(_el('div','font-weight:700;font-size:13px;color:var(--fg);',n.title));
+      if(n.body)mid.appendChild(_el('div','font-size:12px;color:var(--muted);line-height:1.4;word-break:break-word;',n.body));
+      row.appendChild(mid);
+      row.appendChild(_el('div','font-size:10px;color:var(--muted);flex:0 0 auto;',_ago(n.at)));
+      if(n.view||n.group){row.style.cursor='pointer';row.onclick=function(){_close();if(n.group){try{window._khPendingOpenGroup=n.group;}catch(_){}}var v=n.view||(n.group?'messages':'');if(v&&typeof showView==='function'){try{showView(v);}catch(_){}}};}
+      listEl.appendChild(row);
+    })(a[i]);}
+  }
+  function _build(){
+    if(handle||!document.body)return;
+    handle=_el('div','position:fixed;left:50%;bottom:62px;transform:translateX(-50%);z-index:99997;background:var(--card);color:var(--fg);border:1px solid rgba(128,128,128,.35);border-radius:999px;padding:4px 14px;font-size:11px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.2);cursor:pointer;display:none;align-items:center;gap:6px;opacity:.94;');
+    handle.appendChild(_el('span','font-size:12px;','🔔'));
+    handle.appendChild(_el('span',null,'Notifications'));
+    badge=_el('span','display:none;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-inv);border-radius:999px;min-width:16px;height:16px;font-size:9px;font-weight:900;padding:0 4px;');
+    handle.appendChild(badge);
+    handle.onclick=_open;
+    document.body.appendChild(handle);
+
+    panel=_el('div','position:fixed;left:0;right:0;bottom:0;z-index:99998;background:var(--bg);border-top:1px solid rgba(128,128,128,.35);border-radius:16px 16px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.3);transform:translateY(110%);transition:transform .25s ease;max-height:70vh;display:flex;flex-direction:column;');
+    var grab=_el('div','flex:0 0 auto;padding:8px 0 4px;display:flex;justify-content:center;');
+    grab.appendChild(_el('div','width:40px;height:4px;border-radius:2px;background:rgba(128,128,128,.5);'));
+    panel.appendChild(grab);
+    var hdr=_el('div','flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:2px 14px 8px;');
+    hdr.appendChild(_el('div','font-weight:800;font-size:14px;color:var(--fg);','Notifications'));
+    var clr=_el('button','background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:4px 6px;','Clear all');
+    clr.onclick=function(){window._khNotifs=[];_save([]);_unread=0;_badge();_list();};
+    hdr.appendChild(clr);
+    panel.appendChild(hdr);
+    listEl=_el('div','flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;');
+    panel.appendChild(listEl);
+    document.body.appendChild(panel);
+
+    backdrop=_el('div','position:fixed;left:0;top:0;right:0;bottom:0;z-index:99996;background:rgba(0,0,0,.28);opacity:0;transition:opacity .2s;pointer-events:none;');
+    backdrop.onclick=_close;
+    document.body.appendChild(backdrop);
+
+    /* Swipe UP from the very bottom edge to open; swipe DOWN on the panel to close. */
+    var sy=0,sx=0,tracking=false;
+    document.addEventListener('touchstart',function(e){
+      if(isOpen)return;var t=e.touches&&e.touches[0];if(!t)return;
+      if(t.clientY>=window.innerHeight-26){sy=t.clientY;sx=t.clientX;tracking=true;}
+    },{passive:true});
+    document.addEventListener('touchmove',function(e){
+      if(!tracking||isOpen)return;var t=e.touches&&e.touches[0];if(!t)return;
+      if(sy-t.clientY>46&&Math.abs(t.clientX-sx)<70){tracking=false;_open();}
+    },{passive:true});
+    document.addEventListener('touchend',function(){tracking=false;},{passive:true});
+    var py=0;
+    panel.addEventListener('touchstart',function(e){var t=e.touches&&e.touches[0];if(t)py=t.clientY;},{passive:true});
+    panel.addEventListener('touchend',function(e){var t=e.changedTouches&&e.changedTouches[0];if(t&&t.clientY-py>60)_close();},{passive:true});
+  }
+  function _open(){_build();if(!panel)return;isOpen=true;_unread=0;_badge();_list();panel.style.transform='translateY(0)';if(backdrop){backdrop.style.pointerEvents='auto';backdrop.style.opacity='1';}if(handle)handle.style.display='none';}
+  function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}if(handle&&(window._khNotifs||[]).length)handle.style.display='flex';}
+  window._khOpenNotifs=_open;
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_build);else setTimeout(_build,400);
+  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();if(handle)handle.style.display='flex';}}catch(_){}},900);
+})();
 
 /* ── KindleHub Mobile OS ──────────────────────────────────────────────── */
 /* Shared wallpaper catalogue. Previously inlined twice — once in
@@ -5712,6 +5821,28 @@ function applyTheme(t){
 const KH_ACCENTS=[['Ink','#111111'],['Ocean','#1f6f8b'],['Forest','#2f7d4f'],['Plum','#7d3f8f'],['Rust','#b5532a'],['Berry','#b03a5b'],['Slate','#41506b'],['Gold','#8a6d12']];
 const KH_FONTS={system:['System',"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif"],serif:['Serif',"Georgia,'Times New Roman',serif"],mono:['Mono',"'SF Mono',Menlo,Consolas,monospace"],rounded:['Rounded',"'Trebuchet MS','Segoe UI',Verdana,sans-serif"]};
 function _contrastColor(hex){try{var h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (0.299*r+0.587*g+0.114*b)>140?'#111111':'#ffffff';}catch(_){return '#ffffff';}}
+/* Keep an accent VISIBLE against the current theme background. --accent is used
+   as foreground on links / the active nav tab, so a near-black accent (e.g. the
+   "Ink" swatch #111) on a dark theme rendered invisible. If the accent's
+   luminance is within ~40 of the background's (genuinely low contrast) we blend
+   it toward white (on a dark bg) or black (on a light bg) just enough to show.
+   Accents that already contrast — the mid-tone swatches — are returned
+   unchanged, so a deliberate colour choice is never overridden. */
+function _accentForBg(hex){
+  try{
+    var m=(getComputedStyle(document.body).backgroundColor||'').match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if(!m)return hex;
+    var bl=0.299*+m[1]+0.587*+m[2]+0.114*+m[3];
+    var h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(function(c){return c+c;}).join('');
+    if(h.length!==6)return hex;
+    var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+    var al=0.299*r+0.587*g+0.114*b;
+    if(Math.abs(al-bl)>=40)return hex; // enough contrast — leave the chosen colour alone
+    var toward=bl<128?255:0, k=0.55;
+    r=Math.round(r+(toward-r)*k);g=Math.round(g+(toward-g)*k);b=Math.round(b+(toward-b)*k);
+    return '#'+[r,g,b].map(function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
+  }catch(_){return hex;}
+}
 function applyCustomisation(){
   try{
     /* Set the vars on BOTH <html> and <body>. The dark/sepia theme classes
@@ -5721,7 +5852,7 @@ function applyCustomisation(){
        "did nothing" outside light mode. Inline-on-body outranks the class. */
     var targets=[document.documentElement,document.body].filter(Boolean);
     targets.forEach(function(t){
-      if(S.accent){t.style.setProperty('--accent',S.accent);t.style.setProperty('--accent-inv',_contrastColor(S.accent));}
+      if(S.accent){var _acc=_accentForBg(S.accent);t.style.setProperty('--accent',_acc);t.style.setProperty('--accent-inv',_contrastColor(_acc));}
       else{t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');}
       var f=S.uiFont&&KH_FONTS[S.uiFont];
       if(f){
@@ -7695,6 +7826,53 @@ async function _adminRpc(fn,body){
     return{ok:false,body:t,status:r.status};
   }catch(e){return{ok:false,body:String(e&&e.message||e)};}
 }
+/* ── Limited MODERATOR role (aggregate community stats only) ───────────────────
+   A moderator enters a code the admin gave them (the admin adds its SHA-256 to
+   the Worker's MOD_HASHES env). The code unlocks ONLY kh_mod_stats — community
+   COUNTS, never any user, message, mail or cloud data. Instantly revocable by
+   the admin (remove the hash from the env). Admins are implicitly moderators. */
+function _modCode(){ try{ return (localStorage.getItem('kh_mod_code')||'').trim(); }catch(_){ return ''; } }
+async function _khModStats(tok){
+  tok = tok || _modCode() || (window._adminToken||'');
+  if(!tok) return {ok:false,status:401};
+  try{
+    const r=await fetch(_sbBase()+'/rest/v1/rpc/kh_mod_stats',{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_token:tok})});
+    if(!r.ok) return {ok:false,status:r.status};
+    return {ok:true,data:await r.json()};
+  }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
+}
+function _khBuildModCard(){
+  const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginTop:'12px',boxShadow:'var(--shadow)'}});
+  c.appendChild(txt('div','MODERATOR TOOLS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
+  c.appendChild(txt('div','Have a moderator code from the admin? Enter it to see community stats. This shows COUNTS only — never any names, messages, mail or personal data.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}});
+  const inp=el('input',{type:'password',placeholder:'moderator code',autocomplete:'off',style:{flex:'1',minWidth:'140px',fontSize:'13px',padding:'8px 10px',border:'var(--border)',borderRadius:'8px',background:'var(--bg)',color:'var(--fg)',boxSizing:'border-box'}});
+  inp.value=_modCode();
+  const btn=txt('button','View stats',{className:'btn primary small'});
+  row.appendChild(inp);row.appendChild(btn);c.appendChild(row);
+  const out=el('div',{style:{fontSize:'12px',lineHeight:'1.7'}});c.appendChild(out);
+  async function load(saveIt){
+    const code=(inp.value||'').trim();
+    if(saveIt){ try{ if(code)localStorage.setItem('kh_mod_code',code); else localStorage.removeItem('kh_mod_code'); }catch(_){} }
+    out.textContent='Loading…';
+    const res=await _khModStats(code);
+    if(!res.ok){ out.textContent=(res.status===401?'Enter a moderator code above.':(res.status===403?'That code isn’t a valid moderator code.':'Couldn’t load stats — check your connection.')); return; }
+    const d=res.data||{};
+    out.innerHTML='';
+    const stat=function(label,val){ const rr=el('div',{style:{display:'flex',justifyContent:'space-between',padding:'3px 0',borderBottom:'1px dashed var(--muted)'}}); rr.appendChild(txt('span',label,{})); rr.appendChild(txt('strong',String(val==null?'—':val),{})); out.appendChild(rr); };
+    stat('Total users', d.users);
+    stat('Online now', d.onlineNow);
+    stat('Visitors today', d.visitsToday);
+    stat('Unique visitors (7d)', d.visitors7d);
+    stat('Messages in cloud', d.messages);
+    stat('Chat rooms', d.groups);
+    stat('Open feedback / reports', d.feedbackOpen);
+    out.appendChild(txt('div','Counts only — no names, messages, mail or personal data are reachable from this role.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px'}}));
+  }
+  btn.onclick=function(){ load(true); };
+  if(_modCode()||window._adminToken) setTimeout(function(){load(false);},60);
+  return c;
+}
 async function _khBanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
@@ -8147,8 +8325,12 @@ async function _logVisit(){
      front of ua_hint — 'g|' guest, 'u|' signed-in — so admin stats can count
      "not-logged-in users per day" with NO schema change. Stripped on display
      via _visitUaClean(). */
-  const _guest=!(typeof S!=='undefined'&&S&&S.authToken);
-  const ua=(_guest?'g|':'u|')+(navigator.userAgent||'').slice(0,158);
+  /* Prefix: 'g|' guest, 'u|' signed-in (Pro), 'U|' signed-in on Ultra/Creator —
+     lets admin stats split TODAY's devices into guests / signed-in / Ultra with
+     no schema change. Stripped on display via _visitUaClean(). */
+  const _signedIn=!!(typeof S!=='undefined'&&S&&S.authToken);
+  const _ultra=_signedIn&&typeof _khTier==='function'&&_khTier()!=='pro';
+  const ua=(_signedIn?(_ultra?'U|':'u|'):'g|')+(navigator.userAgent||'').slice(0,158);
   const geo=await _getGeo();
   const row={device_id:id,day:today,last_seen:new Date().toISOString(),ua_hint:ua};
   if(geo){
@@ -8163,8 +8345,10 @@ async function _logVisit(){
 /* ua_hint now carries a leading 'g|'/'u|' guest flag (see _logVisit). Helpers to
    read it and to strip it for display. Older rows without a flag → treated as
    not-guest (unknown) so they don't inflate the guest count. */
-function _visitUaClean(ua){return String(ua||'').replace(/^[gu]\|/,'');}
+function _visitUaClean(ua){return String(ua||'').replace(/^[guU]\|/,'');}
 function _visitIsGuest(ua){return /^g\|/.test(String(ua||''));}
+function _visitIsSignedIn(ua){return /^[uU]\|/.test(String(ua||''));}
+function _visitIsUltra(ua){return /^U\|/.test(String(ua||''));}
 
 /* ── Live presence heartbeat ──────────────────────────────────────────
    Each open client upserts ONE row into kh_presence (keyed on a stable
@@ -8865,6 +9049,14 @@ function _parseItemIds(text){
 
   async function reportError(message,source,lineno,colno,errorObj,kind){
     kind=kind||'error';
+    /* Ignore errors from THIRD-PARTY scripts we don't ship — chiefly the
+       Cloudflare Web Analytics beacon (served as .../beacon.min.js/v<hash>),
+       whose modern JS (optional chaining) old Kindle Silk can't parse, throwing
+       a harmless "Unexpected token ." on every load that was flooding the error
+       log with reports we can't act on. Our own code is inline in the page
+       document, so its source is the page URL — never a /v<hash> beacon asset. */
+    var _thirdParty=String(source||'')+' '+String((errorObj&&errorObj.stack)||'');
+    if(/cloudflareinsights|beacon\.min\.js|\/cdn-cgi\/|rocket-loader|\bv[0-9a-f]{24,}/i.test(_thirdParty))return;
     const key=String(message||'')+'@'+(lineno||'?');
     if(_reported.has(key))return;
     _reported.add(key);
@@ -9179,13 +9371,13 @@ function _trimStateForCloud(stateObj){
    notes, books, journals, flashcards, calendar or recipes). */
 let STORAGE_LIMIT_BYTES=1.5*1024*1024;   /* tier-driven: Pro 1.5MB · Ultra 3MB · Creator 12MB — kept current by _khUltraTick */
 /* ── KindleHub Ultra — a tier you EARN by using KindleHub ──────────────────
-   Any day you're active for ≥10 minutes is a "qualifying day". Keep ≥3
+   Any day you're SIGNED IN and active for ≥15 minutes is a "qualifying day". Keep ≥3
    qualifying days inside the trailing 7-day window and Ultra stays on — a
    rolling, licence-points-style window, so a steady 3×/week user never drops a
    day. The Creator (the admin) has it permanently. State lives in S.ultra so it
    rides the normal cloud-sync pipeline; while OFFLINE we keep the last-known
    status so a connectivity blip can never revoke it. */
-const ULTRA_MIN_SEC=600,ULTRA_DAYS_NEEDED=3,ULTRA_WINDOW_DAYS=7;
+const ULTRA_MIN_SEC=900,ULTRA_DAYS_NEEDED=3,ULTRA_WINDOW_DAYS=7; /* 15 min/day × 3 days/week */
 function _ultraState(){
   if(!S.ultra||typeof S.ultra!=='object')S.ultra={days:[],acc:{d:'',sec:0},active:false,since:0};
   if(!Array.isArray(S.ultra.days))S.ultra.days=[];
@@ -9210,6 +9402,18 @@ function _khUltraActive(){
   return _ultraWindowDays().length>=ULTRA_DAYS_NEEDED;
 }
 function _khTier(){return _isCreator()?'creator':(_khUltraActive()?'ultra':'pro');}
+/* Gate a premium feature behind the Ultra (or Creator) tier. Returns true when
+   allowed; otherwise shows a friendly, free-to-unlock upsell and returns false. */
+function _khRequireUltra(label){
+  if(_khTier()!=='pro')return true; // ultra or creator → allowed
+  const what=label||'This';
+  const msg=(typeof S!=='undefined'&&S.authToken)
+    ? (what+' is a KindleHub Ultra feature. Unlock it FREE — just use KindleHub 15+ min a day on any 3 days this week.')
+    : (what+' is a KindleHub Ultra feature. Sign in (Settings), then use KindleHub 15+ min a day on 3 days this week to unlock it — free.');
+  try{if(typeof toast==='function')toast(msg,5500);}catch(_){}
+  return false;
+}
+window._khRequireUltra=_khRequireUltra;
 function _storageLimit(){const t=_khTier();return t==='creator'?(12*1024*1024):(t==='ultra'?(3*1024*1024):(1.5*1024*1024));}
 function _khBadgeInfo(tier){tier=tier||_khTier();
   if(tier==='creator')return{label:'Creator',title:'Creator — the one who built KindleHub'};
@@ -9268,7 +9472,9 @@ function _khUltraTick(addSec){
     if(u.acc.d!==today)u.acc={d:today,sec:0};
     let changed=false;
     if(addSec>0){u.acc.sec+=addSec;
-      if(u.acc.sec>=ULTRA_MIN_SEC&&u.days.indexOf(today)<0){u.days.push(today);changed=true;}}
+      /* Only a SIGNED-IN day counts toward Ultra — guest usage never accrues
+         qualifying days (Ultra is an account tier). */
+      if(u.acc.sec>=ULTRA_MIN_SEC&&S.authToken&&u.days.indexOf(today)<0){u.days.push(today);changed=true;}}
     const keepFrom=new Date(NOW().getTime()-2*ULTRA_WINDOW_DAYS*86400000).toISOString().slice(0,10);
     const n0=u.days.length;u.days=u.days.filter(function(d){return d>=keepFrom;});if(u.days.length!==n0)changed=true;
     const nowActive=_khUltraActive();
@@ -10405,10 +10611,10 @@ async function _groupSend(code,msg){
     try{
       row.device_hint=(typeof _khDeviceLabel==='function'?_khDeviceLabel():'').slice(0,80);
     }catch(_){}
-    try{
-      const loc=(typeof _khCachedLocationLabel==='function')?_khCachedLocationLabel():'';
-      if(loc)row.location_hint=loc.slice(0,120);
-    }catch(_){}
+    /* location_hint is now stamped SERVER-SIDE from Cloudflare's edge geo
+       (request.cf) on insert — reliable and spoof-proof. We no longer ping a
+       third-party IP-geo API from the client on send (it was empty on the first
+       send of every session anyway, and leaked the user's IP to ipapi.co). */
     try{
       await _sbInsert('kh_messages',row);
     }catch(eFirst){
@@ -15201,6 +15407,9 @@ window._khInviteDismissed=_khInviteDismissed;window._khDismissInvite=_khDismissI
     if(typeof _khInviteDismissed==='function'&&_khInviteDismissed(_invKey))return;
     /* Title-case the game name for the header ("chess" → "Chess"). */
     const gameTitle=String(game).charAt(0).toUpperCase()+String(game).slice(1);
+    /* Also log the invite to the Notification Center (dedup guard above ensures
+       this only fires for a genuinely new request, not on inbox replay). */
+    try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'🎮',title:gameTitle+' invite',body:(fromName||'A player')+' wants to play '+gameTitle,view:'games'});}catch(_){}
     const host=_bannerHost();
     const card=document.createElement('div');
     card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);border:2px solid var(--fg,#111);border-radius:12px;padding:13px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.28);font-size:13px;line-height:1.45;display:flex;flex-direction:column;gap:9px;animation:none;';
@@ -15282,6 +15491,9 @@ window._khInviteDismissed=_khInviteDismissed;window._khDismissInvite=_khDismissI
    closes. This is what every 2-player game ties into. */
 window.KH_MP.openLobby=function(opts){
   opts=opts||{};
+  /* Online multiplayer is an Ultra feature — this is the single entry every
+     "Play Online" button routes through, so gating here covers them all. */
+  if(typeof _khRequireUltra==='function'&&!_khRequireUltra('Online multiplayer'))return;
   const gameName=opts.gameName||'game';
   const onConnected=opts.onConnected||function(){};
   const old=document.getElementById('kh-mp-lobby');if(old)old.remove();
@@ -17305,7 +17517,28 @@ const Wordle=(()=>{
 })();
 
 const Sudoku=(()=>{
-  let G=null,selected=null;
+  let G=null,selected=null,_sdkCells=null;
+  /* Repaint ONLY the 81 cells' state (value / selected-row-col-box highlight /
+     conflict colour) on the existing DOM nodes — no innerHTML rebuild. Tapping a
+     cell or entering a number used to rebuild the whole board + numpad + controls
+     every time, a full e-ink flash on each interaction. */
+  function paintCells(){
+    if(!G||!_sdkCells)return;
+    const conflicts=getConflicts();
+    for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+      const idx=r*9+c, cell=_sdkCells[idx];
+      if(!cell)continue;
+      const val=G.fixed[r][c]?G.puzzle[r][c]:(G.user[r][c]||0);
+      const isSel=selected&&selected[0]===r&&selected[1]===c;
+      const isHL=selected&&!isSel&&(selected[0]===r||selected[1]===c||(Math.floor(selected[0]/3)===Math.floor(r/3)&&Math.floor(selected[1]/3)===Math.floor(c/3)));
+      const cls='sdk-cell'+(G.fixed[r][c]?' fixed':' user-input')+(isSel?' selected':isHL?' highlight':'');
+      if(cell.className!==cls)cell.className=cls;
+      const tv=val?String(val):'';
+      if(cell.textContent!==tv)cell.textContent=tv;
+      const col=(conflicts.has(idx)&&!G.fixed[r][c])?'var(--danger)':'';
+      if(cell.style.color!==col)cell.style.color=col;
+    }
+  }
   function isValid(board,r,c,num){
     for(let i=0;i<9;i++)if(board[r][i]===num)return false;
     for(let i=0;i<9;i++)if(board[i][c]===num)return false;
@@ -17361,26 +17594,24 @@ const Sudoku=(()=>{
   }
   function render(){
     immersiveContent.innerHTML='';if(!G)return;
-    const conflicts=getConflicts();
     const board=el('div',{className:'sudoku-board',id:'sdkBoard'});
+    _sdkCells=new Array(81);
     for(let r=0;r<9;r++)for(let c=0;c<9;c++){
-      const val=G.fixed[r][c]?G.puzzle[r][c]:(G.user[r][c]||0);
       const idx=r*9+c;
-      const isSel=selected&&selected[0]===r&&selected[1]===c;
-      const isHL=selected&&!isSel&&(selected[0]===r||selected[1]===c||(Math.floor(selected[0]/3)===Math.floor(r/3)&&Math.floor(selected[1]/3)===Math.floor(c/3)));
-      let cls='sdk-cell'+(G.fixed[r][c]?' fixed':' user-input')+(isSel?' selected':isHL?' highlight':'');
-      const cell=el('div',{className:cls,'data-r':r,'data-c':c});
-      cell.textContent=val||'';
-      if(conflicts.has(idx)&&!G.fixed[r][c])cell.style.color='var(--danger)';
+      const cell=el('div',{className:'sdk-cell','data-r':r,'data-c':c});
+      /* Static box borders — depend only on position, so set once here. Cell
+         value / highlight / conflict colour are filled by paintCells(). */
       if((c+1)%3===0&&c<8)cell.style.borderRight='2px solid var(--fg)';
       if((r+1)%3===0&&r<8)cell.style.borderBottom='2px solid var(--fg)';
       if(c%3===0)cell.style.borderLeft='2px solid var(--fg)';
       if(r%3===0)cell.style.borderTop='2px solid var(--fg)';
+      _sdkCells[idx]=cell;
       board.appendChild(cell);
     }
     immersiveContent.appendChild(txt('p','Tap a cell, then a number. Red = conflict.',{style:{fontSize:'12px',color:'var(--muted)',margin:'2px 0 6px'}}));
     immersiveContent.appendChild(board);
-    board.onclick=e=>{const cell=e.target.closest('.sdk-cell');if(!cell)return;selected=[parseInt(cell.dataset.r),parseInt(cell.dataset.c)];render();};
+    /* tap = select only → repaint state, not a full rebuild */
+    board.onclick=e=>{const cell=e.target.closest('.sdk-cell');if(!cell)return;selected=[parseInt(cell.dataset.r),parseInt(cell.dataset.c)];paintCells();};
     const numpad=el('div',{className:'sudoku-numpad'});
     for(let n=1;n<=9;n++){
       const btn=txt('button',String(n),{className:'btn'});
@@ -17396,18 +17627,18 @@ const Sudoku=(()=>{
            exact match to one stored solution — puzzles aren't guaranteed unique,
            so a correct alternate fill must also count as solved. */
         if(complete&&getConflicts().size>0)complete=false;
-        if(complete){render();toast('Sudoku solved!');recordStat('sudoku',true,{time:Date.now()-G.startTime});}else render();
+        if(complete){paintCells();toast('Sudoku solved!');recordStat('sudoku',true,{time:Date.now()-G.startTime});}else paintCells();
       };
       numpad.appendChild(btn);
     }
     const clrBtn=txt('button','Del',{className:'btn',style:{gridColumn:'span 2'}});
-    clrBtn.onclick=()=>{if(selected&&!G.fixed[selected[0]][selected[1]]){G.user[selected[0]][selected[1]]=0;render();}};
+    clrBtn.onclick=()=>{if(selected&&!G.fixed[selected[0]][selected[1]]){G.user[selected[0]][selected[1]]=0;paintCells();}};
     numpad.appendChild(clrBtn);
     immersiveContent.appendChild(numpad);
     const ctrl=el('div',{className:'card-row',style:{marginTop:'8px',flexWrap:'wrap'}});
     ctrl.appendChild(Object.assign(txt('button','New',{className:'btn'}),{onclick:newGameGuard(()=>G&&G.user&&G.user.some(row=>row.some(Boolean)),start)}));
     const revBtn=txt('button','Reveal Cell',{className:'btn small'});
-    revBtn.onclick=()=>{if(!selected||G.fixed[selected[0]][selected[1]])return;G.user[selected[0]][selected[1]]=G.solution[selected[0]][selected[1]];render();toast('Cell revealed');};
+    revBtn.onclick=()=>{if(!selected||G.fixed[selected[0]][selected[1]])return;G.user[selected[0]][selected[1]]=G.solution[selected[0]][selected[1]];paintCells();toast('Cell revealed');};
     ctrl.appendChild(revBtn);
     /* ── Team Sudoku ── share the exact puzzle so friends solve the same
        board and race. The code is just the 81 givens; the loader re-solves
@@ -17434,6 +17665,7 @@ const Sudoku=(()=>{
     };
     ctrl.appendChild(shareBtn);ctrl.appendChild(loadBtn);
     immersiveContent.appendChild(ctrl);
+    paintCells(); // initial fill of the freshly-built board
   }
   /* Sudoku boards are never persisted mid-game, so there is nothing
      to restore. (The old version was a copy-paste of Mastermind's
@@ -19244,8 +19476,9 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
     if(hitEdge){SI.dir*=-1;for(const e of alive)e.y+=12;}
     if(alive.some(e=>e.y+EH>SI.py)){
       SI.active=false;draw();
+      const _sc=SI.score; /* snapshot BEFORE stop() nulls SI (was "Cannot read 'score' of null") */
       stop();
-      toast('Invaded! Score: '+SI.score);recordStat('spaceinv',false);return;
+      toast('Invaded! Score: '+_sc);recordStat('spaceinv',false);return;
     }
     for(const sh of SI.shields){
       for(const b of [...SI.bullets,...SI.ebullets]){
@@ -19275,8 +19508,9 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
         updateImmersiveScore('Score: '+SI.score+'Lives: '+SI.lives);
         if(SI.lives<=0){
           SI.active=false;draw();
+          const _sc=SI.score; /* snapshot BEFORE stop() nulls SI */
           stop();
-          toast('Game over! Score: '+SI.score);recordStat('spaceinv',false);return;
+          toast('Game over! Score: '+_sc);recordStat('spaceinv',false);return;
         }
       }
     }
@@ -23799,10 +24033,35 @@ const Pomodoro=(()=>{
           }
         }
       }catch(_){}
+      /* Custom "set a timer for N minutes" — reuses the countdown machinery. */
+      var cb=$('pomoCustomStart');if(cb)cb.onclick=function(){var mins=parseInt(($('pomoCustom')||{}).value,10);if(mins>0)startCustom(mins);else if(typeof toast==='function')toast('Enter minutes (1–180).');};
+      var ss=$('swStart');if(ss)ss.onclick=swToggle;
+      var sr=$('swReset');if(sr)sr.onclick=swReset;
+      _swPaint();
       render();
     },0);
   }
-  return{init,render};
+  function startCustom(mins){
+    var m=Math.max(1,Math.min(180,Math.round(mins||0)));
+    mode='work';timeLeft=m*60;
+    if(timer){clearInterval(timer);timer=null;}
+    sessionStart=Date.now();
+    timer=setInterval(onTick,1000);
+    render();
+    if(typeof toast==='function')toast('Timer started: '+m+' min');
+  }
+  /* Self-contained STOPWATCH (counts UP), independent of the countdown loop so it
+     can't interfere with the Pomodoro. Ticks only the #swDisplay text; the
+     interval self-clears once the Tools view (and #swDisplay) is gone. */
+  var _swTimer=null,_swBase=0,_swElapsed=0;
+  function _swFmt(ms){var s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);s=s%60;m=m%60;return (h>0?(h+':'+String(m).padStart(2,'0')):String(m))+':'+String(s).padStart(2,'0');}
+  function _swPaint(){var d=$('swDisplay');if(!d)return;var v=_swFmt(_swElapsed+(_swTimer?(Date.now()-_swBase):0));if(d.textContent!==v)d.textContent=v;}
+  function swToggle(){
+    if(_swTimer){_swElapsed+=Date.now()-_swBase;clearInterval(_swTimer);_swTimer=null;var b=$('swStart');if(b)b.textContent='Start';}
+    else{_swBase=Date.now();_swTimer=setInterval(function(){if(!$('swDisplay')){clearInterval(_swTimer);_swTimer=null;return;}_swPaint();},250);var b2=$('swStart');if(b2)b2.textContent='Pause';}
+  }
+  function swReset(){if(_swTimer){clearInterval(_swTimer);_swTimer=null;}_swElapsed=0;var b=$('swStart');if(b)b.textContent='Start';_swPaint();}
+  return{init,render,startCustom};
 })();
 
 /* Turn a note's text into an AI-generated flashcard deck (saved to
@@ -34904,7 +35163,7 @@ tools:()=>{
   wc.appendChild(wcBtn);
   g.appendChild(wc);
   const pom=el('div',{className:'card',style:{gridColumn:'1/-1'}});
-  pom.appendChild(txt('h2','Pomodoro + Focus Journal'));
+  pom.appendChild(txt('h2','⏱ Timer, Stopwatch & Pomodoro'));
   pom.appendChild(txt('div','',{id:'pomodoroMode',style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
   const pomTask=el('input',{id:'pomoTask',placeholder:'What are you working on? (optional)',style:{marginBottom:'6px',fontSize:'12px'}});
   pom.appendChild(pomTask);
@@ -34917,6 +35176,19 @@ tools:()=>{
   pr.appendChild(txt('button','Short 5',{className:'btn small',id:'pomo_short'}));
   pr.appendChild(txt('button','Long 15',{className:'btn small',id:'pomo_long'}));
   pom.appendChild(pr);
+  /* Custom "set a timer for N minutes" — makes a plain timer obvious to find. */
+  const _ctRow=el('div',{className:'card-row',style:{marginTop:'8px',flexWrap:'wrap',alignItems:'center',gap:'6px'}});
+  _ctRow.appendChild(txt('span','Custom timer:',{style:{fontSize:'12px',color:'var(--muted)'}}));
+  _ctRow.appendChild(el('input',{id:'pomoCustom',type:'number',min:'1',max:'180',placeholder:'min',inputmode:'numeric',style:{width:'72px',fontSize:'13px'}}));
+  _ctRow.appendChild(txt('button','Start timer',{className:'btn small',id:'pomoCustomStart'}));
+  pom.appendChild(_ctRow);
+  /* Stopwatch — counts UP. A separate, clearly-labelled tool. */
+  pom.appendChild(txt('div','STOPWATCH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginTop:'12px'}}));
+  pom.appendChild(txt('div','0:00',{id:'swDisplay',className:'pomodoro-ring',style:{fontSize:'34px'}}));
+  const _swRow=el('div',{className:'card-row',style:{flexWrap:'wrap'}});
+  _swRow.appendChild(txt('button','Start',{className:'btn small primary',id:'swStart'}));
+  _swRow.appendChild(txt('button','Reset',{className:'btn small',id:'swReset'}));
+  pom.appendChild(_swRow);
   const pomNote=el('textarea',{id:'pomoNote',rows:'2',placeholder:'Reflection note for this session...',style:{display:'none',width:'100%',marginTop:'8px',fontSize:'12px',padding:'6px',border:'var(--thin)',borderRadius:'4px',background:'var(--card)',color:'var(--fg)',resize:'vertical'}});
   pom.appendChild(pomNote);
   const pomNoteSave=txt('button','Save note',{className:'btn small primary',id:'pomoNoteSave',style:{display:'none',marginTop:'4px'}});
@@ -36827,15 +37099,16 @@ settings:()=>{
       _ultraBox.appendChild(hdr);
       /* Plain-language answer to "am I an admin?" so users can self-check
          instead of asking. Admins are the `creator` tier. */
+      /* Don't surface "admin" wording to normal users — it confused them. The
+         creator just sees an "everything unlocked" line; everyone else sees only
+         their Ultra status below. */
       if(p.tier==='creator'){
-        _ultraBox.appendChild(txt('div','✓ You ARE an admin — you have the moderation + admin tools.',{style:{fontSize:'12px',fontWeight:'800',color:'var(--success)',marginBottom:'4px'}}));
-      }else{
-        _ultraBox.appendChild(txt('div','You are a standard member — not an admin.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
+        _ultraBox.appendChild(txt('div','✓ You are the Creator — every feature is unlocked, permanently.',{style:{fontSize:'12px',fontWeight:'800',color:'var(--success)',marginBottom:'4px'}}));
       }
       const tierName=p.tier==='creator'?'Creator (permanent)':(p.tier==='ultra'?'Ultra — active':'Pro');
       _ultraBox.appendChild(txt('div','Your tier: '+tierName,{style:{fontSize:'12px',fontWeight:'700',marginBottom:'4px'}}));
       if(p.tier!=='creator'){
-        _ultraBox.appendChild(txt('div','Active days this week: '+p.windowDays+'/'+p.need+(p.todayQualified?' · today counts ✓':(' · today '+p.todayMin+'/10 min')),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
+        _ultraBox.appendChild(txt('div','Active days this week: '+p.windowDays+'/'+p.need+(p.todayQualified?' · today counts ✓':(' · today '+p.todayMin+'/15 min')),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
         /* Visual progress toward Ultra — fills as qualifying days accrue so
            the path to unlocking is obvious at a glance, not buried in text. */
         const barOuter=el('div',{style:{height:'10px',borderRadius:'999px',background:'var(--card)',border:'var(--thin)',overflow:'hidden',margin:'2px 0 6px'}});
@@ -36845,11 +37118,11 @@ settings:()=>{
         if(p.tier!=='ultra'){
           const need=Math.max(0,p.need-p.windowDays);
           const cta=el('div',{style:{fontSize:'12px',fontWeight:'700',color:'var(--fg)',background:'var(--card)',border:'var(--thin)',borderRadius:'8px',padding:'8px 10px',margin:'2px 0 6px',lineHeight:'1.5'}});
-          cta.textContent=need<=0?'You qualify — Ultra unlocks shortly!':('Unlock Ultra: be active '+need+' more day'+(need===1?'':'s')+' this week (just 10+ minutes each).');
+          cta.textContent=need<=0?'You qualify — Ultra unlocks shortly!':('Unlock Ultra: be active '+need+' more day'+(need===1?'':'s')+' this week (just 15+ minutes each).');
           _ultraBox.appendChild(cta);
         }
       }
-      _ultraBox.appendChild(txt('div',p.tier==='creator'?'Unlimited storage, full AI, and the Creator badge — forever.':(p.tier==='ultra'?'You have Ultra: first-come AI + KHI, 3 MB cloud storage, and the Big Contributor badge. Use KindleHub 3 days a week (10+ min each) to keep it — it rolls, so a steady week never lets it lapse.':'Ultra perks: more AI + KHI, 3 MB cloud storage, and a Big Contributor badge. It works like a rolling points system — stay active 3×/week (10+ min each) and you never lose it. No payment, ever.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+      _ultraBox.appendChild(txt('div',p.tier==='creator'?'Unlimited storage, full AI, and the Creator badge — forever.':(p.tier==='ultra'?'You have Ultra: first-come AI + KHI, 3 MB cloud storage, and the Big Contributor badge. Use KindleHub 3 days a week (15+ min each) to keep it — it rolls, so a steady week never lets it lapse.':'Ultra perks: more AI + KHI, 3 MB cloud storage, and a Big Contributor badge. It works like a rolling points system — stay active 3×/week (15+ min each) and you never lose it. No payment, ever.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
       const rf=txt('button','Refresh',{className:'btn small',style:{marginTop:'8px',fontSize:'10px'}});rf.onclick=function(){try{if(typeof _khUltraTick==='function')_khUltraTick(0);}catch(_){}_renderUltra();};
       _ultraBox.appendChild(rf);
     }
@@ -36864,6 +37137,8 @@ settings:()=>{
     function _onTierChange(){ if(_ultraBox&&_ultraBox.isConnected)_renderUltra(); else try{window.removeEventListener('kh-tier-changed',_onTierChange);}catch(_){} }
     try{window.addEventListener('kh-tier-changed',_onTierChange);}catch(_){}
     cAccount.appendChild(_ultraBox);
+    /* Limited moderator stats card — code-gated, counts only (see _khBuildModCard). */
+    try{ if(typeof _khBuildModCard==='function') cAccount.appendChild(_khBuildModCard()); }catch(_){}
   }catch(_){}
 
   /* Two modes: login (username+pw) and register (username+pw+confirm).
@@ -37962,7 +38237,16 @@ feedback:()=>{
       /* Active backend status */
       const beRow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',marginBottom:'10px',fontSize:'11px',fontFamily:'monospace'}});
       if(_sbActive()){
-        beRow.innerHTML='<strong>Backend:</strong> Supabase (active)<br>URL: '+SUPABASE_URL;
+        /* Report the REAL backend. Live traffic now routes through the
+           Cloudflare D1 worker (_apiGatewayUrl); Supabase is only shown if no
+           gateway is configured. The old hardcoded "Supabase (active)" label was
+           stale after the D1 migration. */
+        const _gw=(typeof _apiGatewayUrl==='function'?_apiGatewayUrl():'')||'';
+        if(_gw){
+          beRow.innerHTML='<strong>Backend:</strong> Cloudflare D1 (active)<br>URL: '+_gw;
+        } else {
+          beRow.innerHTML='<strong>Backend:</strong> Supabase (active)<br>URL: '+SUPABASE_URL;
+        }
       } else {
         beRow.innerHTML='<strong>Backend:</strong> jsonstorage.net (legacy)<br>Set SUPABASE_URL + SUPABASE_ANON_KEY in the source to upgrade.';
       }
@@ -38112,9 +38396,11 @@ feedback:()=>{
       const s30=stat('LAST 30 DAYS','…','unique devices');
       const sLifetime=stat('LIFETIME','…','unique devices');
       const sFirstSeen=stat('TRACKED FROM','…');
+      const sSignedToday=stat('SIGNED-IN TODAY','…','logged-in devices');
       const sGuestToday=stat('GUESTS TODAY','…','signed-out devices');
+      const sUltraToday=stat('ULTRA TODAY','…','on Ultra plan');
       const sGuest7=stat('GUESTS 7D','…','signed-out devices');
-      visGrid.append(sToday,s7,s30,sGuestToday,sGuest7,sLifetime,sFirstSeen);
+      visGrid.append(sToday,s7,s30,sSignedToday,sGuestToday,sUltraToday,sGuest7,sLifetime,sFirstSeen);
 
       /* Database stats grid */
       c.appendChild(txt('div','DATABASE',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
@@ -38414,6 +38700,7 @@ feedback:()=>{
         }
         const byDay={};const u7=new Set();const u30=new Set();const uToday=new Set();
         const gToday=new Set();const g7=new Set();/* signed-out (guest) devices, from the ua_hint 'g|' flag */
+        const siToday=new Set();const ultraToday=new Set();/* signed-in / Ultra today, from 'u|'/'U|' */
         (rows30||[]).forEach(r=>{
           byDay[r.day]=(byDay[r.day]||new Set());byDay[r.day].add(r.device_id);
           if(r.day>=d30)u30.add(r.device_id);
@@ -38423,11 +38710,15 @@ feedback:()=>{
             if(r.day===today)gToday.add(r.device_id);
             if(r.day>=d7)g7.add(r.device_id);
           }
+          if(r.day===today&&typeof _visitIsSignedIn==='function'&&_visitIsSignedIn(r.ua_hint))siToday.add(r.device_id);
+          if(r.day===today&&typeof _visitIsUltra==='function'&&_visitIsUltra(r.ua_hint))ultraToday.add(r.device_id);
         });
         sToday.querySelectorAll('div')[1].textContent=String(uToday.size);
         s7.querySelectorAll('div')[1].textContent=String(u7.size);
         s30.querySelectorAll('div')[1].textContent=String(u30.size);
+        sSignedToday.querySelectorAll('div')[1].textContent=String(siToday.size);
         sGuestToday.querySelectorAll('div')[1].textContent=String(gToday.size);
+        sUltraToday.querySelectorAll('div')[1].textContent=String(ultraToday.size);
         sGuest7.querySelectorAll('div')[1].textContent=String(g7.size);
 
         /* Lifetime unique devices + country aggregation (graceful fallback).
@@ -39834,6 +40125,33 @@ Deno.serve(async (req)=>{
             } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banDisp.slice(0,24)+'"'; }
           };
           actRow.appendChild(banBtn);
+        }
+      }
+      /* Message-content reports ([REPORT] …) name the offender as
+         `By: <username> (uid=…)`. Give the admin the SAME Warn / Ban actions so
+         EVERY report is actionable, not just the [USERNAME] ban-requests. */
+      if(isAdmin&&/\[REPORT\]/.test(item.text||'')&&!/\[USERNAME\]/.test(item.text||'')){
+        const _rm=/By:\s*([^()]+?)\s*\(uid=/.exec(item.text||'');
+        const _rName=_rm?_rm[1].trim():'';
+        const _rDisp=(typeof _dispName==='function'?_dispName(_rName):_rName);
+        if(_rName){
+          const rWarn=txt('button','⚠ Warn '+_rDisp.slice(0,18),{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+          rWarn.onclick=async()=>{
+            rWarn.disabled=true;
+            const ok=await _khWarnUsername(_rName);
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
+            else { rWarn.disabled=false; }
+          };
+          actRow.appendChild(rWarn);
+          const rBan=txt('button','Ban "'+_rDisp.slice(0,18)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
+          rBan.onclick=async()=>{
+            if(!await kindleConfirm('Ban "'+_rDisp+'"? They can no longer sign in or post, and the name shows as [removed] in chat. This resolves the report.'))return;
+            rBan.disabled=true;rBan.textContent='Banning…';
+            const ok=await _khBanUsername(_rName);
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Banned "'+_rDisp+'".',3500); renderItems(); }
+            else { rBan.disabled=false;rBan.textContent='Ban "'+_rDisp.slice(0,18)+'"'; }
+          };
+          actRow.appendChild(rBan);
         }
       }
       /* Admin status controls — gated on _schemaHasStatus so the admin
@@ -45837,6 +46155,134 @@ sleeplog:()=>{
 },
 
 /* ─── CHESS CLOCK ────────────────────────────────────── */
+sports:()=>{
+  /* Live & recent scores via ESPN's public scoreboard JSON (CORS-open, no key).
+     Covers the leagues users asked for: NBA/NFL/MLB/NHL/soccer/college. */
+  const v=el('section',{id:'view-sports',className:'view'});
+  v.appendChild(txt('h2','Sports Scores',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  v.appendChild(txt('div','Live and recent scores across the major leagues.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const LEAGUES=[['NBA','basketball','nba'],['NFL','football','nfl'],['MLB','baseball','mlb'],['NHL','hockey','nhl'],['Soccer','soccer','eng.1'],['NCAAF','football','college-football'],['NCAAB','basketball','mens-college-basketball']];
+  const tabs=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}});
+  const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px',minHeight:'16px'}});
+  const list=el('div',{});
+  let _cur=0,_busy=false;
+  function _pick(arr,ha){for(let i=0;i<(arr||[]).length;i++){if(arr[i]&&arr[i].homeAway===ha)return arr[i];}return null;}
+  function _teamName(c){return (c&&c.team&&(c.team.displayName||c.team.shortDisplayName||c.team.abbreviation))||'—';}
+  async function load(i){
+    if(_busy)return;
+    _cur=i;
+    const bs=tabs.querySelectorAll('button');for(let j=0;j<bs.length;j++)bs[j].className='btn small'+(j===i?' primary':'');
+    list.innerHTML='';
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to see scores.';return;}
+    _busy=true;status.textContent='Loading '+LEAGUES[i][0]+'…';
+    try{
+      const url='https://site.api.espn.com/apis/site/v2/sports/'+LEAGUES[i][1]+'/'+LEAGUES[i][2]+'/scoreboard';
+      const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
+      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
+      clearTimeout(tid);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const data=await r.json();
+      const events=(data&&data.events)||[];
+      if(!events.length){status.textContent='No '+LEAGUES[i][0]+' games right now.';_busy=false;return;}
+      status.textContent=events.length+' game'+(events.length===1?'':'s')+' — tap Refresh to update.';
+      events.forEach(ev=>{
+        const comp=(ev.competitions&&ev.competitions[0])||{};
+        const cs=comp.competitors||[];
+        const away=_pick(cs,'away')||cs[0]||{}, home=_pick(cs,'home')||cs[1]||{};
+        const st=(ev.status&&ev.status.type&&(ev.status.type.shortDetail||ev.status.type.detail))||'';
+        const row=el('div',{className:'card',style:{padding:'9px 12px',marginBottom:'6px'}});
+        [away,home].forEach(t=>{
+          const rr=el('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'14px',padding:'2px 0'}});
+          rr.appendChild(txt('span',_teamName(t),{style:{fontWeight:t.winner?'800':'500'}}));
+          rr.appendChild(txt('span',(t.score!=null?String(t.score):''),{style:{fontWeight:t.winner?'800':'500',fontVariantNumeric:'tabular-nums'}}));
+          row.appendChild(rr);
+        });
+        if(st)row.appendChild(txt('div',st,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'4px'}}));
+        list.appendChild(row);
+      });
+    }catch(e){status.textContent='Couldn’t load scores (network issue). Try again.';}
+    _busy=false;
+  }
+  LEAGUES.forEach((lg,i)=>{const b=txt('button',lg[0],{className:'btn small'});b.onclick=()=>load(i);tabs.appendChild(b);});
+  v.appendChild(tabs);v.appendChild(status);v.appendChild(list);
+  const refresh=txt('button','↻ Refresh',{className:'btn small',style:{marginTop:'10px'}});refresh.onclick=()=>load(_cur);v.appendChild(refresh);
+  v.appendChild(txt('div','Scores via ESPN. Unofficial feed — may occasionally be unavailable.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px',fontStyle:'italic'}}));
+  setTimeout(()=>load(0),30);
+  return v;
+},
+imagesearch:()=>{
+  /* Image search over Openverse — ~800M free, openly-licensed images (Flickr,
+     Wikimedia, museums). CORS-open + no API key needed. Great for Kindles that
+     can't reach Google/Pinterest. mature=false keeps it family-safe. */
+  const v=el('section',{id:'view-imagesearch',className:'view'});
+  v.appendChild(txt('h2','Image Search',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  v.appendChild(txt('div','Search millions of free, openly-licensed images — works even where Google or Pinterest don’t.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const bar=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+  const inp=el('input',{id:'imgqInput',type:'text',placeholder:'Search images…',style:{flex:'1',fontSize:'14px',padding:'9px 11px'}});
+  const btn=txt('button','Search',{className:'btn primary'});
+  bar.appendChild(inp);bar.appendChild(btn);v.appendChild(bar);
+  const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px',minHeight:'16px'}});
+  v.appendChild(status);
+  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(96px,1fr))',gap:'6px'}});
+  v.appendChild(grid);
+  let _q='',_page=1,_busy=false;
+  function _openImage(im){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.86)',zIndex:'999999',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'12px',boxSizing:'border-box'}});
+    const big=new Image();big.src=im.url||im.thumbnail;big.alt=im.title||'image';big.style.cssText='max-width:100%;max-height:76vh;object-fit:contain;border-radius:6px;background:#fff;';
+    big.onerror=()=>{big.src=im.thumbnail||'';big.onerror=null;};
+    ov.appendChild(big);
+    const cap=el('div',{style:{color:'#fff',fontSize:'12px',textAlign:'center',marginTop:'8px',maxWidth:'92vw',lineHeight:'1.4'}});
+    cap.textContent=(im.title||'Untitled')+(im.creator?(' · '+im.creator):'')+(im.license?(' · '+String(im.license).toUpperCase()):'');
+    ov.appendChild(cap);
+    const row=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',flexWrap:'wrap',justifyContent:'center'}});
+    if(im.foreign_landing_url){const src=txt('button','Open source page',{className:'btn small'});src.onclick=()=>{if(typeof _khOpenExt==='function')_khOpenExt(im.foreign_landing_url);};row.appendChild(src);}
+    const cls=txt('button','Close',{className:'btn small primary'});cls.onclick=()=>ov.remove();row.appendChild(cls);
+    ov.appendChild(row);
+    ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
+  async function run(q,page){
+    if(_busy)return;
+    _q=q;_page=page||1;
+    const oldMore=v.querySelector('.imgMore');if(oldMore)oldMore.remove();
+    if(_page===1)grid.innerHTML='';
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to search images.';return;}
+    _busy=true;status.textContent=_page===1?'Searching…':'Loading more…';
+    try{
+      const url='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
+      const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
+      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
+      clearTimeout(tid);
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const data=await r.json();
+      const results=(data&&data.results)||[];
+      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”.';_busy=false;return;}
+      status.textContent=(data.result_count?(data.result_count.toLocaleString()+' results'):'')+' — tap an image to view it larger.';
+      results.forEach(im=>{
+        const thumb=im.thumbnail||im.url;if(!thumb)return;
+        const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'6px',background:'var(--card)',border:'var(--thin)',cursor:'pointer'}});
+        const img=new Image();img.alt=im.title||'image';img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+        img.onerror=()=>{cell.style.display='none';};
+        img.src=thumb;cell.appendChild(img);
+        cell.onclick=()=>_openImage(im);
+        grid.appendChild(cell);
+      });
+      if(results.length>=24){
+        const more=txt('button','Load more',{className:'btn small imgMore',style:{display:'block',margin:'12px auto 0'}});
+        more.onclick=()=>run(_q,_page+1);
+        v.appendChild(more);
+      }
+    }catch(e){
+      status.textContent='Couldn’t load images (network issue). Please try again.';
+    }
+    _busy=false;
+  }
+  btn.onclick=()=>{const q=inp.value.trim();if(q)run(q,1);else{status.textContent='Type something to search for.';}};
+  inp.addEventListener('keydown',(e)=>{if(e.key==='Enter'){const q=inp.value.trim();if(q)run(q,1);}});
+  return v;
+},
 qrgen:()=>{
   const v=el('section',{id:'view-qrgen',className:'view'});
   /* QR codes are still generated by the api.qrserver.com endpoint (text-in,
@@ -52174,6 +52620,11 @@ messages:()=>{
   let _screen='list'; // list | create | join | chat
   let _activeGroup=null; // {code,itemId,name}
   let _messages=[];
+  /* Progressive chat rendering: show the newest _CHAT_PAGE messages first (fast
+     on e-ink), then a "Load earlier" button reveals older ones a page at a time.
+     Reset to one page each time a group is (re)loaded. */
+  const _CHAT_PAGE=10;
+  let _renderLimit=_CHAT_PAGE;
   let _pollTimer=null;
   let _lastMsgCount=0;
 
@@ -52463,6 +52914,11 @@ messages:()=>{
     createBtn.onclick=async()=>{
       const name=nameInp.value.trim();
       if(!name){toast('Enter a group name first.');return;}
+      /* No two groups you're in can share a name — avoids a confusing list. */
+      const _nl=name.toLowerCase();
+      if((S.msgGroups||[]).some(function(g){return g&&g.name&&String(g.name).trim().toLowerCase()===_nl;})){
+        toast('You already have a group named "'+name+'". Choose a different name.',3800);return;
+      }
       createBtn.disabled=true;
       createBtn.textContent='Creating...';
       try{
@@ -53439,7 +53895,7 @@ messages:()=>{
         const vpnMatch=/VPN:\s*(yes|no)/.exec(msg.location);
         if(vpnMatch)lines.push(['VPN', vpnMatch[1]+(vpnMatch[1]==='yes'?' (datacenter / hosting ASN — likely)':'')]);
       } else {
-        lines.push(['Approx. location', '(not recorded — pre-v7.9.50 message or column missing)']);
+        lines.push(['Approx. location', '(not recorded — older message, or the sender’s network couldn’t be geolocated)']);
       }
       lines.push(['Message text', '"'+(msg.text||'').slice(0,300)+'"']);
 
@@ -53623,8 +54079,19 @@ messages:()=>{
         log.appendChild(emp);return;
       }
       const msgById={};(msgs||[]).forEach(m=>{msgById[m.id]=m;});
+      /* Render only the newest _renderLimit (fast first paint on e-ink). When
+         searching, show all matches. "Load earlier" reveals another page and
+         keeps the reader's scroll position steady. */
+      const _total=filtered.length;
+      const _start=_searchTerm?0:Math.max(0,_total-_renderLimit);
+      const _visible=filtered.slice(_start);
+      if(_start>0){
+        const more=txt('button','↑ Load earlier messages ('+_start+')',{className:'btn small',style:{display:'block',margin:'0 auto 8px',fontSize:'11px'}});
+        more.onclick=function(){ const _pb=log.scrollHeight-log.scrollTop; _renderLimit=Math.min(_total,_renderLimit+_CHAT_PAGE); renderMessages(_messages); try{log.scrollTop=Math.max(0,log.scrollHeight-_pb);}catch(_){} };
+        log.appendChild(more);
+      }
       let lastDateStr='';
-      filtered.forEach(m=>{
+      _visible.forEach(m=>{
         const dateStr=fmtDate(m.ts);
         if(dateStr!==lastDateStr){
           log.appendChild(txt('div',dateStr,{className:'msg-date-divider'}));
@@ -53903,6 +54370,7 @@ messages:()=>{
 
     /* ── Load + members ── */
     async function loadMessages(){
+      _renderLimit=_CHAT_PAGE; /* a freshly-opened group starts at one page */
       try{
         _messages=await _groupFetchMessages(g.code);
         /* Self-heal: if the room came back EMPTY but this device cached its last
@@ -54729,6 +55197,10 @@ BUILDERS.adventure=()=>{
              end:!!p.end};
       }
     }catch(_){}
+    /* The await above yields — the user may have left the adventure (which sets
+       _adv=null) while the AI was thinking. Bail rather than crash on _adv.busy /
+       _adv.log ("Cannot set property 'busy' of null"). */
+    if(!_adv)return;
     _adv.busy=false;
     if(!res){
       if(!_adv.log.length){
@@ -57917,6 +58389,12 @@ function _attachToTarget(el){
     el.dataset.khOrigInputmode=el.getAttribute('inputmode')||'__none__';
   }
   el.setAttribute('inputmode','none');
+  /* readOnly reliably suppresses the native keyboard on EVERY engine (old
+     Kindle WebKit ignores inputmode=none) while typeChar() still writes the
+     value programmatically. Set here too so a tap that fires pointerdown/focusin
+     before the bulk pass is still covered. Original readOnly restored on disable. */
+  if(el.dataset.khOrigRo==null){el.dataset.khOrigRo=el.readOnly?'1':'0';}
+  el.readOnly=true;
   /* Stop the soft keyboard summons */
   try{el.setAttribute('autocomplete','off');}catch(e){}
   _target=el;
@@ -58001,6 +58479,13 @@ function applyInputmodeAll(mode){
         el.dataset.khOrigInputmode=el.getAttribute('inputmode')||'__none__';
       }
       el.setAttribute('inputmode','none');
+      /* inputmode='none' is IGNORED by old Kindle WebKit, so the native
+         keyboard popped up alongside the KindleHub keyboard ("two keyboards").
+         readOnly is honoured by every engine and still lets typeChar() write the
+         value programmatically, so it reliably suppresses the native keyboard.
+         The ORIGINAL readOnly is remembered and restored on disable. */
+      if(el.dataset.khOrigRo==null){el.dataset.khOrigRo=el.readOnly?'1':'0';}
+      el.readOnly=true;
     } else {
       if(el.dataset.khOrigInputmode){
         var orig=el.dataset.khOrigInputmode;
@@ -58008,6 +58493,7 @@ function applyInputmodeAll(mode){
         else{el.setAttribute('inputmode',orig);}
         delete el.dataset.khOrigInputmode;
       }
+      if(el.dataset.khOrigRo!=null){el.readOnly=(el.dataset.khOrigRo==='1');delete el.dataset.khOrigRo;}
     }
   }
 }
@@ -58074,6 +58560,10 @@ function init(){
             elx.dataset.khOrigInputmode=elx.getAttribute('inputmode')||'__none__';
           }
           elx.setAttribute('inputmode','none');
+          /* Also suppress the native keyboard via readOnly (see applyInputmodeAll)
+             so inputs created while the KH keyboard is on never summon it. */
+          if(elx.dataset.khOrigRo==null){elx.dataset.khOrigRo=elx.readOnly?'1':'0';}
+          elx.readOnly=true;
         }
       }
     }
