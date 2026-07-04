@@ -17,7 +17,7 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   Seed a logged-in/onboarded state via `addInitScript` setting `localStorage['kindlehub_v5']`
   (note: the app gzip-compresses saved state, so read it back via `window._KH.S`, not raw JSON.parse).
   The repeated game-launch regression lives at `/tmp/games_test.cjs` (launches all 22 data-game buttons).
-- Commit when the user asks; branch is `claude/wonderful-clarke-6hm5ex`. The user merges PRs (or asks me to).
+- Commit when the user asks; branch is `claude/keen-tesla-n73rpc` (was wonderful-clarke). The user merges PRs (or asks me to).
   End commit messages with the session URL line.
 
 ## Architecture cheat-sheet (grep anchors)
@@ -288,7 +288,7 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   triggers/columns/policies after each schema change.
 
 ## Deploy / "how do I get the changes"
-1. Merge the open PR for branch `claude/wonderful-clarke-6hm5ex` into `main` (GitHub → Merge).
+1. Merge the open PR for branch `claude/keen-tesla-n73rpc` into `main` (GitHub → Merge).
 2. Download **`index.min.html`** from `main`, rename it to `index.html`, and upload to the host. (It's the
    minified deploy build — ~22% smaller than the source, so it parses/loads faster on the Kindle. The
    readable source you edit is still `index.html`.)
@@ -300,6 +300,66 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
      api-worker URL and inbound/outbound mail lands in the SAME D1 database as everything else (no
      SUPABASE_SERVICE_KEY needed). Falls back to Supabase only if API_GATEWAY is unset. Outbound still
      uses Resend (free 100/day; worker caps DAILY_SEND_CAP=80) — the one paid-tier risk if volume grows.
+
+## ⚡ Latest session — new features, fixes, env vars, branch (READ THIS)
+**Active dev branch is now `claude/keen-tesla-n73rpc`** (not wonderful-clarke). All work below is on it.
+**NEW Worker env vars (set on the D1 api-worker):**
+- `KH_PEPPER` (recommended) — envelope-at-rest. Worker AES-GCM-wraps sensitive columns (`kh_users.state`,
+  `kh_mail` subject/body, `kh_messages.text`) with `KHW1:` prefix before writing D1, unwraps on read
+  (`wrapCell`/`unwrapCell`/`unwrapRows`, `WRAP_COLS`). A STOLEN D1 is useless without the pepper. Opt-in
+  (unset = no-op), backward-compat (legacy rows pass through), no client change. ⚠ KEEP IT FOREVER once set
+  (losing it = wrapped rows unreadable). Test: `/tmp/envelope_test.mjs`.
+- `MOD_HASHES` (optional) — comma-sep SHA-256 of moderator codes. Unlocks ONLY the `kh_mod_stats` RPC
+  (aggregate COUNTS: users/online/visitors/messages/rooms/feedback — never rows/PII). `isMod(token,env)`;
+  a mod token can't ban/announce/read gated tables (server-enforced). Client: Settings→Account→"Moderator
+  tools" (`_khModStats`/`_khBuildModCard`, code in `kh_mod_code`). Grant/revoke via the env, no deploy. Admins
+  are implicitly mods. Test: `/tmp/mod_test.mjs`.
+**Scaling / capacity (SCALING.md):** adaptive fleet backoff — Worker stamps `X-KH-Load` (% of daily free
+budget used, from `dailyUsed`/`_loadFrac`) on every response (in `cors()`); client `_sbFetch` reads it →
+`window._khLoad`; background pollers call `_khLoadSkip()` (skips ticks once load >55%, ramps to ~85%). Presence
+40s→70s + online window 60s→150s. So the free-tier cap is approached asymptotically, never tripped. For a HARD
+5000-user guarantee: Workers Paid $5/mo (10M req/day). Test: `/tmp/loadhdr_test.mjs`.
+**New apps/views (BUILDERS + nav tab + NAV_TABS entry, hardcoded `<div class="tab" data-view=..>` in nav HTML):**
+- `imagesearch` ("Images") — Openverse image search (`api.openverse.org/v1/images`, CORS-open, no key,
+  `mature=false`), thumbnail grid + Load more + full viewer. For Kindles that can't reach Google/Pinterest.
+- `sports` ("Sports") — ESPN scoreboard (`site.api.espn.com/apis/site/v2/sports/{sport}/{league}/scoreboard`,
+  CORS-open, no key). Leagues NBA/NFL/MLB/NHL/Soccer(eng.1)/NCAAF/NCAAB. Avoids Array.find (old-Silk).
+**Notification Center** — swipe-up bottom sheet (`_khPushNotif({icon,title,body,view,group})`, `_khOpenNotifs`,
+device-local `localStorage['kh_notifs']` cap 25, handle+badge). Fed by chat (`notifyMsg`) + game invites
+(`_renderInvite`). Extensible to announcements/mail. IIFE right after `notifyMsg`.
+**Ultra tier changes:** threshold 10→15 min/day (`ULTRA_MIN_SEC=900`), 3 days/week; ONLY accrues when signed
+in; online games are Ultra-gated via `_khRequireUltra('...')` at the single choke point `KH_MP.openLobby`; the
+Settings Account card no longer says "admin" (creator sees "You are the Creator"). `_khUltraActive` already
+required auth.
+**Admin daily stats:** `_logVisit` packs tier into ua_hint (`g|` guest, `u|` signed-in Pro, `U|` Ultra/Creator);
+`_visitIsSignedIn`/`_visitIsUltra`; admin USAGE STATS shows SIGNED-IN TODAY / GUESTS TODAY / ULTRA TODAY.
+**Chat:** progressive render — newest `_CHAT_PAGE=10`, "Load earlier" button (scroll-preserving) in
+`renderMessages`; no two groups you're in can share a name (create-time check). Backend label now reports the
+REAL backend (Cloudflare D1 via `_apiGatewayUrl`), not hardcoded "Supabase".
+**Timer/Stopwatch:** Pomodoro card retitled "⏱ Timer, Stopwatch & Pomodoro"; added `startCustom(mins)` +
+a self-contained count-up stopwatch (`swToggle`/`swReset`/`#swDisplay`).
+**Restart-logout fix:** the gzip state blob can fail to inflate on a cold Kindle boot (→ logged-out default);
+a tiny UNCOMPRESSED `kh_session` mirror (`_writeBootHints`) is restored at boot if the main blob lacks auth.
+**Double-keyboard fix:** KindleHub keyboard now also toggles `readOnly` (not just `inputmode='none'`, which old
+Silk ignores) in `applyInputmodeAll`/`_attachToTarget`/observer; `typeChar` writes value programmatically so
+readOnly is fine; restored on disable.
+**Crash fixes:** Space Invaders `tick` snapshot score BEFORE `stop()` (was "score of null"); adventure
+`advance()` post-await `if(!_adv)return`; `reportError` ignores 3rd-party beacon errors (Cloudflare Web
+Analytics `beacon.min.js/v<hash>` "Unexpected token ." on Silk — matches `cloudflareinsights|beacon\.min\.js|
+\/cdn-cgi\/|rocket-loader|\bv[0-9a-f]{24,}`; also turn OFF CF Web Analytics in dashboard).
+**Security/UI fixes:** leaderboard `kh_scores` score clamped server-side (≤999999999, int, name≤40); message
+`location_hint` now stamped SERVER-SIDE from `request.cf` (city/region/country) in handlePost — reliable +
+spoof-proof (client ipapi.co call removed); kh_feedback PATCH now allows non-admin `comments` (was votes-only
+→ "no valid columns" bug) but still blocks status/text/author; ALL reports get Warn/Ban (parse `By: <name>`
+from `[REPORT]` items, not just `[USERNAME]`); canvas `var(--fg)` resolved to real colours (Pomodoro/Weather/
+Wheel were invisible on dark); Mindfulness `inset`→longhand; 45 modal overlays + `#toastRoot` mount into
+`rotateRoot||body` (landscape); Pomodoro no longer rebuilds log+chart every second; Sudoku incremental
+`paintCells` (no full rebuild per tap); dark accent kept readable via `_accentForBg`.
+**Worker tests (node --experimental-sqlite):** envelope_test, mod_test, geo_test, score_test, loadhdr_test,
+fbcomment_test, worker_acl_test — all in /tmp, all passing. Client headless: /tmp/uibugs_validate.cjs (boot),
+crash_test, notif_test, timer_test, imgsearch_test, sports_test, kbsession_test, ultra_test, stats_test.
+⚠ **DEPLOY GATES:** migrate all users to D1 BEFORE the Supabase-severed build goes live (else logins break);
+set `KH_PEPPER` (+ `MOD_HASHES` if granting mods); redeploy api-worker.js; upload index.min.html; CF Purge.
 
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
