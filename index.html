@@ -1162,6 +1162,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="dictionary">Dict</div>
     <div class="tab" data-view="maps">Maps</div>
     <div class="tab" data-view="rss">News</div>
+    <div class="tab" data-view="gazette">Gazette</div>
     <div class="tab" data-view="stocks">Stocks</div>
     <div class="tab" data-view="discover">Discover</div>
     <div class="tab" data-view="translate">Translate</div>
@@ -2533,7 +2534,7 @@ const NAV_TABS=[
   ['breathe','Mindfulness'],['kanban','To-Do'],
   ['messages','Messages'],['calendar','Calendar'],['weather','Weather'],
   ['feedback','Feedback'],['dictionary','Dict'],['maps','Maps'],
-  ['rss','News'],['stocks','Stocks'],
+  ['rss','News'],['gazette','Gazette'],['stocks','Stocks'],
   ['discover','Discover'],['translate','Translate'],['cipher','Cipher'],['mdjournal','Journal'],
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
@@ -44877,6 +44878,236 @@ rss:()=>{
 
 /* ── Extra builders ── */
 Object.assign(BUILDERS,{
+
+/* ── The Kindle Gazette — an AI-assembled daily newspaper ─────────────
+   Default "Daily" edition uses the PUBLIC/SHARED AI key (free, no personal
+   key) so it costs the reader nothing and is effectively the SAME paper for
+   everyone (same fixed public feeds + shared model + temperature 0), cached
+   per-day on-device. The "Custom" edition uses the EXACT same model picker as
+   the Assistant page (buildAIModelPicker → own API or shared) plus the
+   reader's interests for a tailored front page. Headlines come from public,
+   CORS-open RSS via rss2json — the same plumbing the News tab uses. Big text
+   (editions) is cached in localStorage, never in S. */
+gazette:()=>{
+  const v=el('section',{id:'view-gazette',className:'view',style:{padding:'0'}});
+  if(!document.getElementById('gz-css')){
+    const st=document.createElement('style');st.id='gz-css';
+    st.textContent=[
+      '.gz-wrap{background:var(--bg);min-height:100%;padding:0 0 24px;}',
+      '.gz-masthead{text-align:center;padding:14px 12px 0;}',
+      '.gz-title{font-family:Georgia,"Times New Roman",var(--title-font),serif;font-weight:900;font-size:30px;letter-spacing:1px;line-height:1;}',
+      '.gz-rule{border-top:3px double var(--fg);margin:8px 0 0;}',
+      '.gz-sub{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);display:flex;justify-content:center;gap:12px;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--fg);}',
+      '.gz-controls{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 4px;align-items:center;}',
+      '.gz-seg{display:flex;border:var(--thin);border-radius:6px;overflow:hidden;}',
+      '.gz-seg button{padding:6px 12px;font-size:11px;font-weight:800;border:none;background:var(--card);color:var(--muted);cursor:pointer;font-family:var(--ui-font);}',
+      '.gz-seg button.on{background:var(--fg);color:var(--bg);}',
+      '.gz-custrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 12px 10px;position:relative;}',
+      '.gz-body{padding:8px 14px 0;}',
+      '.gz-headline{font-family:Georgia,serif;font-weight:900;font-size:23px;line-height:1.22;margin:6px 0 6px;}',
+      '.gz-lead{font-size:14px;line-height:1.6;font-style:italic;border-left:3px solid var(--fg);padding-left:11px;margin-bottom:16px;}',
+      '.gz-cols{}',
+      '@media(min-width:560px){.gz-cols{-webkit-column-count:2;column-count:2;-webkit-column-gap:22px;column-gap:22px;}}',
+      '.gz-story{-webkit-column-break-inside:avoid;break-inside:avoid;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--muted);}',
+      '.gz-story h4{font-family:Georgia,serif;font-size:15px;font-weight:800;line-height:1.3;margin:0 0 4px;}',
+      '.gz-story p{font-size:13px;line-height:1.6;color:var(--fg);margin:0;}',
+      '.gz-status{font-size:11px;color:var(--muted);padding:6px 14px;font-style:italic;min-height:16px;}',
+      '.gz-empty{padding:26px 16px;text-align:center;color:var(--muted);font-style:italic;font-size:13px;}',
+      '.gz-foot{font-size:10px;color:var(--muted);font-style:italic;padding:10px 0 4px;border-top:1px solid var(--muted);margin-top:6px;}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  /* Fixed public feeds — SAME for every reader, so the Daily edition draws
+     from one shared source. CORS-open, no key (via rss2json). */
+  const GAZETTE_FEEDS=[
+    {label:'BBC',url:'https://feeds.bbci.co.uk/news/world/rss.xml'},
+    {label:'Guardian',url:'https://www.theguardian.com/world/rss'},
+    {label:'AP',url:'https://rsshub.app/apnews/topics/apf-topnews'},
+    {label:'Al Jazeera',url:'https://www.aljazeera.com/xml/rss/all.xml'},
+    {label:'Ars Technica',url:'https://feeds.arstechnica.com/arstechnica/index'},
+    {label:'NASA',url:'https://www.nasa.gov/rss/dyn/breaking_news.rss'},
+  ];
+
+  function _gzToday(){const d=new Date(NOW());return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function _gzDateLabel(){try{return new Date(NOW()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});}catch(_){return _gzToday();}}
+  function _gzLoad(){try{const o=JSON.parse(localStorage.getItem('kh_gazette')||'null');return o&&typeof o==='object'?o:{};}catch(_){return {};}}
+  function _gzSave(o){try{localStorage.setItem('kh_gazette',JSON.stringify(o));}catch(_){}}
+
+  let mode=(S.gazetteMode==='custom')?'custom':'public';
+  let busy=false;
+
+  const wrap=el('div',{className:'gz-wrap'});v.appendChild(wrap);
+  /* Masthead */
+  const mast=el('div',{className:'gz-masthead'});
+  mast.appendChild(txt('div','The Kindle Gazette',{className:'gz-title'}));
+  mast.appendChild(el('div',{className:'gz-rule'}));
+  const sub=el('div',{className:'gz-sub'});
+  mast.appendChild(sub);
+  wrap.appendChild(mast);
+  /* Controls */
+  const controls=el('div',{className:'gz-controls'});
+  const seg=el('div',{className:'gz-seg'});
+  const segPub=txt('button','📰 Daily',{});
+  const segCus=txt('button','✎ Custom',{});
+  seg.appendChild(segPub);seg.appendChild(segCus);
+  controls.appendChild(seg);
+  const refreshBtn=txt('button','↻ Refresh',{className:'btn small'});
+  controls.appendChild(refreshBtn);
+  wrap.appendChild(controls);
+  /* Custom row — the SAME picker as the Assistant page + interests. */
+  const picker=buildAIModelPicker({btnId:'gzModelPickerBtn',dropId:'gzModelDrop'});
+  const custRow=el('div',{className:'gz-custrow'});
+  custRow.appendChild(txt('span','Model:',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)'}}));
+  const pickWrap=el('div',{style:{position:'relative'}});
+  pickWrap.appendChild(picker.btn);pickWrap.appendChild(picker.drop);
+  custRow.appendChild(pickWrap);
+  const topicIn=el('input',{type:'text',placeholder:'Your interests (e.g. tech, football)…',value:S.gazetteTopics||''});
+  topicIn.style.cssText='flex:1;min-width:150px;font-size:12px;padding:6px 8px;border:var(--thin);border-radius:6px;background:var(--bg);color:var(--fg);';
+  topicIn.onchange=()=>{S.gazetteTopics=String(topicIn.value||'').slice(0,120);save();};
+  custRow.appendChild(topicIn);
+  const genBtn=txt('button','Generate',{className:'btn small primary'});
+  custRow.appendChild(genBtn);
+  wrap.appendChild(custRow);
+  /* Status + body */
+  const status=el('div',{className:'gz-status'});wrap.appendChild(status);
+  const body=el('div',{className:'gz-body'});wrap.appendChild(body);
+
+  function syncSeg(){segPub.className=(mode==='public')?'on':'';segCus.className=(mode==='custom')?'on':'';}
+  function showCustom(){custRow.style.display=(mode==='custom')?'flex':'none';}
+  function refreshSub(ed){
+    sub.innerHTML='';
+    sub.appendChild(txt('span',_gzDateLabel()));
+    sub.appendChild(txt('span',mode==='public'?'Free Public Edition':'Custom Edition'));
+    if(ed&&ed.model)sub.appendChild(txt('span',ed.model));
+  }
+  function setBusy(b){busy=b;refreshBtn.disabled=b;genBtn.disabled=b;segPub.disabled=b;segCus.disabled=b;}
+
+  async function gatherHeadlines(){
+    const out=[],seen={};
+    await Promise.all(GAZETTE_FEEDS.map(async f=>{
+      try{
+        const r=await fetch('https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(f.url));
+        const d=await r.json();
+        if(d&&d.status==='ok'&&Array.isArray(d.items)){
+          d.items.slice(0,4).forEach(it=>{
+            const t=String((it&&it.title)||'').trim();
+            const k=t.toLowerCase();
+            if(t&&!seen[k]){seen[k]=1;out.push({title:t,src:f.label,desc:String((it&&it.description)||'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,150),link:(it&&it.link)||''});}
+          });
+        }
+      }catch(_){}
+    }));
+    return out.slice(0,26);
+  }
+
+  function buildPrompt(heads){
+    const wire=heads.map((h,i)=>(i+1)+'. ['+h.src+'] '+h.title+(h.desc?(' — '+h.desc):'')).join('\n');
+    let extra='';
+    if(mode==='custom'){
+      const topics=String(S.gazetteTopics||'').trim();
+      const feedLabels=(S.rssFeeds||[]).map(f=>f&&f.label).filter(Boolean).slice(0,6).join(', ');
+      if(topics)extra+='\nThe reader is especially interested in: '+topics+'. Give those topics more prominence when the wire covers them.';
+      if(feedLabels)extra+='\nThe reader also follows: '+feedLabels+'.';
+      const nm=S.user||(S.email?S.email.split('@')[0]:'');
+      if(nm)extra+='\nGreet the reader by name ("'+String(nm).slice(0,24)+'") once, in the LEAD.';
+    }
+    return 'You are the editor of THE KINDLE GAZETTE, a concise, neutral daily newspaper for e-readers. Using ONLY the wire headlines below — do NOT invent facts beyond them — write today\'s edition ('+_gzDateLabel()+').'+extra+'\n\nReturn PLAIN TEXT in EXACTLY this format and nothing else:\nHEADLINE: <front-page headline, max 9 words>\nLEAD: <two sentences summarising the day>\n===\nTITLE: <story headline>\nBODY: <two or three neutral sentences>\n===\nTITLE: <next story>\nBODY: <...>\n\nInclude 5 to 6 stories. Separate every story with a line that is only ===.\n\nWIRE:\n'+wire;
+  }
+
+  function _gzParse(text){
+    const ed={headline:'',lead:'',stories:[]};
+    const parts=String(text||'').split(/\n\s*={2,}\s*\n/);
+    parts.forEach(chunk=>{
+      const h=/HEADLINE:\s*([^\n]+)/i.exec(chunk);
+      const l=/LEAD:\s*([\s\S]*?)(?:\n[A-Z]{3,}:|$)/i.exec(chunk);
+      const t=/TITLE:\s*([^\n]+)/i.exec(chunk);
+      const b=/BODY:\s*([\s\S]+)/i.exec(chunk);
+      if(h&&!ed.headline)ed.headline=h[1].trim();
+      if(l&&!ed.lead)ed.lead=l[1].trim();
+      if(t)ed.stories.push({title:t[1].trim(),body:b?b[1].replace(/\n\s*(HEADLINE|LEAD|TITLE):[\s\S]*/i,'').trim():''});
+    });
+    if(!ed.headline&&!ed.stories.length){ed.headline='Today’s Edition';ed.lead=String(text||'').trim().slice(0,600);}
+    return ed;
+  }
+
+  function renderEdition(ed){
+    body.innerHTML='';
+    if(ed.headline)body.appendChild(txt('div',ed.headline,{className:'gz-headline'}));
+    if(ed.lead)body.appendChild(txt('div',ed.lead,{className:'gz-lead'}));
+    const cols=el('div',{className:'gz-cols'});
+    (ed.stories||[]).forEach(s=>{
+      const st=el('div',{className:'gz-story'});
+      if(s.title)st.appendChild(txt('h4',s.title));
+      if(s.body)st.appendChild(txt('p',s.body));
+      cols.appendChild(st);
+    });
+    body.appendChild(cols);
+    const foot=el('div',{className:'gz-foot'});
+    foot.textContent='Assembled from public news wires'+(ed.model?(' · '+ed.model):'')+'. AI-written summaries — verify important details in the News tab.';
+    body.appendChild(foot);
+    refreshSub(ed);
+  }
+
+  function renderWire(heads){
+    body.innerHTML='';
+    body.appendChild(txt('div','Today’s Wire',{className:'gz-headline'}));
+    body.appendChild(txt('div','Live public headlines — the AI editor is unavailable, so here is the raw wire.',{className:'gz-lead'}));
+    const cols=el('div',{className:'gz-cols'});
+    heads.slice(0,18).forEach(h=>{
+      const st=el('div',{className:'gz-story'});
+      st.appendChild(txt('h4',h.title));
+      if(h.desc)st.appendChild(txt('p',h.desc));
+      st.appendChild(txt('div',h.src,{style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'3px'}}));
+      cols.appendChild(st);
+    });
+    body.appendChild(cols);
+    refreshSub(null);
+  }
+
+  async function generate(force){
+    if(busy)return;
+    const today=_gzToday();
+    const cache=_gzLoad();
+    if(!force&&cache.date===today&&cache[mode]){renderEdition(cache[mode]);status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');return;}
+    if(navigator.onLine===false){
+      if(cache.date===today&&cache[mode]){renderEdition(cache[mode]);status.textContent='Offline — showing today’s saved edition.';}
+      else{body.innerHTML='';body.appendChild(txt('div','Offline — reconnect and tap Refresh to fetch today’s Gazette.',{className:'gz-empty'}));status.textContent='';}
+      return;
+    }
+    setBusy(true);
+    body.innerHTML='';body.appendChild(txt('div','Gathering the wire…',{className:'gz-empty'}));
+    status.textContent='Gathering public headlines…';
+    const heads=await gatherHeadlines();
+    if(!heads.length){setBusy(false);status.textContent='';body.innerHTML='';body.appendChild(txt('div','Could not reach the news wire. Check your connection and tap Refresh.',{className:'gz-empty'}));return;}
+    status.textContent='Writing today’s edition with '+(mode==='public'?'the free public AI':'your selected model')+'…';
+    const prompt=buildPrompt(heads);
+    let out=null;
+    try{
+      if(mode==='public')out=await khiCall(prompt,{provider:'shared',temperature:0,maxTokens:1500});
+      else out=await khiCall(prompt,Object.assign({temperature:0.3,maxTokens:1600},_khiOptsFromPicker()));
+    }catch(_){}
+    setBusy(false);
+    if(!out){status.textContent='';renderWire(heads);return;}
+    const ed=_gzParse(out);
+    ed.model=(mode==='public')?'Public AI':(picker.label?picker.label():'');
+    ed.at=NOW();
+    const c=_gzLoad();const nc=(c.date===today)?c:{date:today};nc.date=today;nc[mode]=ed;_gzSave(nc);
+    renderEdition(ed);
+    status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');
+  }
+
+  segPub.onclick=()=>{if(mode==='public')return;mode='public';S.gazetteMode='public';save();syncSeg();showCustom();refreshSub();generate(false);};
+  segCus.onclick=()=>{if(mode==='custom')return;mode='custom';S.gazetteMode='custom';save();syncSeg();showCustom();refreshSub();generate(false);};
+  refreshBtn.onclick=()=>generate(true);
+  genBtn.onclick=()=>generate(true);
+
+  syncSeg();showCustom();refreshSub();
+  const cache=_gzLoad();
+  if(cache.date===_gzToday()&&cache[mode]){renderEdition(cache[mode]);status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');}
+  else generate(false);
+  return v;
+},
 
 science:()=>{
   const v=el('section',{id:'view-science',className:'view'});
