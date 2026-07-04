@@ -8216,8 +8216,12 @@ async function _logVisit(){
      front of ua_hint — 'g|' guest, 'u|' signed-in — so admin stats can count
      "not-logged-in users per day" with NO schema change. Stripped on display
      via _visitUaClean(). */
-  const _guest=!(typeof S!=='undefined'&&S&&S.authToken);
-  const ua=(_guest?'g|':'u|')+(navigator.userAgent||'').slice(0,158);
+  /* Prefix: 'g|' guest, 'u|' signed-in (Pro), 'U|' signed-in on Ultra/Creator —
+     lets admin stats split TODAY's devices into guests / signed-in / Ultra with
+     no schema change. Stripped on display via _visitUaClean(). */
+  const _signedIn=!!(typeof S!=='undefined'&&S&&S.authToken);
+  const _ultra=_signedIn&&typeof _khTier==='function'&&_khTier()!=='pro';
+  const ua=(_signedIn?(_ultra?'U|':'u|'):'g|')+(navigator.userAgent||'').slice(0,158);
   const geo=await _getGeo();
   const row={device_id:id,day:today,last_seen:new Date().toISOString(),ua_hint:ua};
   if(geo){
@@ -8232,8 +8236,10 @@ async function _logVisit(){
 /* ua_hint now carries a leading 'g|'/'u|' guest flag (see _logVisit). Helpers to
    read it and to strip it for display. Older rows without a flag → treated as
    not-guest (unknown) so they don't inflate the guest count. */
-function _visitUaClean(ua){return String(ua||'').replace(/^[gu]\|/,'');}
+function _visitUaClean(ua){return String(ua||'').replace(/^[guU]\|/,'');}
 function _visitIsGuest(ua){return /^g\|/.test(String(ua||''));}
+function _visitIsSignedIn(ua){return /^[uU]\|/.test(String(ua||''));}
+function _visitIsUltra(ua){return /^U\|/.test(String(ua||''));}
 
 /* ── Live presence heartbeat ──────────────────────────────────────────
    Each open client upserts ONE row into kh_presence (keyed on a stable
@@ -38240,9 +38246,11 @@ feedback:()=>{
       const s30=stat('LAST 30 DAYS','…','unique devices');
       const sLifetime=stat('LIFETIME','…','unique devices');
       const sFirstSeen=stat('TRACKED FROM','…');
+      const sSignedToday=stat('SIGNED-IN TODAY','…','logged-in devices');
       const sGuestToday=stat('GUESTS TODAY','…','signed-out devices');
+      const sUltraToday=stat('ULTRA TODAY','…','on Ultra plan');
       const sGuest7=stat('GUESTS 7D','…','signed-out devices');
-      visGrid.append(sToday,s7,s30,sGuestToday,sGuest7,sLifetime,sFirstSeen);
+      visGrid.append(sToday,s7,s30,sSignedToday,sGuestToday,sUltraToday,sGuest7,sLifetime,sFirstSeen);
 
       /* Database stats grid */
       c.appendChild(txt('div','DATABASE',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'6px'}}));
@@ -38542,6 +38550,7 @@ feedback:()=>{
         }
         const byDay={};const u7=new Set();const u30=new Set();const uToday=new Set();
         const gToday=new Set();const g7=new Set();/* signed-out (guest) devices, from the ua_hint 'g|' flag */
+        const siToday=new Set();const ultraToday=new Set();/* signed-in / Ultra today, from 'u|'/'U|' */
         (rows30||[]).forEach(r=>{
           byDay[r.day]=(byDay[r.day]||new Set());byDay[r.day].add(r.device_id);
           if(r.day>=d30)u30.add(r.device_id);
@@ -38551,11 +38560,15 @@ feedback:()=>{
             if(r.day===today)gToday.add(r.device_id);
             if(r.day>=d7)g7.add(r.device_id);
           }
+          if(r.day===today&&typeof _visitIsSignedIn==='function'&&_visitIsSignedIn(r.ua_hint))siToday.add(r.device_id);
+          if(r.day===today&&typeof _visitIsUltra==='function'&&_visitIsUltra(r.ua_hint))ultraToday.add(r.device_id);
         });
         sToday.querySelectorAll('div')[1].textContent=String(uToday.size);
         s7.querySelectorAll('div')[1].textContent=String(u7.size);
         s30.querySelectorAll('div')[1].textContent=String(u30.size);
+        sSignedToday.querySelectorAll('div')[1].textContent=String(siToday.size);
         sGuestToday.querySelectorAll('div')[1].textContent=String(gToday.size);
+        sUltraToday.querySelectorAll('div')[1].textContent=String(ultraToday.size);
         sGuest7.querySelectorAll('div')[1].textContent=String(g7.size);
 
         /* Lifetime unique devices + country aggregation (graceful fallback).
@@ -52591,6 +52604,11 @@ messages:()=>{
     createBtn.onclick=async()=>{
       const name=nameInp.value.trim();
       if(!name){toast('Enter a group name first.');return;}
+      /* No two groups you're in can share a name — avoids a confusing list. */
+      const _nl=name.toLowerCase();
+      if((S.msgGroups||[]).some(function(g){return g&&g.name&&String(g.name).trim().toLowerCase()===_nl;})){
+        toast('You already have a group named "'+name+'". Choose a different name.',3800);return;
+      }
       createBtn.disabled=true;
       createBtn.textContent='Creating...';
       try{
