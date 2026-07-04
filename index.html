@@ -25574,6 +25574,23 @@ function _khiOptsFromPicker(){
     (document.head||document.documentElement).appendChild(st);
   }catch(_){}
 })();
+/* Progressive perf hint: on engines that support it, skip laying out /
+   painting off-screen items in the big fixed-size grids (the 40-icon Retro
+   launcher, the dashboard tiles). contain-intrinsic-size gives a stable
+   placeholder so there's no scroll jank. Wrapped in @supports so it does
+   NOTHING on old Kindle Silk (which ignores it anyway) — a pure win for the
+   many non-Kindle viewers scrolling the long retro grid, zero risk on-device. */
+(function _khInjectPerfCss(){
+  try{
+    if(document.getElementById('perf-css'))return;
+    var st=document.createElement('style');st.id='perf-css';
+    st.textContent='@supports (content-visibility:auto){'
+      +'.simple-app-grid .simple-app{content-visibility:auto;contain-intrinsic-size:auto 84px;}'
+      +'.dash-grid .dash-tile{content-visibility:auto;contain-intrinsic-size:auto 78px;}'
+      +'}';
+    (document.head||document.documentElement).appendChild(st);
+  }catch(_){}
+})();
 function _khJbCaps(){
   var d=document.documentElement||{};
   var fs=!!(d.requestFullscreen||d.webkitRequestFullscreen||d.mozRequestFullScreen||d.msRequestFullscreen);
