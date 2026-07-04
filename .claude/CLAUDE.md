@@ -336,6 +336,15 @@ required auth.
 **Chat:** progressive render — newest `_CHAT_PAGE=10`, "Load earlier" button (scroll-preserving) in
 `renderMessages`; no two groups you're in can share a name (create-time check). Backend label now reports the
 REAL backend (Cloudflare D1 via `_apiGatewayUrl`), not hardcoded "Supabase".
+**Announcement comments** (public thread per announcement): the home widget's each announcement gets a
+"💬 Comments (N)" button → `_openAnnouncementComments(a,card)` modal (mirrors the feedback `_openCommentThread`).
+Reading open to all; posting needs sign-in (re-reads the row, appends `{id,author,text,date}`, caps newest 60,
+PATCHes `comments`-only, NO admin token). Display profanity-filtered (`_censorText`/`_dispName`). Stored in a
+JSON `comments` column on kh_announcements. **Worker gate** (`api-worker.js`): `comments` added to
+COLUMNS/JSON_COLS/UPDATE_OK for kh_announcements + a handlePatch rule filtering a NON-admin PATCH to `comments`
+only (text/active/targets untouchable from the client — verified vs a mixed-PATCH piggyback attack). SCHEMA_DDL
++ best-effort ALTER add the column (`'[]'`). The two announcement loaders now `select=...,comments`. Tests:
+`/tmp/anncomment_test.mjs` (worker, 8/8) + `/tmp/anncomment_client.cjs` (client UI).
 **Timer/Stopwatch:** Pomodoro card retitled "⏱ Timer, Stopwatch & Pomodoro"; added `startCustom(mins)` +
 a self-contained count-up stopwatch (`swToggle`/`swReset`/`#swDisplay`).
 **Restart-logout fix:** the gzip state blob can fail to inflate on a cold Kindle boot (→ logged-out default);
