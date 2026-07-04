@@ -8934,6 +8934,14 @@ function _parseItemIds(text){
 
   async function reportError(message,source,lineno,colno,errorObj,kind){
     kind=kind||'error';
+    /* Ignore errors from THIRD-PARTY scripts we don't ship — chiefly the
+       Cloudflare Web Analytics beacon (served as .../beacon.min.js/v<hash>),
+       whose modern JS (optional chaining) old Kindle Silk can't parse, throwing
+       a harmless "Unexpected token ." on every load that was flooding the error
+       log with reports we can't act on. Our own code is inline in the page
+       document, so its source is the page URL — never a /v<hash> beacon asset. */
+    var _thirdParty=String(source||'')+' '+String((errorObj&&errorObj.stack)||'');
+    if(/cloudflareinsights|beacon\.min\.js|\/cdn-cgi\/|rocket-loader|\bv[0-9a-f]{24,}/i.test(_thirdParty))return;
     const key=String(message||'')+'@'+(lineno||'?');
     if(_reported.has(key))return;
     _reported.add(key);
@@ -19333,8 +19341,9 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
     if(hitEdge){SI.dir*=-1;for(const e of alive)e.y+=12;}
     if(alive.some(e=>e.y+EH>SI.py)){
       SI.active=false;draw();
+      const _sc=SI.score; /* snapshot BEFORE stop() nulls SI (was "Cannot read 'score' of null") */
       stop();
-      toast('Invaded! Score: '+SI.score);recordStat('spaceinv',false);return;
+      toast('Invaded! Score: '+_sc);recordStat('spaceinv',false);return;
     }
     for(const sh of SI.shields){
       for(const b of [...SI.bullets,...SI.ebullets]){
@@ -19364,8 +19373,9 @@ function _initSpaceInvaders(){if(SpaceInvaders)return;SpaceInvaders=(()=>{
         updateImmersiveScore('Score: '+SI.score+'Lives: '+SI.lives);
         if(SI.lives<=0){
           SI.active=false;draw();
+          const _sc=SI.score; /* snapshot BEFORE stop() nulls SI */
           stop();
-          toast('Game over! Score: '+SI.score);recordStat('spaceinv',false);return;
+          toast('Game over! Score: '+_sc);recordStat('spaceinv',false);return;
         }
       }
     }
@@ -54829,6 +54839,10 @@ BUILDERS.adventure=()=>{
              end:!!p.end};
       }
     }catch(_){}
+    /* The await above yields — the user may have left the adventure (which sets
+       _adv=null) while the AI was thinking. Bail rather than crash on _adv.busy /
+       _adv.log ("Cannot set property 'busy' of null"). */
+    if(!_adv)return;
     _adv.busy=false;
     if(!res){
       if(!_adv.log.length){
