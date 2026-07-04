@@ -3203,7 +3203,101 @@ function notifyMsg(name,text,ms,msgId,groupCode){
      chat directly (the messages builder reads window._khPendingOpenGroup). */
   const opts=groupCode?{onClick:()=>{try{window._khPendingOpenGroup=groupCode;if(typeof showView==='function')showView('messages');}catch(_){}}}:undefined;
   toast(safeName+': '+truncated,ms||5000,opts);
+  try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'💬',title:safeName,body:truncated,group:groupCode||'',view:'messages'});}catch(_){}
 }
+
+/* ── Notification Center — swipe-up bottom sheet ──────────────────────────────
+   A practical, reviewable list of recent notifications (chat messages, invites,
+   announcements), reachable by swiping UP from the bottom edge or tapping the
+   handle. Replaces relying on transient toasts. Device-local (localStorage
+   'kh_notifs', newest-first, capped) — never written to S. */
+(function(){
+  var KEY='kh_notifs', CAP=25;
+  var _unread=0, panel=null, listEl=null, handle=null, badge=null, backdrop=null, isOpen=false;
+  function _load(){try{var a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[];}catch(_){return [];}}
+  function _save(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(0,CAP)));}catch(_){}}
+  window._khNotifs=_load();
+  function _el(tag,css,txt){var e=document.createElement(tag);if(css)e.style.cssText=css;if(txt!=null)e.textContent=txt;return e;}
+  function _ago(ts){var s=Math.floor((Date.now()-ts)/1000);if(s<60)return 'now';var m=Math.floor(s/60);if(m<60)return m+'m';var h=Math.floor(m/60);if(h<24)return h+'h';return Math.floor(h/24)+'d';}
+
+  window._khPushNotif=function(n){
+    try{
+      n=n||{};
+      window._khNotifs.unshift({icon:String(n.icon||'🔔').slice(0,4),title:String(n.title||'').slice(0,60),body:String(n.body||'').slice(0,140),at:Date.now(),view:n.view||'',group:n.group||''});
+      window._khNotifs=window._khNotifs.slice(0,CAP);_save(window._khNotifs);
+      if(!isOpen)_unread++;
+      _build();_badge();
+      if(handle)handle.style.display='flex';
+      if(isOpen)_list();
+    }catch(_){}
+  };
+  function _badge(){if(!badge)return;if(_unread>0){badge.style.display='flex';badge.textContent=_unread>9?'9+':String(_unread);}else{badge.style.display='none';}}
+  function _list(){
+    if(!listEl)return;listEl.innerHTML='';
+    var a=window._khNotifs||[];
+    if(!a.length){listEl.appendChild(_el('div','padding:26px 12px;text-align:center;color:var(--muted);font-size:13px;','No notifications yet.'));return;}
+    for(var i=0;i<a.length;i++){(function(n){
+      var row=_el('div','display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid rgba(128,128,128,.2);');
+      row.appendChild(_el('div','font-size:18px;flex:0 0 auto;line-height:1.2;',n.icon));
+      var mid=_el('div','flex:1;min-width:0;');
+      if(n.title)mid.appendChild(_el('div','font-weight:700;font-size:13px;color:var(--fg);',n.title));
+      if(n.body)mid.appendChild(_el('div','font-size:12px;color:var(--muted);line-height:1.4;word-break:break-word;',n.body));
+      row.appendChild(mid);
+      row.appendChild(_el('div','font-size:10px;color:var(--muted);flex:0 0 auto;',_ago(n.at)));
+      if(n.view||n.group){row.style.cursor='pointer';row.onclick=function(){_close();if(n.group){try{window._khPendingOpenGroup=n.group;}catch(_){}}var v=n.view||(n.group?'messages':'');if(v&&typeof showView==='function'){try{showView(v);}catch(_){}}};}
+      listEl.appendChild(row);
+    })(a[i]);}
+  }
+  function _build(){
+    if(handle||!document.body)return;
+    handle=_el('div','position:fixed;left:50%;bottom:62px;transform:translateX(-50%);z-index:99997;background:var(--card);color:var(--fg);border:1px solid rgba(128,128,128,.35);border-radius:999px;padding:4px 14px;font-size:11px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.2);cursor:pointer;display:none;align-items:center;gap:6px;opacity:.94;');
+    handle.appendChild(_el('span','font-size:12px;','🔔'));
+    handle.appendChild(_el('span',null,'Notifications'));
+    badge=_el('span','display:none;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-inv);border-radius:999px;min-width:16px;height:16px;font-size:9px;font-weight:900;padding:0 4px;');
+    handle.appendChild(badge);
+    handle.onclick=_open;
+    document.body.appendChild(handle);
+
+    panel=_el('div','position:fixed;left:0;right:0;bottom:0;z-index:99998;background:var(--bg);border-top:1px solid rgba(128,128,128,.35);border-radius:16px 16px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.3);transform:translateY(110%);transition:transform .25s ease;max-height:70vh;display:flex;flex-direction:column;');
+    var grab=_el('div','flex:0 0 auto;padding:8px 0 4px;display:flex;justify-content:center;');
+    grab.appendChild(_el('div','width:40px;height:4px;border-radius:2px;background:rgba(128,128,128,.5);'));
+    panel.appendChild(grab);
+    var hdr=_el('div','flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:2px 14px 8px;');
+    hdr.appendChild(_el('div','font-weight:800;font-size:14px;color:var(--fg);','Notifications'));
+    var clr=_el('button','background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:4px 6px;','Clear all');
+    clr.onclick=function(){window._khNotifs=[];_save([]);_unread=0;_badge();_list();};
+    hdr.appendChild(clr);
+    panel.appendChild(hdr);
+    listEl=_el('div','flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;');
+    panel.appendChild(listEl);
+    document.body.appendChild(panel);
+
+    backdrop=_el('div','position:fixed;left:0;top:0;right:0;bottom:0;z-index:99996;background:rgba(0,0,0,.28);opacity:0;transition:opacity .2s;pointer-events:none;');
+    backdrop.onclick=_close;
+    document.body.appendChild(backdrop);
+
+    /* Swipe UP from the very bottom edge to open; swipe DOWN on the panel to close. */
+    var sy=0,sx=0,tracking=false;
+    document.addEventListener('touchstart',function(e){
+      if(isOpen)return;var t=e.touches&&e.touches[0];if(!t)return;
+      if(t.clientY>=window.innerHeight-26){sy=t.clientY;sx=t.clientX;tracking=true;}
+    },{passive:true});
+    document.addEventListener('touchmove',function(e){
+      if(!tracking||isOpen)return;var t=e.touches&&e.touches[0];if(!t)return;
+      if(sy-t.clientY>46&&Math.abs(t.clientX-sx)<70){tracking=false;_open();}
+    },{passive:true});
+    document.addEventListener('touchend',function(){tracking=false;},{passive:true});
+    var py=0;
+    panel.addEventListener('touchstart',function(e){var t=e.touches&&e.touches[0];if(t)py=t.clientY;},{passive:true});
+    panel.addEventListener('touchend',function(e){var t=e.changedTouches&&e.changedTouches[0];if(t&&t.clientY-py>60)_close();},{passive:true});
+  }
+  function _open(){_build();if(!panel)return;isOpen=true;_unread=0;_badge();_list();panel.style.transform='translateY(0)';if(backdrop){backdrop.style.pointerEvents='auto';backdrop.style.opacity='1';}if(handle)handle.style.display='none';}
+  function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}if(handle&&(window._khNotifs||[]).length)handle.style.display='flex';}
+  window._khOpenNotifs=_open;
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_build);else setTimeout(_build,400);
+  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();if(handle)handle.style.display='flex';}}catch(_){}},900);
+})();
 
 /* ── KindleHub Mobile OS ──────────────────────────────────────────────── */
 /* Shared wallpaper catalogue. Previously inlined twice — once in
@@ -15298,6 +15392,9 @@ window._khInviteDismissed=_khInviteDismissed;window._khDismissInvite=_khDismissI
     if(typeof _khInviteDismissed==='function'&&_khInviteDismissed(_invKey))return;
     /* Title-case the game name for the header ("chess" → "Chess"). */
     const gameTitle=String(game).charAt(0).toUpperCase()+String(game).slice(1);
+    /* Also log the invite to the Notification Center (dedup guard above ensures
+       this only fires for a genuinely new request, not on inbox replay). */
+    try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'🎮',title:gameTitle+' invite',body:(fromName||'A player')+' wants to play '+gameTitle,view:'games'});}catch(_){}
     const host=_bannerHost();
     const card=document.createElement('div');
     card.style.cssText='background:var(--card,#fff);color:var(--fg,#111);border:2px solid var(--fg,#111);border-radius:12px;padding:13px 14px;box-shadow:0 6px 22px rgba(0,0,0,0.28);font-size:13px;line-height:1.45;display:flex;flex-direction:column;gap:9px;animation:none;';
