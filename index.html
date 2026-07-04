@@ -26950,74 +26950,28 @@ document.addEventListener('click',e=>{
     }
   }
   if(id==='testAI'){
-    /* Show a quick model picker before testing */
-    const _curProv=S.aiProvider==='openrouter'?'OpenRouter':'Gemini';
-    const _curModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.hbGeminiModel||'gemini-2.0-flash');
-    const _modLabel=_curModel.split('/').pop().replace(':free','');
-    /* Build a quick modal with provider + model choice */
+    /* Model picker before testing — the SAME canonical picker as the
+       Assistant header (buildAIModelPicker), so it always exposes every
+       provider + model and can never drift from the chat picker. It writes
+       the global selection on pick, so Test just re-runs testAIConnection. */
     const _ov=document.createElement('div');
-    _ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.55);z-index:999999;display:flex;align-items:center;justify-content:center;';
+    _ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.55);z-index:999999;display:flex;align-items:center;justify-content:center;padding:14px;';
     const _box=document.createElement('div');
-    _box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,380px);display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-md);';
+    _box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,380px);display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-md);';
     const _h=document.createElement('div');_h.textContent='Test AI Connection';_h.style.cssText='font-size:14px;font-weight:900;font-family:var(--title-font);';
-    const _provRow=document.createElement('div');_provRow.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
-    const _pLbl=document.createElement('span');_pLbl.textContent='Provider:';_pLbl.style.cssText='font-size:11px;font-weight:700;';
-    const _pGem=document.createElement('button');_pGem.textContent='Gemini';
-    const _pOR=document.createElement('button');_pOR.textContent='OpenRouter';
-    const _pAn=document.createElement('button');_pAn.textContent='Claude';
-    const _pOa=document.createElement('button');_pOa.textContent='GPT';
-    const _provBtns={gemini:_pGem,openrouter:_pOR,anthropic:_pAn,openai:_pOa};
-    function _syncProvBtns(){Object.keys(_provBtns).forEach(k=>{_provBtns[k].className='btn small'+(S.aiProvider===k?' primary':'');});}
-    _syncProvBtns();
-    _provRow.append(_pLbl,_pGem,_pOR,_pAn,_pOa);
-    const _mLbl=document.createElement('div');_mLbl.textContent='Model:';_mLbl.style.cssText='font-size:11px;font-weight:700;';
-    const _mSel=document.createElement('select');_mSel.style.cssText='font-size:11px;padding:5px 8px;border:var(--border);border-radius:8px;background:var(--card);color:var(--fg);width:100%;';
-    function _populateModels(){
-      _mSel.innerHTML='';
-      function _addGroup(label,items,cur){
-        const og=document.createElement('optgroup');og.label=label;
-        items.forEach(([id,name])=>{
-          const o=document.createElement('option');o.value=id;o.textContent=name;
-          if(id===cur)o.selected=true;
-          og.appendChild(o);
-        });
-        _mSel.appendChild(og);
-      }
-      if(S.aiProvider==='openrouter'){
-        const cur=S.openrouterModel||'openrouter/free';
-        _addGroup('Free models',[['openrouter/free','Free Router (auto)'],['meta-llama/llama-3.3-70b-instruct:free','Llama 3.3 70B'],['meta-llama/llama-4-maverick:free','Llama 4 Maverick'],['deepseek/deepseek-r1:free','DeepSeek R1'],['mistralai/mistral-small-3.1-24b-instruct:free','Mistral Small 3.1'],['qwen/qwen3-8b:free','Qwen 3 8B']],cur);
-        _addGroup('Paid models',[['anthropic/claude-opus-4','Claude Opus 4'],['anthropic/claude-sonnet-4','Claude Sonnet 4'],['anthropic/claude-3.5-sonnet','Claude 3.5 Sonnet'],['anthropic/claude-3-haiku','Claude 3 Haiku'],['openai/gpt-4o','GPT-4o'],['openai/gpt-4o-mini','GPT-4o Mini'],['google/gemini-2.5-pro','Gemini 2.5 Pro'],['google/gemini-2.0-flash-001','Gemini 2.0 Flash']],cur);
-      } else if(S.aiProvider==='anthropic'){
-        _addGroup('Paid — needs billing',ANTHROPIC_MODELS,S.anthropicModel||'claude-haiku-4-5-20251001');
-      } else if(S.aiProvider==='openai'){
-        _addGroup('Paid — needs billing',OPENAI_MODELS,S.openaiModel||'gpt-5.4-mini');
-      } else {
-        const cur=S.hbGeminiModel||'gemini-3.1-flash-lite';
-        _addGroup('Free tier',[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (15 RPM)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3.5-flash','Gemini 3.5 Flash'],['gemini-3.1-flash','Gemini 3.1 Flash']],cur);
-        _addGroup('Paid tier',[['gemini-2.5-pro','Gemini 2.5 Pro'],['gemini-3.1-pro','Gemini 3.1 Pro'],['gemini-2.0-flash','Gemini 2 Flash'],['gemini-2.0-flash-lite','Gemini 2 Flash Lite']],cur);
-      }
-    }
-    _pGem.onclick=()=>{S.aiProvider='gemini';save();_syncProvBtns();_populateModels();};
-    _pOR.onclick=()=>{S.aiProvider='openrouter';save();_syncProvBtns();_populateModels();};
-    _pAn.onclick=()=>{S.aiProvider='anthropic';save();_syncProvBtns();_populateModels();};
-    _pOa.onclick=()=>{S.aiProvider='openai';save();_syncProvBtns();_populateModels();};
-    _populateModels();
+    const _hint=document.createElement('div');_hint.textContent='Choose a provider and model, then Test.';_hint.style.cssText='font-size:11px;color:var(--muted);';
+    const _tPick=buildAIModelPicker({btnId:'testDlgModelBtn',dropId:'testDlgModelDrop'});
+    const _pickWrap=document.createElement('div');_pickWrap.style.cssText='position:relative;';
+    _pickWrap.appendChild(_tPick.btn);_pickWrap.appendChild(_tPick.drop);
     const _btnRow=document.createElement('div');_btnRow.style.cssText='display:flex;gap:8px;justify-content:flex-end;';
     const _cancelB=document.createElement('button');_cancelB.textContent='Cancel';_cancelB.className='btn';
     const _testB=document.createElement('button');_testB.textContent='Test';_testB.className='btn primary';
     _cancelB.onclick=()=>_ov.remove();
-    _testB.onclick=()=>{
-      /* Apply selected model then run test */
-      if(S.aiProvider==='openrouter')S.openrouterModel=_mSel.value;
-      else if(S.aiProvider==='anthropic')S.anthropicModel=_mSel.value;
-      else if(S.aiProvider==='openai')S.openaiModel=_mSel.value;
-      else S.hbGeminiModel=_mSel.value;
-      save();_ov.remove();testAIConnection();
-    };
+    _testB.onclick=()=>{save();_ov.remove();testAIConnection();};
     _ov.onclick=e2=>{if(e2.target===_ov)_ov.remove();};
     _btnRow.append(_cancelB,_testB);
-    _box.append(_h,_provRow,_mLbl,_mSel,_btnRow);
-    _ov.appendChild(_box);document.body.appendChild(_ov);
+    _box.append(_h,_hint,_pickWrap,_btnRow);
+    _ov.appendChild(_box);(document.getElementById('rotateRoot')||document.body).appendChild(_ov);
   }
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement&&document.activeElement.id==='chatIn')sendChat();});
@@ -39232,25 +39186,17 @@ feedback:()=>{
       const instrEl=el('textarea',{rows:2,placeholder:_hasErr?'e.g. also guard against an empty name':'e.g. Make the home clock widget show seconds',style:'width:100%;font-size:12px;padding:8px;border:var(--thin);border-radius:6px;background:var(--bg);color:var(--fg);box-sizing:border-box;resize:vertical;'});
       box.appendChild(instrEl);
 
-      /* Model picker */
-      const modelRow=el('div',{style:'display:flex;gap:6px;align-items:center;flex-wrap:wrap;'});
+      /* Model picker — the SAME canonical picker as the Assistant page, so a
+         code fix can use any provider/model (it persists the choice to S like
+         the chat picker). Gemini is recommended for code; whatever the model
+         returns is Silk-checked + security-gated + previewed before apply. */
+      const modelRow=el('div',{style:'display:flex;gap:6px;align-items:center;flex-wrap:wrap;position:relative;'});
       modelRow.appendChild(txt('span','Model:',{style:'font-size:11px;font-weight:700;'}));
-      const provSel=el('select',{style:'font-size:11px;padding:5px 8px;border:var(--border);border-radius:6px;background:var(--card);color:var(--fg);'});
-      /* OpenRouter is intentionally EXCLUDED for code fixes — its free models
-         are too unreliable for patches. Gemini is recommended. */
-      [['gemini','Gemini (recommended)'],['shared','Shared (free)'],['anthropic','Claude (paid)'],['openai','GPT (paid)']].forEach(p=>{const o=el('option',{value:p[0]});o.textContent=p[1];if(S.aiProvider===p[0])o.selected=true;provSel.appendChild(o);});
-      modelRow.appendChild(provSel);
-      const modelSel=el('select',{style:'font-size:11px;padding:5px 8px;border:var(--border);border-radius:6px;background:var(--card);color:var(--fg);flex:1;min-width:140px;'});
-      function _populateModels(){
-        modelSel.innerHTML='';
-        const opts=provSel.value==='anthropic'?ANTHROPIC_MODELS
-          :provSel.value==='openai'?OPENAI_MODELS
-          :[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — free, fastest'],['gemini-3.5-flash','Gemini 3.5 Flash (free, newest)'],['gemini-3.1-flash','Gemini 3.1 Flash (free)'],['gemini-2.5-flash','Gemini 2.5 Flash (free)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (free)'],['gemini-2.0-flash','Gemini 2.0 Flash (free)'],['gemini-2.0-flash-lite','Gemini 2.0 Flash Lite (free)'],['gemini-3.1-pro','Gemini 3.1 Pro — best for code (paid)'],['gemini-2.5-pro','Gemini 2.5 Pro (paid)']];
-        opts.forEach(([id,name])=>{const o=el('option',{value:id});o.textContent=name;modelSel.appendChild(o);});
-      }
-      _populateModels();
-      provSel.onchange=_populateModels;
-      modelRow.appendChild(modelSel);
+      const _fixPick=buildAIModelPicker({btnId:'fixModelPickerBtn',dropId:'fixModelDrop'});
+      const _fixPickWrap=el('div',{style:'position:relative;'});
+      _fixPickWrap.appendChild(_fixPick.btn);_fixPickWrap.appendChild(_fixPick.drop);
+      modelRow.appendChild(_fixPickWrap);
+      modelRow.appendChild(txt('span','Gemini recommended for code',{style:'font-size:10px;color:var(--muted);'}));
       box.appendChild(modelRow);
 
       const status=txt('div','',{style:'font-size:11px;color:var(--muted);min-height:16px;'});
@@ -39288,17 +39234,11 @@ feedback:()=>{
           (_hasErr?('Error:\n'+(err.fullText||((err.msg||'')+'\n'+(err.stack||'')))+'\n'):'')+
           (_instr?('What the user wants: '+_instr+'\n'):'');
         try{
-          /* Use the user-selected provider for the fix call. Temporarily
-             swap S.aiProvider so callAIStream routes correctly, then
-             restore. */
-          const savedProvider=S.aiProvider, savedGem=S.hbGeminiModel, savedAn=S.anthropicModel, savedOa=S.openaiModel;
-          S.aiProvider=provSel.value;
-          if(provSel.value==='gemini')S.hbGeminiModel=modelSel.value;
-          else if(provSel.value==='anthropic')S.anthropicModel=modelSel.value;
-          else if(provSel.value==='openai')S.openaiModel=modelSel.value;
+          /* The canonical picker already persisted the user's provider/model
+             choice to S (same as the chat picker), so callAIStream routes
+             correctly with no temporary swap. */
           let patch='';
           await callAIStream([{role:'user',text:prompt}],t=>{patch=t;});
-          S.aiProvider=savedProvider;S.hbGeminiModel=savedGem;S.anthropicModel=savedAn;S.openaiModel=savedOa;
           /* Strip markdown fences if the model ignored the instruction */
           patch=patch.replace(/^```[a-z]*\n/i,'').replace(/\n```\s*$/,'').trim();
           if(!patch){status.textContent=(navigator.onLine===false?'You’re offline — connect to the internet and try again.':'Empty response — check your connection or try a stronger model.');genBtn.disabled=false;return;}
@@ -39338,7 +39278,7 @@ feedback:()=>{
         catch(e){if(!await kindleConfirm('Patch threw on first run: '+e.message+'\n\nApply anyway?'))return;}
         if(!S.localFixes)S.localFixes={};
         const id=err.id||(err.msg?(err.msg+'@'+(err.line||'')):('edit_'+Date.now()));
-        S.localFixes[id]={code,note:(err.msg||'').slice(0,140),model:provSel.value+'/'+modelSel.value,when:new Date().toISOString()};
+        S.localFixes[id]={code,note:(err.msg||'').slice(0,140),model:(_fixPick.label?_fixPick.label():(S.aiProvider||'')),when:new Date().toISOString()};
         if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
         toast('Patch applied locally. Reload to confirm. Manage from Admin → Local Fixes.');
         ov.remove();
