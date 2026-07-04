@@ -7653,7 +7653,7 @@ async function _loadRelevantAnnouncements(){
      otherwise only the listed usernames (S.email) / user-ids. */
   if(typeof _sbActive!=='function'||!_sbActive())return [];
   try{
-    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets&active=eq.true&order=created_at.desc&limit=20');
+    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets,comments&active=eq.true&order=created_at.desc&limit=20');
     if(!Array.isArray(rows))return [];
     const me=String(S.email||'').toLowerCase(),myId=String(S.userId||'');
     return rows.filter(r=>{
@@ -7668,7 +7668,7 @@ async function _loadRelevantAnnouncements(){
 async function _loadAllAnnouncements(){
   if(typeof _sbActive!=='function'||!_sbActive())return [];
   try{
-    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets&active=eq.true&order=created_at.desc&limit=50');
+    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets,comments&active=eq.true&order=created_at.desc&limit=50');
     return Array.isArray(rows)?rows:[];
   }catch(_){return [];}
 }
@@ -8047,6 +8047,13 @@ async function _renderAnnouncementWidget(card){
           :('private · '+a.targets.length+' recipient'+(a.targets.length===1?'':'s')));
       }
       body.appendChild(txt('div',metaBits.join('  ·  '),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px'}}));
+      /* Comments: anyone can read the thread; signed-in users can post.
+         Mirrors the feedback-comment pattern — a JSON `comments` array; the
+         worker gates a non-admin PATCH of kh_announcements to `comments` only. */
+      const _cCount=Array.isArray(a.comments)?a.comments.length:0;
+      const cBtn=txt('button','💬 Comments'+(_cCount?(' ('+_cCount+')'):''),{className:'btn small',style:{marginTop:'6px',fontSize:'11px'}});
+      cBtn.onclick=()=>_openAnnouncementComments(a,card);
+      body.appendChild(cBtn);
       block.appendChild(body);
       if(!isAdmin){
         const x=txt('button','✕',{className:'btn small',style:{minWidth:'30px',flexShrink:'0'}});
@@ -8091,6 +8098,88 @@ async function _renderAnnouncementWidget(card){
     }
     card.appendChild(row);
   }
+}
+
+/* Announcement comment thread — a public discussion under each announcement.
+   Reading is open to everyone; posting requires sign-in. Comments live in the
+   announcement's JSON `comments` column; the Cloudflare worker restricts a
+   non-admin PATCH of kh_announcements to the `comments` field only, so this
+   can never touch text/active/targets. Display is profanity-filtered like all
+   other user-generated text shown to others. Mirrors _openCommentThread. */
+async function _openAnnouncementComments(a,card){
+  if(!a)return;
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const box=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'18px',maxWidth:'500px',width:'100%',boxShadow:'var(--shadow-md)',maxHeight:'85vh',display:'flex',flexDirection:'column'}});
+  box.appendChild(txt('h3','💬 Comments',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  /* The announcement this thread hangs off (censored for display). */
+  box.appendChild(txt('div',_censorText(a.text),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',lineHeight:'1.5',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+  const listBox=el('div',{style:{flex:'1',overflowY:'auto',marginBottom:'10px',maxHeight:'40vh'}});
+  /* Local working copy, kept in sync with a.comments as posts land. */
+  let cur=Array.isArray(a.comments)?a.comments.slice():[];
+  function refreshList(){
+    listBox.innerHTML='';
+    if(!cur.length){listBox.appendChild(txt('div','No comments yet. Be the first.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'10px 0'}}));return;}
+    cur.slice().sort((x,y)=>String(x.date).localeCompare(String(y.date))).forEach(c=>{
+      const crow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'6px',fontSize:'12px',lineHeight:'1.5'}});
+      const hdr=el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',fontSize:'10px',color:'var(--muted)',fontWeight:'700'}});
+      const auth=el('div',{style:{display:'flex',alignItems:'center',gap:'6px'}});
+      if(typeof _avatarEl==='function')auth.appendChild(_avatarEl(c.author||'Anon',16));
+      auth.appendChild(txt('span',_dispName(c.author||'Anon')));
+      hdr.appendChild(auth);
+      hdr.appendChild(txt('span',c.date?new Date(c.date).toLocaleString():''));
+      crow.appendChild(hdr);
+      crow.appendChild(txt('div',_censorText(c.text||''),{style:{whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+      listBox.appendChild(crow);
+    });
+  }
+  refreshList();
+  box.appendChild(listBox);
+  if(S.authToken){
+    /* Signed-in users can post. */
+    const inp=el('textarea',{rows:2,placeholder:'Write a comment...',style:{width:'100%',fontSize:'12px',marginBottom:'8px',resize:'vertical'}});
+    box.appendChild(inp);
+    const btnRow=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end'}});
+    const close=txt('button','Close',{className:'btn small'});close.onclick=()=>ov.remove();
+    const post=txt('button','Post comment',{className:'btn small primary'});
+    post.onclick=async()=>{
+      const text=(inp.value||'').trim();
+      if(!text)return toast('Type something first');
+      if(!_sbActive()){toast('Commenting requires internet');return;}
+      if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('⚠ Heads up: flagged language will be hidden for others.',3000);
+      post.disabled=true;post.textContent='Posting…';
+      const author=S.email?S.email.split('@')[0]:(S.user||'Anon');
+      const entry={id:'c_'+Date.now().toString(36),text:text.slice(0,500),author:String(author).slice(0,40),date:new Date().toISOString()};
+      try{
+        /* Re-read just this row so a concurrent commenter isn't clobbered,
+           then append + cap the thread to the newest 60. */
+        const rows=await _sbSelect('kh_announcements','id=eq.'+encodeURIComponent(a.id)+'&select=comments');
+        const server=Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].comments)?rows[0].comments:[];
+        server.push(entry);
+        const capped=server.slice(-60);
+        /* NO admin token — the worker limits a non-admin PATCH of
+           kh_announcements to the `comments` column, so text/active/targets
+           can't be touched from here. */
+        await _sbUpdate('kh_announcements','id=eq.'+encodeURIComponent(a.id),{comments:capped});
+        cur=capped;a.comments=capped;
+        inp.value='';
+        refreshList();
+        try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
+      }catch(e){
+        console.error('[Announcement comment failed]',e);
+        if(typeof _isMissingColumnError==='function'&&_isMissingColumnError(e,'comments'))toast('Run the latest worker (comments column missing on kh_announcements)',6000);
+        else toast('Comment failed: '+String((e&&e.message)||e).slice(0,160),7000);
+      }
+      post.disabled=false;post.textContent='Post comment';
+    };
+    btnRow.append(close,post);
+    box.appendChild(btnRow);
+  } else {
+    box.appendChild(txt('div','Sign in to add a comment.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',marginBottom:'8px'}}));
+    const close=txt('button','Close',{className:'btn small',style:{alignSelf:'flex-end'}});close.onclick=()=>ov.remove();
+    box.appendChild(close);
+  }
+  ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 
 /* ── Visit log (anonymous, once-per-device-per-day) ──────────────────
