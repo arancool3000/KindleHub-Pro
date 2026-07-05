@@ -3264,6 +3264,10 @@ function notifyMsg(name,text,ms,msgId,groupCode){
 (function(){
   var KEY='kh_notifs', CAP=25;
   var _unread=0, panel=null, listEl=null, handle=null, badge=null, backdrop=null, isOpen=false;
+  /* Once the user opens the tray for the first time they've LEARNED the swipe-up
+     gesture, so the teaching arrow stops showing (persisted device-locally). */
+  var SWIPED_KEY='kh_notif_swiped', _learned=false;
+  try{_learned=localStorage.getItem(SWIPED_KEY)==='1';}catch(_){}
   function _load(){try{var a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[];}catch(_){return [];}}
   function _save(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(0,CAP)));}catch(_){}}
   window._khNotifs=_load();
@@ -3277,11 +3281,15 @@ function notifyMsg(name,text,ms,msgId,groupCode){
       window._khNotifs=window._khNotifs.slice(0,CAP);_save(window._khNotifs);
       if(!isOpen)_unread++;
       _build();_badge();
-      if(handle)handle.style.display='flex';
+      _showHandle();
       if(isOpen)_list();
     }catch(_){}
   };
   function _badge(){if(!badge)return;if(_unread>0){badge.style.display='flex';badge.textContent=_unread>9?'9+':String(_unread);}else{badge.style.display='none';}}
+  /* The bottom swipe-hint arrow is a TEACHING aid: show it while there are
+     unread notifications, or until the user first opens the tray (learns the
+     gesture). Once learned it stays hidden unless something new arrives. */
+  function _showHandle(){if(handle)handle.style.display=((_unread>0)||(!_learned&&(window._khNotifs||[]).length>0))?'flex':'none';}
   function _list(){
     if(!listEl)return;listEl.innerHTML='';
     var a=window._khNotifs||[];
@@ -3300,10 +3308,17 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   }
   function _build(){
     if(handle||!document.body)return;
-    handle=_el('div','position:fixed;left:50%;bottom:62px;transform:translateX(-50%);z-index:99997;background:var(--card);color:var(--fg);border:1px solid rgba(128,128,128,.35);border-radius:999px;padding:4px 14px;font-size:11px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.2);cursor:pointer;display:none;align-items:center;gap:6px;opacity:.94;');
-    handle.appendChild(_el('span','font-size:12px;','🔔'));
-    handle.appendChild(_el('span',null,'Notifications'));
-    badge=_el('span','display:none;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-inv);border-radius:999px;min-width:16px;height:16px;font-size:9px;font-weight:900;padding:0 4px;');
+    /* A thin swipe-up hint strip pinned to the very BOTTOM edge. It draws an
+       inline SVG chevron — NEVER a font glyph/emoji — so it can't render as a
+       Kindle "tofu" box, and it's minimal (not a floating pill) so it isn't
+       intrusive. Tapping it, or swiping up from the bottom edge, opens the tray. */
+    handle=_el('div','position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:99997;width:132px;max-width:46vw;height:20px;color:var(--fg);background:var(--card);border:1px solid rgba(128,128,128,.3);border-bottom:none;border-radius:10px 10px 0 0;box-shadow:0 -1px 6px rgba(0,0,0,.12);cursor:pointer;display:none;align-items:center;justify-content:center;gap:6px;opacity:.9;');
+    var _chev=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    _chev.setAttribute('viewBox','0 0 24 12');_chev.setAttribute('width','22');_chev.setAttribute('height','11');_chev.style.cssText='display:block;';
+    var _pl=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    _pl.setAttribute('points','3,9 12,3 21,9');_pl.setAttribute('fill','none');_pl.setAttribute('stroke','currentColor');_pl.setAttribute('stroke-width','2.6');_pl.setAttribute('stroke-linecap','round');_pl.setAttribute('stroke-linejoin','round');
+    _chev.appendChild(_pl);handle.appendChild(_chev);
+    badge=_el('span','display:none;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-inv);border-radius:999px;min-width:15px;height:15px;font-size:9px;font-weight:900;padding:0 4px;');
     handle.appendChild(badge);
     handle.onclick=_open;
     document.body.appendChild(handle);
@@ -3341,12 +3356,12 @@ function notifyMsg(name,text,ms,msgId,groupCode){
     panel.addEventListener('touchstart',function(e){var t=e.touches&&e.touches[0];if(t)py=t.clientY;},{passive:true});
     panel.addEventListener('touchend',function(e){var t=e.changedTouches&&e.changedTouches[0];if(t&&t.clientY-py>60)_close();},{passive:true});
   }
-  function _open(){_build();if(!panel)return;isOpen=true;_unread=0;_badge();_list();panel.style.transform='translateY(0)';if(backdrop){backdrop.style.pointerEvents='auto';backdrop.style.opacity='1';}if(handle)handle.style.display='none';}
-  function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}if(handle&&(window._khNotifs||[]).length)handle.style.display='flex';}
+  function _open(){_build();if(!panel)return;isOpen=true;_unread=0;if(!_learned){_learned=true;try{localStorage.setItem(SWIPED_KEY,'1');}catch(_){}}_badge();_list();panel.style.transform='translateY(0)';if(backdrop){backdrop.style.pointerEvents='auto';backdrop.style.opacity='1';}if(handle)handle.style.display='none';}
+  function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}_showHandle();}
   window._khOpenNotifs=_open;
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_build);else setTimeout(_build,400);
-  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();if(handle)handle.style.display='flex';}}catch(_){}},900);
+  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();_showHandle();}}catch(_){}},900);
 })();
 
 /* ── KindleHub Mobile OS ──────────────────────────────────────────────── */
