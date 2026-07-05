@@ -413,6 +413,34 @@ NB: `S.jailbrokenLayout`/`S.gazetteMode`/`S.gazetteTopics`/`S.dailyGoal` are sma
   (12/12). **NEXT:** wire the first playable 3-4p game (e.g. online Trivia) to `onStart`.
 User decisions this round (via AskUserQuestion): Messages first = Friend requests + Share apps/screenshots;
 images/GIFs = SKIP (no media backend); online games = START NOW. Screenshot-in-chat still pending the media call.
+
+## ⚡ Round: game bugs + warn/ban flow + Farm game + Find launcher
+- **Game bug fixes**: Snake canvas `max-width:100%` had no `height:auto` → squished tall on narrow Kindles;
+  added `height:auto;aspect-ratio:1/1` (true 1:1). Minesweeper flagged cell used `background:var(--unrev)` (same
+  as unrevealed) w/ no text colour → the 'F' was invisible; now `background:var(--accent);color:var(--accent-inv)`.
+  DigQuest jump worked ~1/100: the queued jump was consumed+cleared even when `onGround` was false, and onGround
+  flickers false for a tick after landing (0.01px snap gap) → added a jump BUFFER (`jumpBuf=JBUF=8`) + COYOTE
+  time (`coyote=COYOTE=4`) in `step()` — the standard platformer fix. Anagrams bank ~52→~140; Nonogram puzzles
+  8→28 (all 5×5). Test: `tools/games_test.cjs` (35 games, 0-flagged).
+- **Warn/ban flow** (`_WARN_TAG='[[KH_WARN]]'`): warnings are targeted announcements tagged `[[KH_WARN]]` and
+  ROUTED OUT of the general announcements widget for everyone except the target (the widget filter checks the
+  current user is in `a.targets`) — so warnings/bans no longer clutter the admin's (or anyone's) announcements.
+  The WARNED user still gets theirs + sees it prominently: a big blocking modal on home (`_khMaybeShowWarningModal`,
+  once, `kh_warn_ack`) + a red-bordered card in the widget (`_dispAnnText` strips the tag). Admin panel (Feedback
+  view) gets a red **Moderation notices** card (`_khRefreshModerationCard`, `#kh-mod-card-host`) listing active
+  warnings w/ Delete. Ban-request rows show **already warned** via `_khLoadWarnedSet()` (set of warned usernames
+  from warn announcements, loaded into `window._khWarnedSet`). Tofu-safe: dropped ⚠ from the warn text/label; the
+  modal uses a CSS "!" circle. `_khWarnUsername`(+Silent) prepend `_WARN_TAG`. Test: `/tmp/warn_test.cjs`.
+- **Farm** (`const Farm`, game #35): cosy turn-based farming sim — 4×3 plots, seed shop (Wheat/Carrot/Berry/
+  Pumpkin, cost/grow/sell), "Next day" grows all crops, tap a READY crop to harvest+sell for coins. No loop
+  (renders per-action like Minesweeper); state persists in `S.games.farm` (plots/coins/day/seed/best). Wired:
+  `_doLaunch` case + `GAME_HELP`/`GAME_MAP` + a card in the Games grid (rowBoard) + `tools/games_test.cjs` id.
+  Test: `/tmp/farm_test.cjs`.
+- **Easier navigation**: a **"Find" launcher** — a `.nav-launcher` accent chip at the START of the nav (not a
+  `.tab`, so the tab click/reorder logic ignores it; inline `onclick=_khOpenLauncher()`) opens a searchable
+  overlay of all ~38 pages (from `NAV_TABS`+home) with RECENT pages as chips; type to filter, tap/Enter to jump
+  (navigates via the real nav tab so split-screen stays correct). Plain "Find" text (no tofu). Test:
+  `/tmp/launcher_test.cjs`.
 **Timer/Stopwatch:** Pomodoro card retitled "⏱ Timer, Stopwatch & Pomodoro"; added `startCustom(mins)` +
 a self-contained count-up stopwatch (`swToggle`/`swReset`/`#swDisplay`).
 **Restart-logout fix:** the gzip state blob can fail to inflate on a cold Kindle boot (→ logged-out default);
