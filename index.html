@@ -337,7 +337,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .ms-cell.revealed{background:var(--bg);border-color:transparent;cursor:default}
 .ms-cell.revealed-empty{background:var(--bg);border-color:transparent;}
 .ms-cell.mine-hit{background:var(--fg);color:var(--bg)}
-.ms-cell.flagged{background:var(--unrev);font-weight:900}
+.ms-cell.flagged{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);font-weight:900}
 .sudoku-board{display:grid;grid-template-columns:repeat(9,1fr);gap:0;border:2px solid var(--fg);width:min(92vw,378px);margin:6px auto;border-radius:8px;overflow:hidden;}
 .sdk-cell{width:100%;height:40px;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
 .sdk-cell.fixed{color:var(--fg);background:var(--card)}
@@ -623,28 +623,42 @@ body.simple-ui input,body.simple-ui textarea,body.simple-ui select{
 body.simple-ui .toast{background:#000;color:#fff;border:2px solid #000;border-radius:4px;box-shadow:3px 3px 0 #fff,3px 3px 0 1px #000;}
 body.simple-ui .header-sub{color:#444;}
 
-/* Retro-mode home grid */
-.simple-home{padding:14px 16px 20px;color:#000;}
+/* ── Retro-mode home grid — a boxy, print-shop "desktop" aesthetic ──
+   Serif titles + monospace labels, chunky drop-shadows, framed app tiles
+   and a windowed masthead. All static (no per-tick repaint) so it's easy on
+   e-ink; the black-on-white boxes read beautifully on e-paper. */
+.simple-home{padding:14px 16px 22px;color:#000;}
+/* Masthead — a windowed "title bar" gives the retro home a strong identity. */
+.simple-masthead{border:2px solid #000;border-radius:4px;box-shadow:4px 4px 0 #000;background:#fff;margin-bottom:20px;overflow:hidden;}
+.simple-masthead .smh-bar{display:flex;align-items:center;gap:7px;background:#000;color:#fff;padding:5px 9px;font-family:'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;}
+.simple-masthead .smh-dot{width:9px;height:9px;border:1.5px solid #fff;border-radius:50%;display:inline-block;flex-shrink:0;}
+.simple-masthead .smh-spacer{flex:1;}
+.simple-masthead .smh-body{padding:13px 15px 14px;}
+.simple-masthead .smh-title{font-family:'Times New Roman',serif;font-weight:800;font-size:28px;line-height:1;letter-spacing:.5px;color:#000;}
+.simple-masthead .smh-sub{font-family:'Courier New',monospace;font-size:11px;color:#444;margin-top:6px;letter-spacing:.4px;}
 .simple-feat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px;}
-.simple-feat-card{background:#fff;border:2px solid #000;border-radius:4px;padding:13px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;box-shadow:3px 3px 0 #000;position:relative;}
-.simple-feat-card:active{transform:translate(1px,1px);box-shadow:2px 2px 0 #000;}
-.simple-feat-icon{width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.simple-feat-card{background:#fff;border:2px solid #000;border-radius:4px;padding:13px 14px 15px;display:flex;align-items:center;gap:11px;cursor:pointer;box-shadow:3px 3px 0 #000;position:relative;}
+.simple-feat-card:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000;}
+.simple-feat-icon{width:32px;height:32px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:2px solid #000;border-radius:7px;padding:4px;background:#fff;box-sizing:border-box;}
 .simple-feat-icon svg{width:100%;height:100%;}
 .simple-feat-body{flex:1;min-width:0;}
-.simple-feat-title{font-weight:800;font-size:13px;line-height:1.2;color:#000;}
-.simple-feat-sub{font-size:10.5px;color:#555;margin-top:2px;font-style:italic;}
+.simple-feat-title{font-family:'Times New Roman',serif;font-weight:800;font-size:15px;line-height:1.15;color:#000;}
+.simple-feat-sub{font-family:'Courier New',monospace;font-size:10px;color:#555;margin-top:3px;letter-spacing:.3px;text-transform:uppercase;}
 .simple-feat-plus{position:absolute;top:5px;right:6px;width:16px;height:16px;border:1.5px solid #000;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:#fff;}
-.simple-section-hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:14px;}
-.simple-section-hdr h2{font-family:'Times New Roman',serif;font-weight:700;font-size:22px;margin:0;color:#000;}
-.simple-edit-btn{background:#fff;color:#000;border:2px solid #000;border-radius:4px;padding:4px 11px;font-weight:700;font-size:11px;cursor:pointer;box-shadow:2px 2px 0 #000;}
-.simple-app-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:16px 10px;}
+.simple-section-hdr{display:flex;align-items:center;justify-content:space-between;border-bottom:3px double #000;padding-bottom:6px;margin-bottom:16px;}
+.simple-section-hdr h2{font-family:'Times New Roman',serif;font-weight:700;font-size:22px;margin:0;color:#000;letter-spacing:.5px;}
+.simple-edit-btn{background:#fff;color:#000;border:2px solid #000;border-radius:4px;padding:4px 11px;font-weight:700;font-size:11px;cursor:pointer;box-shadow:2px 2px 0 #000;font-family:'Courier New',monospace;text-transform:uppercase;letter-spacing:.5px;}
+.simple-edit-btn:active{transform:translate(1px,1px);box-shadow:1px 1px 0 #000;}
+.simple-app-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:18px 12px;}
 @media (max-width:640px){.simple-app-grid{grid-template-columns:repeat(4,1fr);}.simple-feat-row{grid-template-columns:1fr;gap:10px;}}
-.simple-app{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;padding:5px 3px;position:relative;}
-.simple-app-icon{width:38px;height:38px;display:flex;align-items:center;justify-content:center;color:#000;}
+.simple-app{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;padding:2px;position:relative;}
+/* Framed icon tiles — each icon sits in a bordered "app tile" like a classic
+   desktop launcher, replacing the old bare floating glyphs. */
+.simple-app-icon{width:54px;height:54px;display:flex;align-items:center;justify-content:center;color:#000;border:2px solid #000;border-radius:9px;background:#fff;box-shadow:2px 2px 0 #000;padding:12px;box-sizing:border-box;}
 .simple-app-icon svg{width:100%;height:100%;stroke:#000;fill:none;stroke-width:2;}
-.simple-app-label{font-size:11px;font-weight:600;text-align:center;color:#000;line-height:1.2;}
+.simple-app-label{font-size:11px;font-weight:700;text-align:center;color:#000;line-height:1.15;font-family:'Courier New',monospace;letter-spacing:.2px;}
 .simple-app-plus{position:absolute;top:0;right:4px;width:14px;height:14px;border:1.5px solid #000;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:#fff;}
-.simple-app:active{transform:translate(1px,1px);}
+.simple-app:active .simple-app-icon{transform:translate(2px,2px);box-shadow:0 0 0 #000;}
 
 /* Retro-UI readability fixes — give content surfaces a solid white
    background so the dot pattern doesn't bleed through underneath text.
@@ -728,6 +742,14 @@ body.simple-ui.dark #view-home{background:transparent;border:none;box-shadow:non
 body.simple-ui.dark .simple-feat-card,
 body.simple-ui.dark .simple-app{background:#15151f;}
 body.simple-ui.dark .view{border-color:#f0f0f0;box-shadow:3px 3px 0 #f0f0f0;}
+/* Retro dark — frame the app + feature tiles and the masthead to match. */
+body.simple-ui.dark .simple-app-icon{color:#f0f0f0;background:#15151f;border-color:#f0f0f0;box-shadow:2px 2px 0 #f0f0f0;}
+body.simple-ui.dark .simple-feat-icon{background:#15151f;border-color:#f0f0f0;}
+body.simple-ui.dark .simple-masthead{background:#15151f;border-color:#f0f0f0;box-shadow:4px 4px 0 #f0f0f0;}
+body.simple-ui.dark .simple-masthead .smh-bar{background:#f0f0f0;color:#0a0a12;}
+body.simple-ui.dark .simple-masthead .smh-dot{border-color:#0a0a12;}
+body.simple-ui.dark .simple-masthead .smh-title{color:#f0f0f0;}
+body.simple-ui.dark .simple-masthead .smh-sub{color:#c8c8d0;}
 /* Sepia + Retro — similar treatment, parchment-coloured page with
    dark sepia ink. Less drastic than dark; mostly already worked. */
 body.simple-ui.sepia{
@@ -742,6 +764,17 @@ body.simple-ui.sepia{
 body.simple-ui.sepia header,body.simple-ui.sepia nav{background:#f0e8d3;border-color:#3a2a14;}
 body.simple-ui.sepia .card,body.simple-ui.sepia .btn{background:#f8efd6;color:#3a2a14;border-color:#3a2a14;box-shadow:3px 3px 0 #3a2a14;}
 body.simple-ui.sepia .simple-feat-card,body.simple-ui.sepia .simple-app{background:#f8efd6;}
+/* Retro sepia — parchment-framed tiles + masthead. */
+body.simple-ui.sepia .simple-app-icon{color:#3a2a14;background:#f8efd6;border-color:#3a2a14;box-shadow:2px 2px 0 #3a2a14;}
+body.simple-ui.sepia .simple-app-icon svg{stroke:#3a2a14;}
+body.simple-ui.sepia .simple-feat-icon{background:#f8efd6;border-color:#3a2a14;}
+body.simple-ui.sepia .simple-masthead{background:#f8efd6;border-color:#3a2a14;box-shadow:4px 4px 0 #3a2a14;}
+body.simple-ui.sepia .simple-masthead .smh-bar{background:#3a2a14;color:#f8efd6;}
+body.simple-ui.sepia .simple-masthead .smh-dot{border-color:#f8efd6;}
+body.simple-ui.sepia .simple-masthead .smh-title{color:#3a2a14;}
+body.simple-ui.sepia .simple-masthead .smh-sub{color:#6b5230;}
+body.simple-ui.sepia .simple-section-hdr{border-bottom-color:#3a2a14;}
+body.simple-ui.sepia .simple-section-hdr h2,body.simple-ui.sepia .simple-app-label,body.simple-ui.sepia .simple-feat-title{color:#3a2a14;}
 
 /* ── SIMPLE MODE — e-ink / oversimplified skin ──────────────────────────
    Toggled from the Control Center ("Simple" tile). Independent of the
@@ -1098,8 +1131,8 @@ body.launcher-ui .view{padding-bottom:80px;}
       <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
     </div>
     <div class="header-controls">
-      <button class="btn small" id="recentBtn" title="Recent activities &amp; split screen — show two pages at once">Recent</button>
       <div class="clock" id="sysClock"></div>
+      <button class="btn small" id="recentBtn" title="Recent activities &amp; split screen — show two pages at once">Recent</button>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
       <button class="btn small" id="landscapeBtn" title="Rotate the app 90° for sideways reading (Landscape)">⟳</button>
       <button class="btn small" id="themeBtn" title="Cycle theme: Light / Dark / Sepia">Light</button>
@@ -1146,6 +1179,7 @@ body.launcher-ui .view{padding-bottom:80px;}
        Home stays first, Settings goes last to match the runtime
        enforcement inside applyNavOrder(). ───────────────────── -->
   <nav id="mainNav">
+    <div class="nav-launcher" onclick="try{_khOpenLauncher()}catch(e){}" title="Search &amp; jump to any page" style="flex-shrink:0;cursor:pointer;padding:7px 12px;font-weight:800;font-size:12px;background:var(--accent,#111);color:var(--accent-inv,#fff);border-radius:6px;margin:3px 6px 3px 4px;white-space:nowrap;align-self:center;">Find</div>
     <div class="tab active nav-essential" data-view="home">Home</div>
     <div class="tab" data-view="games">Arcade</div>
     <div class="tab" data-view="chat">Assistant</div>
@@ -1161,7 +1195,9 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="feedback">Feedback</div>
     <div class="tab" data-view="dictionary">Dict</div>
     <div class="tab" data-view="maps">Maps</div>
+    <div class="tab" data-view="dashboard">Dashboard</div>
     <div class="tab" data-view="rss">News</div>
+    <div class="tab" data-view="gazette">Gazette</div>
     <div class="tab" data-view="stocks">Stocks</div>
     <div class="tab" data-view="discover">Discover</div>
     <div class="tab" data-view="translate">Translate</div>
@@ -1405,7 +1441,7 @@ function defaultState(){
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
-    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],localFixes:{},savedWords:[],
+    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],friends:[],friendRequests:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
@@ -1775,6 +1811,140 @@ function _khDeclineChatRequest(code){
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
   }catch(_){}
 }
+/* ── Friend requests ──────────────────────────────────────────────────────
+   A two-way handshake over the same inbox plumbing as chat requests. We only
+   ever exchange the 16-char hash PREFIX (exactly what findPlayers already
+   exposes to any search — enough to target someone's inbox, NOT the full
+   AES-key hash), so friending never leaks a secret. A→B FRIEND_REQUEST; when B
+   accepts it adds A and sends FRIEND_ACCEPT back so A adds B. Both persist in
+   S.friends / S.friendRequests (device-synced like chatRequests). */
+function _khOnFriendRequest(env){
+  try{
+    const p=(env&&env.payload)||{};
+    const hash=String(p.fromHash||'').slice(0,16);
+    if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
+    const uid=String(p.fromUserId||'');
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already friends */
+    if(!Array.isArray(S.friendRequests))S.friendRequests=[];
+    if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid))))return;/* already pending */
+    const fromName=String(p.fromName||'Someone').slice(0,40);
+    S.friendRequests.push({hash:hash,uid:uid,name:fromName,ts:Date.now()});
+    if(S.friendRequests.length>60)S.friendRequests=S.friendRequests.slice(-60);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    try{if(typeof _khMarkGroupUnread==='function')_khMarkGroupUnread('__requests__');}catch(_){}
+    if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(fromName):fromName)+' sent you a friend request — open Messages.',6000);
+    try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'👋',title:'Friend request',body:fromName+' wants to be friends',view:'messages'});}catch(_){}
+  }catch(_){}
+}
+function _khOnFriendAccept(env){
+  try{
+    const p=(env&&env.payload)||{};
+    const hash=String(p.fromHash||'').slice(0,16);
+    const uid=String(p.fromUserId||'');
+    if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already have them */
+    const nm=String(p.fromName||'Friend').slice(0,40);
+    S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now()});
+    if(Array.isArray(S.friendRequests))S.friendRequests=S.friendRequests.filter(r=>!(r&&(r.hash===hash||(uid&&r.uid===uid))));
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(nm):nm)+' accepted your friend request!',5000);
+    try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'✅',title:'Friend added',body:nm+' accepted your request',view:'messages'});}catch(_){}
+  }catch(_){}
+}
+function _khAcceptFriendRequest(hash){
+  try{
+    if(!Array.isArray(S.friendRequests))return;
+    const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
+    const req=S.friendRequests[i];
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(!S.friends.find(f=>f&&f.hash===req.hash))S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now()});
+    S.friendRequests.splice(i,1);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    /* Tell the requester we accepted so they add us back. */
+    try{if(window.KH_MP&&KH_MP.sendFriendAccept&&req.hash)KH_MP.sendFriendAccept(req.hash);}catch(_){}
+    if(typeof toast==='function')toast('You are now friends with '+(typeof _censorText==='function'?_censorText(req.name):req.name)+'.',4000);
+  }catch(_){}
+}
+function _khDeclineFriendRequest(hash){
+  try{
+    if(!Array.isArray(S.friendRequests))return;
+    const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
+    S.friendRequests.splice(i,1);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+function _khRemoveFriend(hash){
+  try{
+    if(!Array.isArray(S.friends))return;
+    S.friends=S.friends.filter(f=>!(f&&f.hash===hash));
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+/* DM a friend directly (mutual consent already given) — create a private group
+   and drop a DM_INVITE so it auto-appears on their side too. */
+async function _khMessageFriend(friend,onDone){
+  try{
+    if(!(window.KH_MP&&KH_MP.sendDmInvite)){if(typeof toast==='function')toast('Messaging needs the cloud backend.');return;}
+    const dn=(typeof _dispName==='function')?_dispName:(x=>x);
+    const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
+    const name='DM: '+dn(myShort)+' & '+dn(String(friend.name||'friend').slice(0,20));
+    const created=await _groupCreate(name);
+    if(!Array.isArray(S.msgGroups))S.msgGroups=[];
+    if(!S.msgGroups.find(x=>x&&x.code===created.code))S.msgGroups.push({code:created.code,name:created.name||name});
+    if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==created.code);
+    if(typeof save==='function')save();
+    await KH_MP.sendDmInvite(friend.hash,created.code,name);
+    if(typeof toast==='function')toast('Chat opened with '+(typeof _censorText==='function'?_censorText(friend.name):friend.name)+'.',4000);
+    if(typeof onDone==='function')onDone();
+  }catch(e){if(typeof toast==='function')toast('Could not open chat: '+String((e&&e.message)||e).slice(0,80));}
+}
+/* Search users and send a friend request (code-free). */
+function _khAddFriendPicker(onDone){
+  if(!(window.KH_MP&&KH_MP.findPlayers&&KH_MP.sendFriendRequest)){if(typeof toast==='function')toast('Friends need the cloud backend — sign in first.');return;}
+  if(typeof S==='undefined'||!S.authToken){if(typeof toast==='function')toast('Sign in to add friends.');return;}
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'420px',width:'100%',maxHeight:'80vh',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','Add a friend',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div','Search by username — they get a friend request to accept.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const inp=el('input',{type:'text',placeholder:'Username…',autocomplete:'off',style:{width:'100%'}});
+  card.appendChild(inp);
+  const results=el('div',{style:{flex:'1',overflowY:'auto',minHeight:'70px'}});
+  card.appendChild(results);
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=()=>ov.remove();card.appendChild(closeBtn);
+  ov.appendChild(card);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  try{inp.focus();}catch(_){}
+  let _t=null;
+  inp.addEventListener('input',()=>{
+    if(_t)clearTimeout(_t);
+    const q=inp.value.trim();
+    if(q.length<2){results.innerHTML='';return;}
+    _t=setTimeout(async()=>{
+      results.innerHTML='';results.appendChild(txt('div','Searching…',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));
+      let players=[];try{players=await KH_MP.findPlayers(q);}catch(_){}
+      results.innerHTML='';
+      if(!players.length){results.appendChild(txt('div','No users found.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));return;}
+      const _have={};(Array.isArray(S.friends)?S.friends:[]).forEach(f=>{if(f&&f.hash)_have[f.hash]=1;});
+      players.slice(0,20).forEach(u=>{
+        const row=el('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'8px 4px',borderBottom:'var(--thin)'}});
+        try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(u.name||'?',28));}catch(_){}
+        row.appendChild(txt('span',(typeof _dispName==='function'?_dispName(u.name||'user'):u.name),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px'}}));
+        const already=!!_have[String(u.hash||'').slice(0,16)];
+        const rq=txt('button',already?'Friends':'Add',{className:'btn small'+(already?'':' primary')});
+        if(already)rq.disabled=true;
+        rq.onclick=async()=>{
+          rq.disabled=true;rq.textContent='Sending…';
+          try{await KH_MP.sendFriendRequest(u.hash);if(typeof toast==='function')toast('Friend request sent to '+(typeof _censorText==='function'?_censorText(u.name):u.name)+'.',4000);rq.textContent='Requested';if(typeof onDone==='function')onDone();}
+          catch(e){rq.disabled=false;rq.textContent='Add';if(typeof toast==='function')toast('Could not send: '+String((e&&e.message)||e).slice(0,80));}
+        };
+        row.appendChild(rq);
+        results.appendChild(row);
+      });
+    },250);
+  });
+}
 /* Search users by name and send a chat request — the code-free "Message a user"
    flow. onDone() refreshes the caller (e.g. the Messages list). */
 function _khMessageUserPicker(onDone){
@@ -1834,6 +2004,63 @@ function _khMessageUserPicker(onDone){
   });
 }
 window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
+window._khOnFriendRequest=_khOnFriendRequest;window._khOnFriendAccept=_khOnFriendAccept;window._khAcceptFriendRequest=_khAcceptFriendRequest;window._khDeclineFriendRequest=_khDeclineFriendRequest;window._khRemoveFriend=_khRemoveFriend;window._khMessageFriend=_khMessageFriend;window._khAddFriendPicker=_khAddFriendPicker;
+
+/* ── Share custom apps in chat ────────────────────────────────────────────
+   Apps travel as a "KHAPP1:" code (base64 of {label,color,icon,html}) — pure
+   text, no media backend. Sending = drop the code as a normal chat message;
+   the message renderer detects the prefix and shows an Install button that
+   calls _khInstallAppFromCode (same safe decode as the KindleOS store import:
+   size cap + regenerated safe icon, never trusts obj.icon). */
+function _khAppCode(app){try{return 'KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:app.label,color:app.color,icon:app.icon,html:app.customHTML}))));}catch(e){return '';}}
+function _khInstallAppFromCode(code){
+  try{
+    var v=String(code||'').trim();
+    if(v.indexOf('KHAPP1:')!==0)return null;
+    var obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
+    if(!obj||!obj.html)return null;
+    var html=String(obj.html);
+    if(html.length>512*1024)return null;/* size cap so a code can't bloat state */
+    var ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
+    var color=/^#[0-9a-fA-F]{3,8}$/.test(String(obj.color||''))?obj.color:ACCS[Math.floor(Math.random()*ACCS.length)];
+    var label=String(obj.label||'App').slice(0,40);
+    /* NEVER trust obj.icon (innerHTML'd on the grid) — regenerate a safe one. */
+    var safeInitials=label.substring(0,3).toUpperCase().replace(/[<>&"']/g,'');
+    var icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+safeInitials+'</text></svg>';
+    if(typeof osState==='undefined'||!osState)return null;
+    if(!Array.isArray(osState.customApps))osState.customApps=[];
+    var newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:html,builtWith:'Shared'};
+    osState.customApps.push(newApp);
+    try{if(typeof persistOS==='function')persistOS();}catch(_){}
+    try{if(typeof buildPages==='function')buildPages();}catch(_){}
+    try{if(typeof renderInstalled==='function')renderInstalled();}catch(_){}
+    return label;
+  }catch(_){return null;}
+}
+/* Peek an app code's label without installing (for the chat bubble UI). */
+function _khAppCodeLabel(code){try{var o=JSON.parse(decodeURIComponent(escape(atob(String(code).trim().slice(7)))));return String((o&&o.label)||'App').slice(0,40);}catch(e){return 'App';}}
+/* Render a shared-app chat bubble: a compact card with an Install button. Uses
+   an "APP" text badge (no emoji) so it can't render as a Kindle tofu box. */
+function _khAppMsgCard(code,own){
+  var label=(typeof _khAppCodeLabel==='function')?_khAppCodeLabel(code):'App';
+  var box=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'var(--highlight)',border:'var(--thin)',borderRadius:'8px',maxWidth:'240px'}});
+  box.appendChild(txt('span','APP',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+  var mid=el('div',{style:{flex:'1',minWidth:'0'}});
+  mid.appendChild(txt('div',(typeof _censorText==='function'?_censorText(label):label),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+  mid.appendChild(txt('div',own?'You shared an app':'Shared app · tap Install',{style:{fontSize:'10px',color:'var(--muted)'}}));
+  box.appendChild(mid);
+  var inst=txt('button','Install',{className:'btn small primary'});
+  inst.onclick=function(e){
+    if(e&&e.stopPropagation)e.stopPropagation();
+    inst.disabled=true;inst.textContent='…';
+    var nm=_khInstallAppFromCode(code);
+    if(nm){inst.textContent='Installed';if(typeof toast==='function')toast('"'+nm+'" added to your KindleOS home screen.',4500);}
+    else{inst.disabled=false;inst.textContent='Install';if(typeof toast==='function')toast('Could not install that app.');}
+  };
+  box.appendChild(inst);
+  return box;
+}
+window._khAppCode=_khAppCode;window._khInstallAppFromCode=_khInstallAppFromCode;window._khAppCodeLabel=_khAppCodeLabel;window._khAppMsgCard=_khAppMsgCard;
 
 /* ── Admin AI: "ask about a user" ─────────────────────────────────────────
    Gathers a user's cloud METADATA (email, last sync, message count + recent
@@ -2528,12 +2755,12 @@ function applyHomeCity(city){
    Users who reordered get their saved order; getNavOrder() appends any
    tabs missing from saved order so updates still surface them. */
 const NAV_TABS=[
-  ['games','Arcade'],['chat','Assistant'],['tools','Tools'],['calc','Calc'],
+  ['games','Arcade'],['chat','Assistant'],['dashboard','Dashboard'],['tools','Tools'],['calc','Calc'],
   ['reading','Reading'],['draw','Draw'],
   ['breathe','Mindfulness'],['kanban','To-Do'],
   ['messages','Messages'],['calendar','Calendar'],['weather','Weather'],
   ['feedback','Feedback'],['dictionary','Dict'],['maps','Maps'],
-  ['rss','News'],['stocks','Stocks'],
+  ['rss','News'],['gazette','Gazette'],['stocks','Stocks'],
   ['discover','Discover'],['translate','Translate'],['cipher','Cipher'],['mdjournal','Journal'],
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
@@ -2563,6 +2790,48 @@ function applyNavOrder(){
   if(settingsTab)navRoot.appendChild(settingsTab);
   if(homeTab)navRoot.insertBefore(homeTab,navRoot.firstChild);
 }
+/* ── Quick launcher — search + jump to any page ─────────────────────────
+   The nav has ~38 pages; this overlay lets you TYPE to find any of them (with
+   your recent pages up top) and jump straight there. Opened by the "Find" chip
+   at the start of the nav. Navigates via the real nav tab so split-screen /
+   showView stay correct; works in every UI mode. */
+function _khOpenLauncher(){
+  const old=document.getElementById('kh-launcher');if(old){old.remove();return;}
+  const all=[['home','Home']].concat(Array.isArray(NAV_TABS)?NAV_TABS:[]);
+  const seen={},pages=[];all.forEach(function(p){if(p&&p[0]&&!seen[p[0]]){seen[p[0]]=1;pages.push(p);}});
+  const lbl={};pages.forEach(function(p){lbl[p[0]]=p[1];});
+  const ov=el('div',{id:'kh-launcher',style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.55)',zIndex:'600400',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'46px 12px 12px'}});
+  function go(view){const t=document.querySelector('nav .tab[data-view="'+view+'"]');if(t){t.style.display='';t.click();}else{try{showView(view);}catch(_){}}ov.remove();}
+  const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'12px',width:'100%',maxWidth:'440px',maxHeight:'82vh',display:'flex',flexDirection:'column',gap:'8px',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('div','Jump to a page',{style:{fontFamily:'var(--title-font)',fontSize:'15px',fontWeight:'800'}}));
+  const inp=el('input',{type:'text',placeholder:'Search pages…',autocomplete:'off',style:{width:'100%',fontSize:'15px',padding:'9px 11px'}});
+  box.appendChild(inp);
+  const rec=(window._khRecentViews||[]).filter(function(v){return seen[v];}).slice(0,6);
+  if(rec.length){
+    box.appendChild(txt('div','RECENT',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)'}}));
+    const rrow=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}});
+    rec.forEach(function(v){const b=txt('button',lbl[v]||v,{className:'btn small'});b.onclick=function(){go(v);};rrow.appendChild(b);});
+    box.appendChild(rrow);
+  }
+  const list=el('div',{style:{flex:'1',overflowY:'auto',display:'flex',flexDirection:'column',gap:'3px',marginTop:'2px'}});
+  box.appendChild(list);
+  function paint(){
+    const q=(inp.value||'').toLowerCase().trim();
+    list.innerHTML='';
+    const matches=pages.filter(function(p){return !q||p[1].toLowerCase().indexOf(q)>=0||p[0].toLowerCase().indexOf(q)>=0;});
+    if(!matches.length){list.appendChild(txt('div','No page matches “'+q+'”.',{style:{fontSize:'12px',color:'var(--muted)',padding:'10px 4px'}}));return;}
+    matches.forEach(function(p){const r=txt('button',p[1],{className:'btn',style:{width:'100%',textAlign:'left',justifyContent:'flex-start',fontWeight:'600'}});r.onclick=function(){go(p[0]);};list.appendChild(r);});
+  }
+  inp.addEventListener('input',paint);
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){const q=(inp.value||'').toLowerCase().trim();const m=pages.filter(function(p){return !q||p[1].toLowerCase().indexOf(q)>=0;});if(m.length)go(m[0][0]);}});
+  paint();
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=function(){ov.remove();};
+  box.appendChild(closeBtn);
+  ov.appendChild(box);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  try{inp.focus();}catch(_){}
+}
+window._khOpenLauncher=_khOpenLauncher;
 function syncNavVisibility(){
   if(!S.navHidden)S.navHidden={};
   NAV_TABS.forEach(([view])=>{
@@ -3229,6 +3498,10 @@ function notifyMsg(name,text,ms,msgId,groupCode){
 (function(){
   var KEY='kh_notifs', CAP=25;
   var _unread=0, panel=null, listEl=null, handle=null, badge=null, backdrop=null, isOpen=false;
+  /* Once the user opens the tray for the first time they've LEARNED the swipe-up
+     gesture, so the teaching arrow stops showing (persisted device-locally). */
+  var SWIPED_KEY='kh_notif_swiped', _learned=false;
+  try{_learned=localStorage.getItem(SWIPED_KEY)==='1';}catch(_){}
   function _load(){try{var a=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(a)?a:[];}catch(_){return [];}}
   function _save(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(0,CAP)));}catch(_){}}
   window._khNotifs=_load();
@@ -3242,11 +3515,15 @@ function notifyMsg(name,text,ms,msgId,groupCode){
       window._khNotifs=window._khNotifs.slice(0,CAP);_save(window._khNotifs);
       if(!isOpen)_unread++;
       _build();_badge();
-      if(handle)handle.style.display='flex';
+      _showHandle();
       if(isOpen)_list();
     }catch(_){}
   };
   function _badge(){if(!badge)return;if(_unread>0){badge.style.display='flex';badge.textContent=_unread>9?'9+':String(_unread);}else{badge.style.display='none';}}
+  /* The bottom swipe-hint arrow is a TEACHING aid: show it while there are
+     unread notifications, or until the user first opens the tray (learns the
+     gesture). Once learned it stays hidden unless something new arrives. */
+  function _showHandle(){if(handle)handle.style.display=((_unread>0)||(!_learned&&(window._khNotifs||[]).length>0))?'flex':'none';}
   function _list(){
     if(!listEl)return;listEl.innerHTML='';
     var a=window._khNotifs||[];
@@ -3265,10 +3542,17 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   }
   function _build(){
     if(handle||!document.body)return;
-    handle=_el('div','position:fixed;left:50%;bottom:62px;transform:translateX(-50%);z-index:99997;background:var(--card);color:var(--fg);border:1px solid rgba(128,128,128,.35);border-radius:999px;padding:4px 14px;font-size:11px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,.2);cursor:pointer;display:none;align-items:center;gap:6px;opacity:.94;');
-    handle.appendChild(_el('span','font-size:12px;','🔔'));
-    handle.appendChild(_el('span',null,'Notifications'));
-    badge=_el('span','display:none;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-inv);border-radius:999px;min-width:16px;height:16px;font-size:9px;font-weight:900;padding:0 4px;');
+    /* A thin swipe-up hint strip pinned to the very BOTTOM edge. It draws an
+       inline SVG chevron — NEVER a font glyph/emoji — so it can't render as a
+       Kindle "tofu" box, and it's minimal (not a floating pill) so it isn't
+       intrusive. Tapping it, or swiping up from the bottom edge, opens the tray. */
+    handle=_el('div','position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:99997;width:132px;max-width:46vw;height:20px;color:var(--fg);background:var(--card);border:1px solid rgba(128,128,128,.3);border-bottom:none;border-radius:10px 10px 0 0;box-shadow:0 -1px 6px rgba(0,0,0,.12);cursor:pointer;display:none;align-items:center;justify-content:center;gap:6px;opacity:.9;');
+    var _chev=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    _chev.setAttribute('viewBox','0 0 24 12');_chev.setAttribute('width','22');_chev.setAttribute('height','11');_chev.style.cssText='display:block;';
+    var _pl=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    _pl.setAttribute('points','3,9 12,3 21,9');_pl.setAttribute('fill','none');_pl.setAttribute('stroke','currentColor');_pl.setAttribute('stroke-width','2.6');_pl.setAttribute('stroke-linecap','round');_pl.setAttribute('stroke-linejoin','round');
+    _chev.appendChild(_pl);handle.appendChild(_chev);
+    badge=_el('span','display:none;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-inv);border-radius:999px;min-width:15px;height:15px;font-size:9px;font-weight:900;padding:0 4px;');
     handle.appendChild(badge);
     handle.onclick=_open;
     document.body.appendChild(handle);
@@ -3306,12 +3590,12 @@ function notifyMsg(name,text,ms,msgId,groupCode){
     panel.addEventListener('touchstart',function(e){var t=e.touches&&e.touches[0];if(t)py=t.clientY;},{passive:true});
     panel.addEventListener('touchend',function(e){var t=e.changedTouches&&e.changedTouches[0];if(t&&t.clientY-py>60)_close();},{passive:true});
   }
-  function _open(){_build();if(!panel)return;isOpen=true;_unread=0;_badge();_list();panel.style.transform='translateY(0)';if(backdrop){backdrop.style.pointerEvents='auto';backdrop.style.opacity='1';}if(handle)handle.style.display='none';}
-  function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}if(handle&&(window._khNotifs||[]).length)handle.style.display='flex';}
+  function _open(){_build();if(!panel)return;isOpen=true;_unread=0;if(!_learned){_learned=true;try{localStorage.setItem(SWIPED_KEY,'1');}catch(_){}}_badge();_list();panel.style.transform='translateY(0)';if(backdrop){backdrop.style.pointerEvents='auto';backdrop.style.opacity='1';}if(handle)handle.style.display='none';}
+  function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}_showHandle();}
   window._khOpenNotifs=_open;
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_build);else setTimeout(_build,400);
-  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();if(handle)handle.style.display='flex';}}catch(_){}},900);
+  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();_showHandle();}}catch(_){}},900);
 })();
 
 /* ── KindleHub Mobile OS ──────────────────────────────────────────────── */
@@ -3432,6 +3716,10 @@ function launchKindleDesktop(){
     {id:'sheets',    label:'Sheets',      nav:'sheets',    color:'#15803d',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="6" fill="#fff"/><rect x="4" y="4" width="40" height="10" rx="6" fill="#15803d"/><line x1="4" y1="22" x2="44" y2="22" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="30" x2="44" y2="30" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="38" x2="44" y2="38" stroke="#15803d" stroke-width="1.5"/><line x1="18" y1="14" x2="18" y2="44" stroke="#15803d" stroke-width="1.5"/><line x1="32" y1="14" x2="32" y2="44" stroke="#15803d" stroke-width="1.5"/></svg>'},
     {id:'cookbook',  label:'Cookbook',    nav:'cookbook',  color:'#b91c1c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" fill="#fff"/><rect x="6" y="6" width="36" height="8" rx="6" fill="#b91c1c"/><circle cx="24" cy="28" r="9" fill="none" stroke="#b91c1c" stroke-width="2.5"/><path d="M15 28 Q24 18 33 28" stroke="#b91c1c" stroke-width="2" fill="none"/><line x1="20" y1="28" x2="28" y2="28" stroke="#b91c1c" stroke-width="2"/><circle cx="22" cy="26" r="1.5" fill="#b91c1c"/><circle cx="26" cy="26" r="1.5" fill="#b91c1c"/></svg>'},
     {id:'files',     label:'Files',       nav:'files',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="32" rx="4" fill="#fff"/><path d="M6 14 L20 14 L24 18 L42 18 L42 42 L6 42 Z" fill="#475569" opacity=".15" stroke="#475569" stroke-width="2"/><line x1="6" y1="22" x2="42" y2="22" stroke="#475569" stroke-width="1.5"/><rect x="11" y="27" width="26" height="3" rx="1" fill="#475569" opacity=".4"/><rect x="11" y="32" width="18" height="3" rx="1" fill="#475569" opacity=".3"/></svg>'},
+    {id:'dashboard', label:'Dashboard',   nav:'dashboard', color:'#4f46e5',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="5" width="38" height="38" rx="6" fill="#fff"/><rect x="10" y="10" width="12" height="12" rx="2" fill="#4f46e5"/><rect x="26" y="10" width="12" height="8" rx="2" fill="#4f46e5" opacity=".5"/><rect x="26" y="22" width="12" height="16" rx="2" fill="#4f46e5" opacity=".8"/><rect x="10" y="26" width="12" height="12" rx="2" fill="#4f46e5" opacity=".6"/></svg>'},
+    {id:'gazette',   label:'Gazette',     nav:'gazette',   color:'#44403c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="7" width="38" height="34" rx="3" fill="#fff"/><rect x="9" y="11" width="30" height="6" rx="1" fill="#44403c"/><rect x="9" y="20" width="13" height="14" rx="1" fill="#44403c" opacity=".18"/><line x1="25" y1="21" x2="39" y2="21" stroke="#44403c" stroke-width="2"/><line x1="25" y1="26" x2="39" y2="26" stroke="#44403c" stroke-width="1.6" opacity=".6"/><line x1="25" y1="31" x2="39" y2="31" stroke="#44403c" stroke-width="1.6" opacity=".6"/><line x1="9" y1="38" x2="39" y2="38" stroke="#44403c" stroke-width="1.4" opacity=".4"/></svg>'},
+    {id:'sports',    label:'Sports',      nav:'sports',    color:'#166534',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="20" fill="none" stroke="#166534" stroke-width="2"/><polygon points="24,14 30,18.5 27.7,25.5 20.3,25.5 18,18.5" fill="#166534"/><path d="M24 4 L24 14 M40.6 17 L30 18.5 M37.5 38 L27.7 25.5 M10.5 38 L20.3 25.5 M7.4 17 L18 18.5" stroke="#166534" stroke-width="1.6"/></svg>'},
+    {id:'imagesearch',label:'Images',     nav:'imagesearch',color:'#0891b2',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="38" height="32" rx="5" fill="#fff"/><circle cx="16" cy="18" r="4" fill="#0891b2"/><path d="M8 38 L20 24 L28 32 L36 22 L40 27 L40 38 Z" fill="#0891b2" opacity=".35"/><path d="M8 38 L20 24 L28 32 L36 22 L44 32" stroke="#0891b2" stroke-width="2.5" fill="none" stroke-linejoin="round"/></svg>'},
   ]);
 
   /* ── STATE ──
@@ -5723,39 +6011,22 @@ try{
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function tick(){
-    // Use global NOW() so clockOffset is applied in one place
+    // Use global NOW() so clockOffset is applied in one place.
     const d=NOW();
-    // toLocaleTimeString() with no args uses the OS locale system, NOT the JS engine's
-    // cached UTC offset. On Kindle this correctly reflects DST even when getHours() is wrong.
-    let h=d.getHours(), m=d.getMinutes();
-    try{
-      // Parse "HH:MM:SS" or "H:MM:SS AM/PM" out of toLocaleTimeString
-      const raw=d.toLocaleTimeString();
-      // Try 24h parse first (Kindle UK locale returns "14:32:00")
-      const m24=raw.match(/^(\d{1,2}):(\d{2})/);
-      if(m24){
-        h=parseInt(m24[1],10);
-        m=parseInt(m24[2],10);
-      } else {
-        // 12h fallback: "2:32:00 PM"
-        const m12=raw.match(/(\d{1,2}):(\d{2}).*?(AM|PM)/i);
-        if(m12){
-          h=parseInt(m12[1],10)%12+(m12[3].toUpperCase()==='PM'?12:0);
-          m=parseInt(m12[2],10);
-        }
-      }
-    }catch(e){}
-    const timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
-    const dateStr=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
-    const str=dateStr+'  '+timeStr;
-    /* Only touch the DOM when the displayed minute actually changes —
-       rewriting the text node every 30s flashed the e-ink panel for no
-       reason (HH:MM is identical on every other tick). */
+    /* Header shows the DATE only — the Kindle's own status bar already shows
+       the time — so there's no need to parse toLocaleTimeString or do the
+       12h/24h dance here at all. Dropping it saves a locale call + two regex
+       matches on every tick, and the date only changes once a day. */
+    const str=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
+    /* Only touch the DOM when the text actually changes so the e-ink panel
+       isn't flashed on a tick where nothing is different. */
     if(c&&c.textContent!==str)c.textContent=str;
   }
   tick();
   let _iv=null;
-  function startClock(){if(_iv)clearInterval(_iv);tick();_iv=setInterval(tick,30000);}
+  /* 60s cadence is plenty now that only the date is shown — it just needs to
+     catch the midnight rollover within a minute (was 30s for the clock). */
+  function startClock(){if(_iv)clearInterval(_iv);tick();_iv=setInterval(tick,60000);}
   startClock();
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){startClock();}});
 })();
@@ -7340,26 +7611,36 @@ async function _sbDelete(table,query,secret){
    is sent. Bypasses _sbFetch so we can read the header. */
 async function _sbCount(table,query){
   const url=_sbBase()+'/rest/v1/'+table+(query?'?'+query:'?select=*');
-  const ac=typeof AbortController!=='undefined'?new AbortController():null;
-  const tid=setTimeout(()=>{if(ac)ac.abort();},10000);
-  try{
-    const r=await fetch(url,{
-      method:'HEAD',
-      headers:{
-        'apikey':SUPABASE_ANON_KEY,
-        'Authorization':'Bearer '+SUPABASE_ANON_KEY,
-        'Prefer':'count=exact',
-        'Range-Unit':'items',
-        'Range':'0-0',
-      },
-      signal:ac?ac.signal:undefined,
-    });
-    const cr=r.headers.get('content-range')||'';
-    const m=cr.match(/\/(\d+)$/);
-    if(m)return parseInt(m[1],10);
-    return null;
-  }catch(e){return null;}
-  finally{clearTimeout(tid);}
+  const hdr={
+    'apikey':SUPABASE_ANON_KEY,
+    'Authorization':'Bearer '+SUPABASE_ANON_KEY,
+    'Prefer':'count=exact',
+    'Range-Unit':'items',
+    'Range':'0-0',
+  };
+  /* Admin-gated tables (kh_errors, kh_visits, …) only return a count when the
+     admin token is presented. Send it when we have one so those admin tiles
+     show a real number instead of '?'/'—'. Harmless on open tables — the
+     worker only consults it for gating. */
+  if(typeof window!=='undefined'&&window._adminToken)hdr['X-KH-Admin']=window._adminToken;
+  async function _try(method){
+    const ac=typeof AbortController!=='undefined'?new AbortController():null;
+    const tid=setTimeout(()=>{if(ac)ac.abort();},10000);
+    try{
+      const r=await fetch(url,{method:method,headers:hdr,signal:ac?ac.signal:undefined});
+      const cr=r.headers.get('content-range')||'';
+      const m=cr.match(/\/(\d+)$/);
+      return m?parseInt(m[1],10):null;
+    }catch(e){return null;}
+    finally{clearTimeout(tid);}
+  }
+  /* HEAD is cheapest, but some proxies/workers strip the content-range header
+     on HEAD responses; retry once with a bounded GET (still Range 0-0, so ~one
+     row) before giving up, so a count never falsely reads '?' just because the
+     header was missing on the HEAD. */
+  let n=await _try('HEAD');
+  if(n==null)n=await _try('GET');
+  return n;
 }
 
 /* ── Message body encryption (per-group, 12-digit code as the secret) ── */
@@ -7653,7 +7934,7 @@ async function _loadRelevantAnnouncements(){
      otherwise only the listed usernames (S.email) / user-ids. */
   if(typeof _sbActive!=='function'||!_sbActive())return [];
   try{
-    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets&active=eq.true&order=created_at.desc&limit=20');
+    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets,comments&active=eq.true&order=created_at.desc&limit=20');
     if(!Array.isArray(rows))return [];
     const me=String(S.email||'').toLowerCase(),myId=String(S.userId||'');
     return rows.filter(r=>{
@@ -7668,7 +7949,7 @@ async function _loadRelevantAnnouncements(){
 async function _loadAllAnnouncements(){
   if(typeof _sbActive!=='function'||!_sbActive())return [];
   try{
-    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets&active=eq.true&order=created_at.desc&limit=50');
+    const rows=await _sbSelect('kh_announcements','select=id,text,created_at,targets,comments&active=eq.true&order=created_at.desc&limit=50');
     return Array.isArray(rows)?rows:[];
   }catch(_){return [];}
 }
@@ -7705,6 +7986,92 @@ async function _announceRpc(fn,body){
    admin-token RPC as announcements. Auto-expires on the date (re-opens
    itself). Admins — and anyone already signed in — are NEVER blocked. */
 const _CAP_TAG='[[KH_CAP]]';
+/* Moderator warnings are delivered as targeted announcements prefixed with this
+   marker, so they can be routed OUT of the general announcements widget (into
+   the admin panel) while the WARNED user still sees theirs prominently. */
+const _WARN_TAG='[[KH_WARN]]';
+function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);return t;}
+/* Set of usernames who currently have an active warning (from warn-marked
+   announcements) — used to show "already warned" on ban requests. Admin-loaded. */
+async function _khLoadWarnedSet(){
+  try{
+    if(typeof _loadAllAnnouncements!=='function')return new Set();
+    const anns=await _loadAllAnnouncements();
+    const s=new Set();
+    (anns||[]).forEach(function(a){
+      if(String(a.text||'').indexOf(_WARN_TAG)!==0)return;
+      (Array.isArray(a.targets)?a.targets:[]).forEach(function(x){s.add(String(x).toLowerCase());});
+    });
+    window._khWarnedSet=s;return s;
+  }catch(_){return new Set();}
+}
+window._khLoadWarnedSet=_khLoadWarnedSet;
+/* Admin moderation-notices card (in the Feedback/admin panel): lists the active
+   warnings the admin has issued, with a Delete for each. This is where warnings
+   live for the admin — they're routed OUT of the general announcements widget,
+   but each warned user still sees their own. Populates #kh-mod-card-host. */
+async function _khRefreshModerationCard(){
+  try{
+    const host=document.getElementById('kh-mod-card-host');
+    if(!host)return;
+    if(window._isAdminCached!==true){host.innerHTML='';return;}
+    let anns=[];try{anns=await _loadAllAnnouncements();}catch(_){}
+    const warns=(anns||[]).filter(a=>String(a.text||'').indexOf(_WARN_TAG)===0);
+    host.innerHTML='';
+    const card=el('div',{className:'card',style:{border:'2px solid var(--danger)',marginBottom:'12px'}});
+    card.appendChild(txt('h3','Moderation notices ('+warns.length+')',{style:{margin:'0 0 6px',fontSize:'14px',color:'var(--danger)'}}));
+    card.appendChild(txt('div','Active warnings you’ve issued. Each warned user still sees theirs on their home screen; they no longer clutter everyone’s announcements.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+    if(!warns.length){card.appendChild(txt('div','No active warnings.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}}));}
+    else warns.slice().reverse().forEach(a=>{
+      const row=el('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start',borderTop:'1px dashed var(--muted)',paddingTop:'6px',marginTop:'6px'}});
+      const info=el('div',{style:{flex:'1',minWidth:'0'}});
+      const who=(Array.isArray(a.targets)?a.targets:[]).map(x=>_dispName(String(x))).join(', ')||'unknown';
+      info.appendChild(txt('div','To: '+who,{style:{fontWeight:'800',fontSize:'12px'}}));
+      info.appendChild(txt('div',_censorText(_dispAnnText(a.text)).replace(/^⚠?\s*WARNING from the moderators\s*/,'').slice(0,160),{style:{fontSize:'11px',color:'var(--muted)',whiteSpace:'pre-wrap',lineHeight:'1.4',marginTop:'2px'}}));
+      info.appendChild(txt('div',new Date(a.created_at).toLocaleString(),{style:{fontSize:'9px',color:'var(--muted)',marginTop:'2px'}}));
+      row.appendChild(info);
+      const del=txt('button','Delete',{className:'btn small'});
+      del.onclick=async()=>{del.disabled=true;const res=await _adminRpc('kh_delete_announcement',{p_id:a.id,p_token:window._adminToken||''});if(res&&res.ok){toast('Warning cleared.');_khRefreshModerationCard();}else{del.disabled=false;toast('Could not delete.');}};
+      row.appendChild(del);
+      card.appendChild(row);
+    });
+    host.appendChild(card);
+  }catch(_){}
+}
+window._khRefreshModerationCard=_khRefreshModerationCard;
+/* Show the current user's newest UNACKNOWLEDGED warning as a big blocking modal
+   (once — acknowledgement is remembered in kh_warn_ack). Called from the home
+   announcement widget so the warned user can't miss it. */
+function _khMaybeShowWarningModal(anns){
+  try{
+    if(typeof S==='undefined'||!S.authToken)return;
+    if(window._khWarnModalOpen)return;
+    let acked=[];try{acked=JSON.parse(localStorage.getItem('kh_warn_ack')||'[]');if(!Array.isArray(acked))acked=[];}catch(_){}
+    const me=String(S.email||'').toLowerCase(),myId=String(S.userId||'');
+    const mine=(anns||[]).filter(function(a){
+      if(String(a.text||'').indexOf(_WARN_TAG)!==0)return false;
+      const tg=Array.isArray(a.targets)?a.targets:[];
+      const t=tg.some(function(x){return String(x).toLowerCase()===me;})||tg.some(function(x){return String(x)===myId;});
+      return t&&acked.indexOf(a.id)<0;
+    });
+    if(!mine.length)return;
+    const a=mine[0];
+    window._khWarnModalOpen=true;
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.75)',zIndex:'1000000',display:'flex',alignItems:'center',justifyContent:'center',padding:'18px'}});
+    const box=el('div',{style:{background:'var(--card)',color:'var(--fg)',border:'3px solid var(--danger)',borderRadius:'14px',padding:'22px',maxWidth:'440px',width:'100%',boxShadow:'0 12px 48px rgba(0,0,0,.5)',textAlign:'center'}});
+    box.appendChild(txt('div','!',{style:{fontSize:'34px',fontWeight:'900',lineHeight:'1',width:'62px',height:'62px',borderRadius:'50%',border:'4px solid var(--danger)',color:'var(--danger)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 8px'}}));
+    box.appendChild(txt('div','Moderator warning',{style:{fontSize:'19px',fontWeight:'900',color:'var(--danger)',margin:'6px 0 12px'}}));
+    box.appendChild(txt('div',_censorText(_dispAnnText(a.text)),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',textAlign:'left',background:'var(--highlight)',padding:'12px',borderRadius:'8px',marginBottom:'14px'}}));
+    const ack=txt('button','I understand',{className:'btn primary',style:{minWidth:'160px'}});
+    ack.onclick=function(){
+      try{let arr=JSON.parse(localStorage.getItem('kh_warn_ack')||'[]');if(!Array.isArray(arr))arr=[];arr.push(a.id);localStorage.setItem('kh_warn_ack',JSON.stringify(arr.slice(-100)));}catch(_){}
+      window._khWarnModalOpen=false;if(ov.parentNode)ov.remove();
+    };
+    box.appendChild(ack);
+    ov.appendChild(box);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }catch(_){}
+}
 let _capState=null; /* {locked,until,message,at} | null = unknown */
 function _capCached(){
   if(_capState)return _capState;
@@ -7911,7 +8278,7 @@ async function _khWarnUsername(name){
   const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
   if(reason==null)return false;/* admin cancelled */
   const msg=String(reason||'').trim()||'Please follow the community rules.';
-  const text='⚠ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const text=_WARN_TAG+'WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
   const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
   if(ok)toast('Warning sent privately to “'+name+'”.',3500);
   /* _announceRpc surfaces its own error toast on failure. */
@@ -7926,7 +8293,7 @@ async function _khWarnUsernameSilent(name,reason){
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
   if(!window._adminToken)return false;
   const msg=String(reason||'').trim()||'Please follow the community rules.';
-  const text='⚠ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const text=_WARN_TAG+'WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
   const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
   return !!ok;
 }
@@ -8026,7 +8393,23 @@ async function _renderAnnouncementWidget(card){
   try{anns=isAdmin?await _loadAllAnnouncements():await _loadRelevantAnnouncements();}catch(_){}
   /* Hide reserved Capacity-Guard control records — they're not real
      announcements; the admin manages them from the Capacity guard card. */
-  try{anns=(anns||[]).filter(a=>String(a.text||'').indexOf(_CAP_TAG)!==0);}catch(_){}
+  try{
+    const _me=String(S.email||'').toLowerCase(),_myId=String(S.userId||'');
+    anns=(anns||[]).filter(a=>{
+      const t=String(a.text||'');
+      if(t.indexOf(_CAP_TAG)===0)return false;/* capacity control record — never a real announcement */
+      if(t.indexOf(_WARN_TAG)===0){
+        /* Moderator warnings aren't general announcements: only the WARNED user
+           still sees theirs here (prominently, below); for everyone else — incl.
+           the admin browsing all — they're routed to the admin panel instead. */
+        const tg=Array.isArray(a.targets)?a.targets:[];
+        return tg.some(x=>String(x).toLowerCase()===_me)||tg.some(x=>String(x)===_myId);
+      }
+      return true;
+    });
+  }catch(_){}
+  /* Surface an unacknowledged warning to the warned user as a big modal. */
+  try{_khMaybeShowWarningModal(anns);}catch(_){}
   let dismissed=[];try{const d=JSON.parse(localStorage.getItem('kh_ann_dismissed')||'[]');if(Array.isArray(d))dismissed=d;}catch(_){}
   /* Non-admins only see announcements they haven't dismissed; admins see
      everything (so they can manage them). */
@@ -8037,16 +8420,27 @@ async function _renderAnnouncementWidget(card){
   card.appendChild(txt('h2',visible.length>1?'Announcements':'Announcement',{style:{margin:'0'}}));
   if(visible.length){
     visible.forEach(a=>{
+      const _isWarn=String(a.text||'').indexOf(_WARN_TAG)===0;
       const block=el('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start',borderTop:'1px dashed var(--muted)',paddingTop:'6px',marginTop:'6px'}});
+      if(_isWarn){block.style.border='2px solid var(--danger)';block.style.borderTop='2px solid var(--danger)';block.style.borderRadius='8px';block.style.padding='10px';block.style.background='var(--highlight)';}
       const body=el('div',{style:{flex:'1',minWidth:'0'}});
-      body.appendChild(txt('div',_censorText(a.text),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+      if(_isWarn)body.appendChild(txt('div','MODERATOR WARNING',{style:{fontSize:'10px',fontWeight:'900',letterSpacing:'.5px',color:'var(--danger)',marginBottom:'4px'}}));
+      body.appendChild(txt('div',_censorText(_dispAnnText(a.text)),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
       const metaBits=[new Date(a.created_at).toLocaleString()];
-      if(Array.isArray(a.targets)&&a.targets.length){
+      if(!_isWarn&&Array.isArray(a.targets)&&a.targets.length){
         metaBits.push(isAdmin
           ?('to: '+a.targets.slice(0,8).join(', ')+(a.targets.length>8?(' +'+(a.targets.length-8)+' more'):''))
           :('private · '+a.targets.length+' recipient'+(a.targets.length===1?'':'s')));
       }
       body.appendChild(txt('div',metaBits.join('  ·  '),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px'}}));
+      /* Comments: general announcements only — a moderator warning is a private
+         notice, not a public discussion thread. */
+      if(!_isWarn){
+        const _cCount=Array.isArray(a.comments)?a.comments.length:0;
+        const cBtn=txt('button','💬 Comments'+(_cCount?(' ('+_cCount+')'):''),{className:'btn small',style:{marginTop:'6px',fontSize:'11px'}});
+        cBtn.onclick=()=>_openAnnouncementComments(a,card);
+        body.appendChild(cBtn);
+      }
       block.appendChild(body);
       if(!isAdmin){
         const x=txt('button','✕',{className:'btn small',style:{minWidth:'30px',flexShrink:'0'}});
@@ -8091,6 +8485,88 @@ async function _renderAnnouncementWidget(card){
     }
     card.appendChild(row);
   }
+}
+
+/* Announcement comment thread — a public discussion under each announcement.
+   Reading is open to everyone; posting requires sign-in. Comments live in the
+   announcement's JSON `comments` column; the Cloudflare worker restricts a
+   non-admin PATCH of kh_announcements to the `comments` field only, so this
+   can never touch text/active/targets. Display is profanity-filtered like all
+   other user-generated text shown to others. Mirrors _openCommentThread. */
+async function _openAnnouncementComments(a,card){
+  if(!a)return;
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const box=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'18px',maxWidth:'500px',width:'100%',boxShadow:'var(--shadow-md)',maxHeight:'85vh',display:'flex',flexDirection:'column'}});
+  box.appendChild(txt('h3','💬 Comments',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  /* The announcement this thread hangs off (censored for display). */
+  box.appendChild(txt('div',_censorText(a.text),{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',lineHeight:'1.5',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+  const listBox=el('div',{style:{flex:'1',overflowY:'auto',marginBottom:'10px',maxHeight:'40vh'}});
+  /* Local working copy, kept in sync with a.comments as posts land. */
+  let cur=Array.isArray(a.comments)?a.comments.slice():[];
+  function refreshList(){
+    listBox.innerHTML='';
+    if(!cur.length){listBox.appendChild(txt('div','No comments yet. Be the first.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'10px 0'}}));return;}
+    cur.slice().sort((x,y)=>String(x.date).localeCompare(String(y.date))).forEach(c=>{
+      const crow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'6px',fontSize:'12px',lineHeight:'1.5'}});
+      const hdr=el('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'2px',fontSize:'10px',color:'var(--muted)',fontWeight:'700'}});
+      const auth=el('div',{style:{display:'flex',alignItems:'center',gap:'6px'}});
+      if(typeof _avatarEl==='function')auth.appendChild(_avatarEl(c.author||'Anon',16));
+      auth.appendChild(txt('span',_dispName(c.author||'Anon')));
+      hdr.appendChild(auth);
+      hdr.appendChild(txt('span',c.date?new Date(c.date).toLocaleString():''));
+      crow.appendChild(hdr);
+      crow.appendChild(txt('div',_censorText(c.text||''),{style:{whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+      listBox.appendChild(crow);
+    });
+  }
+  refreshList();
+  box.appendChild(listBox);
+  if(S.authToken){
+    /* Signed-in users can post. */
+    const inp=el('textarea',{rows:2,placeholder:'Write a comment...',style:{width:'100%',fontSize:'12px',marginBottom:'8px',resize:'vertical'}});
+    box.appendChild(inp);
+    const btnRow=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end'}});
+    const close=txt('button','Close',{className:'btn small'});close.onclick=()=>ov.remove();
+    const post=txt('button','Post comment',{className:'btn small primary'});
+    post.onclick=async()=>{
+      const text=(inp.value||'').trim();
+      if(!text)return toast('Type something first');
+      if(!_sbActive()){toast('Commenting requires internet');return;}
+      if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('⚠ Heads up: flagged language will be hidden for others.',3000);
+      post.disabled=true;post.textContent='Posting…';
+      const author=S.email?S.email.split('@')[0]:(S.user||'Anon');
+      const entry={id:'c_'+Date.now().toString(36),text:text.slice(0,500),author:String(author).slice(0,40),date:new Date().toISOString()};
+      try{
+        /* Re-read just this row so a concurrent commenter isn't clobbered,
+           then append + cap the thread to the newest 60. */
+        const rows=await _sbSelect('kh_announcements','id=eq.'+encodeURIComponent(a.id)+'&select=comments');
+        const server=Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].comments)?rows[0].comments:[];
+        server.push(entry);
+        const capped=server.slice(-60);
+        /* NO admin token — the worker limits a non-admin PATCH of
+           kh_announcements to the `comments` column, so text/active/targets
+           can't be touched from here. */
+        await _sbUpdate('kh_announcements','id=eq.'+encodeURIComponent(a.id),{comments:capped});
+        cur=capped;a.comments=capped;
+        inp.value='';
+        refreshList();
+        try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
+      }catch(e){
+        console.error('[Announcement comment failed]',e);
+        if(typeof _isMissingColumnError==='function'&&_isMissingColumnError(e,'comments'))toast('Run the latest worker (comments column missing on kh_announcements)',6000);
+        else toast('Comment failed: '+String((e&&e.message)||e).slice(0,160),7000);
+      }
+      post.disabled=false;post.textContent='Post comment';
+    };
+    btnRow.append(close,post);
+    box.appendChild(btnRow);
+  } else {
+    box.appendChild(txt('div','Sign in to add a comment.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',marginBottom:'8px'}}));
+    const close=txt('button','Close',{className:'btn small',style:{alignSelf:'flex-end'}});close.onclick=()=>ov.remove();
+    box.appendChild(close);
+  }
+  ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 
 /* ── Visit log (anonymous, once-per-device-per-day) ──────────────────
@@ -12837,7 +13313,7 @@ function appendRelatedPages(viewId,viewEl){
        has its own internal render() that mutates on demand; full
        rebuild is wasted work. They use ON_SHOW handlers (or
        per-action refreshes) to stay current. */
-const ALWAYS_REBUILD=new Set(['games','messages','pet']);
+const ALWAYS_REBUILD=new Set(['games','messages','pet','dashboard']);
 
 /* ════════════════════════════════════════════════════════════════════
    Split screen — "2 pages in 1" multitasking. mainHost normally holds ONE
@@ -13099,6 +13575,7 @@ const GAME_HELP={
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
+  farm:{name:'Farm',how:'A cosy turn-based farming sim. Pick a seed from the shop (Wheat is cheapest), tap an empty plot to plant it (costs coins), then tap "Next day" to grow every crop one day. When a crop is READY, tap it to harvest and sell it for coins — then buy pricier seeds (carrots, berries, pumpkins) that sell for more. Grow your coin pile as high as you can. Your farm saves automatically, so you can come back any time; "New farm" starts over.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
   trivia:{name:'Trivia',how:'A multiple-choice general-knowledge quiz. Read the question, tap the answer you think is right. A correct answer scores a point and the right choice lights up; a wrong answer costs one of your three ♥ lives. Keep going until you run out of lives — then beat your best score. All questions are built in, so it works with no internet.'},
@@ -13268,7 +13745,8 @@ const DigQuest=(function(){
   let player={x:0,y:0,vx:0,vy:0,onGround:false,facing:1};
   let spawn={x:0,y:0},checkpointAt=null;
   let crystals=0,keysHave=0,coins=0,lives=3,score=0,bank=0,flash=0,digCool=0,hintAt=0,hurtCool=0;
-  let drillT=0,shieldT=0,hasSpring=false,jumpsLeft=0,wasJump=false;
+  let drillT=0,shieldT=0,hasSpring=false,jumpsLeft=0,wasJump=false,jumpBuf=0,coyote=0;
+  const JBUF=8,COYOTE=4;/* jump-buffer + coyote-time windows (ticks) */
   /* jumpQueued latches a jump request from a tap so it survives until the
      next physics step consumes it. On e-ink the render loop can run at
      ~9 FPS, so a quick tap used to set input.jump true→false entirely
@@ -13356,7 +13834,7 @@ const DigQuest=(function(){
     const up=gd().up;
     player.x=spawn.x;player.y=spawn.y;player.vx=0;player.vy=0;player.onGround=false;player.facing=1;
     keysHave=0;lives=3+(up.lives||0);flash=0;acc=0;last=0;hurtCool=0;
-    drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;
+    drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;jumpBuf=0;coyote=0;
     hideOverlay();mode='play';updateHud();render();
   }
 
@@ -13444,16 +13922,27 @@ const DigQuest=(function(){
     let ax=(input.right?1:0)-(input.left?1:0);
     if(ax!==0)player.facing=ax;
     player.vx=ax*MOVE;
-    const jp=jumpQueued||(input.jump&&!wasJump);
-    if(jp){if(player.onGround){player.vy=-JUMP;player.onGround=false;}else if(jumpsLeft>0){player.vy=-JUMP*0.9;jumpsLeft--;flash=Math.max(flash,0.08);}}
-    jumpQueued=false;
+    /* Jump BUFFER + COYOTE time so a tap reliably fires. The old code consumed
+       the queued jump on the very next tick and dropped it if onGround was
+       false right then — and onGround flickers false for a tick after landing
+       (the player rests 0.01px above the tile), so most taps were eaten. Now a
+       tap is buffered for a few ticks and the player counts as grounded for a
+       few ticks after leaving the ground. */
+    if(jumpQueued){jumpBuf=JBUF;jumpQueued=false;}
+    if(input.jump&&!wasJump)jumpBuf=JBUF;
     wasJump=input.jump;
+    if(jumpBuf>0){
+      if(player.onGround||coyote>0){player.vy=-JUMP;player.onGround=false;coyote=0;jumpBuf=0;}
+      else if(jumpsLeft>0){player.vy=-JUMP*0.9;jumpsLeft--;flash=Math.max(flash,0.08);jumpBuf=0;}
+      else jumpBuf--;
+    }
     player.vy+=GRAV*dt;if(player.vy>MAXFALL)player.vy=MAXFALL;
     let nx=player.x+player.vx*dt;
     if(rectHits(nx,player.y)){if(player.vx>0)nx=Math.floor((nx+PW)/TS)*TS-PW-0.01;else if(player.vx<0)nx=(Math.floor(nx/TS)+1)*TS+0.01;player.vx=0;}
     player.x=nx;
     let ny=player.y+player.vy*dt;
     if(rectHits(player.x,ny)){if(player.vy>0){ny=Math.floor((ny+PH)/TS)*TS-PH-0.01;player.onGround=true;jumpsLeft=hasSpring?1:0;}else if(player.vy<0){ny=(Math.floor(ny/TS)+1)*TS+0.01;}player.vy=0;}else{player.onGround=false;}
+    if(player.onGround)coyote=COYOTE;else if(coyote>0)coyote--;/* grace window after leaving the ground */
     player.y=ny;
     player.x=clamp(player.x,TS,worldW-TS-PW);
     if(digCool>0)digCool-=dt;
@@ -13602,11 +14091,10 @@ const DigQuest=(function(){
   }
   function buildTools(){
     const row=el('div',{style:{display:'flex',gap:'6px',justifyContent:'center',marginBottom:'6px',flexWrap:'wrap'}});
-    const ek=txt('button','',{className:'btn small'});
-    function lab(){ek.textContent='E-ink mode: '+(renderEveryMs>60?'On':'Off');}lab();
-    ek.onclick=function(){renderEveryMs=(renderEveryMs>60)?33:110;gd().chunky=(renderEveryMs>60);if(typeof save==='function')save();lab();};
+    /* (Removed the "E-ink mode" toggle — it only changed the redraw interval,
+       which makes no visible difference on a B&W e-ink panel.) */
     const rs=txt('button','Restart chapter',{className:'btn small'});rs.onclick=function(){if(mode==='play'||mode==='lose'||mode==='win')loadChapter(chap);};
-    row.append(ek,rs);return row;
+    row.append(rs);return row;
   }
   function build(){
     enterImmersive('Deep Dig','');
@@ -13625,7 +14113,7 @@ const DigQuest=(function(){
   }
   function start(){
     if(running)stop();
-    const d=gd();bank=d.bank;renderEveryMs=d.chunky?110:33;
+    const d=gd();bank=d.bank;renderEveryMs=33;
     build();if(!cv)return;
     running=true;mode='story';chap=0;score=0;crystals=0;coins=0;keysHave=0;
     ctx.fillStyle='#e6edf2';ctx.fillRect(0,0,cv.width,cv.height);
@@ -13638,7 +14126,7 @@ const DigQuest=(function(){
     running=false;persist();
     if(raf){cancelAnimationFrame(raf);raf=null;}
     document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);
-    input={left:false,right:false,down:false,jump:false};digHeld=false;digDownHeld=false;jumpQueued=false;
+    input={left:false,right:false,down:false,jump:false};digHeld=false;digDownHeld=false;jumpQueued=false;jumpBuf=0;coyote=0;
   }
   function loop(ts){
     if(!running)return;
@@ -14160,6 +14648,7 @@ function _doLaunch(g){
     case 'nonogram': Nonogram.start();break;
     case 'eightball': EightBall.start();break;
     case 'trivia': Trivia.start();break;
+    case 'farm': Farm.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -15215,6 +15704,25 @@ window.KH_MP=(function(){
     const me=identity();
     return send(inbox,{type:'CHAT_REQUEST',code:code,name:name||('Chat with '+(me.name||'someone')),fromName:me.name,fromUserId:me.userId});
   }
+  /* Friend handshake. We include OUR OWN 16-char hash prefix (fromHash) so the
+     recipient can send a FRIEND_ACCEPT back to our inbox — the prefix is what
+     findPlayers already exposes to any search, so it's not a secret (it only
+     targets an inbox, it is NOT the full AES-key hash). */
+  function _myHashPrefix(){return String((typeof S!=='undefined'&&S.authToken)||'').slice(0,16);}
+  async function sendFriendRequest(targetHash){
+    if(!targetHash)throw new Error('Invalid target');
+    const inbox=await _ensureInbox(targetHash);
+    if(!inbox)throw new Error('Invalid target hash');
+    const me=identity();
+    return send(inbox,{type:'FRIEND_REQUEST',fromName:me.name,fromUserId:me.userId,fromHash:_myHashPrefix()});
+  }
+  async function sendFriendAccept(targetHash){
+    if(!targetHash)throw new Error('Invalid target');
+    const inbox=await _ensureInbox(targetHash);
+    if(!inbox)throw new Error('Invalid target hash');
+    const me=identity();
+    return send(inbox,{type:'FRIEND_ACCEPT',fromName:me.name,fromUserId:me.userId,fromHash:_myHashPrefix()});
+  }
   /* Recipient side: a DM_INVITE means another user opened a private chat
      with us — auto-add it to our Messages panel. Idempotent and respects a
      prior leave, so replaying old invites on reconnect/open is harmless. */
@@ -15277,6 +15785,9 @@ window.KH_MP=(function(){
       /* Code-free chat REQUEST: unlike DM_INVITE this does NOT auto-join — it
          surfaces a pending request the recipient must Accept (see _khOnChatRequest). */
       if(env.type==='CHAT_REQUEST'){ try{if(typeof window._khOnChatRequest==='function')window._khOnChatRequest(env);}catch(_){} return; }
+      /* Friend handshake — request surfaces a pending card; accept adds a friend. */
+      if(env.type==='FRIEND_REQUEST'){ try{if(typeof window._khOnFriendRequest==='function')window._khOnFriendRequest(env);}catch(_){} return; }
+      if(env.type==='FRIEND_ACCEPT'){ try{if(typeof window._khOnFriendAccept==='function')window._khOnFriendAccept(env);}catch(_){} return; }
       if(env.type!=='GAME_INVITE')return;
       const dedupeKey=(env.id||'')+(env.payload&&env.payload.roomShort||'');
       if(_recentInvites.has(dedupeKey))return;
@@ -15346,9 +15857,39 @@ window.KH_MP=(function(){
     });
     return out;
   }
+  /* ── N-player party layer (foundation for 3-4 player online games) ──────
+     A "party" is just a game room (900000+short) where each member beacons a
+     PARTY_HELLO with their name/userId; getRoster reads recent beacons within a
+     freshness window and dedupes to the live player list (host first, then join
+     order). Games broadcast moves with send(code,{type:'MOVE',…}) and read them
+     via subscribe()/_groupFetchMessages — the same poll-based channel 2-player
+     online games already use, so no worker/realtime change is needed yet. */
+  async function partyHello(code,gameName,isHost){
+    const me=identity();
+    return send(code,{type:'PARTY_HELLO',game:gameName||'',name:me.name,userId:me.userId,host:!!isHost,ts:Date.now()});
+  }
+  async function getRoster(code,windowMs){
+    if(typeof _groupFetchMessages!=='function')return[];
+    let msgs=[];try{msgs=await _groupFetchMessages(code);}catch(_){return[];}
+    const cutoff=Date.now()-(windowMs||12000);
+    const byUser={};
+    (msgs||[]).forEach(m=>{
+      let p;try{p=JSON.parse(m.text);}catch(_){return;}
+      if(!p||p.type!=='PARTY_HELLO')return;
+      if(typeof p.ts!=='number'||p.ts<cutoff)return;
+      const key=String(p.userId||p.name||'');
+      if(!key)return;
+      const prev=byUser[key];
+      if(!prev||p.ts>prev.ts)byUser[key]={name:String(p.name||'Player').slice(0,24),userId:String(p.userId||''),host:!!p.host,ts:p.ts};
+    });
+    const out=[];for(const k in byUser)out.push(byUser[k]);
+    out.sort((a,b)=>((b.host?1:0)-(a.host?1:0))||(a.ts-b.ts));/* host first, then join order */
+    return out;
+  }
+  async function partyStart(code){const me=identity();return send(code,{type:'PARTY_START',by:me.userId,ts:Date.now()});}
   return{makeCode,createRoom,joinRoom,send,subscribe,identity,
-         findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,onInvite,startInbox,stopInbox,
-         announceOpenGame,listOpenGames};
+         findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,sendFriendRequest,sendFriendAccept,onInvite,startInbox,stopInbox,
+         announceOpenGame,listOpenGames,partyHello,getRoster,partyStart};
 })();
 
 /* Start the personal invite listener whenever the user signs in. The
@@ -15481,6 +16022,84 @@ window._khInviteDismissed=_khInviteDismissed;window._khDismissInvite=_khDismissI
   }
   _wire();
 })();
+
+/* ── N-player party lobby ───────────────────────────────────────────────
+   `KH_MP.openParty({gameName, maxPlayers, minPlayers, onStart})` — create or
+   join a 2-4 player room, watch the LIVE roster (poll-based beacons), and
+   (host) Start once enough players are in. onStart(session, roster) fires on
+   every member when the host starts. The foundation 3-4 player online games
+   build on; uses the same poll-based room channel as 2-player games. */
+window.KH_MP.openParty=function(opts){
+  opts=opts||{};
+  if(typeof _khRequireUltra==='function'&&!_khRequireUltra('Online multiplayer'))return;
+  var gameName=opts.gameName||'game';
+  var maxPlayers=Math.max(2,Math.min(4,opts.maxPlayers||4));
+  var minPlayers=Math.max(2,Math.min(maxPlayers,opts.minPlayers||2));
+  var onStart=opts.onStart||function(){};
+  var old=document.getElementById('kh-mp-party');if(old)old.remove();
+  function _txt(tag,t,css){var e=document.createElement(tag);if(css)e.style.cssText=css;if(t!=null)e.textContent=t;return e;}
+  var ov=document.createElement('div');ov.id='kh-mp-party';
+  ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.7);z-index:600200;display:flex;align-items:center;justify-content:center;padding:14px;font-family:var(--ui-font,sans-serif);';
+  var box=_txt('div',null,'background:var(--card,#fff);color:var(--fg,#111);border:var(--thin,1px solid rgba(0,0,0,.1));border-radius:14px;padding:16px;width:100%;max-width:400px;max-height:88vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:12px;');
+  var _poll=null,_beacon=null,_sub=null,_started=false,_code=null,_short=null,_isHost=false;
+  function cleanup(){try{if(_poll)clearInterval(_poll);}catch(_){}try{if(_beacon)clearInterval(_beacon);}catch(_){}try{if(_sub&&_sub.close)_sub.close();}catch(_){}_poll=_beacon=_sub=null;}
+  function closeAll(){cleanup();if(ov.parentNode)ov.remove();}
+  var hdr=_txt('div',null,'display:flex;align-items:center;gap:8px;');
+  hdr.appendChild(_txt('div',gameName.charAt(0).toUpperCase()+gameName.slice(1)+' — Party (up to '+maxPlayers+')','font-size:16px;font-weight:800;flex:1;'));
+  var closeBtn=_txt('button','Close','');closeBtn.className='btn small';closeBtn.onclick=closeAll;hdr.appendChild(closeBtn);
+  box.appendChild(hdr);
+  var content=_txt('div',null,'display:flex;flex-direction:column;gap:10px;');box.appendChild(content);
+  function menu(){
+    content.innerHTML='';
+    content.appendChild(_txt('div','Create a party and share the code, or join a friend’s with their code.','font-size:11px;color:var(--muted);line-height:1.5;'));
+    var cBtn=_txt('button','Create party','');cBtn.className='btn primary small';cBtn.onclick=doCreate;content.appendChild(cBtn);
+    var jrow=_txt('div',null,'display:flex;gap:6px;');
+    var jin=document.createElement('input');jin.placeholder='6-digit code';jin.maxLength=6;jin.style.cssText='flex:1;font-size:14px;padding:8px;border:var(--thin);border-radius:8px;background:var(--bg);color:var(--fg);';
+    var jBtn=_txt('button','Join','');jBtn.className='btn small';jBtn.onclick=function(){var s=(jin.value||'').replace(/[^0-9]/g,'').slice(0,6);if(s.length!==6){if(typeof toast==='function')toast('Enter the 6-digit code');return;}doJoin(s);};
+    jrow.appendChild(jin);jrow.appendChild(jBtn);content.appendChild(jrow);
+  }
+  function roomView(){
+    content.innerHTML='';
+    var codeBox=_txt('div',null,'text-align:center;background:var(--highlight);border-radius:10px;padding:10px;');
+    codeBox.appendChild(_txt('div','SHARE THIS CODE','font-size:9px;font-weight:800;letter-spacing:1px;color:var(--muted);'));
+    codeBox.appendChild(_txt('div',_short,'font-size:26px;font-weight:900;font-family:monospace;letter-spacing:3px;'));
+    content.appendChild(codeBox);
+    content.appendChild(_txt('div','PLAYERS','font-size:9px;font-weight:800;letter-spacing:.5px;color:var(--muted);'));
+    var rlist=_txt('div',null,'display:flex;flex-direction:column;gap:5px;min-height:40px;');content.appendChild(rlist);
+    var startBtn=null;
+    if(_isHost){
+      startBtn=_txt('button','Start game','');startBtn.className='btn primary small';startBtn.disabled=true;
+      startBtn.onclick=function(){_started=true;try{KH_MP.partyStart(_code);}catch(_){}var roster=window._khPartyRoster||[];cleanup();if(ov.parentNode)ov.remove();onStart({code:_code,short:_short,role:'host'},roster);};
+      content.appendChild(startBtn);
+    } else {
+      content.appendChild(_txt('div','Waiting for the host to start…','font-size:11px;color:var(--muted);font-style:italic;'));
+    }
+    function renderRoster(r){
+      window._khPartyRoster=r;rlist.innerHTML='';
+      (r||[]).slice(0,maxPlayers).forEach(function(pl){
+        var row=_txt('div',null,'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card);border:var(--thin);border-radius:8px;');
+        row.appendChild(_txt('span',(typeof _dispName==='function'?_dispName(pl.name):pl.name),'flex:1;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+        if(pl.host)row.appendChild(_txt('span','HOST','font-size:8px;font-weight:900;background:var(--accent);color:var(--accent-inv);padding:2px 5px;border-radius:4px;'));
+        rlist.appendChild(row);
+      });
+      if(startBtn)startBtn.disabled=(r||[]).length<minPlayers;
+    }
+    window._khPartyRenderRoster=renderRoster;/* test hook */
+    (function first(){KH_MP.partyHello(_code,gameName,_isHost).catch(function(){});KH_MP.getRoster(_code).then(renderRoster).catch(function(){});})();
+    _beacon=setInterval(function(){KH_MP.partyHello(_code,gameName,_isHost).catch(function(){});},2600);
+    _poll=setInterval(function(){KH_MP.getRoster(_code).then(renderRoster).catch(function(){});},2600);
+    if(!_isHost){
+      _sub=KH_MP.subscribe(_code,function(env){
+        if(env&&env.type==='PARTY_START'&&!_started){_started=true;var roster=window._khPartyRoster||[];cleanup();if(ov.parentNode)ov.remove();onStart({code:_code,short:_short,role:'guest'},roster);}
+      });
+    }
+  }
+  async function doCreate(){try{var s=await KH_MP.createRoom(gameName);_code=s.code;_short=s.short;_isHost=true;try{KH_MP.announceOpenGame(gameName,s.short);}catch(_){}roomView();}catch(e){if(typeof toast==='function')toast('Could not create party');}}
+  async function doJoin(short){try{var s=await KH_MP.joinRoom(short,gameName);_code=s.code;_short=s.short;_isHost=false;roomView();}catch(e){if(typeof toast==='function')toast('Could not join party');}}
+  menu();
+  ov.appendChild(box);ov.onclick=function(e){if(e.target===ov)closeAll();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+};
 
 /* ── Reusable multiplayer lobby ────────────────────────────────────────
    `KH_MP.openLobby({gameName, onConnected})` shows a modal with three
@@ -17727,7 +18346,10 @@ const Snake=(()=>{
     const scoreBar=txt('div','Score: 0  |  Best: '+(game.highScore||0),{id:'snakeScoreBar',className:'snake-score-bar'});
     immersiveContent.appendChild(scoreBar);
     const canvas=el('canvas',{id:'snakeCanvas',width:COLS*TILE,height:ROWS*TILE});
-    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;border:2px solid var(--fg);touch-action:none;';
+    /* height:auto keeps the board a true 1:1 square when max-width:100% shrinks
+       it on a narrow Kindle — without it the width shrank but the height stayed
+       340px, squishing the view taller-than-wide ("view too high"). */
+    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;height:auto;aspect-ratio:1/1;border:2px solid var(--fg);touch-action:none;';
     immersiveContent.appendChild(canvas);
     let _st=null;
     canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];_st={x:t.clientX,y:t.clientY};},{passive:false});
@@ -18590,7 +19212,37 @@ const Anagrams=(()=>{
     ['WALNUT','A wrinkly brown nut'],['BREEZE','A gentle wind'],
     ['COMPASS','It points north'],['DIAMOND','A hard, sparkling gem'],
     ['FEATHER','A bird has many'],['MONKEY','A tree-swinging primate'],
-    ['THUNDER','It follows lightning'],['LIBRARY','Full of books to borrow']
+    ['THUNDER','It follows lightning'],['LIBRARY','Full of books to borrow'],
+    ['APPLE','A common red or green fruit'],['BEACH','Sandy shore by the sea'],['CLOUD','White fluff in the sky'],
+    ['EAGLE','A large bird of prey'],['FLUTE','A slim woodwind instrument'],['GRAPE','Small fruit that makes wine'],
+    ['HONEY','Bees make it'],['IGLOO','A dome house made of snow'],['JEWEL','A precious gemstone'],
+    ['KOALA','A eucalyptus-eating marsupial'],['LEMON','A sour yellow citrus'],['MANGO','A sweet tropical fruit'],
+    ['OTTER','A playful river swimmer'],['PIANO','88 black and white keys'],['QUEEN','A female monarch'],
+    ['RIVER','Water flowing to the sea'],['SNAKE','A legless slithering reptile'],['TIGER','A big striped cat'],
+    ['VIRUS','A tiny thing that makes you ill'],['WHALE','The largest sea mammal'],['ZEBRA','A striped African horse'],
+    ['BREAD','A baked loaf'],['CHAIR','You sit on it'],['DANCE','Move to music'],['EARTH','The planet we live on'],
+    ['GHOST','A spooky spirit'],['HEART','It pumps your blood'],['KNIFE','You cut food with it'],
+    ['LIGHT','It lets you see in the dark'],['MOUSE','A small squeaky rodent'],['OCEAN','A vast body of salt water'],
+    ['PEARL','A gem grown inside an oyster'],['ROBOT','A machine that can act on its own'],['STORM','Wind, rain and thunder'],
+    ['TRAIN','It runs on rails'],['VOICE','You speak with it'],['ONION','A layered bulb that makes you cry'],
+    ['BUTTON','You do up a shirt with it'],['CARROT','An orange root vegetable'],['DOCTOR','They treat the sick'],
+    ['GARLIC','A pungent cooking bulb'],['HELMET','Head protection'],['INSECT','A six-legged creature'],
+    ['KETTLE','It boils water'],['LIZARD','A scaly reptile'],['MELODY','A tune'],['PARROT','A colourful talking bird'],
+    ['SPONGE','It soaks up water'],['TURTLE','A reptile with a shell'],['WALLET','It holds your cash and cards'],
+    ['BANANA','A curved yellow fruit'],['CACTUS','A spiny desert plant'],['DONKEY','A long-eared farm animal'],
+    ['FALCON','A fast-diving hunting bird'],['HORNET','A large stinging wasp'],['JAGUAR','A spotted big cat'],
+    ['MUSEUM','Where art and history are shown'],['PEPPER','It makes you sneeze'],['SPIDER','An eight-legged web spinner'],
+    ['TOMATO','A red salad fruit'],['WINTER','The coldest season'],['VOLCANO','A mountain that erupts'],
+    ['BALLOON','It floats when filled with air'],['CABBAGE','A leafy green vegetable'],['DOLPHIN','A clever sea mammal'],
+    ['FACTORY','Where goods are made'],['GIRAFFE','The tallest land animal'],['HARVEST','Gathering the crops'],
+    ['JOURNEY','A long trip'],['LEOPARD','A spotted African cat'],['OCTOPUS','A sea creature with eight arms'],
+    ['PENGUIN','A flightless Antarctic bird'],['RAINBOW','Colours arcing after rain'],['VILLAGE','A small settlement'],
+    ['BLANKET','It keeps you warm in bed'],['CHEETAH','The fastest land animal'],['FANTASY','Made-up magical fiction'],
+    ['GRAVITY','It pulls things down'],['PYRAMID','A giant Egyptian tomb'],['STADIUM','A big sports arena'],
+    ['VITAMIN','A nutrient in food'],['AIRPLANE','It flies through the sky'],['COMPUTER','You are using one now'],
+    ['DINOSAUR','An ancient extinct reptile'],['FIREWORK','It explodes with colour'],['HOSPITAL','Where the sick are treated'],
+    ['KANGAROO','A hopping Australian marsupial'],['MOUNTAIN','A very tall landform'],['NOTEBOOK','You jot notes in it'],
+    ['SANDWICH','Filling between two slices of bread'],['UMBRELLA','It keeps rain off you']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.anagrams&&S.games.anagrams.best)||0;}
@@ -18668,7 +19320,28 @@ const Nonogram=(()=>{
     {name:'House',g:['00100','01110','11111','10101','11111']},
     {name:'Smiley',g:['01010','01010','00000','10001','01110']},
     {name:'Letter T',g:['11111','00100','00100','00100','00100']},
-    {name:'Boat',g:['00100','00100','11111','11111','01110']}
+    {name:'Boat',g:['00100','00100','11111','11111','01110']},
+    {name:'Letter A',g:['01110','10001','11111','10001','10001']},
+    {name:'Letter H',g:['10001','10001','11111','10001','10001']},
+    {name:'Letter I',g:['11111','00100','00100','00100','11111']},
+    {name:'Letter O',g:['01110','10001','10001','10001','01110']},
+    {name:'Letter X',g:['10001','01010','00100','01010','10001']},
+    {name:'Letter L',g:['10000','10000','10000','10000','11111']},
+    {name:'Letter C',g:['01111','10000','10000','10000','01111']},
+    {name:'Letter E',g:['11111','10000','11110','10000','11111']},
+    {name:'Letter U',g:['10001','10001','10001','10001','01110']},
+    {name:'Letter Y',g:['10001','01010','00100','00100','00100']},
+    {name:'Letter Z',g:['11111','00010','00100','01000','11111']},
+    {name:'Star',g:['00100','11111','01110','01010','10001']},
+    {name:'Tree',g:['00100','01110','11111','00100','00100']},
+    {name:'Cup',g:['10001','10001','10001','01110','00100']},
+    {name:'Sun',g:['10101','01110','11111','01110','10101']},
+    {name:'Flower',g:['01010','11111','00100','01110','00100']},
+    {name:'Cat',g:['10001','11011','11111','10101','11111']},
+    {name:'Key',g:['11000','11111','11000','00100','00110']},
+    {name:'Anchor',g:['00100','01010','00100','10101','01110']},
+    {name:'Umbrella',g:['01110','11111','00100','00100','01100']},
+    {name:'Ghost',g:['01110','11111','11111','11111','10101']}
   ];
   const N=5;
   let game=null,mode='fill';
@@ -18754,6 +19427,69 @@ const Nonogram=(()=>{
   return{start,stop};
 })();
 
+/* ── Farm — a cosy turn-based farming sim ───────────────────────────────
+   Plant seeds on a grid, tap "Next day" to grow them, harvest when ready and
+   sell for coins to buy more seeds. Fully turn-based (no loop) so it's easy on
+   e-ink; the whole farm persists in S.games.farm so you can resume any time. */
+const Farm=(()=>{
+  const COLS=4,ROWS=3,PLOTS=COLS*ROWS;
+  const CROPS={
+    wheat:{name:'Wheat',cost:3,grow:2,sell:6},
+    carrot:{name:'Carrot',cost:5,grow:3,sell:12},
+    berry:{name:'Berry',cost:8,grow:4,sell:20},
+    pumpkin:{name:'Pumpkin',cost:10,grow:5,sell:28}
+  };
+  const ORDER=['wheat','carrot','berry','pumpkin'];
+  let st=null;
+  function _load(){if(!S.games)S.games={};var g=S.games.farm;return (g&&Array.isArray(g.plots)&&g.plots.length===PLOTS)?g:null;}
+  function _fresh(prevBest){return {plots:new Array(PLOTS).fill(null),coins:15,day:1,seed:'wheat',best:prevBest||0};}
+  function persist(){try{if(!S.games)S.games={};S.games.farm=st;if(typeof save==='function')save();}catch(_){}}
+  function start(){
+    st=_load()||_fresh(0);
+    if(typeof st.coins!=='number')st.coins=15;if(typeof st.day!=='number')st.day=1;if(!st.seed||!CROPS[st.seed])st.seed='wheat';if(typeof st.best!=='number')st.best=0;
+    enterImmersive('Farm','Day '+st.day+' · Coins: '+st.coins);
+    try{immersiveRoot._trackStop=stop;}catch(_){}
+    render();
+  }
+  function _bar(){if(st.coins>st.best)st.best=st.coins;if(typeof updateImmersiveScore==='function')updateImmersiveScore('Day '+st.day+' · Coins: '+st.coins+' · Best: '+st.best);}
+  function plant(i){var c=CROPS[st.seed];if(!c||st.plots[i])return;if(st.coins<c.cost){toast('Not enough coins for '+c.name+' ('+c.cost+').');return;}st.coins-=c.cost;st.plots[i]={k:st.seed,age:0};persist();render();}
+  function harvest(i){var p=st.plots[i];if(!p)return;var c=CROPS[p.k];if(!c||p.age<c.grow)return;st.coins+=c.sell;st.plots[i]=null;persist();render();}
+  function nextDay(){st.day++;for(var i=0;i<st.plots.length;i++){var p=st.plots[i];if(p){var c=CROPS[p.k];if(c&&p.age<c.grow)p.age++;}}persist();render();}
+  function reset(){st=_fresh(st?st.best:0);persist();render();}
+  function render(){
+    immersiveContent.innerHTML='';
+    _bar();
+    immersiveContent.appendChild(txt('div','Day '+st.day+'  ·  Coins: '+st.coins,{className:'snake-score-bar',style:{textAlign:'center'}}));
+    immersiveContent.appendChild(txt('div','Pick a seed, tap a plot to plant, then Next day to grow. Tap a ready crop to harvest and sell.',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px',lineHeight:'1.4'}}));
+    const shop=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',margin:'6px 0'}});
+    ORDER.forEach(function(k){var c=CROPS[k];var on=(st.seed===k);var b=txt('button',c.name+' '+c.cost+'/'+c.sell,{className:'btn small'+(on?' primary':''),style:{fontSize:'11px'}});b.onclick=function(){st.seed=k;persist();render();};shop.appendChild(b);});
+    immersiveContent.appendChild(shop);
+    const sc=CROPS[st.seed];
+    immersiveContent.appendChild(txt('div','Selected: '+sc.name+' — cost '+sc.cost+', grows '+sc.grow+' days, sells '+sc.sell,{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',marginBottom:'6px'}}));
+    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat('+COLS+',1fr)',gap:'8px',maxWidth:'340px',margin:'0 auto',padding:'0 8px'}});
+    for(let i=0;i<PLOTS;i++){(function(i){
+      const p=st.plots[i];
+      const cell=el('button',{className:'btn',style:{minHeight:'62px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',padding:'4px'}});
+      if(!p){cell.appendChild(txt('span','+',{style:{fontSize:'18px',fontWeight:'900',color:'var(--muted)'}}));cell.appendChild(txt('span','Plant',{style:{fontSize:'9px',color:'var(--muted)'}}));cell.onclick=function(){plant(i);};}
+      else{const c=CROPS[p.k];const ready=p.age>=c.grow;cell.appendChild(txt('span',c.name,{style:{fontSize:'11px',fontWeight:'700'}}));
+        if(ready){cell.style.background='var(--accent)';cell.style.color='var(--accent-inv)';cell.style.borderColor='var(--accent)';cell.appendChild(txt('span','READY +'+c.sell,{style:{fontSize:'9px'}}));cell.onclick=function(){harvest(i);};}
+        else{cell.appendChild(txt('span','growing '+p.age+'/'+c.grow,{style:{fontSize:'9px',color:'var(--muted)'}}));cell.onclick=function(){toast(c.name+' — '+(c.grow-p.age)+' day'+((c.grow-p.age)===1?'':'s')+' to go.');};}}
+      grid.appendChild(cell);
+    })(i);}
+    immersiveContent.appendChild(grid);
+    const ctrl=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center',marginTop:'12px',flexWrap:'wrap'}});
+    const nd=txt('button','Next day',{className:'btn primary'});nd.onclick=nextDay;ctrl.appendChild(nd);
+    const ng=txt('button','New farm',{className:'btn'});
+    ng.onclick=(typeof newGameGuard==='function')?newGameGuard(function(){return !!(st&&(st.plots.some(function(x){return !!x;})||st.day>1));},reset):function(){reset();};
+    ctrl.appendChild(ng);
+    immersiveContent.appendChild(ctrl);
+    const anyGrowing=st.plots.some(function(x){return !!x;});
+    if(st.coins<CROPS.wheat.cost&&!anyGrowing){immersiveContent.appendChild(txt('div','Out of coins and crops — tap New farm to start fresh.',{style:{fontSize:'11px',color:'var(--danger)',textAlign:'center',marginTop:'8px',fontWeight:'700'}}));}
+  }
+  function stop(){/* turn-based — no timers to clear */}
+  return{start,stop};
+})();
+
 /* ── 8-Ball — a simple top-down pool table ──────────────────────────────
    Drag back from the white cue ball and release to shoot (slingshot). Equal-
    mass elastic ball collisions, wall bounces, friction, six pockets. Sink every
@@ -18761,7 +19497,7 @@ const Nonogram=(()=>{
    while something is moving (or you're aiming) so it stays gentle on e-ink. */
 const EightBall=(()=>{
   const W=280,H=452,R=9,POCK=15,FR=40;
-  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=15;
+  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=26;
   const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
   let game=null,timer=null;
   function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
@@ -18860,7 +19596,7 @@ const EightBall=(()=>{
     game.aiming=false;
     var cue=_cue();if(!cue){draw();return;}
     var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
-    if(dl>6){var pow=Math.min(MAXPOW,dl/8);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    if(dl>6){var pow=Math.min(MAXPOW,dl/5);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
     draw();
   }
   function buildUI(){
@@ -25410,6 +26146,24 @@ function _khiOptsFromPicker(){
   return {provider:prov,model:model};
 }
 
+/* Progressive perf hint: on engines that support it, skip laying out /
+   painting off-screen items in the big fixed-size grids (the 40-icon Retro
+   launcher, the dashboard tiles). contain-intrinsic-size gives a stable
+   placeholder so there's no scroll jank. Wrapped in @supports so it does
+   NOTHING on old Kindle Silk (which ignores it anyway) — a pure win for the
+   many non-Kindle viewers scrolling the long retro grid, zero risk on-device. */
+(function _khInjectPerfCss(){
+  try{
+    if(document.getElementById('perf-css'))return;
+    var st=document.createElement('style');st.id='perf-css';
+    st.textContent='@supports (content-visibility:auto){'
+      +'.simple-app-grid .simple-app{content-visibility:auto;contain-intrinsic-size:auto 84px;}'
+      +'.dash-grid .dash-tile{content-visibility:auto;contain-intrinsic-size:auto 78px;}'
+      +'}';
+    (document.head||document.documentElement).appendChild(st);
+  }catch(_){}
+})();
+
 /* ── Test connection ──────────────────────────────────────── */
 async function testAIConnection(){
   const pickerBtn=document.getElementById('chatModelPickerBtn');
@@ -25479,6 +26233,7 @@ const GAME_MAP=[
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
   {keys:['8 ball','8-ball','eight ball','eightball','pool','billiards','snooker','pool table'],g:'eightball'},
   {keys:['trivia','quiz','trivia quiz','general knowledge','quiz game','questions'],g:'trivia'},
+  {keys:['farm','farming','farmville','harvest','crops','plant','farm sim','stardew'],g:'farm'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -26860,74 +27615,28 @@ document.addEventListener('click',e=>{
     }
   }
   if(id==='testAI'){
-    /* Show a quick model picker before testing */
-    const _curProv=S.aiProvider==='openrouter'?'OpenRouter':'Gemini';
-    const _curModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.hbGeminiModel||'gemini-2.0-flash');
-    const _modLabel=_curModel.split('/').pop().replace(':free','');
-    /* Build a quick modal with provider + model choice */
+    /* Model picker before testing — the SAME canonical picker as the
+       Assistant header (buildAIModelPicker), so it always exposes every
+       provider + model and can never drift from the chat picker. It writes
+       the global selection on pick, so Test just re-runs testAIConnection. */
     const _ov=document.createElement('div');
-    _ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.55);z-index:999999;display:flex;align-items:center;justify-content:center;';
+    _ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.55);z-index:999999;display:flex;align-items:center;justify-content:center;padding:14px;';
     const _box=document.createElement('div');
-    _box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,380px);display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-md);';
+    _box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,380px);display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-md);';
     const _h=document.createElement('div');_h.textContent='Test AI Connection';_h.style.cssText='font-size:14px;font-weight:900;font-family:var(--title-font);';
-    const _provRow=document.createElement('div');_provRow.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
-    const _pLbl=document.createElement('span');_pLbl.textContent='Provider:';_pLbl.style.cssText='font-size:11px;font-weight:700;';
-    const _pGem=document.createElement('button');_pGem.textContent='Gemini';
-    const _pOR=document.createElement('button');_pOR.textContent='OpenRouter';
-    const _pAn=document.createElement('button');_pAn.textContent='Claude';
-    const _pOa=document.createElement('button');_pOa.textContent='GPT';
-    const _provBtns={gemini:_pGem,openrouter:_pOR,anthropic:_pAn,openai:_pOa};
-    function _syncProvBtns(){Object.keys(_provBtns).forEach(k=>{_provBtns[k].className='btn small'+(S.aiProvider===k?' primary':'');});}
-    _syncProvBtns();
-    _provRow.append(_pLbl,_pGem,_pOR,_pAn,_pOa);
-    const _mLbl=document.createElement('div');_mLbl.textContent='Model:';_mLbl.style.cssText='font-size:11px;font-weight:700;';
-    const _mSel=document.createElement('select');_mSel.style.cssText='font-size:11px;padding:5px 8px;border:var(--border);border-radius:8px;background:var(--card);color:var(--fg);width:100%;';
-    function _populateModels(){
-      _mSel.innerHTML='';
-      function _addGroup(label,items,cur){
-        const og=document.createElement('optgroup');og.label=label;
-        items.forEach(([id,name])=>{
-          const o=document.createElement('option');o.value=id;o.textContent=name;
-          if(id===cur)o.selected=true;
-          og.appendChild(o);
-        });
-        _mSel.appendChild(og);
-      }
-      if(S.aiProvider==='openrouter'){
-        const cur=S.openrouterModel||'openrouter/free';
-        _addGroup('Free models',[['openrouter/free','Free Router (auto)'],['meta-llama/llama-3.3-70b-instruct:free','Llama 3.3 70B'],['meta-llama/llama-4-maverick:free','Llama 4 Maverick'],['deepseek/deepseek-r1:free','DeepSeek R1'],['mistralai/mistral-small-3.1-24b-instruct:free','Mistral Small 3.1'],['qwen/qwen3-8b:free','Qwen 3 8B']],cur);
-        _addGroup('Paid models',[['anthropic/claude-opus-4','Claude Opus 4'],['anthropic/claude-sonnet-4','Claude Sonnet 4'],['anthropic/claude-3.5-sonnet','Claude 3.5 Sonnet'],['anthropic/claude-3-haiku','Claude 3 Haiku'],['openai/gpt-4o','GPT-4o'],['openai/gpt-4o-mini','GPT-4o Mini'],['google/gemini-2.5-pro','Gemini 2.5 Pro'],['google/gemini-2.0-flash-001','Gemini 2.0 Flash']],cur);
-      } else if(S.aiProvider==='anthropic'){
-        _addGroup('Paid — needs billing',ANTHROPIC_MODELS,S.anthropicModel||'claude-haiku-4-5-20251001');
-      } else if(S.aiProvider==='openai'){
-        _addGroup('Paid — needs billing',OPENAI_MODELS,S.openaiModel||'gpt-5.4-mini');
-      } else {
-        const cur=S.hbGeminiModel||'gemini-3.1-flash-lite';
-        _addGroup('Free tier',[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite (15 RPM)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-flash','Gemini 2.5 Flash'],['gemini-3.5-flash','Gemini 3.5 Flash'],['gemini-3.1-flash','Gemini 3.1 Flash']],cur);
-        _addGroup('Paid tier',[['gemini-2.5-pro','Gemini 2.5 Pro'],['gemini-3.1-pro','Gemini 3.1 Pro'],['gemini-2.0-flash','Gemini 2 Flash'],['gemini-2.0-flash-lite','Gemini 2 Flash Lite']],cur);
-      }
-    }
-    _pGem.onclick=()=>{S.aiProvider='gemini';save();_syncProvBtns();_populateModels();};
-    _pOR.onclick=()=>{S.aiProvider='openrouter';save();_syncProvBtns();_populateModels();};
-    _pAn.onclick=()=>{S.aiProvider='anthropic';save();_syncProvBtns();_populateModels();};
-    _pOa.onclick=()=>{S.aiProvider='openai';save();_syncProvBtns();_populateModels();};
-    _populateModels();
+    const _hint=document.createElement('div');_hint.textContent='Choose a provider and model, then Test.';_hint.style.cssText='font-size:11px;color:var(--muted);';
+    const _tPick=buildAIModelPicker({btnId:'testDlgModelBtn',dropId:'testDlgModelDrop'});
+    const _pickWrap=document.createElement('div');_pickWrap.style.cssText='position:relative;';
+    _pickWrap.appendChild(_tPick.btn);_pickWrap.appendChild(_tPick.drop);
     const _btnRow=document.createElement('div');_btnRow.style.cssText='display:flex;gap:8px;justify-content:flex-end;';
     const _cancelB=document.createElement('button');_cancelB.textContent='Cancel';_cancelB.className='btn';
     const _testB=document.createElement('button');_testB.textContent='Test';_testB.className='btn primary';
     _cancelB.onclick=()=>_ov.remove();
-    _testB.onclick=()=>{
-      /* Apply selected model then run test */
-      if(S.aiProvider==='openrouter')S.openrouterModel=_mSel.value;
-      else if(S.aiProvider==='anthropic')S.anthropicModel=_mSel.value;
-      else if(S.aiProvider==='openai')S.openaiModel=_mSel.value;
-      else S.hbGeminiModel=_mSel.value;
-      save();_ov.remove();testAIConnection();
-    };
+    _testB.onclick=()=>{save();_ov.remove();testAIConnection();};
     _ov.onclick=e2=>{if(e2.target===_ov)_ov.remove();};
     _btnRow.append(_cancelB,_testB);
-    _box.append(_h,_provRow,_mLbl,_mSel,_btnRow);
-    _ov.appendChild(_box);document.body.appendChild(_ov);
+    _box.append(_h,_hint,_pickWrap,_btnRow);
+    _ov.appendChild(_box);(document.getElementById('rotateRoot')||document.body).appendChild(_ov);
   }
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement&&document.activeElement.id==='chatIn')sendChat();});
@@ -29060,6 +29769,21 @@ home:()=>{
      app grid with featured cards above it. */
   if(uiMode==='simple'){
     const wrap=el('div',{className:'simple-home'});
+    /* Windowed masthead — a title bar + personal greeting gives the retro
+       home a strong, cohesive identity (uses NOW() for clock-offset safety). */
+    const _mast=el('div',{className:'simple-masthead'});
+    const _mbar=el('div',{className:'smh-bar'});
+    _mbar.appendChild(el('span',{className:'smh-dot'}));
+    _mbar.appendChild(txt('span','KindleHub'));
+    _mbar.appendChild(el('span',{className:'smh-spacer'}));
+    try{_mbar.appendChild(txt('span',new Date(NOW()).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toUpperCase()));}catch(_){}
+    _mast.appendChild(_mbar);
+    const _mbody=el('div',{className:'smh-body'});
+    const _nm=S.user||(S.email?S.email.split('@')[0]:'');
+    _mbody.appendChild(txt('div',_nm?('Hello, '+_nm):'KindleHub',{className:'smh-title'}));
+    _mbody.appendChild(txt('div',(function(){var h=new Date(NOW()).getHours();var g=h<12?'Good morning':(h<18?'Good afternoon':'Good evening');var wd='';try{wd=' · '+new Date(NOW()).toLocaleDateString(undefined,{weekday:'long'});}catch(_){}return g+wd;})(),{className:'smh-sub'}));
+    _mast.appendChild(_mbody);
+    wrap.appendChild(_mast);
     /* Featured row — three highlight cards across the top */
     const FEAT=[
       {view:'rss',     label:'News Reader',     sub:'Stay informed',
@@ -29139,7 +29863,12 @@ home:()=>{
       sheets:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>',
       mail:'<rect x="3" y="5" width="18" height="14" rx="1"/><polyline points="3,6 12,13 21,6"/>',
       browser:'<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13 13 0 0 1 0 18"/><path d="M12 3a13 13 0 0 0 0 18"/>',
-      files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+      files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      screenshot:'<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6l1.3-2h4.4l1.3 2"/>',
+      imagesearch:'<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="M4 16l4.5-4 3 2.5L16 9l4 5"/>',
+      sports:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/><path d="M6 6l12 12M18 6L6 18" opacity=".45"/>',
+      gazette:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="6" y1="8" x2="13" y2="8"/><line x1="6" y1="12" x2="11" y2="12"/><line x1="6" y1="15" x2="11" y2="15"/><rect x="14" y="11" width="4" height="5"/>',
+      dashboard:'<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/>'
     };
     const FALLBACK_ICON='<rect x="4" y="4" width="16" height="16" rx="2"/>';
     /* Build from NAV_TABS so it stays in sync with the rest of the app.
@@ -29912,6 +30641,12 @@ games:()=>{
     if(bbB)c.appendChild(txt('p','Best score: '+bbB,{style:{fontSize:'11px',color:'var(--muted)'}}));
     else c.appendChild(txt('p','Drop shapes on an 8×8 grid. Fill rows, columns, or quadrants to clear them. Game ends when no shape fits.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.45'}}));
     c.appendChild(txt('button','Play Block Blast',{className:'btn primary','data-game':'blockblast',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowBoard.appendChild(gc('Farm',null,c=>{
+    const fb=S.games&&S.games.farm&&S.games.farm.best||0;
+    c.appendChild(txt('p','A cosy turn-based farming sim — plant seeds, grow crops over days, then harvest and sell for coins. Auto-saves, so you can pop back any time.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.45'}}));
+    if(fb)c.appendChild(txt('p','Best coins: '+fb,{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play Farm',{className:'btn primary','data-game':'farm',style:{marginTop:'6px',width:'100%'}}));
   }));
   v.appendChild(rowBoard);
 
@@ -37809,6 +38544,7 @@ settings:()=>{
   });
   cKbd.appendChild(modeRow);
   g.appendChild(cKbd);
+
   /* NOTE: this used to close the _defer here and reopen a new one, which
      left `c5` (declared above) out of scope below — so the Keyboard
      Shortcuts AND Top Menu Pages cards both threw 'c5 is not defined' and
@@ -38123,6 +38859,10 @@ settings:()=>{
 
 feedback:()=>{
   const v=el('section',{id:'view-feedback',className:'view'});
+  /* Admin-only moderation-notices card (active warnings) — populated async. */
+  const _modHost=el('div',{id:'kh-mod-card-host'});
+  v.appendChild(_modHost);
+  try{if(window._isAdminCached===true)setTimeout(function(){try{if(typeof _khRefreshModerationCard==='function')_khRefreshModerationCard();}catch(_){}},60);}catch(_){}
 
   /* ── All feedback lives inside the master doc (KH_REG) ─────────────────
      doc.feedback.bugs[]  and  doc.feedback.suggestions[]
@@ -38407,8 +39147,12 @@ feedback:()=>{
       const dbGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'6px',marginBottom:'14px'}});
       c.appendChild(dbGrid);
       const sUsers=stat('USERS','…','registered');
-      const sNewU=stat('NEW USERS','…','7d / 30d');
-      const sActiveU=stat('ACTIVE','…','synced 7d');
+      /* There is no signup timestamp on kh_users (only `updated_at` = last
+         cloud sync), so a true "new users" figure is impossible. Both of
+         these are last-sync-based ACTIVE proxies over different windows —
+         labelled honestly so 7d and 30d don't read as duplicate numbers. */
+      const sActiveU=stat('ACTIVE 7D','…','synced last 7 days');
+      const sNewU=stat('ACTIVE 30D','…','synced last 30 days');
       const sGroups=stat('GROUPS','…','chat groups');
       const sMsgs=stat('MESSAGES','…','in cloud now');
       const sMsgsRecent=stat('MSGS 24H','…','today / 7d');
@@ -38420,7 +39164,7 @@ feedback:()=>{
       const sErrsRecent=stat('ERRORS 24H','…','last day');
       const sVisitRows=stat('VISIT ROWS','…','device-days');
       const sAvgState=stat('AVG STATE','…','KB per user');
-      dbGrid.append(sUsers,sNewU,sActiveU,sGroups,sMsgs,sMsgsRecent,sSenders,sFb,sScores,sAnn,sErrs,sErrsRecent,sVisitRows,sAvgState);
+      dbGrid.append(sUsers,sActiveU,sNewU,sGroups,sMsgs,sMsgsRecent,sSenders,sFb,sScores,sAnn,sErrs,sErrsRecent,sVisitRows,sAvgState);
 
       /* Admin AI — ask a free-text question about any user (last online, activity,
          identity) answered from their cloud metadata. Admin-only. */
@@ -38581,16 +39325,18 @@ feedback:()=>{
         const DAY=86400000;
         const _setStat=(tile,val,sub)=>{tile.querySelectorAll('div')[1].textContent=String(val);if(sub!=null){const s=tile.querySelectorAll('div')[2];if(s)s.textContent=sub;}};
 
-        /* New + active users (kh_users.updated_at is the only timestamp we
-           have — it's "last sync", a good proxy for recent activity; for a
-           brand-new account it's also the signup time). */
+        /* Active users. kh_users.updated_at (last cloud sync) is the ONLY
+           timestamp we have — there's no signup date — so these are both
+           active-user proxies over 7d / 30d windows, NOT registrations.
+           (That's also why "active" can exceed the VISITORS count above:
+           visit logging is throttled under load, syncs are not.) */
         Promise.all([
           _sbCount('kh_users','updated_at=gte.'+_iso(7*DAY)).catch(()=>null),
           _sbCount('kh_users','updated_at=gte.'+_iso(30*DAY)).catch(()=>null),
           _sbCount('kh_users','updated_at=gte.'+_iso(DAY)).catch(()=>null),
         ]).then(([u7,u30,u1])=>{
-          _setStat(sNewU, (u7!=null?u7:'?')+' / '+(u30!=null?u30:'?'), 'last 7d / 30d synced');
-          _setStat(sActiveU, u7!=null?u7:'?', (u1!=null?u1+' in last 24h':'synced 7d'));
+          _setStat(sActiveU, u7!=null?u7:'?', (u1!=null?u1+' active today':'synced last 7 days'));
+          _setStat(sNewU, u30!=null?u30:'?', 'synced last 30 days');
         });
 
         /* Messages today / last 7d */
@@ -39142,25 +39888,17 @@ feedback:()=>{
       const instrEl=el('textarea',{rows:2,placeholder:_hasErr?'e.g. also guard against an empty name':'e.g. Make the home clock widget show seconds',style:'width:100%;font-size:12px;padding:8px;border:var(--thin);border-radius:6px;background:var(--bg);color:var(--fg);box-sizing:border-box;resize:vertical;'});
       box.appendChild(instrEl);
 
-      /* Model picker */
-      const modelRow=el('div',{style:'display:flex;gap:6px;align-items:center;flex-wrap:wrap;'});
+      /* Model picker — the SAME canonical picker as the Assistant page, so a
+         code fix can use any provider/model (it persists the choice to S like
+         the chat picker). Gemini is recommended for code; whatever the model
+         returns is Silk-checked + security-gated + previewed before apply. */
+      const modelRow=el('div',{style:'display:flex;gap:6px;align-items:center;flex-wrap:wrap;position:relative;'});
       modelRow.appendChild(txt('span','Model:',{style:'font-size:11px;font-weight:700;'}));
-      const provSel=el('select',{style:'font-size:11px;padding:5px 8px;border:var(--border);border-radius:6px;background:var(--card);color:var(--fg);'});
-      /* OpenRouter is intentionally EXCLUDED for code fixes — its free models
-         are too unreliable for patches. Gemini is recommended. */
-      [['gemini','Gemini (recommended)'],['shared','Shared (free)'],['anthropic','Claude (paid)'],['openai','GPT (paid)']].forEach(p=>{const o=el('option',{value:p[0]});o.textContent=p[1];if(S.aiProvider===p[0])o.selected=true;provSel.appendChild(o);});
-      modelRow.appendChild(provSel);
-      const modelSel=el('select',{style:'font-size:11px;padding:5px 8px;border:var(--border);border-radius:6px;background:var(--card);color:var(--fg);flex:1;min-width:140px;'});
-      function _populateModels(){
-        modelSel.innerHTML='';
-        const opts=provSel.value==='anthropic'?ANTHROPIC_MODELS
-          :provSel.value==='openai'?OPENAI_MODELS
-          :[['gemini-3.1-flash-lite','Gemini 3.1 Flash Lite — free, fastest'],['gemini-3.5-flash','Gemini 3.5 Flash (free, newest)'],['gemini-3.1-flash','Gemini 3.1 Flash (free)'],['gemini-2.5-flash','Gemini 2.5 Flash (free)'],['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite (free)'],['gemini-2.0-flash','Gemini 2.0 Flash (free)'],['gemini-2.0-flash-lite','Gemini 2.0 Flash Lite (free)'],['gemini-3.1-pro','Gemini 3.1 Pro — best for code (paid)'],['gemini-2.5-pro','Gemini 2.5 Pro (paid)']];
-        opts.forEach(([id,name])=>{const o=el('option',{value:id});o.textContent=name;modelSel.appendChild(o);});
-      }
-      _populateModels();
-      provSel.onchange=_populateModels;
-      modelRow.appendChild(modelSel);
+      const _fixPick=buildAIModelPicker({btnId:'fixModelPickerBtn',dropId:'fixModelDrop'});
+      const _fixPickWrap=el('div',{style:'position:relative;'});
+      _fixPickWrap.appendChild(_fixPick.btn);_fixPickWrap.appendChild(_fixPick.drop);
+      modelRow.appendChild(_fixPickWrap);
+      modelRow.appendChild(txt('span','Gemini recommended for code',{style:'font-size:10px;color:var(--muted);'}));
       box.appendChild(modelRow);
 
       const status=txt('div','',{style:'font-size:11px;color:var(--muted);min-height:16px;'});
@@ -39198,17 +39936,11 @@ feedback:()=>{
           (_hasErr?('Error:\n'+(err.fullText||((err.msg||'')+'\n'+(err.stack||'')))+'\n'):'')+
           (_instr?('What the user wants: '+_instr+'\n'):'');
         try{
-          /* Use the user-selected provider for the fix call. Temporarily
-             swap S.aiProvider so callAIStream routes correctly, then
-             restore. */
-          const savedProvider=S.aiProvider, savedGem=S.hbGeminiModel, savedAn=S.anthropicModel, savedOa=S.openaiModel;
-          S.aiProvider=provSel.value;
-          if(provSel.value==='gemini')S.hbGeminiModel=modelSel.value;
-          else if(provSel.value==='anthropic')S.anthropicModel=modelSel.value;
-          else if(provSel.value==='openai')S.openaiModel=modelSel.value;
+          /* The canonical picker already persisted the user's provider/model
+             choice to S (same as the chat picker), so callAIStream routes
+             correctly with no temporary swap. */
           let patch='';
           await callAIStream([{role:'user',text:prompt}],t=>{patch=t;});
-          S.aiProvider=savedProvider;S.hbGeminiModel=savedGem;S.anthropicModel=savedAn;S.openaiModel=savedOa;
           /* Strip markdown fences if the model ignored the instruction */
           patch=patch.replace(/^```[a-z]*\n/i,'').replace(/\n```\s*$/,'').trim();
           if(!patch){status.textContent=(navigator.onLine===false?'You’re offline — connect to the internet and try again.':'Empty response — check your connection or try a stronger model.');genBtn.disabled=false;return;}
@@ -39248,7 +39980,7 @@ feedback:()=>{
         catch(e){if(!await kindleConfirm('Patch threw on first run: '+e.message+'\n\nApply anyway?'))return;}
         if(!S.localFixes)S.localFixes={};
         const id=err.id||(err.msg?(err.msg+'@'+(err.line||'')):('edit_'+Date.now()));
-        S.localFixes[id]={code,note:(err.msg||'').slice(0,140),model:provSel.value+'/'+modelSel.value,when:new Date().toISOString()};
+        S.localFixes[id]={code,note:(err.msg||'').slice(0,140),model:(_fixPick.label?_fixPick.label():(S.aiProvider||'')),when:new Date().toISOString()};
         if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
         toast('Patch applied locally. Reload to confirm. Manage from Admin → Local Fixes.');
         ov.remove();
@@ -40112,6 +40844,7 @@ Deno.serve(async (req)=>{
               renderItems();
             } else { warnBtn.disabled=false; }
           };
+          if(window._khWarnedSet&&window._khWarnedSet.has(String(_banName).toLowerCase()))actRow.appendChild(txt('span','⚠ already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
           actRow.appendChild(warnBtn);
           const banBtn=txt('button','Approve & ban "'+_banDisp.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
@@ -40142,6 +40875,7 @@ Deno.serve(async (req)=>{
             if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
             else { rWarn.disabled=false; }
           };
+          if(window._khWarnedSet&&window._khWarnedSet.has(String(_rName).toLowerCase()))actRow.appendChild(txt('span','⚠ already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
           actRow.appendChild(rWarn);
           const rBan=txt('button','Ban "'+_rDisp.slice(0,18)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           rBan.onclick=async()=>{
@@ -40250,6 +40984,9 @@ Deno.serve(async (req)=>{
       setStatus('Could not load — check internet connection.',true);items=[];
     }
     renderItems();
+    /* Load the "already warned" set so ban-request rows can flag users we've
+       warned before; re-render + refresh the moderation card once it lands. */
+    try{if(window._isAdminCached===true&&typeof _khLoadWarnedSet==='function')_khLoadWarnedSet().then(function(){try{renderItems();}catch(_){}try{if(typeof _khRefreshModerationCard==='function')_khRefreshModerationCard();}catch(_){}});}catch(_){}
   }
 
   submitBtn.onclick=async()=>{
@@ -41255,6 +41992,25 @@ starmap:()=>{
       '.sm-fab-menu{top:10px;right:10px;}'+
       '.sm-fab-guide{top:10px;right:60px;font-size:13px;width:auto;height:42px;border-radius:21px;padding:0 14px;background:#fff;color:#000;border-color:#000;font-weight:800;letter-spacing:0.3px;}'+
       '.sm-fab-city{top:10px;left:10px;font-size:11px;width:auto;height:32px;border-radius:16px;padding:0 12px;background:rgba(13,13,26,0.92);color:#fff;border:1.5px solid #fff;font-weight:700;}'+
+      /* Search chip sits just below the city chip on the left. */
+      '.sm-fab-search{top:50px;left:10px;font-size:11px;width:auto;height:32px;border-radius:16px;padding:0 12px;background:rgba(13,13,26,0.92);color:#fff;border:1.5px solid #fff;font-weight:700;}'+
+      /* Search panel — slides down from the top, ABOVE the FABs (z 35) so it
+         cleanly covers them; has its own close button. */
+      '.sm-search-panel{position:absolute;top:0;left:0;right:0;background:#0d0d1a;border-bottom:2px solid #fff;padding:12px 10px;z-index:35;max-height:78vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(-115%);transition:transform .22s ease-out;box-shadow:0 8px 24px rgba(0,0,0,0.7);}'+
+      '.sm-search-panel.open{transform:translateY(0);}'+
+      '.sm-search-input{width:100%;box-sizing:border-box;background:#1a1a35;color:#fff;border:1.5px solid #667;border-radius:8px;padding:11px 12px;font-size:15px;font-family:var(--ui-font);outline:none;}'+
+      '.sm-search-hint{font-size:10px;color:#9aa;margin:7px 2px 4px;letter-spacing:.3px;}'+
+      '.sm-search-row{display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid #223;cursor:pointer;color:#eee;}'+
+      '.sm-search-row:active{background:#23234a;}'+
+      '.sm-search-badge{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:3px 0;border-radius:8px;border:1px solid #5a6a80;color:#cdd;flex-shrink:0;width:66px;text-align:center;}'+
+      '.sm-search-name{font-size:14px;font-weight:700;flex:1;}'+
+      '.sm-search-sub{font-size:11px;color:#9aa;font-weight:500;}'+
+      '.sm-light .sm-fab-search{background:#fff;color:#000;border-color:#000;}'+
+      '.sm-light .sm-search-panel{background:#fafaf2;border-bottom-color:#000;}'+
+      '.sm-light .sm-search-input{background:#fff;color:#000;border-color:#000;}'+
+      '.sm-light .sm-search-row{color:#000;border-bottom-color:#ccd;}'+
+      '.sm-light .sm-search-badge{border-color:#000;color:#111;}'+
+      '.sm-light .sm-search-sub{color:#556;}'+
       '.sm-settings-panel{position:absolute;top:0;left:0;right:0;background:#0d0d1a;border-bottom:2px solid #fff;padding:12px 10px;z-index:25;max-height:65vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(-110%);transition:transform .22s ease-out;box-shadow:0 8px 24px rgba(0,0,0,0.7);}'+
       /* Opaque select menus — Kindle WebKit renders the open option list
          in-page with the select's own colours; without these the city
@@ -41893,8 +42649,116 @@ starmap:()=>{
     if(lbl)lbl.textContent=_smCityEsc(smCity);
   });
 
-  menuFab.onclick=()=>{settingsPanel.classList.toggle('open');};
+  menuFab.onclick=()=>{if(typeof searchPanel!=='undefined')searchPanel.classList.remove('open');settingsPanel.classList.toggle('open');};
   settingsClose.onclick=()=>settingsPanel.classList.remove('open');
+
+  /* ── Search the sky (stars · planets · satellites · deep-sky objects) ──
+     A floating chip opens a slide-down panel. Typing filters a combined
+     catalogue; picking a result points the view at that object, turns on
+     the relevant layer, and opens the info card — which shows its live
+     altitude / azimuth / compass direction (its "location" in the sky).
+     The index is built LAZILY on first open: by then the whole starmap
+     builder has run, so the STARS_/DSO/SATS consts are all initialised. */
+  const searchFab=el('button',{className:'sm-fab sm-fab-search',title:'Search the sky'});
+  searchFab.innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg><span>Search</span>';
+  v.appendChild(searchFab);
+  const searchPanel=el('div',{className:'sm-search-panel'});
+  const _shHdr=el('div',{className:'sm-settings-header'});
+  const _shTitle=el('div',{className:'sm-settings-title'});_shTitle.textContent='Search the Sky';
+  const _shClose=el('button',{className:'sm-settings-close',title:'Close'});_shClose.innerHTML='×';
+  _shHdr.appendChild(_shTitle);_shHdr.appendChild(_shClose);
+  searchPanel.appendChild(_shHdr);
+  const searchInput=el('input',{className:'sm-search-input',type:'search',placeholder:'e.g. ISS, Sirius, M31, Jupiter…'});
+  searchInput.setAttribute('autocomplete','off');searchInput.setAttribute('autocapitalize','off');searchInput.setAttribute('spellcheck','false');
+  searchPanel.appendChild(searchInput);
+  searchPanel.appendChild(txt('div','Searches stars · planets · satellites · deep-sky objects — tap a result to see where it is.',{className:'sm-search-hint'}));
+  const searchResults=el('div',{});
+  searchPanel.appendChild(searchResults);
+  v.appendChild(searchPanel);
+
+  let _smIndex=null;
+  function _smBuildIndex(){
+    const idx=[],seen={};
+    function add(o){const k=(o.name||'').toLowerCase();if(!k||seen[k])return;seen[k]=1;idx.push(o);}
+    [].concat(STARS_BRIGHT,STARS_DEEP).forEach(s=>add({name:s[3],type:'Star',kind:'Star',ra:s[0],dec:s[1],mag:s[2],con:s[4]}));
+    DSO.forEach(d=>add({name:d[3],type:'DSO',kind:'Deep-sky object',ra:d[0],dec:d[1],dsoType:d[2],mag:d[4]}));
+    SATS.forEach(sat=>add({name:sat.n,type:'Satellite',kind:'Satellite',sat:sat,cat:sat.k||''}));
+    try{planetPos(jdNow()).forEach(pl=>add({name:pl.name,type:'Planet',kind:'Planet',ra:pl.ra,dec:pl.dec}));}catch(_){}
+    return idx;
+  }
+  /* Compute an object's CURRENT alt/az. Satellites use the SGP4-ish
+     propagator (null when below the horizon); everything else converts
+     its RA/Dec with the live sidereal time (alt can be negative = below
+     the horizon, which we still report as a direction). */
+  function _smAltAz(o){
+    if(o.type==='Satellite'){const p=satPosition(o.sat,jdNow());return p?{alt:p.alt,az:p.az,rng:p.rng}:null;}
+    if(o.ra===undefined||o.ra===null)return null;
+    return raDecToAltAz(o.ra,o.dec,smLat,lst(jdNow(),smLon));
+  }
+  const _SM_BADGE={Star:'Star',Planet:'Planet',Satellite:'Satellite',DSO:'Deep sky'};
+  function _smSub(o){
+    if(o.type==='Star')return (CONSTELLATION_NAMES[o.con]||o.con||'')+(o.mag!==undefined?'  ·  mag '+o.mag.toFixed(1):'');
+    if(o.type==='DSO'){const kinds={Gal:'Galaxy',Neb:'Nebula',Glob:'Globular cluster',OC:'Open cluster'};return (kinds[o.dsoType]||o.dsoType||'')+(o.mag!==undefined?'  ·  mag '+o.mag.toFixed(1):'');}
+    if(o.type==='Satellite')return o.cat?('Satellite · '+o.cat):'Satellite';
+    if(o.type==='Planet')return 'Solar System planet';
+    return '';
+  }
+  function _smGoTo(o){
+    const aa=_smAltAz(o);
+    const s={name:o.name,type:o.type,kind:o.kind,con:o.con,mag:o.mag,dsoType:o.dsoType,cat:o.cat};
+    if(aa){s.aa={az:aa.az,alt:aa.alt};if(aa.rng)s.rng=aa.rng;}
+    /* Make sure the layer that draws this object is switched on. */
+    if(o.type==='Satellite'&&tSat.dataset.on!=='1')tSat.click();
+    else if(o.type==='DSO'&&tDSO.dataset.on!=='1')tDSO.click();
+    else if(o.type==='Planet'&&tPlan.dataset.on!=='1')tPlan.click();
+    /* Point the camera at it (azimuth always; altitude when above horizon). */
+    if(aa){viewAz=norm360(aa.az);if(aa.alt>0)viewAlt=Math.max(5,Math.min(85,aa.alt));}
+    searchPanel.classList.remove('open');
+    try{draw();}catch(_){}
+    try{showInfo(s);}catch(_){}
+    if(typeof toast==='function'){
+      if(!aa)toast(o.name+' is below the horizon right now — not currently overhead.',3800);
+      else if(aa.alt<0)toast(o.name+' is below the horizon — showing its direction ('+Math.round(aa.az)+'°).',3800);
+    }
+  }
+  function _smRenderResults(q){
+    searchResults.innerHTML='';
+    if(!_smIndex)_smIndex=_smBuildIndex();
+    q=(q||'').trim().toLowerCase();
+    let list;
+    if(!q){
+      /* Quick suggestions when the box is empty. (Manual lookup — the app
+         avoids Array.find for old-Silk safety.) */
+      const picks=['ISS','Sirius','M31 Andromeda','Jupiter','Vega','Betelgeuse','M42 Orion','Hubble (HST)','Saturn','Polaris'];
+      list=[];
+      picks.forEach(nm=>{for(let i=0;i<_smIndex.length;i++){if(_smIndex[i].name===nm){list.push(_smIndex[i]);break;}}});
+    }else{
+      list=_smIndex.filter(o=>o.name.toLowerCase().indexOf(q)>=0);
+      /* Prefix matches first, then the rest, both alphabetical. */
+      list.sort((a,b)=>{const pa=a.name.toLowerCase().indexOf(q)===0?0:1,pb=b.name.toLowerCase().indexOf(q)===0?0:1;return pa-pb||a.name.localeCompare(b.name);});
+      list=list.slice(0,40);
+    }
+    if(!list.length){searchResults.appendChild(txt('div','No match — try a star, planet, satellite or Messier (M-number) name.',{className:'sm-search-hint'}));return;}
+    list.forEach(o=>{
+      const row=el('div',{className:'sm-search-row'});
+      row.appendChild(txt('span',_SM_BADGE[o.type]||o.type,{className:'sm-search-badge'}));
+      const mid=el('div',{style:'flex:1;min-width:0;'});
+      mid.appendChild(txt('div',o.name,{className:'sm-search-name'}));
+      const sub=_smSub(o);if(sub)mid.appendChild(txt('div',sub,{className:'sm-search-sub'}));
+      row.appendChild(mid);
+      row.onclick=()=>_smGoTo(o);
+      searchResults.appendChild(row);
+    });
+  }
+  const _smOnType=(typeof khDebounce==='function')?khDebounce(()=>_smRenderResults(searchInput.value),180):()=>_smRenderResults(searchInput.value);
+  searchInput.addEventListener('input',_smOnType);
+  searchFab.onclick=()=>{
+    settingsPanel.classList.remove('open');
+    searchPanel.classList.add('open');
+    _smRenderResults(searchInput.value);
+    setTimeout(()=>{try{searchInput.focus();}catch(_){}},120);
+  };
+  _shClose.onclick=()=>searchPanel.classList.remove('open');
 
   /* ── Floating info card (shows when a star is tapped) ──
      v4: theme-aware. The card now flips white-on-dark when body.dark
@@ -44789,6 +45653,362 @@ rss:()=>{
 /* ── Extra builders ── */
 Object.assign(BUILDERS,{
 
+/* ── The Kindle Gazette — an AI-assembled daily newspaper ─────────────
+   Default "Daily" edition uses the PUBLIC/SHARED AI key (free, no personal
+   key) so it costs the reader nothing and is effectively the SAME paper for
+   everyone (same fixed public feeds + shared model + temperature 0), cached
+   per-day on-device. The "Custom" edition uses the EXACT same model picker as
+   the Assistant page (buildAIModelPicker → own API or shared) plus the
+   reader's interests for a tailored front page. Headlines come from public,
+   CORS-open RSS via rss2json — the same plumbing the News tab uses. Big text
+   (editions) is cached in localStorage, never in S. */
+gazette:()=>{
+  const v=el('section',{id:'view-gazette',className:'view',style:{padding:'0'}});
+  if(!document.getElementById('gz-css')){
+    const st=document.createElement('style');st.id='gz-css';
+    st.textContent=[
+      '.gz-wrap{background:var(--bg);min-height:100%;padding:0 0 24px;}',
+      '.gz-masthead{text-align:center;padding:14px 12px 0;}',
+      '.gz-title{font-family:Georgia,"Times New Roman",var(--title-font),serif;font-weight:900;font-size:30px;letter-spacing:1px;line-height:1;}',
+      '.gz-rule{border-top:3px double var(--fg);margin:8px 0 0;}',
+      '.gz-sub{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);display:flex;justify-content:center;gap:12px;flex-wrap:wrap;padding:5px 0;border-bottom:1px solid var(--fg);}',
+      '.gz-controls{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 4px;align-items:center;}',
+      '.gz-seg{display:flex;border:var(--thin);border-radius:6px;overflow:hidden;}',
+      '.gz-seg button{padding:6px 12px;font-size:11px;font-weight:800;border:none;background:var(--card);color:var(--muted);cursor:pointer;font-family:var(--ui-font);}',
+      '.gz-seg button.on{background:var(--fg);color:var(--bg);}',
+      '.gz-custrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 12px 10px;position:relative;}',
+      '.gz-body{padding:8px 14px 0;}',
+      '.gz-headline{font-family:Georgia,serif;font-weight:900;font-size:23px;line-height:1.22;margin:6px 0 6px;}',
+      '.gz-lead{font-size:14px;line-height:1.6;font-style:italic;border-left:3px solid var(--fg);padding-left:11px;margin-bottom:16px;}',
+      '.gz-cols{}',
+      '@media(min-width:560px){.gz-cols{-webkit-column-count:2;column-count:2;-webkit-column-gap:22px;column-gap:22px;}}',
+      '.gz-story{-webkit-column-break-inside:avoid;break-inside:avoid;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--muted);}',
+      '.gz-story h4{font-family:Georgia,serif;font-size:15px;font-weight:800;line-height:1.3;margin:0 0 4px;}',
+      '.gz-story p{font-size:13px;line-height:1.6;color:var(--fg);margin:0;}',
+      '.gz-status{font-size:11px;color:var(--muted);padding:6px 14px;font-style:italic;min-height:16px;}',
+      '.gz-empty{padding:26px 16px;text-align:center;color:var(--muted);font-style:italic;font-size:13px;}',
+      '.gz-foot{font-size:10px;color:var(--muted);font-style:italic;padding:10px 0 4px;border-top:1px solid var(--muted);margin-top:6px;}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  /* Fixed public feeds — SAME for every reader, so the Daily edition draws
+     from one shared source. CORS-open, no key (via rss2json). */
+  const GAZETTE_FEEDS=[
+    {label:'BBC',url:'https://feeds.bbci.co.uk/news/world/rss.xml'},
+    {label:'Guardian',url:'https://www.theguardian.com/world/rss'},
+    {label:'AP',url:'https://rsshub.app/apnews/topics/apf-topnews'},
+    {label:'Al Jazeera',url:'https://www.aljazeera.com/xml/rss/all.xml'},
+    {label:'Ars Technica',url:'https://feeds.arstechnica.com/arstechnica/index'},
+    {label:'NASA',url:'https://www.nasa.gov/rss/dyn/breaking_news.rss'},
+  ];
+
+  function _gzToday(){const d=new Date(NOW());return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function _gzDateLabel(){try{return new Date(NOW()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});}catch(_){return _gzToday();}}
+  function _gzLoad(){try{const o=JSON.parse(localStorage.getItem('kh_gazette')||'null');return o&&typeof o==='object'?o:{};}catch(_){return {};}}
+  function _gzSave(o){try{localStorage.setItem('kh_gazette',JSON.stringify(o));}catch(_){}}
+
+  let mode=(S.gazetteMode==='custom')?'custom':'public';
+  let busy=false;
+
+  const wrap=el('div',{className:'gz-wrap'});v.appendChild(wrap);
+  /* Masthead */
+  const mast=el('div',{className:'gz-masthead'});
+  mast.appendChild(txt('div','The Kindle Gazette',{className:'gz-title'}));
+  mast.appendChild(el('div',{className:'gz-rule'}));
+  const sub=el('div',{className:'gz-sub'});
+  mast.appendChild(sub);
+  wrap.appendChild(mast);
+  /* Controls */
+  const controls=el('div',{className:'gz-controls'});
+  const seg=el('div',{className:'gz-seg'});
+  const segPub=txt('button','📰 Daily',{});
+  const segCus=txt('button','✎ Custom',{});
+  seg.appendChild(segPub);seg.appendChild(segCus);
+  controls.appendChild(seg);
+  const refreshBtn=txt('button','↻ Refresh',{className:'btn small'});
+  controls.appendChild(refreshBtn);
+  wrap.appendChild(controls);
+  /* Custom row — the SAME picker as the Assistant page + interests. */
+  const picker=buildAIModelPicker({btnId:'gzModelPickerBtn',dropId:'gzModelDrop'});
+  const custRow=el('div',{className:'gz-custrow'});
+  custRow.appendChild(txt('span','Model:',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)'}}));
+  const pickWrap=el('div',{style:{position:'relative'}});
+  pickWrap.appendChild(picker.btn);pickWrap.appendChild(picker.drop);
+  custRow.appendChild(pickWrap);
+  const topicIn=el('input',{type:'text',placeholder:'Your interests (e.g. tech, football)…',value:S.gazetteTopics||''});
+  topicIn.style.cssText='flex:1;min-width:150px;font-size:12px;padding:6px 8px;border:var(--thin);border-radius:6px;background:var(--bg);color:var(--fg);';
+  topicIn.onchange=()=>{S.gazetteTopics=String(topicIn.value||'').slice(0,120);save();};
+  custRow.appendChild(topicIn);
+  const genBtn=txt('button','Generate',{className:'btn small primary'});
+  custRow.appendChild(genBtn);
+  wrap.appendChild(custRow);
+  /* Status + body */
+  const status=el('div',{className:'gz-status'});wrap.appendChild(status);
+  const body=el('div',{className:'gz-body'});wrap.appendChild(body);
+
+  function syncSeg(){segPub.className=(mode==='public')?'on':'';segCus.className=(mode==='custom')?'on':'';}
+  function showCustom(){custRow.style.display=(mode==='custom')?'flex':'none';}
+  function refreshSub(ed){
+    sub.innerHTML='';
+    sub.appendChild(txt('span',_gzDateLabel()));
+    sub.appendChild(txt('span',mode==='public'?'Free Public Edition':'Custom Edition'));
+    if(ed&&ed.model)sub.appendChild(txt('span',ed.model));
+  }
+  function setBusy(b){busy=b;refreshBtn.disabled=b;genBtn.disabled=b;segPub.disabled=b;segCus.disabled=b;}
+
+  async function gatherHeadlines(){
+    const out=[],seen={};
+    await Promise.all(GAZETTE_FEEDS.map(async f=>{
+      try{
+        const r=await fetch('https://api.rss2json.com/v1/api.json?rss_url='+encodeURIComponent(f.url));
+        const d=await r.json();
+        if(d&&d.status==='ok'&&Array.isArray(d.items)){
+          d.items.slice(0,4).forEach(it=>{
+            const t=String((it&&it.title)||'').trim();
+            const k=t.toLowerCase();
+            if(t&&!seen[k]){seen[k]=1;out.push({title:t,src:f.label,desc:String((it&&it.description)||'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim().slice(0,150),link:(it&&it.link)||''});}
+          });
+        }
+      }catch(_){}
+    }));
+    return out.slice(0,26);
+  }
+
+  function buildPrompt(heads){
+    const wire=heads.map((h,i)=>(i+1)+'. ['+h.src+'] '+h.title+(h.desc?(' — '+h.desc):'')).join('\n');
+    let extra='';
+    if(mode==='custom'){
+      const topics=String(S.gazetteTopics||'').trim();
+      const feedLabels=(S.rssFeeds||[]).map(f=>f&&f.label).filter(Boolean).slice(0,6).join(', ');
+      if(topics)extra+='\nThe reader is especially interested in: '+topics+'. Give those topics more prominence when the wire covers them.';
+      if(feedLabels)extra+='\nThe reader also follows: '+feedLabels+'.';
+      const nm=S.user||(S.email?S.email.split('@')[0]:'');
+      if(nm)extra+='\nGreet the reader by name ("'+String(nm).slice(0,24)+'") once, in the LEAD.';
+    }
+    return 'You are the editor of THE KINDLE GAZETTE, a concise, neutral daily newspaper for e-readers. Using ONLY the wire headlines below — do NOT invent facts beyond them — write today\'s edition ('+_gzDateLabel()+').'+extra+'\n\nReturn PLAIN TEXT in EXACTLY this format and nothing else:\nHEADLINE: <front-page headline, max 9 words>\nLEAD: <two sentences summarising the day>\n===\nTITLE: <story headline>\nBODY: <two or three neutral sentences>\n===\nTITLE: <next story>\nBODY: <...>\n\nInclude 5 to 6 stories. Separate every story with a line that is only ===.\n\nWIRE:\n'+wire;
+  }
+
+  function _gzParse(text){
+    const ed={headline:'',lead:'',stories:[]};
+    const parts=String(text||'').split(/\n\s*={2,}\s*\n/);
+    parts.forEach(chunk=>{
+      const h=/HEADLINE:\s*([^\n]+)/i.exec(chunk);
+      const l=/LEAD:\s*([\s\S]*?)(?:\n[A-Z]{3,}:|$)/i.exec(chunk);
+      const t=/TITLE:\s*([^\n]+)/i.exec(chunk);
+      const b=/BODY:\s*([\s\S]+)/i.exec(chunk);
+      if(h&&!ed.headline)ed.headline=h[1].trim();
+      if(l&&!ed.lead)ed.lead=l[1].trim();
+      if(t)ed.stories.push({title:t[1].trim(),body:b?b[1].replace(/\n\s*(HEADLINE|LEAD|TITLE):[\s\S]*/i,'').trim():''});
+    });
+    if(!ed.headline&&!ed.stories.length){ed.headline='Today’s Edition';ed.lead=String(text||'').trim().slice(0,600);}
+    return ed;
+  }
+
+  function renderEdition(ed){
+    body.innerHTML='';
+    if(ed.headline)body.appendChild(txt('div',ed.headline,{className:'gz-headline'}));
+    if(ed.lead)body.appendChild(txt('div',ed.lead,{className:'gz-lead'}));
+    const cols=el('div',{className:'gz-cols'});
+    (ed.stories||[]).forEach(s=>{
+      const st=el('div',{className:'gz-story'});
+      if(s.title)st.appendChild(txt('h4',s.title));
+      if(s.body)st.appendChild(txt('p',s.body));
+      cols.appendChild(st);
+    });
+    body.appendChild(cols);
+    const foot=el('div',{className:'gz-foot'});
+    foot.textContent='Assembled from public news wires'+(ed.model?(' · '+ed.model):'')+'. AI-written summaries — verify important details in the News tab.';
+    body.appendChild(foot);
+    refreshSub(ed);
+  }
+
+  function renderWire(heads){
+    body.innerHTML='';
+    body.appendChild(txt('div','Today’s Wire',{className:'gz-headline'}));
+    body.appendChild(txt('div','Live public headlines — the AI editor is unavailable, so here is the raw wire.',{className:'gz-lead'}));
+    const cols=el('div',{className:'gz-cols'});
+    heads.slice(0,18).forEach(h=>{
+      const st=el('div',{className:'gz-story'});
+      st.appendChild(txt('h4',h.title));
+      if(h.desc)st.appendChild(txt('p',h.desc));
+      st.appendChild(txt('div',h.src,{style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'3px'}}));
+      cols.appendChild(st);
+    });
+    body.appendChild(cols);
+    refreshSub(null);
+  }
+
+  async function generate(force){
+    if(busy)return;
+    const today=_gzToday();
+    const cache=_gzLoad();
+    if(!force&&cache.date===today&&cache[mode]){renderEdition(cache[mode]);status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');return;}
+    if(navigator.onLine===false){
+      if(cache.date===today&&cache[mode]){renderEdition(cache[mode]);status.textContent='Offline — showing today’s saved edition.';}
+      else{body.innerHTML='';body.appendChild(txt('div','Offline — reconnect and tap Refresh to fetch today’s Gazette.',{className:'gz-empty'}));status.textContent='';}
+      return;
+    }
+    setBusy(true);
+    body.innerHTML='';body.appendChild(txt('div','Gathering the wire…',{className:'gz-empty'}));
+    status.textContent='Gathering public headlines…';
+    const heads=await gatherHeadlines();
+    if(!heads.length){setBusy(false);status.textContent='';body.innerHTML='';body.appendChild(txt('div','Could not reach the news wire. Check your connection and tap Refresh.',{className:'gz-empty'}));return;}
+    status.textContent='Writing today’s edition with '+(mode==='public'?'the free public AI':'your selected model')+'…';
+    const prompt=buildPrompt(heads);
+    let out=null;
+    try{
+      if(mode==='public')out=await khiCall(prompt,{provider:'shared',temperature:0,maxTokens:1500});
+      else out=await khiCall(prompt,Object.assign({temperature:0.3,maxTokens:1600},_khiOptsFromPicker()));
+    }catch(_){}
+    setBusy(false);
+    if(!out){status.textContent='';renderWire(heads);return;}
+    const ed=_gzParse(out);
+    ed.model=(mode==='public')?'Public AI':(picker.label?picker.label():'');
+    ed.at=NOW();
+    const c=_gzLoad();const nc=(c.date===today)?c:{date:today};nc.date=today;nc[mode]=ed;_gzSave(nc);
+    renderEdition(ed);
+    status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');
+  }
+
+  segPub.onclick=()=>{if(mode==='public')return;mode='public';S.gazetteMode='public';save();syncSeg();showCustom();refreshSub();generate(false);};
+  segCus.onclick=()=>{if(mode==='custom')return;mode='custom';S.gazetteMode='custom';save();syncSeg();showCustom();refreshSub();generate(false);};
+  refreshBtn.onclick=()=>generate(true);
+  genBtn.onclick=()=>generate(true);
+
+  syncSeg();showCustom();refreshSub();
+  const cache=_gzLoad();
+  if(cache.date===_gzToday()&&cache[mode]){renderEdition(cache[mode]);status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');}
+  else generate(false);
+  return v;
+},
+
+/* ── Dashboard — a personalised, tailored-to-you home ────────────────
+   A fast, build-once overview: a greeting, your daily goal + streak,
+   at-a-glance tappable stat tiles, a "continue reading" nudge, today's
+   Gazette headline, and quick actions. All data is read defensively from
+   existing state (no new storage); it's in ALWAYS_REBUILD so counts are
+   always fresh, and it uses only theme vars so it looks right in every
+   theme incl. Retro/dark/sepia. */
+dashboard:()=>{
+  const v=el('section',{id:'view-dashboard',className:'view'});
+  if(!document.getElementById('dash-css')){
+    const st=document.createElement('style');st.id='dash-css';
+    st.textContent=[
+      '.dash-hero{padding:4px 2px 14px;}',
+      '.dash-hi{font-family:var(--title-font);font-size:24px;font-weight:800;line-height:1.12;}',
+      '.dash-date{font-size:12px;color:var(--muted);margin-top:4px;}',
+      '.dash-card{background:var(--card);border:var(--thin);border-radius:12px;padding:14px;margin-bottom:12px;}',
+      '.dash-card h3{margin:0 0 8px;font-size:13px;font-family:var(--title-font);}',
+      '.dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;}',
+      '@media(max-width:380px){.dash-grid{grid-template-columns:repeat(2,1fr);}}',
+      '.dash-tile{background:var(--card);border:var(--thin);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:76px;justify-content:center;}',
+      '.dash-tile:active{background:var(--highlight);}',
+      '.dash-tile-ic{font-size:18px;line-height:1;}',
+      '.dash-tile-num{font-size:22px;font-weight:900;font-family:var(--title-font);line-height:1;color:var(--accent);}',
+      '.dash-tile-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;}',
+      '.dash-qa{display:flex;flex-wrap:wrap;gap:8px;}',
+      '.dash-goal-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+  function _num(a){return Array.isArray(a)?a.length:0;}
+  function _go(view){var t=document.querySelector('nav .tab[data-view="'+view+'"]');if(t){t.style.display='';t.click();}else{try{showView(view);}catch(_){}}}
+  function _gamesPlayed(){try{var s=S.stats||{},t=0;Object.keys(s).forEach(function(k){t+=(s[k]&&s[k].played)||0;});return t;}catch(_){return 0;}}
+  const now=new Date(NOW());
+  const hr=now.getHours();
+  const greet=hr<12?'Good morning':(hr<18?'Good afternoon':'Good evening');
+  const nm=S.user||(S.email?S.email.split('@')[0]:'');
+
+  /* Hero greeting */
+  const hero=el('div',{className:'dash-hero'});
+  hero.appendChild(txt('div',greet+(nm?(', '+nm):'')+'.',{className:'dash-hi'}));
+  try{hero.appendChild(txt('div',now.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}),{className:'dash-date'}));}catch(_){}
+  v.appendChild(hero);
+
+  /* Daily goal + streak (shares S.dailyGoal with the Home widget). */
+  const dg=S.dailyGoal||(S.dailyGoal={text:'',doneDate:'',streak:0});
+  const _today=(function(){try{return now.toISOString().slice(0,10);}catch(_){return '';}})();
+  const goalCard=el('div',{className:'dash-card'});
+  goalCard.appendChild(txt('h3','🎯 Daily goal'));
+  if(dg.text){
+    const gr=el('div',{className:'dash-goal-row'});
+    gr.appendChild(txt('span',dg.text,{style:{flex:'1',minWidth:'140px',fontSize:'14px',fontWeight:'700'}}));
+    if(dg.doneDate===_today){
+      gr.appendChild(txt('span','✓ Done today',{style:{fontSize:'12px',color:'var(--success)',fontWeight:'800'}}));
+    } else {
+      const done=txt('button','Mark done',{className:'btn small primary'});
+      done.onclick=()=>{const y=new Date(NOW().getTime()-86400000).toISOString().slice(0,10);dg.streak=(dg.doneDate===y?(dg.streak||0)+1:1);dg.doneDate=_today;if(typeof saveNow==='function')saveNow();delete VIEWS['dashboard'];delete VIEWS['home'];showView('dashboard');};
+      gr.appendChild(done);
+    }
+    goalCard.appendChild(gr);
+    goalCard.appendChild(txt('div','🔥 Streak: '+(dg.streak||0)+' day'+((dg.streak||0)===1?'':'s'),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'6px',fontWeight:'700'}}));
+  } else {
+    const gr=el('div',{className:'dash-goal-row'});
+    const gin=el('input',{type:'text',placeholder:'Set today’s goal…'});
+    gin.style.cssText='flex:1;min-width:150px;font-size:13px;padding:7px 9px;border:var(--thin);border-radius:8px;background:var(--bg);color:var(--fg);';
+    const gsave=txt('button','Save',{className:'btn small primary'});
+    gsave.onclick=()=>{const t=(gin.value||'').trim();if(!t)return;dg.text=t.slice(0,120);if(typeof saveNow==='function')saveNow();delete VIEWS['dashboard'];delete VIEWS['home'];showView('dashboard');};
+    gr.appendChild(gin);gr.appendChild(gsave);
+    goalCard.appendChild(gr);
+  }
+  v.appendChild(goalCard);
+
+  /* At-a-glance stat tiles — tappable, jump to the relevant view. */
+  const grid=el('div',{className:'dash-grid'});
+  [
+    {ic:'📚',num:_num(S.books),lbl:'Books',view:'reading'},
+    {ic:'📝',num:_num(S.notes),lbl:'Notes',view:'notes'},
+    {ic:'📔',num:_num(S.mdJournals),lbl:'Journal',view:'mdjournal'},
+    {ic:'💬',num:_num(S.msgGroups),lbl:'Chats',view:'messages'},
+    {ic:'🗓',num:_num(S.calEvents),lbl:'Events',view:'calendar'},
+    {ic:'🎮',num:_gamesPlayed(),lbl:'Games',view:'games'}
+  ].forEach(t=>{
+    const tile=el('div',{className:'dash-tile'});
+    tile.appendChild(txt('div',t.ic,{className:'dash-tile-ic'}));
+    tile.appendChild(txt('div',String(t.num),{className:'dash-tile-num'}));
+    tile.appendChild(txt('div',t.lbl,{className:'dash-tile-lbl'}));
+    tile.onclick=()=>_go(t.view);
+    grid.appendChild(tile);
+  });
+  v.appendChild(grid);
+
+  /* Continue reading — most recent book, if any. */
+  const _books=Array.isArray(S.books)?S.books:[];
+  if(_books.length){
+    const b=_books[_books.length-1];
+    const _bt=String((b&&(b.title||b.name))||'').trim();
+    if(_bt){
+      const rc=el('div',{className:'dash-card',style:{cursor:'pointer'}});
+      rc.appendChild(txt('h3','📖 Continue reading'));
+      rc.appendChild(txt('div',_bt,{style:{fontSize:'14px',fontWeight:'700'}}));
+      rc.onclick=()=>_go('reading');
+      v.appendChild(rc);
+    }
+  }
+
+  /* Today's Gazette headline (from the per-day cache, if generated). */
+  const _gazHead=(function(){try{var o=JSON.parse(localStorage.getItem('kh_gazette')||'null');if(!o)return null;var key=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');if(o.date!==key)return null;return (o.public&&o.public.headline)||(o.custom&&o.custom.headline)||null;}catch(_){return null;}})();
+  const gc=el('div',{className:'dash-card',style:{cursor:'pointer'}});
+  gc.appendChild(txt('h3','🗞 The Kindle Gazette'));
+  gc.appendChild(txt('div',_gazHead?_gazHead:'Tap to read today’s edition — a free daily digest of world headlines.',{style:{fontSize:'14px',fontWeight:_gazHead?'700':'400',color:_gazHead?'var(--fg)':'var(--muted)',lineHeight:'1.4'}}));
+  gc.onclick=()=>_go('gazette');
+  v.appendChild(gc);
+
+  /* Quick actions. */
+  const qaCard=el('div',{className:'dash-card'});
+  qaCard.appendChild(txt('h3','⚡ Quick actions'));
+  const qa=el('div',{className:'dash-qa'});
+  [['🤖 Assistant','chat'],['🗞 Gazette','gazette'],['📖 Reading','reading'],['✎ Draw','draw'],['📝 Notes','notes']].forEach(a=>{
+    const bq=txt('button',a[0],{className:'btn small'});
+    bq.onclick=()=>_go(a[1]);
+    qa.appendChild(bq);
+  });
+  qaCard.appendChild(qa);
+  v.appendChild(qaCard);
+  return v;
+},
+
 science:()=>{
   const v=el('section',{id:'view-science',className:'view'});
   v.appendChild(txt('h2','Science Hub',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
@@ -46157,11 +47377,12 @@ sleeplog:()=>{
 /* ─── CHESS CLOCK ────────────────────────────────────── */
 sports:()=>{
   /* Live & recent scores via ESPN's public scoreboard JSON (CORS-open, no key).
-     Covers the leagues users asked for: NBA/NFL/MLB/NHL/soccer/college. */
+     Covers what users asked for: World Cup + the big football/soccer leagues,
+     plus NBA/NFL/MLB/NHL/college. Soccer slugs are ESPN league codes. */
   const v=el('section',{id:'view-sports',className:'view'});
   v.appendChild(txt('h2','Sports Scores',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
-  v.appendChild(txt('div','Live and recent scores across the major leagues.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
-  const LEAGUES=[['NBA','basketball','nba'],['NFL','football','nfl'],['MLB','baseball','mlb'],['NHL','hockey','nhl'],['Soccer','soccer','eng.1'],['NCAAF','football','college-football'],['NCAAB','basketball','mens-college-basketball']];
+  v.appendChild(txt('div','Live and recent scores — football (World Cup & top leagues) plus the major US leagues.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const LEAGUES=[['World Cup','soccer','fifa.world'],['Premier Lg','soccer','eng.1'],['Champions Lg','soccer','uefa.champions'],['La Liga','soccer','esp.1'],['Serie A','soccer','ita.1'],['Bundesliga','soccer','ger.1'],['MLS','soccer','usa.1'],['Women’s WC','soccer','fifa.wwc'],['NBA','basketball','nba'],['NFL','football','nfl'],['MLB','baseball','mlb'],['NHL','hockey','nhl'],['NCAAF','football','college-football'],['NCAAB','basketball','mens-college-basketball']];
   const tabs=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}});
   const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px',minHeight:'16px'}});
   const list=el('div',{});
@@ -46242,23 +47463,58 @@ imagesearch:()=>{
     ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
+  /* Turn a fetch failure into an HONEST, specific message — not a blanket
+     "bad Wi‑Fi". An HTTP status means the service answered (rate limit / down /
+     refused); an abort means it was slow; anything else is a real reach
+     problem (offline, DNS, CORS, or the network blocking the host). */
+  function _imgErrMsg(e){
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return 'You’re offline — connect to the internet to search images.';
+    if(e&&e._http){
+      var s=e._http;
+      if(s===429)return 'The image service is busy right now (rate limited). Wait a few seconds and tap Search again.';
+      if(s>=500)return 'The image service is temporarily down (error '+s+'). Try again shortly.';
+      if(s===401||s===403)return 'The image service refused the request (error '+s+').';
+      return 'The image service returned an error ('+s+'). Try again shortly.';
+    }
+    var msg=String((e&&e.message)||e||'');
+    if(/abort/i.test(msg))return 'The search timed out — the image service is slow right now. Tap Search to retry.';
+    return 'Couldn’t reach the image service. It may be down or blocked on this network (your Wi‑Fi is probably fine) — tap Search to retry.';
+  }
+  async function _imgFetch(url){
+    const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+    const tid=setTimeout(function(){if(ctrl)ctrl.abort();},14000);
+    try{
+      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
+      if(!r.ok){const _e=new Error('HTTP '+r.status);_e._http=r.status;throw _e;}
+      return await r.json();
+    }finally{clearTimeout(tid);}
+  }
   async function run(q,page){
     if(_busy)return;
     _q=q;_page=page||1;
     const oldMore=v.querySelector('.imgMore');if(oldMore)oldMore.remove();
     if(_page===1)grid.innerHTML='';
-    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to search images.';return;}
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to the internet to search images.';return;}
     _busy=true;status.textContent=_page===1?'Searching…':'Loading more…';
+    const apiUrl='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
+    /* Try Openverse directly; on a network/CORS/timeout failure (NOT an HTTP
+       error status) retry ONCE through the allorigins CORS proxy — the same
+       resilience the reader + News feeds use. This is what actually rescues a
+       device where the direct request is blocked, and the message reports the
+       REAL reason instead of always blaming Wi‑Fi. */
+    let data=null,err=null;
+    try{ data=await _imgFetch(apiUrl); }
+    catch(e){
+      err=e;
+      if(!(e&&e._http)){
+        try{ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(apiUrl)); err=null; }
+        catch(e2){ err=e2; }
+      }
+    }
+    if(!data){ status.textContent=_imgErrMsg(err); _busy=false; return; }
     try{
-      const url='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
-      const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
-      const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
-      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
-      clearTimeout(tid);
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      const data=await r.json();
       const results=(data&&data.results)||[];
-      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”.';_busy=false;return;}
+      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”. Try a different search.';_busy=false;return;}
       status.textContent=(data.result_count?(data.result_count.toLocaleString()+' results'):'')+' — tap an image to view it larger.';
       results.forEach(im=>{
         const thumb=im.thumbnail||im.url;if(!thumb)return;
@@ -46275,7 +47531,7 @@ imagesearch:()=>{
         v.appendChild(more);
       }
     }catch(e){
-      status.textContent='Couldn’t load images (network issue). Please try again.';
+      status.textContent='Got a reply but couldn’t read the images — tap Search to retry.';
     }
     _busy=false;
   }
@@ -52785,6 +54041,55 @@ messages:()=>{
       });
     }
 
+    /* ── Friends ── pending friend requests (Accept/Decline), the friends list
+       (Message / remove), and an Add-friend search. Built on the same inbox
+       handshake as chat requests. */
+    const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
+    if(_freq.length){
+      body.appendChild(txt('div','FRIEND REQUESTS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 6px'}}));
+      _freq.slice().reverse().forEach(req=>{
+        const rrow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px',border:'2px solid var(--accent)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'10px'}});
+        try{if(typeof _avatarEl==='function')rrow.appendChild(_avatarEl(req.name||'?',34));}catch(_){}
+        const ri=el('div',{style:{flex:'1',minWidth:'0'}});
+        ri.appendChild(txt('div',_dispName(req.name||'Someone'),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        ri.appendChild(txt('div','wants to be friends',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+        rrow.appendChild(ri);
+        const acc=txt('button','Accept',{className:'btn small primary'});
+        const dec=txt('button','Decline',{className:'btn small'});
+        acc.onclick=()=>{try{if(typeof _khAcceptFriendRequest==='function')_khAcceptFriendRequest(req.hash);}catch(_){}render();};
+        dec.onclick=()=>{try{if(typeof _khDeclineFriendRequest==='function')_khDeclineFriendRequest(req.hash);}catch(_){}render();};
+        rrow.appendChild(acc);rrow.appendChild(dec);
+        body.appendChild(rrow);
+      });
+    }
+    {
+      const _friends=Array.isArray(S.friends)?S.friends:[];
+      const fhdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'2px 0 6px'}});
+      fhdr.appendChild(txt('span','FRIENDS'+(_friends.length?(' ('+_friends.length+')'):''),{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)'}}));
+      const addBtn=txt('button','+ Add',{className:'btn small'});
+      addBtn.onclick=()=>{if(typeof _khAddFriendPicker==='function')_khAddFriendPicker(render);};
+      fhdr.appendChild(addBtn);
+      body.appendChild(fhdr);
+      if(!_friends.length){
+        body.appendChild(txt('div','No friends yet. Tap + Add to find people by username.',{style:{fontSize:'11px',color:'var(--muted)',fontStyle:'italic',marginBottom:'10px'}}));
+      } else {
+        _friends.slice().forEach(fr=>{
+          const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'var(--border)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'8px'}});
+          try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(fr.name||'?',32));}catch(_){}
+          const fi=el('div',{style:{flex:'1',minWidth:'0'}});
+          fi.appendChild(txt('div',_dispName(fr.name||'Friend'),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+          row.appendChild(fi);
+          const msg=txt('button','Message',{className:'btn small primary'});
+          msg.onclick=()=>{msg.disabled=true;msg.textContent='…';if(typeof _khMessageFriend==='function')_khMessageFriend(fr,render);};
+          row.appendChild(msg);
+          const rem=txt('button','✕',{className:'btn small'});rem.title='Remove friend';
+          rem.onclick=async()=>{if(await kindleConfirm('Remove '+_dispName(fr.name||'this friend')+' from your friends?')){if(typeof _khRemoveFriend==='function')_khRemoveFriend(fr.hash);render();}};
+          row.appendChild(rem);
+          body.appendChild(row);
+        });
+      }
+    }
+
     /* Always render the Global Chat at the top — every user is a member. */
     const globalEntry={code:KH_GLOBAL_GROUP_CODE,name:KH_GLOBAL_GROUP_NAME,_isGlobal:true};
     /* Build the list: global first, then user's joined groups (newest first). */
@@ -53274,7 +54579,45 @@ messages:()=>{
     emojiBtn.title='Insert a symbol';
     emojiBtn.onclick=()=>{emojiPanel.style.display=(emojiPanel.style.display==='none')?'block':'none';};
     const sendBtn=txt('button','Send',{className:'btn primary small',style:{flexShrink:'0',borderRadius:'20px',padding:'0 18px',minHeight:'40px',fontWeight:'800'}});
-    comp.append(emojiBtn,txtArea,sendBtn);
+    /* Attach (＋) → share one of your KindleOS apps as an installable code. It's
+       sent through the normal message path (just text), so no send/encryption
+       changes are needed; the recipient's bubble renders an Install button. */
+    const attachBtn=txt('button','+',{className:'btn small',style:{flexShrink:'0',borderRadius:'20px',minWidth:'38px',minHeight:'40px',padding:'0',fontSize:'20px',lineHeight:'1',fontWeight:'700'}});
+    attachBtn.title='Share an app';
+    function _khOpenAppShareMenu(){
+      const apps=(typeof osState!=='undefined'&&osState&&Array.isArray(osState.customApps))?osState.customApps:[];
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
+      const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
+      sheet.appendChild(txt('h3','Share an app',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 4px'}}));
+      sheet.appendChild(txt('div','Send one of your KindleOS apps — the recipient taps Install to add it to their home screen.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+      if(!apps.length){
+        sheet.appendChild(txt('div','You have no custom apps yet. Build one in KindleOS (AI App Builder), then share it here.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'8px 0'}}));
+      } else {
+        apps.forEach(function(app){
+          const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 4px',borderBottom:'var(--thin)'}});
+          row.appendChild(txt('span','APP',{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+          row.appendChild(txt('span',(typeof _censorText==='function'?_censorText(app.label||'App'):(app.label||'App')),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px',fontWeight:'700'}}));
+          const sendA=txt('button','Send',{className:'btn small primary'});
+          sendA.onclick=function(){
+            const code=(typeof _khAppCode==='function')?_khAppCode(app):'';
+            if(!code){if(typeof toast==='function')toast('Could not pack that app');return;}
+            if(code.length>16000){if(typeof toast==='function')toast('That app is too large to share in chat.',4000);return;}
+            ov.remove();
+            txtArea.value=code;
+            try{txtArea.dispatchEvent(new Event('input',{bubbles:true}));}catch(_){}
+            try{sendBtn.click();}catch(_){}
+          };
+          row.appendChild(sendA);
+          sheet.appendChild(row);
+        });
+      }
+      const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'10px'}});cl.onclick=function(){ov.remove();};
+      sheet.appendChild(cl);
+      ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    }
+    attachBtn.onclick=_khOpenAppShareMenu;
+    comp.append(attachBtn,emojiBtn,txtArea,sendBtn);
     v.appendChild(emojiPanel);
     v.appendChild(comp);
 
@@ -54127,10 +55470,16 @@ messages:()=>{
           pinTag.textContent='PIN';
           bubble.appendChild(pinTag);
         }
-        /* Rich text: mentions, inline code, fenced code blocks */
+        /* Rich text: mentions, inline code, fenced code blocks — OR, if the
+           message is a shared app code, a compact Install card instead of the
+           raw base64. */
         const textBox=document.createElement('span');
-        textBox.appendChild(_renderMessageText(m.text));
-        _linkifyEl(textBox);
+        if(String(m.text||'').indexOf('KHAPP1:')===0&&typeof _khAppMsgCard==='function'){
+          textBox.appendChild(_khAppMsgCard(m.text,own));
+        } else {
+          textBox.appendChild(_renderMessageText(m.text));
+          _linkifyEl(textBox);
+        }
         bubble.appendChild(textBox);
         if(m.edited)bubble.appendChild(txt('span','(edited)',{className:'msg-edited'}));
         /* Reactions strip — chips with key + count, tap to toggle */

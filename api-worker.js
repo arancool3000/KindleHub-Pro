@@ -101,7 +101,7 @@ const COLUMNS = {
   kh_feedback:['id','type','text','votes','status','author','comments','status_at','date'],
   kh_errors:['id','text','kind','date'],
   kh_scores:['id','game','score','display_name','user_id','date'],
-  kh_announcements:['id','text','active','targets','created_at'],
+  kh_announcements:['id','text','active','targets','created_at','comments'],
   kh_presence:['user_id','display_name','last_seen'],
   kh_shared_api_usage:['date','count'],
   kh_banned_usernames:['name','reason','created_at'],
@@ -114,7 +114,7 @@ const PK = {
   kh_presence:['user_id'], kh_shared_api_usage:['date'], kh_banned_usernames:['name'],
   kh_visits:['device_id','day'], kh_rate:['bucket'],
 };
-const JSON_COLS = { kh_messages:['reactions'], kh_announcements:['targets'], kh_feedback:['comments'] };
+const JSON_COLS = { kh_messages:['reactions'], kh_announcements:['targets','comments'], kh_feedback:['comments'] };
 const BOOL_COLS = { kh_messages:['edited','important','pinned'], kh_announcements:['active'] };
 const INT_COLS  = new Set(['score','votes','count','n']);
 const TS_COLS   = new Set(['updated_at','ts','created_at','date','last_seen']);
@@ -123,7 +123,7 @@ const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_fe
 /* Open (anon) UPDATE. kh_groups was REMOVED: the client never PATCHes a group
    (it only INSERTs on create), and an open update let anyone enumerate room
    codes then rename / re-own every room. */
-const UPDATE_OK = new Set(['kh_users','kh_feedback','kh_presence']); // open update
+const UPDATE_OK = new Set(['kh_users','kh_feedback','kh_presence','kh_announcements']); // open update (kh_announcements: comments only for non-admin, gated below)
 const SECRET_UPDATE = new Set(['kh_messages']);          // owner_secret-gated update
 const SECRET_DELETE = new Set(['kh_messages','kh_mail']); // owner_secret-gated delete
 /* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only.
@@ -688,6 +688,13 @@ async function handlePatch(table, url, request, env, DB){
   if(table==='kh_feedback' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
     keys = keys.filter(k=>k==='votes'||k==='comments');
   }
+  /* kh_announcements: a non-admin may ONLY append to `comments` (the public
+     discussion thread on an announcement). text/active/targets/created_at stay
+     admin-only (posted/deleted via the security-definer RPCs), so a user can't
+     edit, deactivate or hijack an announcement — just comment on it. */
+  if(table==='kh_announcements' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
+    keys = keys.filter(k=>k==='comments');
+  }
   if(!keys.length) return err('no valid columns to update',400,env);
   const setSql = keys.map(k=>QUOTE(k)+'=?').join(',');
   const _wc = WRAP_COLS[table];
@@ -750,7 +757,7 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_errors (id TEXT PRIMARY KEY, text TEXT NOT NULL, kind TEXT DEFAULT 'error', date TEXT)",
   "CREATE TABLE IF NOT EXISTS kh_scores (id TEXT PRIMARY KEY, game TEXT NOT NULL, score INTEGER NOT NULL, display_name TEXT DEFAULT '', user_id TEXT DEFAULT '', date TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_scores_game_score ON kh_scores(game, score DESC)",
-  "CREATE TABLE IF NOT EXISTS kh_announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, active INTEGER DEFAULT 1, targets TEXT DEFAULT '[]', created_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, active INTEGER DEFAULT 1, targets TEXT DEFAULT '[]', created_at TEXT, comments TEXT DEFAULT '[]')",
   "CREATE TABLE IF NOT EXISTS kh_presence (user_id TEXT PRIMARY KEY, display_name TEXT DEFAULT '', last_seen TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC)",
   "CREATE TABLE IF NOT EXISTS kh_shared_api_usage (date TEXT PRIMARY KEY, count INTEGER DEFAULT 0)",
@@ -771,6 +778,8 @@ async function ensureSchema(DB){
   // best-effort column migrations (CREATE…IF NOT EXISTS won't add a column to a
   // table that already exists from an earlier deploy). ALTER throws if it's there.
   try{ await DB.prepare("ALTER TABLE kh_daily ADD COLUMN w INTEGER DEFAULT 0").run(); }catch(_){}
+  /* Announcement comments column for DBs created before this feature. */
+  try{ await DB.prepare("ALTER TABLE kh_announcements ADD COLUMN comments TEXT DEFAULT '[]'").run(); }catch(_){}
   _schemaReady=true;
 }
 

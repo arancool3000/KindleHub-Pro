@@ -336,6 +336,111 @@ required auth.
 **Chat:** progressive render — newest `_CHAT_PAGE=10`, "Load earlier" button (scroll-preserving) in
 `renderMessages`; no two groups you're in can share a name (create-time check). Backend label now reports the
 REAL backend (Cloudflare D1 via `_apiGatewayUrl`), not hardcoded "Supabase".
+**Announcement comments** (public thread per announcement): the home widget's each announcement gets a
+"💬 Comments (N)" button → `_openAnnouncementComments(a,card)` modal (mirrors the feedback `_openCommentThread`).
+Reading open to all; posting needs sign-in (re-reads the row, appends `{id,author,text,date}`, caps newest 60,
+PATCHes `comments`-only, NO admin token). Display profanity-filtered (`_censorText`/`_dispName`). Stored in a
+JSON `comments` column on kh_announcements. **Worker gate** (`api-worker.js`): `comments` added to
+COLUMNS/JSON_COLS/UPDATE_OK for kh_announcements + a handlePatch rule filtering a NON-admin PATCH to `comments`
+only (text/active/targets untouchable from the client — verified vs a mixed-PATCH piggyback attack). SCHEMA_DDL
++ best-effort ALTER add the column (`'[]'`). The two announcement loaders now `select=...,comments`. Tests:
+`/tmp/anncomment_test.mjs` (worker, 8/8) + `/tmp/anncomment_client.cjs` (client UI).
+
+## ⚡ Round: Gazette + unified pickers + Jailbroken Layout + Retro + Dashboard + perf
+Six-part user request, each its own tested+committed batch on `claude/keen-tesla-n73rpc`:
+- **The Kindle Gazette** (`BUILDERS.gazette`, nav tab + `['gazette','Gazette']`): AI daily newspaper. Default
+  "Daily" edition = **shared/public key** (`khiCall(prompt,{provider:'shared',temperature:0,maxTokens:1500})`)
+  so it's free + effectively same-for-all (fixed public feeds + shared model + temp 0); cached per-day in
+  `localStorage['kh_gazette']` (`{date,public:{headline,lead,stories,model,at},custom:{…}}`) — NEVER in S.
+  "✎ Custom" edition = the **canonical model picker** (`buildAIModelPicker`) → own API or shared + reader
+  interests (`S.gazetteTopics`) + followed feeds, via `khiCall(prompt,_khiOptsFromPicker())`. Headlines from
+  a fixed `GAZETTE_FEEDS` set via rss2json (CORS-open, same plumbing as News). Offline→saved edition; AI-down→
+  raw wire fallback. Newspaper layout (serif masthead, `column-count` 2-up on wide, 1 on e-ink). Test:
+  `/tmp/gazette_test.cjs`.
+- **Unified model pickers**: the Assistant's `buildAIModelPicker` (returns `{btn,drop,label,rebuild}`, writes
+  S.aiProvider/hbGeminiModel/openrouterModel/anthropicModel/openaiModel) now also powers the **Test AI
+  Connection** dialog (chat "Test" btn) and the **AI self-fix / prompt-an-edit** dialog (dropped its OpenRouter-
+  omitting provSel/modelSel + the temp S-swap; picker persists the choice). LEFT specialized (documented):
+  KindleOS support bot (manual-grounded bespoke send path — stream fns bake in `buildSYS()`, can't take the
+  support system prompt) + KindleOS store per-provider key-entry panels. Test: `/tmp/picker_test.cjs`.
+- **Jailbroken Layout** (premium, Ultra/Creator-gated via `_khRequireUltra`): Settings toggle (`.kh-switch`,
+  `S.jailbrokenLayout`) → Fullscreen API (vendor-prefixed `_khJbRequestFs/_khJbExitFs`) + Web Audio unlock
+  (`_khJbUnlockAudio` resumes a shared `window._khAudioCtx`; `_khJbBeep` test tone) + immersive `body.jailbroken-
+  layout` full-bleed CSS. All feature-detected (`_khJbCaps`) + try/catch → on KOReader/no-fullscreen engines the
+  CSS layout still applies (never a dead end); a live capability readout shows what the engine supports. Persist:
+  `applyCustomisation` re-applies the class at boot + arms a one-time next-tap re-enter (fullscreen/audio need a
+  gesture); `fullscreenchange`→`.kh-fs` body class. Helpers are top-level after `_khiOptsFromPicker`. Test:
+  `/tmp/jailbroken_test.cjs`.
+- **Retro UI polish** (`body.simple-ui`): app icons now framed "desktop tiles" (54px bordered+shadow), new
+  windowed masthead (`.simple-masthead` monospace title bar + serif "Hello, <name>" greeting via NOW()), framed
+  feature icons, serif titles + Courier labels, double-rule section header. Full dark+sepia parity. All static
+  (e-ink-safe). CSS in the main `<style>` (~627+); masthead built in the `uiMode==='simple'` home branch. Test:
+  `/tmp/retro_test.cjs`.
+- **Personalized Dashboard** (`BUILDERS.dashboard`, nav tab near front + `ALWAYS_REBUILD` so counts stay fresh):
+  greeting+date (NOW()), daily-goal card sharing `S.dailyGoal` w/ the Home widget (set inline / Mark done /
+  🔥streak, same yesterday-carry logic), 6 tappable stat tiles (Books/Notes/Journal/Chats/Events/Games-played →
+  jump to view), continue-reading (last `S.books`), today's Gazette headline (from `kh_gazette` cache), quick
+  actions. Defensive reads, theme-var CSS (works in Retro/dark/sepia). Test: `/tmp/dashboard_test.cjs`.
+- **Perf**: `@supports (content-visibility:auto)` hint (+`contain-intrinsic-size`) on `.simple-app`/`.dash-tile`
+  grids (`perf-css` IIFE) — skips off-screen paint on modern engines, no-op on Silk. (App already view-cached +
+  tick-guarded; deep Kindle-parse perf is a separate effort.)
+NB: `S.jailbrokenLayout`/`S.gazetteMode`/`S.gazetteTopics`/`S.dailyGoal` are small S fields (auto-persist).
+
+## ⚡ Round: notif arrow + friends + app-share + multiplayer foundation
+- **Notification handle redesign** (the `notifyMsg`-adjacent Notification Center IIFE ~3264): the floating "🔔
+  Notifications" pill (tofu on Kindle + intrusive) → a THIN bottom-edge strip drawing an inline **SVG chevron**
+  (never a font glyph, so no tofu). Teaches-then-hides: shown while unread OR until first open; opening sets
+  `localStorage['kh_notif_swiped']` and the teaching arrow stops (reappears thin for new unread, hides when
+  read). `_showHandle()` gates visibility; `_learned` flag. Test: `/tmp/notif_handle_test.cjs`.
+- **Friend requests + friends list** (Messages): two-way inbox handshake reusing the chat-request plumbing.
+  `_khOnFriendRequest`/`_khOnFriendAccept`/`_khAcceptFriendRequest`/`_khDeclineFriendRequest`/`_khRemoveFriend`/
+  `_khMessageFriend`/`_khAddFriendPicker` (all `window.`-exposed, near `_khMessageUserPicker`). KH_MP gains
+  `sendFriendRequest`/`sendFriendAccept`; dispatcher routes `FRIEND_REQUEST`/`FRIEND_ACCEPT`. **Security:** only
+  the 16-char hash PREFIX (what findPlayers already exposes) is exchanged/stored — never the full AES hash. UI
+  in the Messages list render (`render()`): FRIEND REQUESTS card + FRIENDS(n) list + "+ Add". `S.friends`/
+  `S.friendRequests` (in defaults). Test: `/tmp/friends_test.cjs` (13/13).
+- **Share apps in chat**: apps travel as the existing `KHAPP1:` code (pure text, no media). Globals
+  `_khAppCode`/`_khInstallAppFromCode`/`_khAppCodeLabel`/`_khAppMsgCard` (near the friend helpers). Composer
+  "+" attach → app-share sheet → sends the code via the NORMAL send path (`txtArea.value=code;sendBtn.click()`);
+  the `renderMessages` bubble hook detects a `KHAPP1:` message → renders an Install card (safe import: 512KB
+  cap + REGENERATED safe icon, never trusts obj.icon; chat cap 16KB). Test: `/tmp/appshare_test.cjs`.
+  **Screenshots-in-chat DEFERRED** — sending the image needs the media storage the user chose to skip.
+- **Online multiplayer FOUNDATION (step 1)** — `KH_MP.partyHello/getRoster/partyStart` + `KH_MP.openParty(
+  {gameName,maxPlayers,minPlayers,onStart})` lobby (create/join a 2-4p room, live poll-based roster, host Start
+  at minPlayers → `onStart(session,roster)`; guests listen for `PARTY_START`). Reuses the 900000-room channel +
+  send/subscribe/_groupFetchMessages (no worker/realtime change yet). Ultra-gated. `getRoster` dedupes
+  PARTY_HELLO beacons by user (latest wins) within a freshness window, host-first. Test: `/tmp/party_test.cjs`
+  (12/12). **NEXT:** wire the first playable 3-4p game (e.g. online Trivia) to `onStart`.
+User decisions this round (via AskUserQuestion): Messages first = Friend requests + Share apps/screenshots;
+images/GIFs = SKIP (no media backend); online games = START NOW. Screenshot-in-chat still pending the media call.
+
+## ⚡ Round: game bugs + warn/ban flow + Farm game + Find launcher
+- **Game bug fixes**: Snake canvas `max-width:100%` had no `height:auto` → squished tall on narrow Kindles;
+  added `height:auto;aspect-ratio:1/1` (true 1:1). Minesweeper flagged cell used `background:var(--unrev)` (same
+  as unrevealed) w/ no text colour → the 'F' was invisible; now `background:var(--accent);color:var(--accent-inv)`.
+  DigQuest jump worked ~1/100: the queued jump was consumed+cleared even when `onGround` was false, and onGround
+  flickers false for a tick after landing (0.01px snap gap) → added a jump BUFFER (`jumpBuf=JBUF=8`) + COYOTE
+  time (`coyote=COYOTE=4`) in `step()` — the standard platformer fix. Anagrams bank ~52→~140; Nonogram puzzles
+  8→28 (all 5×5). Test: `tools/games_test.cjs` (35 games, 0-flagged).
+- **Warn/ban flow** (`_WARN_TAG='[[KH_WARN]]'`): warnings are targeted announcements tagged `[[KH_WARN]]` and
+  ROUTED OUT of the general announcements widget for everyone except the target (the widget filter checks the
+  current user is in `a.targets`) — so warnings/bans no longer clutter the admin's (or anyone's) announcements.
+  The WARNED user still gets theirs + sees it prominently: a big blocking modal on home (`_khMaybeShowWarningModal`,
+  once, `kh_warn_ack`) + a red-bordered card in the widget (`_dispAnnText` strips the tag). Admin panel (Feedback
+  view) gets a red **Moderation notices** card (`_khRefreshModerationCard`, `#kh-mod-card-host`) listing active
+  warnings w/ Delete. Ban-request rows show **already warned** via `_khLoadWarnedSet()` (set of warned usernames
+  from warn announcements, loaded into `window._khWarnedSet`). Tofu-safe: dropped ⚠ from the warn text/label; the
+  modal uses a CSS "!" circle. `_khWarnUsername`(+Silent) prepend `_WARN_TAG`. Test: `/tmp/warn_test.cjs`.
+- **Farm** (`const Farm`, game #35): cosy turn-based farming sim — 4×3 plots, seed shop (Wheat/Carrot/Berry/
+  Pumpkin, cost/grow/sell), "Next day" grows all crops, tap a READY crop to harvest+sell for coins. No loop
+  (renders per-action like Minesweeper); state persists in `S.games.farm` (plots/coins/day/seed/best). Wired:
+  `_doLaunch` case + `GAME_HELP`/`GAME_MAP` + a card in the Games grid (rowBoard) + `tools/games_test.cjs` id.
+  Test: `/tmp/farm_test.cjs`.
+- **Easier navigation**: a **"Find" launcher** — a `.nav-launcher` accent chip at the START of the nav (not a
+  `.tab`, so the tab click/reorder logic ignores it; inline `onclick=_khOpenLauncher()`) opens a searchable
+  overlay of all ~38 pages (from `NAV_TABS`+home) with RECENT pages as chips; type to filter, tap/Enter to jump
+  (navigates via the real nav tab so split-screen stays correct). Plain "Find" text (no tofu). Test:
+  `/tmp/launcher_test.cjs`.
 **Timer/Stopwatch:** Pomodoro card retitled "⏱ Timer, Stopwatch & Pomodoro"; added `startCustom(mins)` +
 a self-contained count-up stopwatch (`swToggle`/`swReset`/`#swDisplay`).
 **Restart-logout fix:** the gzip state blob can fail to inflate on a cold Kindle boot (→ logged-out default);
@@ -360,6 +465,54 @@ fbcomment_test, worker_acl_test — all in /tmp, all passing. Client headless: /
 crash_test, notif_test, timer_test, imgsearch_test, sports_test, kbsession_test, ultra_test, stats_test.
 ⚠ **DEPLOY GATES:** migrate all users to D1 BEFORE the Supabase-severed build goes live (else logins break);
 set `KH_PEPPER` (+ `MOD_HASHES` if granting mods); redeploy api-worker.js; upload index.min.html; CF Purge.
+
+## ⚡ Round: 8-ball + Stars search + Jailbroken REMOVED + Sports football + metrics + OS apps + perf
+Ten-item "fix all in 1 go" batch on `claude/keen-tesla-n73rpc` (all in `index.html`, re-minified):
+- **Header = date only + Recent moved** (`sysClock`/`recentBtn`): the Kindle already shows the time in its own
+  status bar, so `tick()` now writes ONLY the date (`Sun 5 Jul`) — dropped the `toLocaleTimeString` parse + the
+  12h/24h regex dance entirely, and slowed the clock interval 30s→60s (date changes once a day). The header HTML
+  order is now `[date] [Recent] [landscape] [theme] [uiMode] [OS]` — Recent moved RIGHT past the clock so it
+  sits with the other header buttons (was on the far left).
+- **Jailbroken Layout REMOVED** (user asked to pull it): deleted the whole feature added last round —
+  `_khInjectJbCss` IIFE (+ `.kh-switch`/`.kh-fs`/`body.jailbroken-layout` CSS), the `_khJbCaps/_khJbRequestFs/
+  _khJbExitFs/_khJbUnlockAudio/_khJbBeep/_khJbSyncFs/_khJbApply` helpers + `fullscreenchange` listeners, the
+  `applyCustomisation` boot re-apply block (`window._khJbArmed`), and the Settings → App Settings card (`cJb`).
+  `S.jailbrokenLayout` is now an inert leftover field (harmless). The `perf-css` `content-visibility` IIFE STAYS
+  (separate feature). Only `.kh-sl-gameover` (Slither) still uses a `kh-sl*` class — unrelated.
+- **8-Ball stronger** (`EightBall`): `MAXPOW` 15→**26**, shot power `Math.min(MAXPOW,dl/8)`→`dl/5` — a firm flick
+  now actually breaks the rack.
+- **Deep Dig (DigQuest) e-ink mode removed**: the "e-ink" toggle did nothing useful on a B&W screen. Dropped the
+  `ek` button (row now just "Restart chapter") and hard-set `renderEveryMs=33` (was `d.chunky?110:33`).
+- **Sports: football + World Cup** (`BUILDERS.sports` `LEAGUES`): the single `['Soccer','soccer','eng.1']`
+  (Premier League only) → **World Cup (`fifa.world`), Premier Lg, Champions Lg (`uefa.champions`), La Liga
+  (`esp.1`), Serie A (`ita.1`), Bundesliga (`ger.1`), MLS (`usa.1`), Women's WC (`fifa.wwc`)** + the US
+  leagues. ESPN slugs; World Cup loads first (it's the 2026 tournament right now). Out-of-season leagues show
+  "No X games right now" (existing empty-state).
+- **Stars page search** (`BUILDERS.starmap`): a **Search chip** (`.sm-fab-search`, below the city chip) opens a
+  slide-down panel (`.sm-search-panel`, z-index 35 so it covers the FABs) with a search box over a combined
+  index — **stars (STARS_BRIGHT+DEEP), Messier DSOs, satellites (SATS), planets (planetPos)**. Index built
+  LAZILY on first open (`_smBuildIndex`, so the `const` catalogues are initialised by then), deduped by name.
+  Picking a result: `_smGoTo` computes CURRENT alt/az (`_smAltAz` — `satPosition` for sats, `raDecToAltAz` for
+  the rest), turns ON the matching layer toggle (`tSat/tDSO/tPlan.click()` if off), points the camera
+  (`viewAz`/`viewAlt`), and opens the existing info card (`showInfo`) which shows **Alt / Az / compass
+  direction** = the object's live location. Below-horizon objects still show direction + a toast. Avoids
+  `Array.find` (old-Silk). Empty box shows 10 quick suggestions (ISS, Sirius, M31, …). Test: `/tmp/round_test.cjs`.
+- **Admin metrics fixes** (`buildVisitsCard` + `_sbCount`): (1) `_sbCount` now sends the **`X-KH-Admin`** token
+  when present (admin-gated `kh_visits`/`kh_errors` were returning null → VISIT ROWS `?` / ERRORS `—`) AND falls
+  back **HEAD→GET** if a proxy strips `content-range` on HEAD (was GROUPS `?`). (2) **"NEW USERS" was a lie** —
+  kh_users has NO signup column (only `updated_at`=last sync), so "NEW USERS 7d" was the SAME query as "ACTIVE",
+  showing the identical 109. Relabelled to **ACTIVE 7D** (u7, +24h count) and **ACTIVE 30D** (u30) — honest,
+  non-duplicate. Comment notes active>visitors is expected (visit-logging is throttled under CF load; syncs
+  aren't). Note: a true new-user count needs a `created_at` column (worker+schema change) — deferred.
+- **New apps in KindleOS** (`BUILTIN_APPS`): added **Dashboard, Gazette, Sports, Images (imagesearch)** with
+  colored 48×48 icons. `openApp`→`showView(app.nav)` (BUILDERS fallback) + `buildPages`→`allApps()` so they
+  render in the OS grid. (They were already in `NAV_TABS`/BUILDERS, just missing from the OS launcher.)
+- **Retro home icons** (`ICON_LIB`): added `screenshot/imagesearch/sports/gazette/dashboard` line icons — these
+  views were falling back to `FALLBACK_ICON` (a plain square), the "all the same square logo" bug.
+- **Perf ("a bit faster")**: the clock simplification above (no locale parse, 60s), plus the Jailbroken removal
+  cuts JS to parse/run at boot. (Deep parse-time perf remains a separate effort per the notes below.)
+Tests: `/tmp/round_test.cjs` (header/JB-gone/sports/OS-apps/star-search — all green vs index.min.html) +
+`tools/games_test.cjs` (35 games, 0 flagged). Minifier Silk syntax gate passed.
 
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
