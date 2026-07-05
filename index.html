@@ -1440,7 +1440,7 @@ function defaultState(){
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
-    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],localFixes:{},savedWords:[],
+    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],friends:[],friendRequests:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
@@ -1810,6 +1810,140 @@ function _khDeclineChatRequest(code){
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
   }catch(_){}
 }
+/* ── Friend requests ──────────────────────────────────────────────────────
+   A two-way handshake over the same inbox plumbing as chat requests. We only
+   ever exchange the 16-char hash PREFIX (exactly what findPlayers already
+   exposes to any search — enough to target someone's inbox, NOT the full
+   AES-key hash), so friending never leaks a secret. A→B FRIEND_REQUEST; when B
+   accepts it adds A and sends FRIEND_ACCEPT back so A adds B. Both persist in
+   S.friends / S.friendRequests (device-synced like chatRequests). */
+function _khOnFriendRequest(env){
+  try{
+    const p=(env&&env.payload)||{};
+    const hash=String(p.fromHash||'').slice(0,16);
+    if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
+    const uid=String(p.fromUserId||'');
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already friends */
+    if(!Array.isArray(S.friendRequests))S.friendRequests=[];
+    if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid))))return;/* already pending */
+    const fromName=String(p.fromName||'Someone').slice(0,40);
+    S.friendRequests.push({hash:hash,uid:uid,name:fromName,ts:Date.now()});
+    if(S.friendRequests.length>60)S.friendRequests=S.friendRequests.slice(-60);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    try{if(typeof _khMarkGroupUnread==='function')_khMarkGroupUnread('__requests__');}catch(_){}
+    if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(fromName):fromName)+' sent you a friend request — open Messages.',6000);
+    try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'👋',title:'Friend request',body:fromName+' wants to be friends',view:'messages'});}catch(_){}
+  }catch(_){}
+}
+function _khOnFriendAccept(env){
+  try{
+    const p=(env&&env.payload)||{};
+    const hash=String(p.fromHash||'').slice(0,16);
+    const uid=String(p.fromUserId||'');
+    if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already have them */
+    const nm=String(p.fromName||'Friend').slice(0,40);
+    S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now()});
+    if(Array.isArray(S.friendRequests))S.friendRequests=S.friendRequests.filter(r=>!(r&&(r.hash===hash||(uid&&r.uid===uid))));
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(nm):nm)+' accepted your friend request!',5000);
+    try{if(typeof window._khPushNotif==='function')window._khPushNotif({icon:'✅',title:'Friend added',body:nm+' accepted your request',view:'messages'});}catch(_){}
+  }catch(_){}
+}
+function _khAcceptFriendRequest(hash){
+  try{
+    if(!Array.isArray(S.friendRequests))return;
+    const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
+    const req=S.friendRequests[i];
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(!S.friends.find(f=>f&&f.hash===req.hash))S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now()});
+    S.friendRequests.splice(i,1);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    /* Tell the requester we accepted so they add us back. */
+    try{if(window.KH_MP&&KH_MP.sendFriendAccept&&req.hash)KH_MP.sendFriendAccept(req.hash);}catch(_){}
+    if(typeof toast==='function')toast('You are now friends with '+(typeof _censorText==='function'?_censorText(req.name):req.name)+'.',4000);
+  }catch(_){}
+}
+function _khDeclineFriendRequest(hash){
+  try{
+    if(!Array.isArray(S.friendRequests))return;
+    const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
+    S.friendRequests.splice(i,1);
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+function _khRemoveFriend(hash){
+  try{
+    if(!Array.isArray(S.friends))return;
+    S.friends=S.friends.filter(f=>!(f&&f.hash===hash));
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+  }catch(_){}
+}
+/* DM a friend directly (mutual consent already given) — create a private group
+   and drop a DM_INVITE so it auto-appears on their side too. */
+async function _khMessageFriend(friend,onDone){
+  try{
+    if(!(window.KH_MP&&KH_MP.sendDmInvite)){if(typeof toast==='function')toast('Messaging needs the cloud backend.');return;}
+    const dn=(typeof _dispName==='function')?_dispName:(x=>x);
+    const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
+    const name='DM: '+dn(myShort)+' & '+dn(String(friend.name||'friend').slice(0,20));
+    const created=await _groupCreate(name);
+    if(!Array.isArray(S.msgGroups))S.msgGroups=[];
+    if(!S.msgGroups.find(x=>x&&x.code===created.code))S.msgGroups.push({code:created.code,name:created.name||name});
+    if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==created.code);
+    if(typeof save==='function')save();
+    await KH_MP.sendDmInvite(friend.hash,created.code,name);
+    if(typeof toast==='function')toast('Chat opened with '+(typeof _censorText==='function'?_censorText(friend.name):friend.name)+'.',4000);
+    if(typeof onDone==='function')onDone();
+  }catch(e){if(typeof toast==='function')toast('Could not open chat: '+String((e&&e.message)||e).slice(0,80));}
+}
+/* Search users and send a friend request (code-free). */
+function _khAddFriendPicker(onDone){
+  if(!(window.KH_MP&&KH_MP.findPlayers&&KH_MP.sendFriendRequest)){if(typeof toast==='function')toast('Friends need the cloud backend — sign in first.');return;}
+  if(typeof S==='undefined'||!S.authToken){if(typeof toast==='function')toast('Sign in to add friends.');return;}
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const card=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'16px',maxWidth:'420px',width:'100%',maxHeight:'80vh',display:'flex',flexDirection:'column',gap:'10px',boxShadow:'var(--shadow-md)'}});
+  card.appendChild(txt('h3','Add a friend',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
+  card.appendChild(txt('div','Search by username — they get a friend request to accept.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+  const inp=el('input',{type:'text',placeholder:'Username…',autocomplete:'off',style:{width:'100%'}});
+  card.appendChild(inp);
+  const results=el('div',{style:{flex:'1',overflowY:'auto',minHeight:'70px'}});
+  card.appendChild(results);
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=()=>ov.remove();card.appendChild(closeBtn);
+  ov.appendChild(card);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  try{inp.focus();}catch(_){}
+  let _t=null;
+  inp.addEventListener('input',()=>{
+    if(_t)clearTimeout(_t);
+    const q=inp.value.trim();
+    if(q.length<2){results.innerHTML='';return;}
+    _t=setTimeout(async()=>{
+      results.innerHTML='';results.appendChild(txt('div','Searching…',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));
+      let players=[];try{players=await KH_MP.findPlayers(q);}catch(_){}
+      results.innerHTML='';
+      if(!players.length){results.appendChild(txt('div','No users found.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px 0'}}));return;}
+      const _have={};(Array.isArray(S.friends)?S.friends:[]).forEach(f=>{if(f&&f.hash)_have[f.hash]=1;});
+      players.slice(0,20).forEach(u=>{
+        const row=el('div',{style:{display:'flex',alignItems:'center',gap:'9px',padding:'8px 4px',borderBottom:'var(--thin)'}});
+        try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(u.name||'?',28));}catch(_){}
+        row.appendChild(txt('span',(typeof _dispName==='function'?_dispName(u.name||'user'):u.name),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px'}}));
+        const already=!!_have[String(u.hash||'').slice(0,16)];
+        const rq=txt('button',already?'Friends':'Add',{className:'btn small'+(already?'':' primary')});
+        if(already)rq.disabled=true;
+        rq.onclick=async()=>{
+          rq.disabled=true;rq.textContent='Sending…';
+          try{await KH_MP.sendFriendRequest(u.hash);if(typeof toast==='function')toast('Friend request sent to '+(typeof _censorText==='function'?_censorText(u.name):u.name)+'.',4000);rq.textContent='Requested';if(typeof onDone==='function')onDone();}
+          catch(e){rq.disabled=false;rq.textContent='Add';if(typeof toast==='function')toast('Could not send: '+String((e&&e.message)||e).slice(0,80));}
+        };
+        row.appendChild(rq);
+        results.appendChild(row);
+      });
+    },250);
+  });
+}
 /* Search users by name and send a chat request — the code-free "Message a user"
    flow. onDone() refreshes the caller (e.g. the Messages list). */
 function _khMessageUserPicker(onDone){
@@ -1869,6 +2003,7 @@ function _khMessageUserPicker(onDone){
   });
 }
 window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
+window._khOnFriendRequest=_khOnFriendRequest;window._khOnFriendAccept=_khOnFriendAccept;window._khAcceptFriendRequest=_khAcceptFriendRequest;window._khDeclineFriendRequest=_khDeclineFriendRequest;window._khRemoveFriend=_khRemoveFriend;window._khMessageFriend=_khMessageFriend;window._khAddFriendPicker=_khAddFriendPicker;
 
 /* ── Admin AI: "ask about a user" ─────────────────────────────────────────
    Gathers a user's cloud METADATA (email, last sync, message count + recent
@@ -15367,6 +15502,25 @@ window.KH_MP=(function(){
     const me=identity();
     return send(inbox,{type:'CHAT_REQUEST',code:code,name:name||('Chat with '+(me.name||'someone')),fromName:me.name,fromUserId:me.userId});
   }
+  /* Friend handshake. We include OUR OWN 16-char hash prefix (fromHash) so the
+     recipient can send a FRIEND_ACCEPT back to our inbox — the prefix is what
+     findPlayers already exposes to any search, so it's not a secret (it only
+     targets an inbox, it is NOT the full AES-key hash). */
+  function _myHashPrefix(){return String((typeof S!=='undefined'&&S.authToken)||'').slice(0,16);}
+  async function sendFriendRequest(targetHash){
+    if(!targetHash)throw new Error('Invalid target');
+    const inbox=await _ensureInbox(targetHash);
+    if(!inbox)throw new Error('Invalid target hash');
+    const me=identity();
+    return send(inbox,{type:'FRIEND_REQUEST',fromName:me.name,fromUserId:me.userId,fromHash:_myHashPrefix()});
+  }
+  async function sendFriendAccept(targetHash){
+    if(!targetHash)throw new Error('Invalid target');
+    const inbox=await _ensureInbox(targetHash);
+    if(!inbox)throw new Error('Invalid target hash');
+    const me=identity();
+    return send(inbox,{type:'FRIEND_ACCEPT',fromName:me.name,fromUserId:me.userId,fromHash:_myHashPrefix()});
+  }
   /* Recipient side: a DM_INVITE means another user opened a private chat
      with us — auto-add it to our Messages panel. Idempotent and respects a
      prior leave, so replaying old invites on reconnect/open is harmless. */
@@ -15429,6 +15583,9 @@ window.KH_MP=(function(){
       /* Code-free chat REQUEST: unlike DM_INVITE this does NOT auto-join — it
          surfaces a pending request the recipient must Accept (see _khOnChatRequest). */
       if(env.type==='CHAT_REQUEST'){ try{if(typeof window._khOnChatRequest==='function')window._khOnChatRequest(env);}catch(_){} return; }
+      /* Friend handshake — request surfaces a pending card; accept adds a friend. */
+      if(env.type==='FRIEND_REQUEST'){ try{if(typeof window._khOnFriendRequest==='function')window._khOnFriendRequest(env);}catch(_){} return; }
+      if(env.type==='FRIEND_ACCEPT'){ try{if(typeof window._khOnFriendAccept==='function')window._khOnFriendAccept(env);}catch(_){} return; }
       if(env.type!=='GAME_INVITE')return;
       const dedupeKey=(env.id||'')+(env.payload&&env.payload.roomShort||'');
       if(_recentInvites.has(dedupeKey))return;
@@ -15499,7 +15656,7 @@ window.KH_MP=(function(){
     return out;
   }
   return{makeCode,createRoom,joinRoom,send,subscribe,identity,
-         findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,onInvite,startInbox,stopInbox,
+         findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,sendFriendRequest,sendFriendAccept,onInvite,startInbox,stopInbox,
          announceOpenGame,listOpenGames};
 })();
 
@@ -53401,6 +53558,55 @@ messages:()=>{
         rrow.appendChild(acc);rrow.appendChild(dec);
         body.appendChild(rrow);
       });
+    }
+
+    /* ── Friends ── pending friend requests (Accept/Decline), the friends list
+       (Message / remove), and an Add-friend search. Built on the same inbox
+       handshake as chat requests. */
+    const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
+    if(_freq.length){
+      body.appendChild(txt('div','FRIEND REQUESTS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 6px'}}));
+      _freq.slice().reverse().forEach(req=>{
+        const rrow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px',border:'2px solid var(--accent)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'10px'}});
+        try{if(typeof _avatarEl==='function')rrow.appendChild(_avatarEl(req.name||'?',34));}catch(_){}
+        const ri=el('div',{style:{flex:'1',minWidth:'0'}});
+        ri.appendChild(txt('div',_dispName(req.name||'Someone'),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        ri.appendChild(txt('div','wants to be friends',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+        rrow.appendChild(ri);
+        const acc=txt('button','Accept',{className:'btn small primary'});
+        const dec=txt('button','Decline',{className:'btn small'});
+        acc.onclick=()=>{try{if(typeof _khAcceptFriendRequest==='function')_khAcceptFriendRequest(req.hash);}catch(_){}render();};
+        dec.onclick=()=>{try{if(typeof _khDeclineFriendRequest==='function')_khDeclineFriendRequest(req.hash);}catch(_){}render();};
+        rrow.appendChild(acc);rrow.appendChild(dec);
+        body.appendChild(rrow);
+      });
+    }
+    {
+      const _friends=Array.isArray(S.friends)?S.friends:[];
+      const fhdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'2px 0 6px'}});
+      fhdr.appendChild(txt('span','FRIENDS'+(_friends.length?(' ('+_friends.length+')'):''),{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)'}}));
+      const addBtn=txt('button','+ Add',{className:'btn small'});
+      addBtn.onclick=()=>{if(typeof _khAddFriendPicker==='function')_khAddFriendPicker(render);};
+      fhdr.appendChild(addBtn);
+      body.appendChild(fhdr);
+      if(!_friends.length){
+        body.appendChild(txt('div','No friends yet. Tap + Add to find people by username.',{style:{fontSize:'11px',color:'var(--muted)',fontStyle:'italic',marginBottom:'10px'}}));
+      } else {
+        _friends.slice().forEach(fr=>{
+          const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'var(--border)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'8px'}});
+          try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(fr.name||'?',32));}catch(_){}
+          const fi=el('div',{style:{flex:'1',minWidth:'0'}});
+          fi.appendChild(txt('div',_dispName(fr.name||'Friend'),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+          row.appendChild(fi);
+          const msg=txt('button','Message',{className:'btn small primary'});
+          msg.onclick=()=>{msg.disabled=true;msg.textContent='…';if(typeof _khMessageFriend==='function')_khMessageFriend(fr,render);};
+          row.appendChild(msg);
+          const rem=txt('button','✕',{className:'btn small'});rem.title='Remove friend';
+          rem.onclick=async()=>{if(await kindleConfirm('Remove '+_dispName(fr.name||'this friend')+' from your friends?')){if(typeof _khRemoveFriend==='function')_khRemoveFriend(fr.hash);render();}};
+          row.appendChild(rem);
+          body.appendChild(row);
+        });
+      }
     }
 
     /* Always render the Global Chat at the top — every user is a member. */
