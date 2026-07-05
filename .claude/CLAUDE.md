@@ -385,6 +385,34 @@ Six-part user request, each its own tested+committed batch on `claude/keen-tesla
   grids (`perf-css` IIFE) — skips off-screen paint on modern engines, no-op on Silk. (App already view-cached +
   tick-guarded; deep Kindle-parse perf is a separate effort.)
 NB: `S.jailbrokenLayout`/`S.gazetteMode`/`S.gazetteTopics`/`S.dailyGoal` are small S fields (auto-persist).
+
+## ⚡ Round: notif arrow + friends + app-share + multiplayer foundation
+- **Notification handle redesign** (the `notifyMsg`-adjacent Notification Center IIFE ~3264): the floating "🔔
+  Notifications" pill (tofu on Kindle + intrusive) → a THIN bottom-edge strip drawing an inline **SVG chevron**
+  (never a font glyph, so no tofu). Teaches-then-hides: shown while unread OR until first open; opening sets
+  `localStorage['kh_notif_swiped']` and the teaching arrow stops (reappears thin for new unread, hides when
+  read). `_showHandle()` gates visibility; `_learned` flag. Test: `/tmp/notif_handle_test.cjs`.
+- **Friend requests + friends list** (Messages): two-way inbox handshake reusing the chat-request plumbing.
+  `_khOnFriendRequest`/`_khOnFriendAccept`/`_khAcceptFriendRequest`/`_khDeclineFriendRequest`/`_khRemoveFriend`/
+  `_khMessageFriend`/`_khAddFriendPicker` (all `window.`-exposed, near `_khMessageUserPicker`). KH_MP gains
+  `sendFriendRequest`/`sendFriendAccept`; dispatcher routes `FRIEND_REQUEST`/`FRIEND_ACCEPT`. **Security:** only
+  the 16-char hash PREFIX (what findPlayers already exposes) is exchanged/stored — never the full AES hash. UI
+  in the Messages list render (`render()`): FRIEND REQUESTS card + FRIENDS(n) list + "+ Add". `S.friends`/
+  `S.friendRequests` (in defaults). Test: `/tmp/friends_test.cjs` (13/13).
+- **Share apps in chat**: apps travel as the existing `KHAPP1:` code (pure text, no media). Globals
+  `_khAppCode`/`_khInstallAppFromCode`/`_khAppCodeLabel`/`_khAppMsgCard` (near the friend helpers). Composer
+  "+" attach → app-share sheet → sends the code via the NORMAL send path (`txtArea.value=code;sendBtn.click()`);
+  the `renderMessages` bubble hook detects a `KHAPP1:` message → renders an Install card (safe import: 512KB
+  cap + REGENERATED safe icon, never trusts obj.icon; chat cap 16KB). Test: `/tmp/appshare_test.cjs`.
+  **Screenshots-in-chat DEFERRED** — sending the image needs the media storage the user chose to skip.
+- **Online multiplayer FOUNDATION (step 1)** — `KH_MP.partyHello/getRoster/partyStart` + `KH_MP.openParty(
+  {gameName,maxPlayers,minPlayers,onStart})` lobby (create/join a 2-4p room, live poll-based roster, host Start
+  at minPlayers → `onStart(session,roster)`; guests listen for `PARTY_START`). Reuses the 900000-room channel +
+  send/subscribe/_groupFetchMessages (no worker/realtime change yet). Ultra-gated. `getRoster` dedupes
+  PARTY_HELLO beacons by user (latest wins) within a freshness window, host-first. Test: `/tmp/party_test.cjs`
+  (12/12). **NEXT:** wire the first playable 3-4p game (e.g. online Trivia) to `onStart`.
+User decisions this round (via AskUserQuestion): Messages first = Friend requests + Share apps/screenshots;
+images/GIFs = SKIP (no media backend); online games = START NOW. Screenshot-in-chat still pending the media call.
 **Timer/Stopwatch:** Pomodoro card retitled "⏱ Timer, Stopwatch & Pomodoro"; added `startCustom(mins)` +
 a self-contained count-up stopwatch (`swToggle`/`swReset`/`#swDisplay`).
 **Restart-logout fix:** the gzip state blob can fail to inflate on a cold Kindle boot (→ logged-out default);
