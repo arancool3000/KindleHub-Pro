@@ -514,6 +514,33 @@ Ten-item "fix all in 1 go" batch on `claude/keen-tesla-n73rpc` (all in `index.ht
 Tests: `/tmp/round_test.cjs` (header/JB-gone/sports/OS-apps/star-search — all green vs index.min.html) +
 `tools/games_test.cjs` (35 games, 0 flagged). Minifier Silk syntax gate passed.
 
+## ⚡ Round: kill tofu emoji + retro home reorganised + Farm depth + Find button removed
+User was (rightly) annoyed: "remove ALL NOT SUPPORTED UNICODE… retro home SO DISORGANISED… Farm most
+boring thing ever… what is the new Find button". Four fixes on `claude/keen-tesla-n73rpc`:
+- **Tofu emoji purge**: recent features shipped astral-plane emoji that render as □ on Kindle Silk. Removed from
+  DASHBOARD (🎯🔥📚📝📔💬🗓🎮📖🗞⚡🤖 → clean text headers + **inline-SVG** stat tiles via `_DSVG`), GAZETTE (📰/✎
+  segment buttons → plain "Daily"/"Custom"), NOTIFICATION CENTER (icons were emoji rendered via `textContent`;
+  now a keyword→SVG map `_NICONS`/`_nIcon` — callers pass `'friend'|'ok'|'chat'|'game'|'bell'`, render switched
+  to innerHTML for `<svg…>`; legacy emoji notifs fall back to the bell), plus stray toasts/labels (🎱 8-ball,
+  ✈ flight sim, ⚖ BMI, ⚐ report tags, 📖 habit-tool AI example → ★). KEPT: chess `♚♛♜` + card `♠♥♦♣` (game-
+  critical, render fine) and everything already on the `EINK_SYMBOLS` safe list (✓✗★☆✦♥ arrows · °). Scan tool:
+  a node one-liner over U+1F000–1FAFF/U+2600–27BF minus the safe set — down to just chess glyphs + one comment.
+- **Retro home reorganised** (`uiMode==='simple'` branch): the flat 40-icon "All Applications" wall was the
+  "disorganised" look. Now grouped into labelled shelves — **Read / Create / Play / Connect / Organise / Tools /
+  Explore / More** (`CATS`), each a `.simple-section-hdr` + its own `.simple-app-grid`; Edit button rides the
+  first header; hidden apps (`S.retroHidden`) skipped; any NAV_TABS view not in a category auto-appends to More
+  so nothing can vanish. Masthead + featured row unchanged.
+- **Farm made fun** (`const Farm`): was plant→next-day→harvest with zero depth. Now a real progression loop —
+  **XP/level** unlocks crops (Wheat/Carrot→Berry→Pumpkin→Corn→Melon by `lv`); daily **weather** (`WEATHER`/
+  `WKEYS`: Sunny normal, Rainy 2× growth, Dry spell = no passive growth); **watering cans** (`WATER_PER_DAY=3`,
+  tap a growing plot to rush +1 day); a rolling **daily order** (`_makeOrder`, deliver N of a crop for a coin
+  bonus). Still turn-based (no loop, e-ink-safe), persists to `S.games.farm` (`_norm` back-fills old saves).
+- **Find button removed**: the `.nav-launcher` "Find" chip (from the earlier navigation round) confused the user
+  (they'd asked for a STARS search, not a header Find). Deleted the nav chip; `_khOpenLauncher` left as inert
+  dead code. The Stars page search bar (last round) stays.
+Tests: `/tmp/fix_test.cjs` (find-gone, dash/gazette/retro/notif emoji-free, 6 SVG tiles, 8 retro shelves, full
+Farm plant→water→ripen→harvest→persist) + `tools/games_test.cjs` (35 games, 0 flagged). Minify Silk gate passed.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
