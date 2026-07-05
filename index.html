@@ -1131,8 +1131,8 @@ body.launcher-ui .view{padding-bottom:80px;}
       <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
     </div>
     <div class="header-controls">
-      <button class="btn small" id="recentBtn" title="Recent activities &amp; split screen — show two pages at once">Recent</button>
       <div class="clock" id="sysClock"></div>
+      <button class="btn small" id="recentBtn" title="Recent activities &amp; split screen — show two pages at once">Recent</button>
       <button class="btn small" id="legacyModeBtn" title="View original KindleHub (August special)" style="display:none;border-color:var(--muted);color:var(--muted)">v1 Preview</button>
       <button class="btn small" id="landscapeBtn" title="Rotate the app 90° for sideways reading (Landscape)">⟳</button>
       <button class="btn small" id="themeBtn" title="Cycle theme: Light / Dark / Sepia">Light</button>
@@ -3716,6 +3716,10 @@ function launchKindleDesktop(){
     {id:'sheets',    label:'Sheets',      nav:'sheets',    color:'#15803d',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="6" fill="#fff"/><rect x="4" y="4" width="40" height="10" rx="6" fill="#15803d"/><line x1="4" y1="22" x2="44" y2="22" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="30" x2="44" y2="30" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="38" x2="44" y2="38" stroke="#15803d" stroke-width="1.5"/><line x1="18" y1="14" x2="18" y2="44" stroke="#15803d" stroke-width="1.5"/><line x1="32" y1="14" x2="32" y2="44" stroke="#15803d" stroke-width="1.5"/></svg>'},
     {id:'cookbook',  label:'Cookbook',    nav:'cookbook',  color:'#b91c1c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" fill="#fff"/><rect x="6" y="6" width="36" height="8" rx="6" fill="#b91c1c"/><circle cx="24" cy="28" r="9" fill="none" stroke="#b91c1c" stroke-width="2.5"/><path d="M15 28 Q24 18 33 28" stroke="#b91c1c" stroke-width="2" fill="none"/><line x1="20" y1="28" x2="28" y2="28" stroke="#b91c1c" stroke-width="2"/><circle cx="22" cy="26" r="1.5" fill="#b91c1c"/><circle cx="26" cy="26" r="1.5" fill="#b91c1c"/></svg>'},
     {id:'files',     label:'Files',       nav:'files',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="32" rx="4" fill="#fff"/><path d="M6 14 L20 14 L24 18 L42 18 L42 42 L6 42 Z" fill="#475569" opacity=".15" stroke="#475569" stroke-width="2"/><line x1="6" y1="22" x2="42" y2="22" stroke="#475569" stroke-width="1.5"/><rect x="11" y="27" width="26" height="3" rx="1" fill="#475569" opacity=".4"/><rect x="11" y="32" width="18" height="3" rx="1" fill="#475569" opacity=".3"/></svg>'},
+    {id:'dashboard', label:'Dashboard',   nav:'dashboard', color:'#4f46e5',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="5" width="38" height="38" rx="6" fill="#fff"/><rect x="10" y="10" width="12" height="12" rx="2" fill="#4f46e5"/><rect x="26" y="10" width="12" height="8" rx="2" fill="#4f46e5" opacity=".5"/><rect x="26" y="22" width="12" height="16" rx="2" fill="#4f46e5" opacity=".8"/><rect x="10" y="26" width="12" height="12" rx="2" fill="#4f46e5" opacity=".6"/></svg>'},
+    {id:'gazette',   label:'Gazette',     nav:'gazette',   color:'#44403c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="7" width="38" height="34" rx="3" fill="#fff"/><rect x="9" y="11" width="30" height="6" rx="1" fill="#44403c"/><rect x="9" y="20" width="13" height="14" rx="1" fill="#44403c" opacity=".18"/><line x1="25" y1="21" x2="39" y2="21" stroke="#44403c" stroke-width="2"/><line x1="25" y1="26" x2="39" y2="26" stroke="#44403c" stroke-width="1.6" opacity=".6"/><line x1="25" y1="31" x2="39" y2="31" stroke="#44403c" stroke-width="1.6" opacity=".6"/><line x1="9" y1="38" x2="39" y2="38" stroke="#44403c" stroke-width="1.4" opacity=".4"/></svg>'},
+    {id:'sports',    label:'Sports',      nav:'sports',    color:'#166534',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="20" fill="none" stroke="#166534" stroke-width="2"/><polygon points="24,14 30,18.5 27.7,25.5 20.3,25.5 18,18.5" fill="#166534"/><path d="M24 4 L24 14 M40.6 17 L30 18.5 M37.5 38 L27.7 25.5 M10.5 38 L20.3 25.5 M7.4 17 L18 18.5" stroke="#166534" stroke-width="1.6"/></svg>'},
+    {id:'imagesearch',label:'Images',     nav:'imagesearch',color:'#0891b2',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="38" height="32" rx="5" fill="#fff"/><circle cx="16" cy="18" r="4" fill="#0891b2"/><path d="M8 38 L20 24 L28 32 L36 22 L40 27 L40 38 Z" fill="#0891b2" opacity=".35"/><path d="M8 38 L20 24 L28 32 L36 22 L44 32" stroke="#0891b2" stroke-width="2.5" fill="none" stroke-linejoin="round"/></svg>'},
   ]);
 
   /* ── STATE ──
@@ -6007,39 +6011,22 @@ try{
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function tick(){
-    // Use global NOW() so clockOffset is applied in one place
+    // Use global NOW() so clockOffset is applied in one place.
     const d=NOW();
-    // toLocaleTimeString() with no args uses the OS locale system, NOT the JS engine's
-    // cached UTC offset. On Kindle this correctly reflects DST even when getHours() is wrong.
-    let h=d.getHours(), m=d.getMinutes();
-    try{
-      // Parse "HH:MM:SS" or "H:MM:SS AM/PM" out of toLocaleTimeString
-      const raw=d.toLocaleTimeString();
-      // Try 24h parse first (Kindle UK locale returns "14:32:00")
-      const m24=raw.match(/^(\d{1,2}):(\d{2})/);
-      if(m24){
-        h=parseInt(m24[1],10);
-        m=parseInt(m24[2],10);
-      } else {
-        // 12h fallback: "2:32:00 PM"
-        const m12=raw.match(/(\d{1,2}):(\d{2}).*?(AM|PM)/i);
-        if(m12){
-          h=parseInt(m12[1],10)%12+(m12[3].toUpperCase()==='PM'?12:0);
-          m=parseInt(m12[2],10);
-        }
-      }
-    }catch(e){}
-    const timeStr=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
-    const dateStr=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
-    const str=dateStr+'  '+timeStr;
-    /* Only touch the DOM when the displayed minute actually changes —
-       rewriting the text node every 30s flashed the e-ink panel for no
-       reason (HH:MM is identical on every other tick). */
+    /* Header shows the DATE only — the Kindle's own status bar already shows
+       the time — so there's no need to parse toLocaleTimeString or do the
+       12h/24h dance here at all. Dropping it saves a locale call + two regex
+       matches on every tick, and the date only changes once a day. */
+    const str=days[d.getDay()]+' '+d.getDate()+' '+months[d.getMonth()];
+    /* Only touch the DOM when the text actually changes so the e-ink panel
+       isn't flashed on a tick where nothing is different. */
     if(c&&c.textContent!==str)c.textContent=str;
   }
   tick();
   let _iv=null;
-  function startClock(){if(_iv)clearInterval(_iv);tick();_iv=setInterval(tick,30000);}
+  /* 60s cadence is plenty now that only the date is shown — it just needs to
+     catch the midnight rollover within a minute (was 30s for the clock). */
+  function startClock(){if(_iv)clearInterval(_iv);tick();_iv=setInterval(tick,60000);}
   startClock();
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){startClock();}});
 })();
@@ -6150,19 +6137,6 @@ function applyCustomisation(){
       }
     });
     if(typeof _applyLang==='function')_applyLang();
-    /* Jailbroken Layout persists across reloads: re-apply the immersive CSS
-       class (this runs at boot + on every settings change). Fullscreen/audio
-       need a user gesture, so arm a ONE-TIME re-enter on the next tap. */
-    try{
-      var _jb=!!S.jailbrokenLayout;
-      document.body.classList.toggle('jailbroken-layout',_jb);
-      if(_jb&&!window._khJbArmed){
-        window._khJbArmed=true;
-        var _re=function(){try{document.removeEventListener('click',_re,true);document.removeEventListener('touchend',_re,true);}catch(_){}try{if(S.jailbrokenLayout&&typeof _khJbRequestFs==='function'){_khJbRequestFs();_khJbUnlockAudio();}}catch(_){}};
-        document.addEventListener('click',_re,true);
-        document.addEventListener('touchend',_re,true);
-      }
-    }catch(_){}
   }catch(_){}
 }
 /* Language preference. The app ships in English; this saves the user's choice
@@ -7637,26 +7611,36 @@ async function _sbDelete(table,query,secret){
    is sent. Bypasses _sbFetch so we can read the header. */
 async function _sbCount(table,query){
   const url=_sbBase()+'/rest/v1/'+table+(query?'?'+query:'?select=*');
-  const ac=typeof AbortController!=='undefined'?new AbortController():null;
-  const tid=setTimeout(()=>{if(ac)ac.abort();},10000);
-  try{
-    const r=await fetch(url,{
-      method:'HEAD',
-      headers:{
-        'apikey':SUPABASE_ANON_KEY,
-        'Authorization':'Bearer '+SUPABASE_ANON_KEY,
-        'Prefer':'count=exact',
-        'Range-Unit':'items',
-        'Range':'0-0',
-      },
-      signal:ac?ac.signal:undefined,
-    });
-    const cr=r.headers.get('content-range')||'';
-    const m=cr.match(/\/(\d+)$/);
-    if(m)return parseInt(m[1],10);
-    return null;
-  }catch(e){return null;}
-  finally{clearTimeout(tid);}
+  const hdr={
+    'apikey':SUPABASE_ANON_KEY,
+    'Authorization':'Bearer '+SUPABASE_ANON_KEY,
+    'Prefer':'count=exact',
+    'Range-Unit':'items',
+    'Range':'0-0',
+  };
+  /* Admin-gated tables (kh_errors, kh_visits, …) only return a count when the
+     admin token is presented. Send it when we have one so those admin tiles
+     show a real number instead of '?'/'—'. Harmless on open tables — the
+     worker only consults it for gating. */
+  if(typeof window!=='undefined'&&window._adminToken)hdr['X-KH-Admin']=window._adminToken;
+  async function _try(method){
+    const ac=typeof AbortController!=='undefined'?new AbortController():null;
+    const tid=setTimeout(()=>{if(ac)ac.abort();},10000);
+    try{
+      const r=await fetch(url,{method:method,headers:hdr,signal:ac?ac.signal:undefined});
+      const cr=r.headers.get('content-range')||'';
+      const m=cr.match(/\/(\d+)$/);
+      return m?parseInt(m[1],10):null;
+    }catch(e){return null;}
+    finally{clearTimeout(tid);}
+  }
+  /* HEAD is cheapest, but some proxies/workers strip the content-range header
+     on HEAD responses; retry once with a bounded GET (still Range 0-0, so ~one
+     row) before giving up, so a count never falsely reads '?' just because the
+     header was missing on the HEAD. */
+  let n=await _try('HEAD');
+  if(n==null)n=await _try('GET');
+  return n;
 }
 
 /* ── Message body encryption (per-group, 12-digit code as the secret) ── */
@@ -14107,11 +14091,10 @@ const DigQuest=(function(){
   }
   function buildTools(){
     const row=el('div',{style:{display:'flex',gap:'6px',justifyContent:'center',marginBottom:'6px',flexWrap:'wrap'}});
-    const ek=txt('button','',{className:'btn small'});
-    function lab(){ek.textContent='E-ink mode: '+(renderEveryMs>60?'On':'Off');}lab();
-    ek.onclick=function(){renderEveryMs=(renderEveryMs>60)?33:110;gd().chunky=(renderEveryMs>60);if(typeof save==='function')save();lab();};
+    /* (Removed the "E-ink mode" toggle — it only changed the redraw interval,
+       which makes no visible difference on a B&W e-ink panel.) */
     const rs=txt('button','Restart chapter',{className:'btn small'});rs.onclick=function(){if(mode==='play'||mode==='lose'||mode==='win')loadChapter(chap);};
-    row.append(ek,rs);return row;
+    row.append(rs);return row;
   }
   function build(){
     enterImmersive('Deep Dig','');
@@ -14130,7 +14113,7 @@ const DigQuest=(function(){
   }
   function start(){
     if(running)stop();
-    const d=gd();bank=d.bank;renderEveryMs=d.chunky?110:33;
+    const d=gd();bank=d.bank;renderEveryMs=33;
     build();if(!cv)return;
     running=true;mode='story';chap=0;score=0;crystals=0;coins=0;keysHave=0;
     ctx.fillStyle='#e6edf2';ctx.fillRect(0,0,cv.width,cv.height);
@@ -19514,7 +19497,7 @@ const Farm=(()=>{
    while something is moving (or you're aiming) so it stays gentle on e-ink. */
 const EightBall=(()=>{
   const W=280,H=452,R=9,POCK=15,FR=40;
-  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=15;
+  const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=26;
   const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
   let game=null,timer=null;
   function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
@@ -19613,7 +19596,7 @@ const EightBall=(()=>{
     game.aiming=false;
     var cue=_cue();if(!cue){draw();return;}
     var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
-    if(dl>6){var pow=Math.min(MAXPOW,dl/8);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    if(dl>6){var pow=Math.min(MAXPOW,dl/5);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
     draw();
   }
   function buildUI(){
@@ -26163,33 +26146,6 @@ function _khiOptsFromPicker(){
   return {provider:prov,model:model};
 }
 
-/* ── Jailbroken Layout — premium immersive mode ──────────────────────
-   A single toggle that, where the engine supports it, enters the modern
-   Fullscreen API (hides the browser bars) and unlocks the standard Web
-   Audio API (resumes a shared AudioContext so sound works on unlocked /
-   jailbroken e-ink browser engines), plus a full-bleed immersive CSS
-   layout. Every capability is feature-detected and degrades gracefully —
-   on engines without Fullscreen or Web Audio (e.g. KOReader's browser) the
-   CSS immersive layout still applies, so the toggle is never a dead end.
-   All vendor-prefixed so it works on old WebKit as well as modern engines. */
-(function _khInjectJbCss(){
-  try{
-    if(document.getElementById('jb-css'))return;
-    var st=document.createElement('style');st.id='jb-css';
-    st.textContent=[
-      '.kh-switch{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;}',
-      '.kh-switch input{opacity:0;width:0;height:0;position:absolute;margin:0;}',
-      '.kh-switch .kh-sl{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--muted);border-radius:26px;-webkit-transition:background .15s;transition:background .15s;}',
-      '.kh-switch .kh-sl:before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:var(--card);border-radius:50%;-webkit-transition:-webkit-transform .15s;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3);}',
-      '.kh-switch input:checked + .kh-sl{background:var(--accent);}',
-      '.kh-switch input:checked + .kh-sl:before{-webkit-transform:translateX(20px);transform:translateX(20px);}',
-      'body.jailbroken-layout #app{max-width:none;}',
-      'body.jailbroken-layout .view{max-width:100%;}',
-      'body.jailbroken-layout.kh-fs #app{min-height:100vh;}',
-    ].join('');
-    (document.head||document.documentElement).appendChild(st);
-  }catch(_){}
-})();
 /* Progressive perf hint: on engines that support it, skip laying out /
    painting off-screen items in the big fixed-size grids (the 40-icon Retro
    launcher, the dashboard tiles). contain-intrinsic-size gives a stable
@@ -26207,38 +26163,6 @@ function _khiOptsFromPicker(){
     (document.head||document.documentElement).appendChild(st);
   }catch(_){}
 })();
-function _khJbCaps(){
-  var d=document.documentElement||{};
-  var fs=!!(d.requestFullscreen||d.webkitRequestFullscreen||d.mozRequestFullScreen||d.msRequestFullscreen);
-  var au=!!(window.AudioContext||window.webkitAudioContext);
-  return {fullscreen:fs,webAudio:au};
-}
-function _khJbRequestFs(){
-  try{var d=document.documentElement;var fn=d.requestFullscreen||d.webkitRequestFullscreen||d.mozRequestFullScreen||d.msRequestFullscreen;if(fn){var r=fn.call(d);if(r&&r.catch)r.catch(function(){});return true;}}catch(_){}
-  return false;
-}
-function _khJbExitFs(){
-  try{if(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement){var fn=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen||document.msExitFullscreen;if(fn){var r=fn.call(document);if(r&&r.catch)r.catch(function(){});}}}catch(_){}
-}
-function _khJbUnlockAudio(){
-  try{var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return null;if(!window._khAudioCtx)window._khAudioCtx=new AC();if(window._khAudioCtx.state==='suspended'&&window._khAudioCtx.resume)window._khAudioCtx.resume().catch(function(){});return window._khAudioCtx;}catch(_){return null;}
-}
-function _khJbBeep(){
-  try{var ctx=_khJbUnlockAudio();if(!ctx||!ctx.createOscillator)return false;var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=660;g.gain.value=0.06;o.connect(g);g.connect(ctx.destination);o.start();setTimeout(function(){try{o.stop();}catch(_){}},180);return true;}catch(_){return false;}
-}
-/* Mirror real fullscreen state onto a body class so the CSS can react and the
-   Settings toggle can reflect reality if the user exits via a device button. */
-function _khJbSyncFs(){try{var on=!!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement);document.body.classList.toggle('kh-fs',on);}catch(_){}}
-try{document.addEventListener('fullscreenchange',_khJbSyncFs);document.addEventListener('webkitfullscreenchange',_khJbSyncFs);}catch(_){}
-function _khJbApply(on,fromGesture){
-  try{S.jailbrokenLayout=!!on;}catch(_){}
-  try{document.body.classList.toggle('jailbroken-layout',!!on);}catch(_){}
-  if(on){ if(fromGesture){_khJbRequestFs();_khJbUnlockAudio();} }
-  else{ _khJbExitFs(); }
-  try{_khJbSyncFs();}catch(_){}
-  try{if(typeof save==='function')save();}catch(_){}
-}
-window._khJbApply=_khJbApply;
 
 /* ── Test connection ──────────────────────────────────────── */
 async function testAIConnection(){
@@ -29939,7 +29863,12 @@ home:()=>{
       sheets:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>',
       mail:'<rect x="3" y="5" width="18" height="14" rx="1"/><polyline points="3,6 12,13 21,6"/>',
       browser:'<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13 13 0 0 1 0 18"/><path d="M12 3a13 13 0 0 0 0 18"/>',
-      files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+      files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      screenshot:'<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6l1.3-2h4.4l1.3 2"/>',
+      imagesearch:'<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="M4 16l4.5-4 3 2.5L16 9l4 5"/>',
+      sports:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/><path d="M6 6l12 12M18 6L6 18" opacity=".45"/>',
+      gazette:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="6" y1="8" x2="13" y2="8"/><line x1="6" y1="12" x2="11" y2="12"/><line x1="6" y1="15" x2="11" y2="15"/><rect x="14" y="11" width="4" height="5"/>',
+      dashboard:'<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/>'
     };
     const FALLBACK_ICON='<rect x="4" y="4" width="16" height="16" rx="2"/>';
     /* Build from NAV_TABS so it stays in sync with the rest of the app.
@@ -38616,48 +38545,6 @@ settings:()=>{
   cKbd.appendChild(modeRow);
   g.appendChild(cKbd);
 
-  /* ── Jailbroken Layout (premium immersive mode) ── */
-  const cJb=el('div',{className:'card'});
-  const _jbHdr=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}});
-  _jbHdr.appendChild(txt('h2','Jailbroken Layout',{style:{margin:'0'}}));
-  _jbHdr.appendChild(txt('span','PREMIUM',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',background:'var(--accent)',color:'var(--accent-inv)',padding:'2px 6px',borderRadius:'4px'}}));
-  cJb.appendChild(_jbHdr);
-  cJb.appendChild(txt('p','An immersive, edge-to-edge mode: enters true fullscreen (hides the browser bars) and unlocks the Web Audio engine for sound, where your device supports it. Built for unlocked / jailbroken e-ink browsers and KOReader — falls back to a full-bleed layout on engines without fullscreen.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',margin:'6px 0 10px'}}));
-  const _jbCaps=_khJbCaps();
-  const _jbCapLine=el('div',{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'10px',fontFamily:'monospace',lineHeight:'1.6'}});
-  _jbCapLine.textContent='This engine — Fullscreen: '+(_jbCaps.fullscreen?'✓ supported':'✗ not supported')+'  ·  Web Audio: '+(_jbCaps.webAudio?'✓ supported':'✗ not supported');
-  cJb.appendChild(_jbCapLine);
-  const _jbCtl=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}});
-  const _jbSwitch=el('label',{className:'kh-switch'});
-  const _jbInput=el('input',{type:'checkbox'});
-  _jbInput.checked=!!S.jailbrokenLayout;
-  const _jbSl=el('span',{className:'kh-sl'});
-  _jbSwitch.appendChild(_jbInput);_jbSwitch.appendChild(_jbSl);
-  _jbCtl.appendChild(_jbSwitch);
-  const _jbState=txt('span',S.jailbrokenLayout?'On':'Off',{style:{fontSize:'13px',fontWeight:'700'}});
-  _jbCtl.appendChild(_jbState);
-  cJb.appendChild(_jbCtl);
-  _jbInput.onchange=function(){
-    const want=_jbInput.checked;
-    if(want){
-      /* Premium gate — Ultra / Creator only, same as online multiplayer. */
-      if(typeof _khRequireUltra==='function'&&!_khRequireUltra('Jailbroken Layout')){_jbInput.checked=false;return;}
-      _khJbApply(true,true);/* the toggle click IS the user gesture fullscreen/audio need */
-      _jbState.textContent='On';
-      const _c=_khJbCaps();
-      toast(_c.fullscreen?('Jailbroken Layout on — fullscreen'+(_c.webAudio?' + audio unlocked':'')):'Jailbroken Layout on — immersive layout (fullscreen not supported on this engine)',4500);
-    } else {
-      _khJbApply(false,false);
-      _jbState.textContent='Off';
-      toast('Jailbroken Layout off');
-    }
-  };
-  if(_jbCaps.webAudio){
-    const _jbBeep=txt('button','🔊 Test sound',{className:'btn small',style:{marginTop:'10px'}});
-    _jbBeep.onclick=function(){toast(_khJbBeep()?'Played a test tone':'Audio could not start on this engine');};
-    cJb.appendChild(_jbBeep);
-  }
-  g.appendChild(cJb);
   /* NOTE: this used to close the _defer here and reopen a new one, which
      left `c5` (declared above) out of scope below — so the Keyboard
      Shortcuts AND Top Menu Pages cards both threw 'c5 is not defined' and
@@ -39260,8 +39147,12 @@ feedback:()=>{
       const dbGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:'6px',marginBottom:'14px'}});
       c.appendChild(dbGrid);
       const sUsers=stat('USERS','…','registered');
-      const sNewU=stat('NEW USERS','…','7d / 30d');
-      const sActiveU=stat('ACTIVE','…','synced 7d');
+      /* There is no signup timestamp on kh_users (only `updated_at` = last
+         cloud sync), so a true "new users" figure is impossible. Both of
+         these are last-sync-based ACTIVE proxies over different windows —
+         labelled honestly so 7d and 30d don't read as duplicate numbers. */
+      const sActiveU=stat('ACTIVE 7D','…','synced last 7 days');
+      const sNewU=stat('ACTIVE 30D','…','synced last 30 days');
       const sGroups=stat('GROUPS','…','chat groups');
       const sMsgs=stat('MESSAGES','…','in cloud now');
       const sMsgsRecent=stat('MSGS 24H','…','today / 7d');
@@ -39273,7 +39164,7 @@ feedback:()=>{
       const sErrsRecent=stat('ERRORS 24H','…','last day');
       const sVisitRows=stat('VISIT ROWS','…','device-days');
       const sAvgState=stat('AVG STATE','…','KB per user');
-      dbGrid.append(sUsers,sNewU,sActiveU,sGroups,sMsgs,sMsgsRecent,sSenders,sFb,sScores,sAnn,sErrs,sErrsRecent,sVisitRows,sAvgState);
+      dbGrid.append(sUsers,sActiveU,sNewU,sGroups,sMsgs,sMsgsRecent,sSenders,sFb,sScores,sAnn,sErrs,sErrsRecent,sVisitRows,sAvgState);
 
       /* Admin AI — ask a free-text question about any user (last online, activity,
          identity) answered from their cloud metadata. Admin-only. */
@@ -39434,16 +39325,18 @@ feedback:()=>{
         const DAY=86400000;
         const _setStat=(tile,val,sub)=>{tile.querySelectorAll('div')[1].textContent=String(val);if(sub!=null){const s=tile.querySelectorAll('div')[2];if(s)s.textContent=sub;}};
 
-        /* New + active users (kh_users.updated_at is the only timestamp we
-           have — it's "last sync", a good proxy for recent activity; for a
-           brand-new account it's also the signup time). */
+        /* Active users. kh_users.updated_at (last cloud sync) is the ONLY
+           timestamp we have — there's no signup date — so these are both
+           active-user proxies over 7d / 30d windows, NOT registrations.
+           (That's also why "active" can exceed the VISITORS count above:
+           visit logging is throttled under load, syncs are not.) */
         Promise.all([
           _sbCount('kh_users','updated_at=gte.'+_iso(7*DAY)).catch(()=>null),
           _sbCount('kh_users','updated_at=gte.'+_iso(30*DAY)).catch(()=>null),
           _sbCount('kh_users','updated_at=gte.'+_iso(DAY)).catch(()=>null),
         ]).then(([u7,u30,u1])=>{
-          _setStat(sNewU, (u7!=null?u7:'?')+' / '+(u30!=null?u30:'?'), 'last 7d / 30d synced');
-          _setStat(sActiveU, u7!=null?u7:'?', (u1!=null?u1+' in last 24h':'synced 7d'));
+          _setStat(sActiveU, u7!=null?u7:'?', (u1!=null?u1+' active today':'synced last 7 days'));
+          _setStat(sNewU, u30!=null?u30:'?', 'synced last 30 days');
         });
 
         /* Messages today / last 7d */
@@ -42099,6 +41992,25 @@ starmap:()=>{
       '.sm-fab-menu{top:10px;right:10px;}'+
       '.sm-fab-guide{top:10px;right:60px;font-size:13px;width:auto;height:42px;border-radius:21px;padding:0 14px;background:#fff;color:#000;border-color:#000;font-weight:800;letter-spacing:0.3px;}'+
       '.sm-fab-city{top:10px;left:10px;font-size:11px;width:auto;height:32px;border-radius:16px;padding:0 12px;background:rgba(13,13,26,0.92);color:#fff;border:1.5px solid #fff;font-weight:700;}'+
+      /* Search chip sits just below the city chip on the left. */
+      '.sm-fab-search{top:50px;left:10px;font-size:11px;width:auto;height:32px;border-radius:16px;padding:0 12px;background:rgba(13,13,26,0.92);color:#fff;border:1.5px solid #fff;font-weight:700;}'+
+      /* Search panel — slides down from the top, ABOVE the FABs (z 35) so it
+         cleanly covers them; has its own close button. */
+      '.sm-search-panel{position:absolute;top:0;left:0;right:0;background:#0d0d1a;border-bottom:2px solid #fff;padding:12px 10px;z-index:35;max-height:78vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(-115%);transition:transform .22s ease-out;box-shadow:0 8px 24px rgba(0,0,0,0.7);}'+
+      '.sm-search-panel.open{transform:translateY(0);}'+
+      '.sm-search-input{width:100%;box-sizing:border-box;background:#1a1a35;color:#fff;border:1.5px solid #667;border-radius:8px;padding:11px 12px;font-size:15px;font-family:var(--ui-font);outline:none;}'+
+      '.sm-search-hint{font-size:10px;color:#9aa;margin:7px 2px 4px;letter-spacing:.3px;}'+
+      '.sm-search-row{display:flex;align-items:center;gap:10px;padding:10px 6px;border-bottom:1px solid #223;cursor:pointer;color:#eee;}'+
+      '.sm-search-row:active{background:#23234a;}'+
+      '.sm-search-badge{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:3px 0;border-radius:8px;border:1px solid #5a6a80;color:#cdd;flex-shrink:0;width:66px;text-align:center;}'+
+      '.sm-search-name{font-size:14px;font-weight:700;flex:1;}'+
+      '.sm-search-sub{font-size:11px;color:#9aa;font-weight:500;}'+
+      '.sm-light .sm-fab-search{background:#fff;color:#000;border-color:#000;}'+
+      '.sm-light .sm-search-panel{background:#fafaf2;border-bottom-color:#000;}'+
+      '.sm-light .sm-search-input{background:#fff;color:#000;border-color:#000;}'+
+      '.sm-light .sm-search-row{color:#000;border-bottom-color:#ccd;}'+
+      '.sm-light .sm-search-badge{border-color:#000;color:#111;}'+
+      '.sm-light .sm-search-sub{color:#556;}'+
       '.sm-settings-panel{position:absolute;top:0;left:0;right:0;background:#0d0d1a;border-bottom:2px solid #fff;padding:12px 10px;z-index:25;max-height:65vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(-110%);transition:transform .22s ease-out;box-shadow:0 8px 24px rgba(0,0,0,0.7);}'+
       /* Opaque select menus — Kindle WebKit renders the open option list
          in-page with the select's own colours; without these the city
@@ -42737,8 +42649,116 @@ starmap:()=>{
     if(lbl)lbl.textContent=_smCityEsc(smCity);
   });
 
-  menuFab.onclick=()=>{settingsPanel.classList.toggle('open');};
+  menuFab.onclick=()=>{if(typeof searchPanel!=='undefined')searchPanel.classList.remove('open');settingsPanel.classList.toggle('open');};
   settingsClose.onclick=()=>settingsPanel.classList.remove('open');
+
+  /* ── Search the sky (stars · planets · satellites · deep-sky objects) ──
+     A floating chip opens a slide-down panel. Typing filters a combined
+     catalogue; picking a result points the view at that object, turns on
+     the relevant layer, and opens the info card — which shows its live
+     altitude / azimuth / compass direction (its "location" in the sky).
+     The index is built LAZILY on first open: by then the whole starmap
+     builder has run, so the STARS_/DSO/SATS consts are all initialised. */
+  const searchFab=el('button',{className:'sm-fab sm-fab-search',title:'Search the sky'});
+  searchFab.innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg><span>Search</span>';
+  v.appendChild(searchFab);
+  const searchPanel=el('div',{className:'sm-search-panel'});
+  const _shHdr=el('div',{className:'sm-settings-header'});
+  const _shTitle=el('div',{className:'sm-settings-title'});_shTitle.textContent='Search the Sky';
+  const _shClose=el('button',{className:'sm-settings-close',title:'Close'});_shClose.innerHTML='×';
+  _shHdr.appendChild(_shTitle);_shHdr.appendChild(_shClose);
+  searchPanel.appendChild(_shHdr);
+  const searchInput=el('input',{className:'sm-search-input',type:'search',placeholder:'e.g. ISS, Sirius, M31, Jupiter…'});
+  searchInput.setAttribute('autocomplete','off');searchInput.setAttribute('autocapitalize','off');searchInput.setAttribute('spellcheck','false');
+  searchPanel.appendChild(searchInput);
+  searchPanel.appendChild(txt('div','Searches stars · planets · satellites · deep-sky objects — tap a result to see where it is.',{className:'sm-search-hint'}));
+  const searchResults=el('div',{});
+  searchPanel.appendChild(searchResults);
+  v.appendChild(searchPanel);
+
+  let _smIndex=null;
+  function _smBuildIndex(){
+    const idx=[],seen={};
+    function add(o){const k=(o.name||'').toLowerCase();if(!k||seen[k])return;seen[k]=1;idx.push(o);}
+    [].concat(STARS_BRIGHT,STARS_DEEP).forEach(s=>add({name:s[3],type:'Star',kind:'Star',ra:s[0],dec:s[1],mag:s[2],con:s[4]}));
+    DSO.forEach(d=>add({name:d[3],type:'DSO',kind:'Deep-sky object',ra:d[0],dec:d[1],dsoType:d[2],mag:d[4]}));
+    SATS.forEach(sat=>add({name:sat.n,type:'Satellite',kind:'Satellite',sat:sat,cat:sat.k||''}));
+    try{planetPos(jdNow()).forEach(pl=>add({name:pl.name,type:'Planet',kind:'Planet',ra:pl.ra,dec:pl.dec}));}catch(_){}
+    return idx;
+  }
+  /* Compute an object's CURRENT alt/az. Satellites use the SGP4-ish
+     propagator (null when below the horizon); everything else converts
+     its RA/Dec with the live sidereal time (alt can be negative = below
+     the horizon, which we still report as a direction). */
+  function _smAltAz(o){
+    if(o.type==='Satellite'){const p=satPosition(o.sat,jdNow());return p?{alt:p.alt,az:p.az,rng:p.rng}:null;}
+    if(o.ra===undefined||o.ra===null)return null;
+    return raDecToAltAz(o.ra,o.dec,smLat,lst(jdNow(),smLon));
+  }
+  const _SM_BADGE={Star:'Star',Planet:'Planet',Satellite:'Satellite',DSO:'Deep sky'};
+  function _smSub(o){
+    if(o.type==='Star')return (CONSTELLATION_NAMES[o.con]||o.con||'')+(o.mag!==undefined?'  ·  mag '+o.mag.toFixed(1):'');
+    if(o.type==='DSO'){const kinds={Gal:'Galaxy',Neb:'Nebula',Glob:'Globular cluster',OC:'Open cluster'};return (kinds[o.dsoType]||o.dsoType||'')+(o.mag!==undefined?'  ·  mag '+o.mag.toFixed(1):'');}
+    if(o.type==='Satellite')return o.cat?('Satellite · '+o.cat):'Satellite';
+    if(o.type==='Planet')return 'Solar System planet';
+    return '';
+  }
+  function _smGoTo(o){
+    const aa=_smAltAz(o);
+    const s={name:o.name,type:o.type,kind:o.kind,con:o.con,mag:o.mag,dsoType:o.dsoType,cat:o.cat};
+    if(aa){s.aa={az:aa.az,alt:aa.alt};if(aa.rng)s.rng=aa.rng;}
+    /* Make sure the layer that draws this object is switched on. */
+    if(o.type==='Satellite'&&tSat.dataset.on!=='1')tSat.click();
+    else if(o.type==='DSO'&&tDSO.dataset.on!=='1')tDSO.click();
+    else if(o.type==='Planet'&&tPlan.dataset.on!=='1')tPlan.click();
+    /* Point the camera at it (azimuth always; altitude when above horizon). */
+    if(aa){viewAz=norm360(aa.az);if(aa.alt>0)viewAlt=Math.max(5,Math.min(85,aa.alt));}
+    searchPanel.classList.remove('open');
+    try{draw();}catch(_){}
+    try{showInfo(s);}catch(_){}
+    if(typeof toast==='function'){
+      if(!aa)toast(o.name+' is below the horizon right now — not currently overhead.',3800);
+      else if(aa.alt<0)toast(o.name+' is below the horizon — showing its direction ('+Math.round(aa.az)+'°).',3800);
+    }
+  }
+  function _smRenderResults(q){
+    searchResults.innerHTML='';
+    if(!_smIndex)_smIndex=_smBuildIndex();
+    q=(q||'').trim().toLowerCase();
+    let list;
+    if(!q){
+      /* Quick suggestions when the box is empty. (Manual lookup — the app
+         avoids Array.find for old-Silk safety.) */
+      const picks=['ISS','Sirius','M31 Andromeda','Jupiter','Vega','Betelgeuse','M42 Orion','Hubble (HST)','Saturn','Polaris'];
+      list=[];
+      picks.forEach(nm=>{for(let i=0;i<_smIndex.length;i++){if(_smIndex[i].name===nm){list.push(_smIndex[i]);break;}}});
+    }else{
+      list=_smIndex.filter(o=>o.name.toLowerCase().indexOf(q)>=0);
+      /* Prefix matches first, then the rest, both alphabetical. */
+      list.sort((a,b)=>{const pa=a.name.toLowerCase().indexOf(q)===0?0:1,pb=b.name.toLowerCase().indexOf(q)===0?0:1;return pa-pb||a.name.localeCompare(b.name);});
+      list=list.slice(0,40);
+    }
+    if(!list.length){searchResults.appendChild(txt('div','No match — try a star, planet, satellite or Messier (M-number) name.',{className:'sm-search-hint'}));return;}
+    list.forEach(o=>{
+      const row=el('div',{className:'sm-search-row'});
+      row.appendChild(txt('span',_SM_BADGE[o.type]||o.type,{className:'sm-search-badge'}));
+      const mid=el('div',{style:'flex:1;min-width:0;'});
+      mid.appendChild(txt('div',o.name,{className:'sm-search-name'}));
+      const sub=_smSub(o);if(sub)mid.appendChild(txt('div',sub,{className:'sm-search-sub'}));
+      row.appendChild(mid);
+      row.onclick=()=>_smGoTo(o);
+      searchResults.appendChild(row);
+    });
+  }
+  const _smOnType=(typeof khDebounce==='function')?khDebounce(()=>_smRenderResults(searchInput.value),180):()=>_smRenderResults(searchInput.value);
+  searchInput.addEventListener('input',_smOnType);
+  searchFab.onclick=()=>{
+    settingsPanel.classList.remove('open');
+    searchPanel.classList.add('open');
+    _smRenderResults(searchInput.value);
+    setTimeout(()=>{try{searchInput.focus();}catch(_){}},120);
+  };
+  _shClose.onclick=()=>searchPanel.classList.remove('open');
 
   /* ── Floating info card (shows when a star is tapped) ──
      v4: theme-aware. The card now flips white-on-dark when body.dark
@@ -47357,11 +47377,12 @@ sleeplog:()=>{
 /* ─── CHESS CLOCK ────────────────────────────────────── */
 sports:()=>{
   /* Live & recent scores via ESPN's public scoreboard JSON (CORS-open, no key).
-     Covers the leagues users asked for: NBA/NFL/MLB/NHL/soccer/college. */
+     Covers what users asked for: World Cup + the big football/soccer leagues,
+     plus NBA/NFL/MLB/NHL/college. Soccer slugs are ESPN league codes. */
   const v=el('section',{id:'view-sports',className:'view'});
   v.appendChild(txt('h2','Sports Scores',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
-  v.appendChild(txt('div','Live and recent scores across the major leagues.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
-  const LEAGUES=[['NBA','basketball','nba'],['NFL','football','nfl'],['MLB','baseball','mlb'],['NHL','hockey','nhl'],['Soccer','soccer','eng.1'],['NCAAF','football','college-football'],['NCAAB','basketball','mens-college-basketball']];
+  v.appendChild(txt('div','Live and recent scores — football (World Cup & top leagues) plus the major US leagues.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const LEAGUES=[['World Cup','soccer','fifa.world'],['Premier Lg','soccer','eng.1'],['Champions Lg','soccer','uefa.champions'],['La Liga','soccer','esp.1'],['Serie A','soccer','ita.1'],['Bundesliga','soccer','ger.1'],['MLS','soccer','usa.1'],['Women’s WC','soccer','fifa.wwc'],['NBA','basketball','nba'],['NFL','football','nfl'],['MLB','baseball','mlb'],['NHL','hockey','nhl'],['NCAAF','football','college-football'],['NCAAB','basketball','mens-college-basketball']];
   const tabs=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}});
   const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px',minHeight:'16px'}});
   const list=el('div',{});

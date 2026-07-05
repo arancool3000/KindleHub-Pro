@@ -466,6 +466,54 @@ crash_test, notif_test, timer_test, imgsearch_test, sports_test, kbsession_test,
 ⚠ **DEPLOY GATES:** migrate all users to D1 BEFORE the Supabase-severed build goes live (else logins break);
 set `KH_PEPPER` (+ `MOD_HASHES` if granting mods); redeploy api-worker.js; upload index.min.html; CF Purge.
 
+## ⚡ Round: 8-ball + Stars search + Jailbroken REMOVED + Sports football + metrics + OS apps + perf
+Ten-item "fix all in 1 go" batch on `claude/keen-tesla-n73rpc` (all in `index.html`, re-minified):
+- **Header = date only + Recent moved** (`sysClock`/`recentBtn`): the Kindle already shows the time in its own
+  status bar, so `tick()` now writes ONLY the date (`Sun 5 Jul`) — dropped the `toLocaleTimeString` parse + the
+  12h/24h regex dance entirely, and slowed the clock interval 30s→60s (date changes once a day). The header HTML
+  order is now `[date] [Recent] [landscape] [theme] [uiMode] [OS]` — Recent moved RIGHT past the clock so it
+  sits with the other header buttons (was on the far left).
+- **Jailbroken Layout REMOVED** (user asked to pull it): deleted the whole feature added last round —
+  `_khInjectJbCss` IIFE (+ `.kh-switch`/`.kh-fs`/`body.jailbroken-layout` CSS), the `_khJbCaps/_khJbRequestFs/
+  _khJbExitFs/_khJbUnlockAudio/_khJbBeep/_khJbSyncFs/_khJbApply` helpers + `fullscreenchange` listeners, the
+  `applyCustomisation` boot re-apply block (`window._khJbArmed`), and the Settings → App Settings card (`cJb`).
+  `S.jailbrokenLayout` is now an inert leftover field (harmless). The `perf-css` `content-visibility` IIFE STAYS
+  (separate feature). Only `.kh-sl-gameover` (Slither) still uses a `kh-sl*` class — unrelated.
+- **8-Ball stronger** (`EightBall`): `MAXPOW` 15→**26**, shot power `Math.min(MAXPOW,dl/8)`→`dl/5` — a firm flick
+  now actually breaks the rack.
+- **Deep Dig (DigQuest) e-ink mode removed**: the "e-ink" toggle did nothing useful on a B&W screen. Dropped the
+  `ek` button (row now just "Restart chapter") and hard-set `renderEveryMs=33` (was `d.chunky?110:33`).
+- **Sports: football + World Cup** (`BUILDERS.sports` `LEAGUES`): the single `['Soccer','soccer','eng.1']`
+  (Premier League only) → **World Cup (`fifa.world`), Premier Lg, Champions Lg (`uefa.champions`), La Liga
+  (`esp.1`), Serie A (`ita.1`), Bundesliga (`ger.1`), MLS (`usa.1`), Women's WC (`fifa.wwc`)** + the US
+  leagues. ESPN slugs; World Cup loads first (it's the 2026 tournament right now). Out-of-season leagues show
+  "No X games right now" (existing empty-state).
+- **Stars page search** (`BUILDERS.starmap`): a **Search chip** (`.sm-fab-search`, below the city chip) opens a
+  slide-down panel (`.sm-search-panel`, z-index 35 so it covers the FABs) with a search box over a combined
+  index — **stars (STARS_BRIGHT+DEEP), Messier DSOs, satellites (SATS), planets (planetPos)**. Index built
+  LAZILY on first open (`_smBuildIndex`, so the `const` catalogues are initialised by then), deduped by name.
+  Picking a result: `_smGoTo` computes CURRENT alt/az (`_smAltAz` — `satPosition` for sats, `raDecToAltAz` for
+  the rest), turns ON the matching layer toggle (`tSat/tDSO/tPlan.click()` if off), points the camera
+  (`viewAz`/`viewAlt`), and opens the existing info card (`showInfo`) which shows **Alt / Az / compass
+  direction** = the object's live location. Below-horizon objects still show direction + a toast. Avoids
+  `Array.find` (old-Silk). Empty box shows 10 quick suggestions (ISS, Sirius, M31, …). Test: `/tmp/round_test.cjs`.
+- **Admin metrics fixes** (`buildVisitsCard` + `_sbCount`): (1) `_sbCount` now sends the **`X-KH-Admin`** token
+  when present (admin-gated `kh_visits`/`kh_errors` were returning null → VISIT ROWS `?` / ERRORS `—`) AND falls
+  back **HEAD→GET** if a proxy strips `content-range` on HEAD (was GROUPS `?`). (2) **"NEW USERS" was a lie** —
+  kh_users has NO signup column (only `updated_at`=last sync), so "NEW USERS 7d" was the SAME query as "ACTIVE",
+  showing the identical 109. Relabelled to **ACTIVE 7D** (u7, +24h count) and **ACTIVE 30D** (u30) — honest,
+  non-duplicate. Comment notes active>visitors is expected (visit-logging is throttled under CF load; syncs
+  aren't). Note: a true new-user count needs a `created_at` column (worker+schema change) — deferred.
+- **New apps in KindleOS** (`BUILTIN_APPS`): added **Dashboard, Gazette, Sports, Images (imagesearch)** with
+  colored 48×48 icons. `openApp`→`showView(app.nav)` (BUILDERS fallback) + `buildPages`→`allApps()` so they
+  render in the OS grid. (They were already in `NAV_TABS`/BUILDERS, just missing from the OS launcher.)
+- **Retro home icons** (`ICON_LIB`): added `screenshot/imagesearch/sports/gazette/dashboard` line icons — these
+  views were falling back to `FALLBACK_ICON` (a plain square), the "all the same square logo" bug.
+- **Perf ("a bit faster")**: the clock simplification above (no locale parse, 60s), plus the Jailbroken removal
+  cuts JS to parse/run at boot. (Deep parse-time perf remains a separate effort per the notes below.)
+Tests: `/tmp/round_test.cjs` (header/JB-gone/sports/OS-apps/star-search — all green vs index.min.html) +
+`tools/games_test.cjs` (35 games, 0 flagged). Minifier Silk syntax gate passed.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
