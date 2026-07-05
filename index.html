@@ -337,7 +337,7 @@ select{padding-right:28px;appearance:none;-webkit-appearance:none;background-ima
 .ms-cell.revealed{background:var(--bg);border-color:transparent;cursor:default}
 .ms-cell.revealed-empty{background:var(--bg);border-color:transparent;}
 .ms-cell.mine-hit{background:var(--fg);color:var(--bg)}
-.ms-cell.flagged{background:var(--unrev);font-weight:900}
+.ms-cell.flagged{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);font-weight:900}
 .sudoku-board{display:grid;grid-template-columns:repeat(9,1fr);gap:0;border:2px solid var(--fg);width:min(92vw,378px);margin:6px auto;border-radius:8px;overflow:hidden;}
 .sdk-cell{width:100%;height:40px;border:var(--thin);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none;font-family:var(--ui-font)}
 .sdk-cell.fixed{color:var(--fg);background:var(--card)}
@@ -13611,7 +13611,8 @@ const DigQuest=(function(){
   let player={x:0,y:0,vx:0,vy:0,onGround:false,facing:1};
   let spawn={x:0,y:0},checkpointAt=null;
   let crystals=0,keysHave=0,coins=0,lives=3,score=0,bank=0,flash=0,digCool=0,hintAt=0,hurtCool=0;
-  let drillT=0,shieldT=0,hasSpring=false,jumpsLeft=0,wasJump=false;
+  let drillT=0,shieldT=0,hasSpring=false,jumpsLeft=0,wasJump=false,jumpBuf=0,coyote=0;
+  const JBUF=8,COYOTE=4;/* jump-buffer + coyote-time windows (ticks) */
   /* jumpQueued latches a jump request from a tap so it survives until the
      next physics step consumes it. On e-ink the render loop can run at
      ~9 FPS, so a quick tap used to set input.jump true→false entirely
@@ -13699,7 +13700,7 @@ const DigQuest=(function(){
     const up=gd().up;
     player.x=spawn.x;player.y=spawn.y;player.vx=0;player.vy=0;player.onGround=false;player.facing=1;
     keysHave=0;lives=3+(up.lives||0);flash=0;acc=0;last=0;hurtCool=0;
-    drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;
+    drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;jumpBuf=0;coyote=0;
     hideOverlay();mode='play';updateHud();render();
   }
 
@@ -13787,16 +13788,27 @@ const DigQuest=(function(){
     let ax=(input.right?1:0)-(input.left?1:0);
     if(ax!==0)player.facing=ax;
     player.vx=ax*MOVE;
-    const jp=jumpQueued||(input.jump&&!wasJump);
-    if(jp){if(player.onGround){player.vy=-JUMP;player.onGround=false;}else if(jumpsLeft>0){player.vy=-JUMP*0.9;jumpsLeft--;flash=Math.max(flash,0.08);}}
-    jumpQueued=false;
+    /* Jump BUFFER + COYOTE time so a tap reliably fires. The old code consumed
+       the queued jump on the very next tick and dropped it if onGround was
+       false right then — and onGround flickers false for a tick after landing
+       (the player rests 0.01px above the tile), so most taps were eaten. Now a
+       tap is buffered for a few ticks and the player counts as grounded for a
+       few ticks after leaving the ground. */
+    if(jumpQueued){jumpBuf=JBUF;jumpQueued=false;}
+    if(input.jump&&!wasJump)jumpBuf=JBUF;
     wasJump=input.jump;
+    if(jumpBuf>0){
+      if(player.onGround||coyote>0){player.vy=-JUMP;player.onGround=false;coyote=0;jumpBuf=0;}
+      else if(jumpsLeft>0){player.vy=-JUMP*0.9;jumpsLeft--;flash=Math.max(flash,0.08);jumpBuf=0;}
+      else jumpBuf--;
+    }
     player.vy+=GRAV*dt;if(player.vy>MAXFALL)player.vy=MAXFALL;
     let nx=player.x+player.vx*dt;
     if(rectHits(nx,player.y)){if(player.vx>0)nx=Math.floor((nx+PW)/TS)*TS-PW-0.01;else if(player.vx<0)nx=(Math.floor(nx/TS)+1)*TS+0.01;player.vx=0;}
     player.x=nx;
     let ny=player.y+player.vy*dt;
     if(rectHits(player.x,ny)){if(player.vy>0){ny=Math.floor((ny+PH)/TS)*TS-PH-0.01;player.onGround=true;jumpsLeft=hasSpring?1:0;}else if(player.vy<0){ny=(Math.floor(ny/TS)+1)*TS+0.01;}player.vy=0;}else{player.onGround=false;}
+    if(player.onGround)coyote=COYOTE;else if(coyote>0)coyote--;/* grace window after leaving the ground */
     player.y=ny;
     player.x=clamp(player.x,TS,worldW-TS-PW);
     if(digCool>0)digCool-=dt;
@@ -13981,7 +13993,7 @@ const DigQuest=(function(){
     running=false;persist();
     if(raf){cancelAnimationFrame(raf);raf=null;}
     document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);
-    input={left:false,right:false,down:false,jump:false};digHeld=false;digDownHeld=false;jumpQueued=false;
+    input={left:false,right:false,down:false,jump:false};digHeld=false;digDownHeld=false;jumpQueued=false;jumpBuf=0;coyote=0;
   }
   function loop(ts){
     if(!running)return;
@@ -18200,7 +18212,10 @@ const Snake=(()=>{
     const scoreBar=txt('div','Score: 0  |  Best: '+(game.highScore||0),{id:'snakeScoreBar',className:'snake-score-bar'});
     immersiveContent.appendChild(scoreBar);
     const canvas=el('canvas',{id:'snakeCanvas',width:COLS*TILE,height:ROWS*TILE});
-    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;border:2px solid var(--fg);touch-action:none;';
+    /* height:auto keeps the board a true 1:1 square when max-width:100% shrinks
+       it on a narrow Kindle — without it the width shrank but the height stayed
+       340px, squishing the view taller-than-wide ("view too high"). */
+    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;height:auto;aspect-ratio:1/1;border:2px solid var(--fg);touch-action:none;';
     immersiveContent.appendChild(canvas);
     let _st=null;
     canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];_st={x:t.clientX,y:t.clientY};},{passive:false});
@@ -19063,7 +19078,37 @@ const Anagrams=(()=>{
     ['WALNUT','A wrinkly brown nut'],['BREEZE','A gentle wind'],
     ['COMPASS','It points north'],['DIAMOND','A hard, sparkling gem'],
     ['FEATHER','A bird has many'],['MONKEY','A tree-swinging primate'],
-    ['THUNDER','It follows lightning'],['LIBRARY','Full of books to borrow']
+    ['THUNDER','It follows lightning'],['LIBRARY','Full of books to borrow'],
+    ['APPLE','A common red or green fruit'],['BEACH','Sandy shore by the sea'],['CLOUD','White fluff in the sky'],
+    ['EAGLE','A large bird of prey'],['FLUTE','A slim woodwind instrument'],['GRAPE','Small fruit that makes wine'],
+    ['HONEY','Bees make it'],['IGLOO','A dome house made of snow'],['JEWEL','A precious gemstone'],
+    ['KOALA','A eucalyptus-eating marsupial'],['LEMON','A sour yellow citrus'],['MANGO','A sweet tropical fruit'],
+    ['OTTER','A playful river swimmer'],['PIANO','88 black and white keys'],['QUEEN','A female monarch'],
+    ['RIVER','Water flowing to the sea'],['SNAKE','A legless slithering reptile'],['TIGER','A big striped cat'],
+    ['VIRUS','A tiny thing that makes you ill'],['WHALE','The largest sea mammal'],['ZEBRA','A striped African horse'],
+    ['BREAD','A baked loaf'],['CHAIR','You sit on it'],['DANCE','Move to music'],['EARTH','The planet we live on'],
+    ['GHOST','A spooky spirit'],['HEART','It pumps your blood'],['KNIFE','You cut food with it'],
+    ['LIGHT','It lets you see in the dark'],['MOUSE','A small squeaky rodent'],['OCEAN','A vast body of salt water'],
+    ['PEARL','A gem grown inside an oyster'],['ROBOT','A machine that can act on its own'],['STORM','Wind, rain and thunder'],
+    ['TRAIN','It runs on rails'],['VOICE','You speak with it'],['ONION','A layered bulb that makes you cry'],
+    ['BUTTON','You do up a shirt with it'],['CARROT','An orange root vegetable'],['DOCTOR','They treat the sick'],
+    ['GARLIC','A pungent cooking bulb'],['HELMET','Head protection'],['INSECT','A six-legged creature'],
+    ['KETTLE','It boils water'],['LIZARD','A scaly reptile'],['MELODY','A tune'],['PARROT','A colourful talking bird'],
+    ['SPONGE','It soaks up water'],['TURTLE','A reptile with a shell'],['WALLET','It holds your cash and cards'],
+    ['BANANA','A curved yellow fruit'],['CACTUS','A spiny desert plant'],['DONKEY','A long-eared farm animal'],
+    ['FALCON','A fast-diving hunting bird'],['HORNET','A large stinging wasp'],['JAGUAR','A spotted big cat'],
+    ['MUSEUM','Where art and history are shown'],['PEPPER','It makes you sneeze'],['SPIDER','An eight-legged web spinner'],
+    ['TOMATO','A red salad fruit'],['WINTER','The coldest season'],['VOLCANO','A mountain that erupts'],
+    ['BALLOON','It floats when filled with air'],['CABBAGE','A leafy green vegetable'],['DOLPHIN','A clever sea mammal'],
+    ['FACTORY','Where goods are made'],['GIRAFFE','The tallest land animal'],['HARVEST','Gathering the crops'],
+    ['JOURNEY','A long trip'],['LEOPARD','A spotted African cat'],['OCTOPUS','A sea creature with eight arms'],
+    ['PENGUIN','A flightless Antarctic bird'],['RAINBOW','Colours arcing after rain'],['VILLAGE','A small settlement'],
+    ['BLANKET','It keeps you warm in bed'],['CHEETAH','The fastest land animal'],['FANTASY','Made-up magical fiction'],
+    ['GRAVITY','It pulls things down'],['PYRAMID','A giant Egyptian tomb'],['STADIUM','A big sports arena'],
+    ['VITAMIN','A nutrient in food'],['AIRPLANE','It flies through the sky'],['COMPUTER','You are using one now'],
+    ['DINOSAUR','An ancient extinct reptile'],['FIREWORK','It explodes with colour'],['HOSPITAL','Where the sick are treated'],
+    ['KANGAROO','A hopping Australian marsupial'],['MOUNTAIN','A very tall landform'],['NOTEBOOK','You jot notes in it'],
+    ['SANDWICH','Filling between two slices of bread'],['UMBRELLA','It keeps rain off you']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.anagrams&&S.games.anagrams.best)||0;}
@@ -19141,7 +19186,28 @@ const Nonogram=(()=>{
     {name:'House',g:['00100','01110','11111','10101','11111']},
     {name:'Smiley',g:['01010','01010','00000','10001','01110']},
     {name:'Letter T',g:['11111','00100','00100','00100','00100']},
-    {name:'Boat',g:['00100','00100','11111','11111','01110']}
+    {name:'Boat',g:['00100','00100','11111','11111','01110']},
+    {name:'Letter A',g:['01110','10001','11111','10001','10001']},
+    {name:'Letter H',g:['10001','10001','11111','10001','10001']},
+    {name:'Letter I',g:['11111','00100','00100','00100','11111']},
+    {name:'Letter O',g:['01110','10001','10001','10001','01110']},
+    {name:'Letter X',g:['10001','01010','00100','01010','10001']},
+    {name:'Letter L',g:['10000','10000','10000','10000','11111']},
+    {name:'Letter C',g:['01111','10000','10000','10000','01111']},
+    {name:'Letter E',g:['11111','10000','11110','10000','11111']},
+    {name:'Letter U',g:['10001','10001','10001','10001','01110']},
+    {name:'Letter Y',g:['10001','01010','00100','00100','00100']},
+    {name:'Letter Z',g:['11111','00010','00100','01000','11111']},
+    {name:'Star',g:['00100','11111','01110','01010','10001']},
+    {name:'Tree',g:['00100','01110','11111','00100','00100']},
+    {name:'Cup',g:['10001','10001','10001','01110','00100']},
+    {name:'Sun',g:['10101','01110','11111','01110','10101']},
+    {name:'Flower',g:['01010','11111','00100','01110','00100']},
+    {name:'Cat',g:['10001','11011','11111','10101','11111']},
+    {name:'Key',g:['11000','11111','11000','00100','00110']},
+    {name:'Anchor',g:['00100','01010','00100','10101','01110']},
+    {name:'Umbrella',g:['01110','11111','00100','00100','01100']},
+    {name:'Ghost',g:['01110','11111','11111','11111','10101']}
   ];
   const N=5;
   let game=null,mode='fill';
