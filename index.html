@@ -15711,9 +15711,39 @@ window.KH_MP=(function(){
     });
     return out;
   }
+  /* ── N-player party layer (foundation for 3-4 player online games) ──────
+     A "party" is just a game room (900000+short) where each member beacons a
+     PARTY_HELLO with their name/userId; getRoster reads recent beacons within a
+     freshness window and dedupes to the live player list (host first, then join
+     order). Games broadcast moves with send(code,{type:'MOVE',…}) and read them
+     via subscribe()/_groupFetchMessages — the same poll-based channel 2-player
+     online games already use, so no worker/realtime change is needed yet. */
+  async function partyHello(code,gameName,isHost){
+    const me=identity();
+    return send(code,{type:'PARTY_HELLO',game:gameName||'',name:me.name,userId:me.userId,host:!!isHost,ts:Date.now()});
+  }
+  async function getRoster(code,windowMs){
+    if(typeof _groupFetchMessages!=='function')return[];
+    let msgs=[];try{msgs=await _groupFetchMessages(code);}catch(_){return[];}
+    const cutoff=Date.now()-(windowMs||12000);
+    const byUser={};
+    (msgs||[]).forEach(m=>{
+      let p;try{p=JSON.parse(m.text);}catch(_){return;}
+      if(!p||p.type!=='PARTY_HELLO')return;
+      if(typeof p.ts!=='number'||p.ts<cutoff)return;
+      const key=String(p.userId||p.name||'');
+      if(!key)return;
+      const prev=byUser[key];
+      if(!prev||p.ts>prev.ts)byUser[key]={name:String(p.name||'Player').slice(0,24),userId:String(p.userId||''),host:!!p.host,ts:p.ts};
+    });
+    const out=[];for(const k in byUser)out.push(byUser[k]);
+    out.sort((a,b)=>((b.host?1:0)-(a.host?1:0))||(a.ts-b.ts));/* host first, then join order */
+    return out;
+  }
+  async function partyStart(code){const me=identity();return send(code,{type:'PARTY_START',by:me.userId,ts:Date.now()});}
   return{makeCode,createRoom,joinRoom,send,subscribe,identity,
          findPlayers,inboxCode,sendInvite,sendDmInvite,sendChatRequest,sendFriendRequest,sendFriendAccept,onInvite,startInbox,stopInbox,
-         announceOpenGame,listOpenGames};
+         announceOpenGame,listOpenGames,partyHello,getRoster,partyStart};
 })();
 
 /* Start the personal invite listener whenever the user signs in. The
@@ -15846,6 +15876,84 @@ window._khInviteDismissed=_khInviteDismissed;window._khDismissInvite=_khDismissI
   }
   _wire();
 })();
+
+/* ── N-player party lobby ───────────────────────────────────────────────
+   `KH_MP.openParty({gameName, maxPlayers, minPlayers, onStart})` — create or
+   join a 2-4 player room, watch the LIVE roster (poll-based beacons), and
+   (host) Start once enough players are in. onStart(session, roster) fires on
+   every member when the host starts. The foundation 3-4 player online games
+   build on; uses the same poll-based room channel as 2-player games. */
+window.KH_MP.openParty=function(opts){
+  opts=opts||{};
+  if(typeof _khRequireUltra==='function'&&!_khRequireUltra('Online multiplayer'))return;
+  var gameName=opts.gameName||'game';
+  var maxPlayers=Math.max(2,Math.min(4,opts.maxPlayers||4));
+  var minPlayers=Math.max(2,Math.min(maxPlayers,opts.minPlayers||2));
+  var onStart=opts.onStart||function(){};
+  var old=document.getElementById('kh-mp-party');if(old)old.remove();
+  function _txt(tag,t,css){var e=document.createElement(tag);if(css)e.style.cssText=css;if(t!=null)e.textContent=t;return e;}
+  var ov=document.createElement('div');ov.id='kh-mp-party';
+  ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.7);z-index:600200;display:flex;align-items:center;justify-content:center;padding:14px;font-family:var(--ui-font,sans-serif);';
+  var box=_txt('div',null,'background:var(--card,#fff);color:var(--fg,#111);border:var(--thin,1px solid rgba(0,0,0,.1));border-radius:14px;padding:16px;width:100%;max-width:400px;max-height:88vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.5);display:flex;flex-direction:column;gap:12px;');
+  var _poll=null,_beacon=null,_sub=null,_started=false,_code=null,_short=null,_isHost=false;
+  function cleanup(){try{if(_poll)clearInterval(_poll);}catch(_){}try{if(_beacon)clearInterval(_beacon);}catch(_){}try{if(_sub&&_sub.close)_sub.close();}catch(_){}_poll=_beacon=_sub=null;}
+  function closeAll(){cleanup();if(ov.parentNode)ov.remove();}
+  var hdr=_txt('div',null,'display:flex;align-items:center;gap:8px;');
+  hdr.appendChild(_txt('div',gameName.charAt(0).toUpperCase()+gameName.slice(1)+' — Party (up to '+maxPlayers+')','font-size:16px;font-weight:800;flex:1;'));
+  var closeBtn=_txt('button','Close','');closeBtn.className='btn small';closeBtn.onclick=closeAll;hdr.appendChild(closeBtn);
+  box.appendChild(hdr);
+  var content=_txt('div',null,'display:flex;flex-direction:column;gap:10px;');box.appendChild(content);
+  function menu(){
+    content.innerHTML='';
+    content.appendChild(_txt('div','Create a party and share the code, or join a friend’s with their code.','font-size:11px;color:var(--muted);line-height:1.5;'));
+    var cBtn=_txt('button','Create party','');cBtn.className='btn primary small';cBtn.onclick=doCreate;content.appendChild(cBtn);
+    var jrow=_txt('div',null,'display:flex;gap:6px;');
+    var jin=document.createElement('input');jin.placeholder='6-digit code';jin.maxLength=6;jin.style.cssText='flex:1;font-size:14px;padding:8px;border:var(--thin);border-radius:8px;background:var(--bg);color:var(--fg);';
+    var jBtn=_txt('button','Join','');jBtn.className='btn small';jBtn.onclick=function(){var s=(jin.value||'').replace(/[^0-9]/g,'').slice(0,6);if(s.length!==6){if(typeof toast==='function')toast('Enter the 6-digit code');return;}doJoin(s);};
+    jrow.appendChild(jin);jrow.appendChild(jBtn);content.appendChild(jrow);
+  }
+  function roomView(){
+    content.innerHTML='';
+    var codeBox=_txt('div',null,'text-align:center;background:var(--highlight);border-radius:10px;padding:10px;');
+    codeBox.appendChild(_txt('div','SHARE THIS CODE','font-size:9px;font-weight:800;letter-spacing:1px;color:var(--muted);'));
+    codeBox.appendChild(_txt('div',_short,'font-size:26px;font-weight:900;font-family:monospace;letter-spacing:3px;'));
+    content.appendChild(codeBox);
+    content.appendChild(_txt('div','PLAYERS','font-size:9px;font-weight:800;letter-spacing:.5px;color:var(--muted);'));
+    var rlist=_txt('div',null,'display:flex;flex-direction:column;gap:5px;min-height:40px;');content.appendChild(rlist);
+    var startBtn=null;
+    if(_isHost){
+      startBtn=_txt('button','Start game','');startBtn.className='btn primary small';startBtn.disabled=true;
+      startBtn.onclick=function(){_started=true;try{KH_MP.partyStart(_code);}catch(_){}var roster=window._khPartyRoster||[];cleanup();if(ov.parentNode)ov.remove();onStart({code:_code,short:_short,role:'host'},roster);};
+      content.appendChild(startBtn);
+    } else {
+      content.appendChild(_txt('div','Waiting for the host to start…','font-size:11px;color:var(--muted);font-style:italic;'));
+    }
+    function renderRoster(r){
+      window._khPartyRoster=r;rlist.innerHTML='';
+      (r||[]).slice(0,maxPlayers).forEach(function(pl){
+        var row=_txt('div',null,'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card);border:var(--thin);border-radius:8px;');
+        row.appendChild(_txt('span',(typeof _dispName==='function'?_dispName(pl.name):pl.name),'flex:1;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+        if(pl.host)row.appendChild(_txt('span','HOST','font-size:8px;font-weight:900;background:var(--accent);color:var(--accent-inv);padding:2px 5px;border-radius:4px;'));
+        rlist.appendChild(row);
+      });
+      if(startBtn)startBtn.disabled=(r||[]).length<minPlayers;
+    }
+    window._khPartyRenderRoster=renderRoster;/* test hook */
+    (function first(){KH_MP.partyHello(_code,gameName,_isHost).catch(function(){});KH_MP.getRoster(_code).then(renderRoster).catch(function(){});})();
+    _beacon=setInterval(function(){KH_MP.partyHello(_code,gameName,_isHost).catch(function(){});},2600);
+    _poll=setInterval(function(){KH_MP.getRoster(_code).then(renderRoster).catch(function(){});},2600);
+    if(!_isHost){
+      _sub=KH_MP.subscribe(_code,function(env){
+        if(env&&env.type==='PARTY_START'&&!_started){_started=true;var roster=window._khPartyRoster||[];cleanup();if(ov.parentNode)ov.remove();onStart({code:_code,short:_short,role:'guest'},roster);}
+      });
+    }
+  }
+  async function doCreate(){try{var s=await KH_MP.createRoom(gameName);_code=s.code;_short=s.short;_isHost=true;try{KH_MP.announceOpenGame(gameName,s.short);}catch(_){}roomView();}catch(e){if(typeof toast==='function')toast('Could not create party');}}
+  async function doJoin(short){try{var s=await KH_MP.joinRoom(short,gameName);_code=s.code;_short=s.short;_isHost=false;roomView();}catch(e){if(typeof toast==='function')toast('Could not join party');}}
+  menu();
+  ov.appendChild(box);ov.onclick=function(e){if(e.target===ov)closeAll();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+};
 
 /* ── Reusable multiplayer lobby ────────────────────────────────────────
    `KH_MP.openLobby({gameName, onConnected})` shows a modal with three
