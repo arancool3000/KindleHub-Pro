@@ -7959,6 +7959,92 @@ async function _announceRpc(fn,body){
    admin-token RPC as announcements. Auto-expires on the date (re-opens
    itself). Admins — and anyone already signed in — are NEVER blocked. */
 const _CAP_TAG='[[KH_CAP]]';
+/* Moderator warnings are delivered as targeted announcements prefixed with this
+   marker, so they can be routed OUT of the general announcements widget (into
+   the admin panel) while the WARNED user still sees theirs prominently. */
+const _WARN_TAG='[[KH_WARN]]';
+function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);return t;}
+/* Set of usernames who currently have an active warning (from warn-marked
+   announcements) — used to show "already warned" on ban requests. Admin-loaded. */
+async function _khLoadWarnedSet(){
+  try{
+    if(typeof _loadAllAnnouncements!=='function')return new Set();
+    const anns=await _loadAllAnnouncements();
+    const s=new Set();
+    (anns||[]).forEach(function(a){
+      if(String(a.text||'').indexOf(_WARN_TAG)!==0)return;
+      (Array.isArray(a.targets)?a.targets:[]).forEach(function(x){s.add(String(x).toLowerCase());});
+    });
+    window._khWarnedSet=s;return s;
+  }catch(_){return new Set();}
+}
+window._khLoadWarnedSet=_khLoadWarnedSet;
+/* Admin moderation-notices card (in the Feedback/admin panel): lists the active
+   warnings the admin has issued, with a Delete for each. This is where warnings
+   live for the admin — they're routed OUT of the general announcements widget,
+   but each warned user still sees their own. Populates #kh-mod-card-host. */
+async function _khRefreshModerationCard(){
+  try{
+    const host=document.getElementById('kh-mod-card-host');
+    if(!host)return;
+    if(window._isAdminCached!==true){host.innerHTML='';return;}
+    let anns=[];try{anns=await _loadAllAnnouncements();}catch(_){}
+    const warns=(anns||[]).filter(a=>String(a.text||'').indexOf(_WARN_TAG)===0);
+    host.innerHTML='';
+    const card=el('div',{className:'card',style:{border:'2px solid var(--danger)',marginBottom:'12px'}});
+    card.appendChild(txt('h3','Moderation notices ('+warns.length+')',{style:{margin:'0 0 6px',fontSize:'14px',color:'var(--danger)'}}));
+    card.appendChild(txt('div','Active warnings you’ve issued. Each warned user still sees theirs on their home screen; they no longer clutter everyone’s announcements.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+    if(!warns.length){card.appendChild(txt('div','No active warnings.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic'}}));}
+    else warns.slice().reverse().forEach(a=>{
+      const row=el('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start',borderTop:'1px dashed var(--muted)',paddingTop:'6px',marginTop:'6px'}});
+      const info=el('div',{style:{flex:'1',minWidth:'0'}});
+      const who=(Array.isArray(a.targets)?a.targets:[]).map(x=>_dispName(String(x))).join(', ')||'unknown';
+      info.appendChild(txt('div','To: '+who,{style:{fontWeight:'800',fontSize:'12px'}}));
+      info.appendChild(txt('div',_censorText(_dispAnnText(a.text)).replace(/^⚠?\s*WARNING from the moderators\s*/,'').slice(0,160),{style:{fontSize:'11px',color:'var(--muted)',whiteSpace:'pre-wrap',lineHeight:'1.4',marginTop:'2px'}}));
+      info.appendChild(txt('div',new Date(a.created_at).toLocaleString(),{style:{fontSize:'9px',color:'var(--muted)',marginTop:'2px'}}));
+      row.appendChild(info);
+      const del=txt('button','Delete',{className:'btn small'});
+      del.onclick=async()=>{del.disabled=true;const res=await _adminRpc('kh_delete_announcement',{p_id:a.id,p_token:window._adminToken||''});if(res&&res.ok){toast('Warning cleared.');_khRefreshModerationCard();}else{del.disabled=false;toast('Could not delete.');}};
+      row.appendChild(del);
+      card.appendChild(row);
+    });
+    host.appendChild(card);
+  }catch(_){}
+}
+window._khRefreshModerationCard=_khRefreshModerationCard;
+/* Show the current user's newest UNACKNOWLEDGED warning as a big blocking modal
+   (once — acknowledgement is remembered in kh_warn_ack). Called from the home
+   announcement widget so the warned user can't miss it. */
+function _khMaybeShowWarningModal(anns){
+  try{
+    if(typeof S==='undefined'||!S.authToken)return;
+    if(window._khWarnModalOpen)return;
+    let acked=[];try{acked=JSON.parse(localStorage.getItem('kh_warn_ack')||'[]');if(!Array.isArray(acked))acked=[];}catch(_){}
+    const me=String(S.email||'').toLowerCase(),myId=String(S.userId||'');
+    const mine=(anns||[]).filter(function(a){
+      if(String(a.text||'').indexOf(_WARN_TAG)!==0)return false;
+      const tg=Array.isArray(a.targets)?a.targets:[];
+      const t=tg.some(function(x){return String(x).toLowerCase()===me;})||tg.some(function(x){return String(x)===myId;});
+      return t&&acked.indexOf(a.id)<0;
+    });
+    if(!mine.length)return;
+    const a=mine[0];
+    window._khWarnModalOpen=true;
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.75)',zIndex:'1000000',display:'flex',alignItems:'center',justifyContent:'center',padding:'18px'}});
+    const box=el('div',{style:{background:'var(--card)',color:'var(--fg)',border:'3px solid var(--danger)',borderRadius:'14px',padding:'22px',maxWidth:'440px',width:'100%',boxShadow:'0 12px 48px rgba(0,0,0,.5)',textAlign:'center'}});
+    box.appendChild(txt('div','!',{style:{fontSize:'34px',fontWeight:'900',lineHeight:'1',width:'62px',height:'62px',borderRadius:'50%',border:'4px solid var(--danger)',color:'var(--danger)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 8px'}}));
+    box.appendChild(txt('div','Moderator warning',{style:{fontSize:'19px',fontWeight:'900',color:'var(--danger)',margin:'6px 0 12px'}}));
+    box.appendChild(txt('div',_censorText(_dispAnnText(a.text)),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',textAlign:'left',background:'var(--highlight)',padding:'12px',borderRadius:'8px',marginBottom:'14px'}}));
+    const ack=txt('button','I understand',{className:'btn primary',style:{minWidth:'160px'}});
+    ack.onclick=function(){
+      try{let arr=JSON.parse(localStorage.getItem('kh_warn_ack')||'[]');if(!Array.isArray(arr))arr=[];arr.push(a.id);localStorage.setItem('kh_warn_ack',JSON.stringify(arr.slice(-100)));}catch(_){}
+      window._khWarnModalOpen=false;if(ov.parentNode)ov.remove();
+    };
+    box.appendChild(ack);
+    ov.appendChild(box);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }catch(_){}
+}
 let _capState=null; /* {locked,until,message,at} | null = unknown */
 function _capCached(){
   if(_capState)return _capState;
@@ -8165,7 +8251,7 @@ async function _khWarnUsername(name){
   const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
   if(reason==null)return false;/* admin cancelled */
   const msg=String(reason||'').trim()||'Please follow the community rules.';
-  const text='⚠ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const text=_WARN_TAG+'WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
   const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
   if(ok)toast('Warning sent privately to “'+name+'”.',3500);
   /* _announceRpc surfaces its own error toast on failure. */
@@ -8180,7 +8266,7 @@ async function _khWarnUsernameSilent(name,reason){
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
   if(!window._adminToken)return false;
   const msg=String(reason||'').trim()||'Please follow the community rules.';
-  const text='⚠ WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+  const text=_WARN_TAG+'WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
   const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
   return !!ok;
 }
@@ -8280,7 +8366,23 @@ async function _renderAnnouncementWidget(card){
   try{anns=isAdmin?await _loadAllAnnouncements():await _loadRelevantAnnouncements();}catch(_){}
   /* Hide reserved Capacity-Guard control records — they're not real
      announcements; the admin manages them from the Capacity guard card. */
-  try{anns=(anns||[]).filter(a=>String(a.text||'').indexOf(_CAP_TAG)!==0);}catch(_){}
+  try{
+    const _me=String(S.email||'').toLowerCase(),_myId=String(S.userId||'');
+    anns=(anns||[]).filter(a=>{
+      const t=String(a.text||'');
+      if(t.indexOf(_CAP_TAG)===0)return false;/* capacity control record — never a real announcement */
+      if(t.indexOf(_WARN_TAG)===0){
+        /* Moderator warnings aren't general announcements: only the WARNED user
+           still sees theirs here (prominently, below); for everyone else — incl.
+           the admin browsing all — they're routed to the admin panel instead. */
+        const tg=Array.isArray(a.targets)?a.targets:[];
+        return tg.some(x=>String(x).toLowerCase()===_me)||tg.some(x=>String(x)===_myId);
+      }
+      return true;
+    });
+  }catch(_){}
+  /* Surface an unacknowledged warning to the warned user as a big modal. */
+  try{_khMaybeShowWarningModal(anns);}catch(_){}
   let dismissed=[];try{const d=JSON.parse(localStorage.getItem('kh_ann_dismissed')||'[]');if(Array.isArray(d))dismissed=d;}catch(_){}
   /* Non-admins only see announcements they haven't dismissed; admins see
      everything (so they can manage them). */
@@ -8291,23 +8393,27 @@ async function _renderAnnouncementWidget(card){
   card.appendChild(txt('h2',visible.length>1?'Announcements':'Announcement',{style:{margin:'0'}}));
   if(visible.length){
     visible.forEach(a=>{
+      const _isWarn=String(a.text||'').indexOf(_WARN_TAG)===0;
       const block=el('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start',borderTop:'1px dashed var(--muted)',paddingTop:'6px',marginTop:'6px'}});
+      if(_isWarn){block.style.border='2px solid var(--danger)';block.style.borderTop='2px solid var(--danger)';block.style.borderRadius='8px';block.style.padding='10px';block.style.background='var(--highlight)';}
       const body=el('div',{style:{flex:'1',minWidth:'0'}});
-      body.appendChild(txt('div',_censorText(a.text),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+      if(_isWarn)body.appendChild(txt('div','MODERATOR WARNING',{style:{fontSize:'10px',fontWeight:'900',letterSpacing:'.5px',color:'var(--danger)',marginBottom:'4px'}}));
+      body.appendChild(txt('div',_censorText(_dispAnnText(a.text)),{style:{fontSize:'14px',lineHeight:'1.6',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
       const metaBits=[new Date(a.created_at).toLocaleString()];
-      if(Array.isArray(a.targets)&&a.targets.length){
+      if(!_isWarn&&Array.isArray(a.targets)&&a.targets.length){
         metaBits.push(isAdmin
           ?('to: '+a.targets.slice(0,8).join(', ')+(a.targets.length>8?(' +'+(a.targets.length-8)+' more'):''))
           :('private · '+a.targets.length+' recipient'+(a.targets.length===1?'':'s')));
       }
       body.appendChild(txt('div',metaBits.join('  ·  '),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px'}}));
-      /* Comments: anyone can read the thread; signed-in users can post.
-         Mirrors the feedback-comment pattern — a JSON `comments` array; the
-         worker gates a non-admin PATCH of kh_announcements to `comments` only. */
-      const _cCount=Array.isArray(a.comments)?a.comments.length:0;
-      const cBtn=txt('button','💬 Comments'+(_cCount?(' ('+_cCount+')'):''),{className:'btn small',style:{marginTop:'6px',fontSize:'11px'}});
-      cBtn.onclick=()=>_openAnnouncementComments(a,card);
-      body.appendChild(cBtn);
+      /* Comments: general announcements only — a moderator warning is a private
+         notice, not a public discussion thread. */
+      if(!_isWarn){
+        const _cCount=Array.isArray(a.comments)?a.comments.length:0;
+        const cBtn=txt('button','💬 Comments'+(_cCount?(' ('+_cCount+')'):''),{className:'btn small',style:{marginTop:'6px',fontSize:'11px'}});
+        cBtn.onclick=()=>_openAnnouncementComments(a,card);
+        body.appendChild(cBtn);
+      }
       block.appendChild(body);
       if(!isAdmin){
         const x=txt('button','✕',{className:'btn small',style:{minWidth:'30px',flexShrink:'0'}});
@@ -38751,6 +38857,10 @@ settings:()=>{
 
 feedback:()=>{
   const v=el('section',{id:'view-feedback',className:'view'});
+  /* Admin-only moderation-notices card (active warnings) — populated async. */
+  const _modHost=el('div',{id:'kh-mod-card-host'});
+  v.appendChild(_modHost);
+  try{if(window._isAdminCached===true)setTimeout(function(){try{if(typeof _khRefreshModerationCard==='function')_khRefreshModerationCard();}catch(_){}},60);}catch(_){}
 
   /* ── All feedback lives inside the master doc (KH_REG) ─────────────────
      doc.feedback.bugs[]  and  doc.feedback.suggestions[]
@@ -40726,6 +40836,7 @@ Deno.serve(async (req)=>{
               renderItems();
             } else { warnBtn.disabled=false; }
           };
+          if(window._khWarnedSet&&window._khWarnedSet.has(String(_banName).toLowerCase()))actRow.appendChild(txt('span','⚠ already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
           actRow.appendChild(warnBtn);
           const banBtn=txt('button','Approve & ban "'+_banDisp.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
@@ -40756,6 +40867,7 @@ Deno.serve(async (req)=>{
             if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
             else { rWarn.disabled=false; }
           };
+          if(window._khWarnedSet&&window._khWarnedSet.has(String(_rName).toLowerCase()))actRow.appendChild(txt('span','⚠ already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
           actRow.appendChild(rWarn);
           const rBan=txt('button','Ban "'+_rDisp.slice(0,18)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           rBan.onclick=async()=>{
@@ -40864,6 +40976,9 @@ Deno.serve(async (req)=>{
       setStatus('Could not load — check internet connection.',true);items=[];
     }
     renderItems();
+    /* Load the "already warned" set so ban-request rows can flag users we've
+       warned before; re-render + refresh the moderation card once it lands. */
+    try{if(window._isAdminCached===true&&typeof _khLoadWarnedSet==='function')_khLoadWarnedSet().then(function(){try{renderItems();}catch(_){}try{if(typeof _khRefreshModerationCard==='function')_khRefreshModerationCard();}catch(_){}});}catch(_){}
   }
 
   submitBtn.onclick=async()=>{
