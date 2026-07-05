@@ -1179,6 +1179,7 @@ body.launcher-ui .view{padding-bottom:80px;}
        Home stays first, Settings goes last to match the runtime
        enforcement inside applyNavOrder(). ───────────────────── -->
   <nav id="mainNav">
+    <div class="nav-launcher" onclick="try{_khOpenLauncher()}catch(e){}" title="Search &amp; jump to any page" style="flex-shrink:0;cursor:pointer;padding:7px 12px;font-weight:800;font-size:12px;background:var(--accent,#111);color:var(--accent-inv,#fff);border-radius:6px;margin:3px 6px 3px 4px;white-space:nowrap;align-self:center;">Find</div>
     <div class="tab active nav-essential" data-view="home">Home</div>
     <div class="tab" data-view="games">Arcade</div>
     <div class="tab" data-view="chat">Assistant</div>
@@ -2789,6 +2790,48 @@ function applyNavOrder(){
   if(settingsTab)navRoot.appendChild(settingsTab);
   if(homeTab)navRoot.insertBefore(homeTab,navRoot.firstChild);
 }
+/* ── Quick launcher — search + jump to any page ─────────────────────────
+   The nav has ~38 pages; this overlay lets you TYPE to find any of them (with
+   your recent pages up top) and jump straight there. Opened by the "Find" chip
+   at the start of the nav. Navigates via the real nav tab so split-screen /
+   showView stay correct; works in every UI mode. */
+function _khOpenLauncher(){
+  const old=document.getElementById('kh-launcher');if(old){old.remove();return;}
+  const all=[['home','Home']].concat(Array.isArray(NAV_TABS)?NAV_TABS:[]);
+  const seen={},pages=[];all.forEach(function(p){if(p&&p[0]&&!seen[p[0]]){seen[p[0]]=1;pages.push(p);}});
+  const lbl={};pages.forEach(function(p){lbl[p[0]]=p[1];});
+  const ov=el('div',{id:'kh-launcher',style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.55)',zIndex:'600400',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'46px 12px 12px'}});
+  function go(view){const t=document.querySelector('nav .tab[data-view="'+view+'"]');if(t){t.style.display='';t.click();}else{try{showView(view);}catch(_){}}ov.remove();}
+  const box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'12px',padding:'12px',width:'100%',maxWidth:'440px',maxHeight:'82vh',display:'flex',flexDirection:'column',gap:'8px',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('div','Jump to a page',{style:{fontFamily:'var(--title-font)',fontSize:'15px',fontWeight:'800'}}));
+  const inp=el('input',{type:'text',placeholder:'Search pages…',autocomplete:'off',style:{width:'100%',fontSize:'15px',padding:'9px 11px'}});
+  box.appendChild(inp);
+  const rec=(window._khRecentViews||[]).filter(function(v){return seen[v];}).slice(0,6);
+  if(rec.length){
+    box.appendChild(txt('div','RECENT',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)'}}));
+    const rrow=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}});
+    rec.forEach(function(v){const b=txt('button',lbl[v]||v,{className:'btn small'});b.onclick=function(){go(v);};rrow.appendChild(b);});
+    box.appendChild(rrow);
+  }
+  const list=el('div',{style:{flex:'1',overflowY:'auto',display:'flex',flexDirection:'column',gap:'3px',marginTop:'2px'}});
+  box.appendChild(list);
+  function paint(){
+    const q=(inp.value||'').toLowerCase().trim();
+    list.innerHTML='';
+    const matches=pages.filter(function(p){return !q||p[1].toLowerCase().indexOf(q)>=0||p[0].toLowerCase().indexOf(q)>=0;});
+    if(!matches.length){list.appendChild(txt('div','No page matches “'+q+'”.',{style:{fontSize:'12px',color:'var(--muted)',padding:'10px 4px'}}));return;}
+    matches.forEach(function(p){const r=txt('button',p[1],{className:'btn',style:{width:'100%',textAlign:'left',justifyContent:'flex-start',fontWeight:'600'}});r.onclick=function(){go(p[0]);};list.appendChild(r);});
+  }
+  inp.addEventListener('input',paint);
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){const q=(inp.value||'').toLowerCase().trim();const m=pages.filter(function(p){return !q||p[1].toLowerCase().indexOf(q)>=0;});if(m.length)go(m[0][0]);}});
+  paint();
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=function(){ov.remove();};
+  box.appendChild(closeBtn);
+  ov.appendChild(box);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  try{inp.focus();}catch(_){}
+}
+window._khOpenLauncher=_khOpenLauncher;
 function syncNavVisibility(){
   if(!S.navHidden)S.navHidden={};
   NAV_TABS.forEach(([view])=>{
