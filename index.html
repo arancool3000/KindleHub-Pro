@@ -13548,6 +13548,7 @@ const GAME_HELP={
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
+  farm:{name:'Farm',how:'A cosy turn-based farming sim. Pick a seed from the shop (Wheat is cheapest), tap an empty plot to plant it (costs coins), then tap "Next day" to grow every crop one day. When a crop is READY, tap it to harvest and sell it for coins — then buy pricier seeds (carrots, berries, pumpkins) that sell for more. Grow your coin pile as high as you can. Your farm saves automatically, so you can come back any time; "New farm" starts over.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
   trivia:{name:'Trivia',how:'A multiple-choice general-knowledge quiz. Read the question, tap the answer you think is right. A correct answer scores a point and the right choice lights up; a wrong answer costs one of your three ♥ lives. Keep going until you run out of lives — then beat your best score. All questions are built in, so it works with no internet.'},
@@ -14621,6 +14622,7 @@ function _doLaunch(g){
     case 'nonogram': Nonogram.start();break;
     case 'eightball': EightBall.start();break;
     case 'trivia': Trivia.start();break;
+    case 'farm': Farm.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -19396,6 +19398,69 @@ const Nonogram=(()=>{
     setTimeout(function(){if(game&&game.done){game.idx=(game.idx+1)%PUZZLES.length;loadPuzzle(game.idx);}},1200);
   }
   function stop(){game=null;}
+  return{start,stop};
+})();
+
+/* ── Farm — a cosy turn-based farming sim ───────────────────────────────
+   Plant seeds on a grid, tap "Next day" to grow them, harvest when ready and
+   sell for coins to buy more seeds. Fully turn-based (no loop) so it's easy on
+   e-ink; the whole farm persists in S.games.farm so you can resume any time. */
+const Farm=(()=>{
+  const COLS=4,ROWS=3,PLOTS=COLS*ROWS;
+  const CROPS={
+    wheat:{name:'Wheat',cost:3,grow:2,sell:6},
+    carrot:{name:'Carrot',cost:5,grow:3,sell:12},
+    berry:{name:'Berry',cost:8,grow:4,sell:20},
+    pumpkin:{name:'Pumpkin',cost:10,grow:5,sell:28}
+  };
+  const ORDER=['wheat','carrot','berry','pumpkin'];
+  let st=null;
+  function _load(){if(!S.games)S.games={};var g=S.games.farm;return (g&&Array.isArray(g.plots)&&g.plots.length===PLOTS)?g:null;}
+  function _fresh(prevBest){return {plots:new Array(PLOTS).fill(null),coins:15,day:1,seed:'wheat',best:prevBest||0};}
+  function persist(){try{if(!S.games)S.games={};S.games.farm=st;if(typeof save==='function')save();}catch(_){}}
+  function start(){
+    st=_load()||_fresh(0);
+    if(typeof st.coins!=='number')st.coins=15;if(typeof st.day!=='number')st.day=1;if(!st.seed||!CROPS[st.seed])st.seed='wheat';if(typeof st.best!=='number')st.best=0;
+    enterImmersive('Farm','Day '+st.day+' · Coins: '+st.coins);
+    try{immersiveRoot._trackStop=stop;}catch(_){}
+    render();
+  }
+  function _bar(){if(st.coins>st.best)st.best=st.coins;if(typeof updateImmersiveScore==='function')updateImmersiveScore('Day '+st.day+' · Coins: '+st.coins+' · Best: '+st.best);}
+  function plant(i){var c=CROPS[st.seed];if(!c||st.plots[i])return;if(st.coins<c.cost){toast('Not enough coins for '+c.name+' ('+c.cost+').');return;}st.coins-=c.cost;st.plots[i]={k:st.seed,age:0};persist();render();}
+  function harvest(i){var p=st.plots[i];if(!p)return;var c=CROPS[p.k];if(!c||p.age<c.grow)return;st.coins+=c.sell;st.plots[i]=null;persist();render();}
+  function nextDay(){st.day++;for(var i=0;i<st.plots.length;i++){var p=st.plots[i];if(p){var c=CROPS[p.k];if(c&&p.age<c.grow)p.age++;}}persist();render();}
+  function reset(){st=_fresh(st?st.best:0);persist();render();}
+  function render(){
+    immersiveContent.innerHTML='';
+    _bar();
+    immersiveContent.appendChild(txt('div','Day '+st.day+'  ·  Coins: '+st.coins,{className:'snake-score-bar',style:{textAlign:'center'}}));
+    immersiveContent.appendChild(txt('div','Pick a seed, tap a plot to plant, then Next day to grow. Tap a ready crop to harvest and sell.',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px',lineHeight:'1.4'}}));
+    const shop=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',margin:'6px 0'}});
+    ORDER.forEach(function(k){var c=CROPS[k];var on=(st.seed===k);var b=txt('button',c.name+' '+c.cost+'/'+c.sell,{className:'btn small'+(on?' primary':''),style:{fontSize:'11px'}});b.onclick=function(){st.seed=k;persist();render();};shop.appendChild(b);});
+    immersiveContent.appendChild(shop);
+    const sc=CROPS[st.seed];
+    immersiveContent.appendChild(txt('div','Selected: '+sc.name+' — cost '+sc.cost+', grows '+sc.grow+' days, sells '+sc.sell,{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',marginBottom:'6px'}}));
+    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat('+COLS+',1fr)',gap:'8px',maxWidth:'340px',margin:'0 auto',padding:'0 8px'}});
+    for(let i=0;i<PLOTS;i++){(function(i){
+      const p=st.plots[i];
+      const cell=el('button',{className:'btn',style:{minHeight:'62px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',padding:'4px'}});
+      if(!p){cell.appendChild(txt('span','+',{style:{fontSize:'18px',fontWeight:'900',color:'var(--muted)'}}));cell.appendChild(txt('span','Plant',{style:{fontSize:'9px',color:'var(--muted)'}}));cell.onclick=function(){plant(i);};}
+      else{const c=CROPS[p.k];const ready=p.age>=c.grow;cell.appendChild(txt('span',c.name,{style:{fontSize:'11px',fontWeight:'700'}}));
+        if(ready){cell.style.background='var(--accent)';cell.style.color='var(--accent-inv)';cell.style.borderColor='var(--accent)';cell.appendChild(txt('span','READY +'+c.sell,{style:{fontSize:'9px'}}));cell.onclick=function(){harvest(i);};}
+        else{cell.appendChild(txt('span','growing '+p.age+'/'+c.grow,{style:{fontSize:'9px',color:'var(--muted)'}}));cell.onclick=function(){toast(c.name+' — '+(c.grow-p.age)+' day'+((c.grow-p.age)===1?'':'s')+' to go.');};}}
+      grid.appendChild(cell);
+    })(i);}
+    immersiveContent.appendChild(grid);
+    const ctrl=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center',marginTop:'12px',flexWrap:'wrap'}});
+    const nd=txt('button','Next day',{className:'btn primary'});nd.onclick=nextDay;ctrl.appendChild(nd);
+    const ng=txt('button','New farm',{className:'btn'});
+    ng.onclick=(typeof newGameGuard==='function')?newGameGuard(function(){return !!(st&&(st.plots.some(function(x){return !!x;})||st.day>1));},reset):function(){reset();};
+    ctrl.appendChild(ng);
+    immersiveContent.appendChild(ctrl);
+    const anyGrowing=st.plots.some(function(x){return !!x;});
+    if(st.coins<CROPS.wheat.cost&&!anyGrowing){immersiveContent.appendChild(txt('div','Out of coins and crops — tap New farm to start fresh.',{style:{fontSize:'11px',color:'var(--danger)',textAlign:'center',marginTop:'8px',fontWeight:'700'}}));}
+  }
+  function stop(){/* turn-based — no timers to clear */}
   return{start,stop};
 })();
 
@@ -26201,6 +26266,7 @@ const GAME_MAP=[
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
   {keys:['8 ball','8-ball','eight ball','eightball','pool','billiards','snooker','pool table'],g:'eightball'},
   {keys:['trivia','quiz','trivia quiz','general knowledge','quiz game','questions'],g:'trivia'},
+  {keys:['farm','farming','farmville','harvest','crops','plant','farm sim','stardew'],g:'farm'},
 ];
 function doConvert(n,from,to){
   const c={
@@ -30603,6 +30669,12 @@ games:()=>{
     if(bbB)c.appendChild(txt('p','Best score: '+bbB,{style:{fontSize:'11px',color:'var(--muted)'}}));
     else c.appendChild(txt('p','Drop shapes on an 8×8 grid. Fill rows, columns, or quadrants to clear them. Game ends when no shape fits.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.45'}}));
     c.appendChild(txt('button','Play Block Blast',{className:'btn primary','data-game':'blockblast',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowBoard.appendChild(gc('Farm',null,c=>{
+    const fb=S.games&&S.games.farm&&S.games.farm.best||0;
+    c.appendChild(txt('p','A cosy turn-based farming sim — plant seeds, grow crops over days, then harvest and sell for coins. Auto-saves, so you can pop back any time.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.45'}}));
+    if(fb)c.appendChild(txt('p','Best coins: '+fb,{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play Farm',{className:'btn primary','data-game':'farm',style:{marginTop:'6px',width:'100%'}}));
   }));
   v.appendChild(rowBoard);
 
