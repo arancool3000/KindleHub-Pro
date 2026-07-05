@@ -2005,6 +2005,62 @@ function _khMessageUserPicker(onDone){
 window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
 window._khOnFriendRequest=_khOnFriendRequest;window._khOnFriendAccept=_khOnFriendAccept;window._khAcceptFriendRequest=_khAcceptFriendRequest;window._khDeclineFriendRequest=_khDeclineFriendRequest;window._khRemoveFriend=_khRemoveFriend;window._khMessageFriend=_khMessageFriend;window._khAddFriendPicker=_khAddFriendPicker;
 
+/* ── Share custom apps in chat ────────────────────────────────────────────
+   Apps travel as a "KHAPP1:" code (base64 of {label,color,icon,html}) — pure
+   text, no media backend. Sending = drop the code as a normal chat message;
+   the message renderer detects the prefix and shows an Install button that
+   calls _khInstallAppFromCode (same safe decode as the KindleOS store import:
+   size cap + regenerated safe icon, never trusts obj.icon). */
+function _khAppCode(app){try{return 'KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:app.label,color:app.color,icon:app.icon,html:app.customHTML}))));}catch(e){return '';}}
+function _khInstallAppFromCode(code){
+  try{
+    var v=String(code||'').trim();
+    if(v.indexOf('KHAPP1:')!==0)return null;
+    var obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
+    if(!obj||!obj.html)return null;
+    var html=String(obj.html);
+    if(html.length>512*1024)return null;/* size cap so a code can't bloat state */
+    var ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
+    var color=/^#[0-9a-fA-F]{3,8}$/.test(String(obj.color||''))?obj.color:ACCS[Math.floor(Math.random()*ACCS.length)];
+    var label=String(obj.label||'App').slice(0,40);
+    /* NEVER trust obj.icon (innerHTML'd on the grid) — regenerate a safe one. */
+    var safeInitials=label.substring(0,3).toUpperCase().replace(/[<>&"']/g,'');
+    var icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+safeInitials+'</text></svg>';
+    if(typeof osState==='undefined'||!osState)return null;
+    if(!Array.isArray(osState.customApps))osState.customApps=[];
+    var newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:html,builtWith:'Shared'};
+    osState.customApps.push(newApp);
+    try{if(typeof persistOS==='function')persistOS();}catch(_){}
+    try{if(typeof buildPages==='function')buildPages();}catch(_){}
+    try{if(typeof renderInstalled==='function')renderInstalled();}catch(_){}
+    return label;
+  }catch(_){return null;}
+}
+/* Peek an app code's label without installing (for the chat bubble UI). */
+function _khAppCodeLabel(code){try{var o=JSON.parse(decodeURIComponent(escape(atob(String(code).trim().slice(7)))));return String((o&&o.label)||'App').slice(0,40);}catch(e){return 'App';}}
+/* Render a shared-app chat bubble: a compact card with an Install button. Uses
+   an "APP" text badge (no emoji) so it can't render as a Kindle tofu box. */
+function _khAppMsgCard(code,own){
+  var label=(typeof _khAppCodeLabel==='function')?_khAppCodeLabel(code):'App';
+  var box=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'var(--highlight)',border:'var(--thin)',borderRadius:'8px',maxWidth:'240px'}});
+  box.appendChild(txt('span','APP',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+  var mid=el('div',{style:{flex:'1',minWidth:'0'}});
+  mid.appendChild(txt('div',(typeof _censorText==='function'?_censorText(label):label),{style:{fontWeight:'700',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+  mid.appendChild(txt('div',own?'You shared an app':'Shared app · tap Install',{style:{fontSize:'10px',color:'var(--muted)'}}));
+  box.appendChild(mid);
+  var inst=txt('button','Install',{className:'btn small primary'});
+  inst.onclick=function(e){
+    if(e&&e.stopPropagation)e.stopPropagation();
+    inst.disabled=true;inst.textContent='…';
+    var nm=_khInstallAppFromCode(code);
+    if(nm){inst.textContent='Installed';if(typeof toast==='function')toast('"'+nm+'" added to your KindleOS home screen.',4500);}
+    else{inst.disabled=false;inst.textContent='Install';if(typeof toast==='function')toast('Could not install that app.');}
+  };
+  box.appendChild(inst);
+  return box;
+}
+window._khAppCode=_khAppCode;window._khInstallAppFromCode=_khInstallAppFromCode;window._khAppCodeLabel=_khAppCodeLabel;window._khAppMsgCard=_khAppMsgCard;
+
 /* ── Admin AI: "ask about a user" ─────────────────────────────────────────
    Gathers a user's cloud METADATA (email, last sync, message count + recent
    group/ts/device/location hints, presence last_seen) and asks the AI to answer
@@ -54098,7 +54154,45 @@ messages:()=>{
     emojiBtn.title='Insert a symbol';
     emojiBtn.onclick=()=>{emojiPanel.style.display=(emojiPanel.style.display==='none')?'block':'none';};
     const sendBtn=txt('button','Send',{className:'btn primary small',style:{flexShrink:'0',borderRadius:'20px',padding:'0 18px',minHeight:'40px',fontWeight:'800'}});
-    comp.append(emojiBtn,txtArea,sendBtn);
+    /* Attach (＋) → share one of your KindleOS apps as an installable code. It's
+       sent through the normal message path (just text), so no send/encryption
+       changes are needed; the recipient's bubble renders an Install button. */
+    const attachBtn=txt('button','+',{className:'btn small',style:{flexShrink:'0',borderRadius:'20px',minWidth:'38px',minHeight:'40px',padding:'0',fontSize:'20px',lineHeight:'1',fontWeight:'700'}});
+    attachBtn.title='Share an app';
+    function _khOpenAppShareMenu(){
+      const apps=(typeof osState!=='undefined'&&osState&&Array.isArray(osState.customApps))?osState.customApps:[];
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
+      const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
+      sheet.appendChild(txt('h3','Share an app',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 4px'}}));
+      sheet.appendChild(txt('div','Send one of your KindleOS apps — the recipient taps Install to add it to their home screen.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+      if(!apps.length){
+        sheet.appendChild(txt('div','You have no custom apps yet. Build one in KindleOS (AI App Builder), then share it here.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'8px 0'}}));
+      } else {
+        apps.forEach(function(app){
+          const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 4px',borderBottom:'var(--thin)'}});
+          row.appendChild(txt('span','APP',{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+          row.appendChild(txt('span',(typeof _censorText==='function'?_censorText(app.label||'App'):(app.label||'App')),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'13px',fontWeight:'700'}}));
+          const sendA=txt('button','Send',{className:'btn small primary'});
+          sendA.onclick=function(){
+            const code=(typeof _khAppCode==='function')?_khAppCode(app):'';
+            if(!code){if(typeof toast==='function')toast('Could not pack that app');return;}
+            if(code.length>16000){if(typeof toast==='function')toast('That app is too large to share in chat.',4000);return;}
+            ov.remove();
+            txtArea.value=code;
+            try{txtArea.dispatchEvent(new Event('input',{bubbles:true}));}catch(_){}
+            try{sendBtn.click();}catch(_){}
+          };
+          row.appendChild(sendA);
+          sheet.appendChild(row);
+        });
+      }
+      const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'10px'}});cl.onclick=function(){ov.remove();};
+      sheet.appendChild(cl);
+      ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    }
+    attachBtn.onclick=_khOpenAppShareMenu;
+    comp.append(attachBtn,emojiBtn,txtArea,sendBtn);
     v.appendChild(emojiPanel);
     v.appendChild(comp);
 
@@ -54951,10 +55045,16 @@ messages:()=>{
           pinTag.textContent='PIN';
           bubble.appendChild(pinTag);
         }
-        /* Rich text: mentions, inline code, fenced code blocks */
+        /* Rich text: mentions, inline code, fenced code blocks — OR, if the
+           message is a shared app code, a compact Install card instead of the
+           raw base64. */
         const textBox=document.createElement('span');
-        textBox.appendChild(_renderMessageText(m.text));
-        _linkifyEl(textBox);
+        if(String(m.text||'').indexOf('KHAPP1:')===0&&typeof _khAppMsgCard==='function'){
+          textBox.appendChild(_khAppMsgCard(m.text,own));
+        } else {
+          textBox.appendChild(_renderMessageText(m.text));
+          _linkifyEl(textBox);
+        }
         bubble.appendChild(textBox);
         if(m.edited)bubble.appendChild(txt('span','(edited)',{className:'msg-edited'}));
         /* Reactions strip — chips with key + count, tap to toggle */
