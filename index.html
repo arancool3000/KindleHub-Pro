@@ -46810,23 +46810,58 @@ imagesearch:()=>{
     ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
+  /* Turn a fetch failure into an HONEST, specific message — not a blanket
+     "bad Wi‑Fi". An HTTP status means the service answered (rate limit / down /
+     refused); an abort means it was slow; anything else is a real reach
+     problem (offline, DNS, CORS, or the network blocking the host). */
+  function _imgErrMsg(e){
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return 'You’re offline — connect to the internet to search images.';
+    if(e&&e._http){
+      var s=e._http;
+      if(s===429)return 'The image service is busy right now (rate limited). Wait a few seconds and tap Search again.';
+      if(s>=500)return 'The image service is temporarily down (error '+s+'). Try again shortly.';
+      if(s===401||s===403)return 'The image service refused the request (error '+s+').';
+      return 'The image service returned an error ('+s+'). Try again shortly.';
+    }
+    var msg=String((e&&e.message)||e||'');
+    if(/abort/i.test(msg))return 'The search timed out — the image service is slow right now. Tap Search to retry.';
+    return 'Couldn’t reach the image service. It may be down or blocked on this network (your Wi‑Fi is probably fine) — tap Search to retry.';
+  }
+  async function _imgFetch(url){
+    const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+    const tid=setTimeout(function(){if(ctrl)ctrl.abort();},14000);
+    try{
+      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
+      if(!r.ok){const _e=new Error('HTTP '+r.status);_e._http=r.status;throw _e;}
+      return await r.json();
+    }finally{clearTimeout(tid);}
+  }
   async function run(q,page){
     if(_busy)return;
     _q=q;_page=page||1;
     const oldMore=v.querySelector('.imgMore');if(oldMore)oldMore.remove();
     if(_page===1)grid.innerHTML='';
-    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to search images.';return;}
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to the internet to search images.';return;}
     _busy=true;status.textContent=_page===1?'Searching…':'Loading more…';
+    const apiUrl='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
+    /* Try Openverse directly; on a network/CORS/timeout failure (NOT an HTTP
+       error status) retry ONCE through the allorigins CORS proxy — the same
+       resilience the reader + News feeds use. This is what actually rescues a
+       device where the direct request is blocked, and the message reports the
+       REAL reason instead of always blaming Wi‑Fi. */
+    let data=null,err=null;
+    try{ data=await _imgFetch(apiUrl); }
+    catch(e){
+      err=e;
+      if(!(e&&e._http)){
+        try{ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(apiUrl)); err=null; }
+        catch(e2){ err=e2; }
+      }
+    }
+    if(!data){ status.textContent=_imgErrMsg(err); _busy=false; return; }
     try{
-      const url='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
-      const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
-      const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
-      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
-      clearTimeout(tid);
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      const data=await r.json();
       const results=(data&&data.results)||[];
-      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”.';_busy=false;return;}
+      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”. Try a different search.';_busy=false;return;}
       status.textContent=(data.result_count?(data.result_count.toLocaleString()+' results'):'')+' — tap an image to view it larger.';
       results.forEach(im=>{
         const thumb=im.thumbnail||im.url;if(!thumb)return;
@@ -46843,7 +46878,7 @@ imagesearch:()=>{
         v.appendChild(more);
       }
     }catch(e){
-      status.textContent='Couldn’t load images (network issue). Please try again.';
+      status.textContent='Got a reply but couldn’t read the images — tap Search to retry.';
     }
     _busy=false;
   }
