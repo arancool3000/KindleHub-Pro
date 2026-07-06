@@ -599,6 +599,33 @@ end. `typeChar`/`typeBackspace`/`insertSugg`/`getPrefix` route through `_kbCaret
   both are ALSO enforced server-side so nothing is weakened. The actual `_sbSelect('kh_users')` lookup keeps
   its 12s bound. (Tested: minify Silk gate + boot regression; login needs a live backend so verified by code.)
 
+## ⚡ Round: de-brand retro masthead + rich Sports app + Farm v3 + image-app resilience
+- **Retro masthead not self-advertising** (`uiMode==='simple'` home): the window title bar said "KINDLEHUB"
+  and the no-name greeting fell back to "KindleHub". Now the bar reads "HOME" and the fallback greeting is
+  "Welcome" (the app-header logo still says KindleHub Pro — only the retro home masthead was de-branded).
+- **Sports app rebuilt** (`BUILDERS.sports`): was a flat today-only score list. Now: a **date bar** (Prev /
+  day label / Next / Today) hitting `scoreboard?dates=YYYYMMDD` so you can walk **past / live / future** days
+  (LIVE badge on in-progress games); every game is **tappable** → a detail view built from
+  `summary?event=<id>` with the scoreline, status, venue, then the best-available stat blocks per sport:
+  **team-stats comparison** (`boxscore.teams[].statistics`), **soccer lineups + formation** (`rosters[]` incl.
+  each side's `formation` and starters/subs), and **US-sport box-score players** (`boxscore.players[]`);
+  falls back to `leaders[]`. **Tapping any player** opens their per-game stat line (`_showPlayer`) — the
+  requested "click Ronaldo → shots/assists", basketball shows its own stat keys, etc. Avoids Array.find. Test
+  `/tmp/sportsfarm_test.cjs`.
+- **Farm v3 — "make it actually fun"** (`const Farm`): added a real management/economy loop on top of the
+  crop/level/weather/order base — **animals** (`ANIMALS` chicken/cow/pig, level-gated) give **passive coins
+  every Next day** (`_animalIncome`); a **Sprinkler** upgrade (`SPRINKLER_COST`, `st.sprinkler`) auto-waters
+  every crop each day; a daily **market event** (`MARKET`/`MKEYS`: Steady / Market Day +50% sell / Harvest
+  festival coin bonus) via `_sellPrice(c)`; plus a **Harvest-all** button. New S fields (`animals`,`sprinkler`,
+  `market`) back-filled by `_norm`. Still turn-based / e-ink-safe.
+- **Image app resilience** (`imagesearch` `run`): a user reported it "not working". It now retries via CORS
+  proxies on **any** failure — incl. an HTTP error like Openverse's low anonymous rate-limit (429) or a 5xx,
+  not just network/CORS — and falls through **two** proxies (allorigins → corsproxy.io) since a proxy fetch is
+  a different route. (The other two forwarded reports — old chat messages resurfacing, a sent email
+  vanishing — are the message-cache/mail-cap behaviours, noted but not chased blind.)
+Tests: `/tmp/sportsfarm_test.cjs` (sports structure + date nav + image build; farm barn/animals/sprinkler/
+market buy-flow) + `tools/games_test.cjs` (35, 0 flagged) + minify Silk gate. Merged to `main`.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
