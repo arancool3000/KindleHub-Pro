@@ -574,6 +574,18 @@ Autonomous batch on `claude/keen-tesla-n73rpc` (user stepped away, asked to fini
 Tests: `/tmp/round3_test.cjs` (find/settings/gazette-tab/dashboard-gone/no-emoji/shared-picker — all green) +
 `tools/games_test.cjs` (35, 0 flagged) + minify Silk gate. Merged to `main` at the user's request.
 
+## ⚡ Fix: KindleHub keyboard typed to the START of the box (caret reset)
+User: "when you pre-type on the KindleHub keyboard… it goes back to the start of the text box." Root cause: the
+KB sets the target `readOnly` to suppress the native keyboard, but old Silk reports a readOnly field's
+`selectionStart` as **0** AND **ignores the selectionStart setter** — so `typeChar` read position 0 every
+keystroke and inserted at the start (typing "hello" → "olleh"). Fix: the keyboard now tracks its OWN caret
+(`_caret`, near `_target`) instead of trusting the field's selection API. `_attachToTarget` SEEDS `_caret` from
+the tap position on the FIRST attach (read BEFORE `readOnly=true`, gated on `khOrigRo==null`), else the value's
+end. `typeChar`/`typeBackspace`/`insertSugg`/`getPrefix` route through `_kbCaret(v)` (clamped) + `_kbSetCaret(pos)`
+(updates `_caret`; best-effort field-setter only when NOT readOnly). Test `/tmp/kbcaret_test.cjs` mocks
+`selectionStart→0` (the Silk behaviour) and asserts typing "hello" yields "hello", not "olleh". Supersedes the
+"typeChar writes value programmatically so readOnly is fine" claim in the earlier double-keyboard note.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
