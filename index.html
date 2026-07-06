@@ -25535,61 +25535,91 @@ function srDueCards(di){
 
 function srDueCount(di){return srDueCards(di).length;}
 
-function studySR(di){
+function studySR(di,cram){
   const deck=S.flashDecks[di];
   if(!deck||!deck.cards.length){toast('No cards in this deck');return;}
-  const due=srDueCards(di);
+  /* cram = review the WHOLE deck now, ignoring the due schedule (shuffled).
+     Otherwise study only cards whose nextReview has passed. Rating still
+     updates the SRS schedule in both modes. */
+  const due=cram
+    ?shuffleArr(deck.cards.map((card,ci)=>({card,ci,data:srGetCard(di,ci)})))
+    :srDueCards(di);
   if(!due.length){toast('No cards due! Come back later.');return;}
-  let idx=0;let shown=false;
-  enterImmersive(deck.name,'SRS: '+due.length+' due');
+  let idx=0;
+  /* Keyboard shortcuts: Space/Enter flips, 1/2/3 = Again/Hard/Easy. Handlers
+     for the current card are stashed here and swapped each card. */
+  let curShow=null,curRate=null;
+  enterImmersive(deck.name,(cram?'Cram: ':'SRS: ')+due.length+(cram?' cards':' due'));
+  function onKey(e){
+    if(immersiveRoot.style.display!=='block')return;
+    if(e.key===' '||e.key==='Enter'){if(curShow){curShow();e.preventDefault();}}
+    else if(e.key==='1'){if(curRate){curRate(1);e.preventDefault();}}
+    else if(e.key==='2'){if(curRate){curRate(3);e.preventDefault();}}
+    else if(e.key==='3'){if(curRate){curRate(5);e.preventDefault();}}
+  }
+  document.addEventListener('keydown',onKey);
+  function cleanup(){document.removeEventListener('keydown',onKey);curShow=null;curRate=null;}
+  immersiveRoot._trackStop=cleanup;/* removed on exitImmersive */
 
   function showCard(){
     immersiveContent.innerHTML='';
     if(idx>=due.length){
+      cleanup();
       immersiveContent.appendChild(txt('h2','Session complete!',{style:{textAlign:'center',margin:'20px 0'}}));
-      immersiveContent.appendChild(txt('p',idx+' cards reviewed.',{style:{textAlign:'center',color:'var(--muted)'}}));
+      immersiveContent.appendChild(txt('p',idx+' card'+(idx===1?'':'s')+' reviewed'+(cram?' (cram)':'')+'.',{style:{textAlign:'center',color:'var(--muted)'}}));
       const nr=srDueCards(di);
       if(nr.length){
-        const nxt=new Date(Math.min(...nr.map(x=>x.data.nextReview)));
-        immersiveContent.appendChild(txt('p','Next due: '+nxt.toLocaleString(),{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)'}}));
+        const nxt=new Date(Math.min.apply(null,nr.map(x=>x.data.nextReview)));
+        immersiveContent.appendChild(txt('p',nr.length+' still due · next: '+nxt.toLocaleString(),{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)'}}));
+      } else {
+        immersiveContent.appendChild(txt('p','All caught up — nothing due right now.',{style:{textAlign:'center',fontSize:'11px',color:'var(--success)',fontWeight:'700'}}));
       }
+      const again=txt('button',cram?'Cram again':'Review again',{className:'btn small primary',style:{display:'block',margin:'14px auto 0'}});
+      again.onclick=()=>studySR(di,cram);
+      immersiveContent.appendChild(again);
       return;
     }
-    shown=false;
     const {card,ci}=due[idx];
     updateImmersiveScore((idx+1)+'/'+due.length);
     const data=srGetCard(di,ci);
     const interval=data.interval>1?data.interval+'d':'new';
-    immersiveContent.appendChild(txt('div','Card '+(idx+1)+' of '+due.length+' — interval: '+interval,{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px'}}));
-    const front=el('div',{style:{border:'var(--thin)',borderRadius:'var(--radius)',padding:'20px',fontSize:'18px',fontWeight:'700',textAlign:'center',minHeight:'80px',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'10px'}});
+    immersiveContent.appendChild(txt('div','Card '+(idx+1)+' of '+due.length+' — interval: '+interval+'  ·  Space flips, 1/2/3 rates',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px'}}));
+    const front=el('div',{style:{border:'var(--thin)',borderRadius:'var(--radius)',padding:'20px',fontSize:'18px',fontWeight:'700',textAlign:'center',minHeight:'80px',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'10px',cursor:'pointer'}});
     front.textContent=card.front;
+    front.title='Tap to flip';
     immersiveContent.appendChild(front);
     const showBtn=txt('button','Show Answer',{className:'btn primary',style:{width:'100%',marginBottom:'10px'}});
     const answerDiv=el('div',{style:{border:'var(--thin)',borderRadius:'4px',padding:'14px',fontSize:'16px',textAlign:'center',marginBottom:'10px',display:'none'}});
     answerDiv.textContent=card.answer;
     immersiveContent.appendChild(showBtn);
     immersiveContent.appendChild(answerDiv);
-    showBtn.onclick=()=>{
-      shown=true;answerDiv.style.display='block';showBtn.style.display='none';
+    function flip(){
+      if(answerDiv.style.display==='block')return;
+      answerDiv.style.display='block';showBtn.style.display='none';
       const rateDiv=el('div',{style:{marginTop:'8px'}});
       rateDiv.appendChild(txt('div','How well did you know this?',{style:{fontSize:'12px',fontWeight:'700',marginBottom:'6px',textAlign:'center'}}));
       const btnRow=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'6px'}});
       const rates=[
-        {q:1,label:'Again',sub:'Forgot'},
-        {q:3,label:'Hard',sub:'Remembered with effort'},
-        {q:5,label:'Easy',sub:'Knew it instantly'},
+        {q:1,label:'Again',sub:'Forgot (1)'},
+        {q:3,label:'Hard',sub:'With effort (2)'},
+        {q:5,label:'Easy',sub:'Instantly (3)'},
       ];
+      const rate=(q)=>{curRate=null;srUpdate(di,ci,q);idx++;showCard();};
+      curRate=rate;
       rates.forEach(({q,label,sub})=>{
         const b=el('div',{style:{border:'var(--thin)',borderRadius:'4px',padding:'8px 4px',cursor:'pointer',textAlign:'center',userSelect:'none'}});
         b.appendChild(txt('div',label,{style:{fontWeight:'700',fontSize:'13px'}}));
         b.appendChild(txt('div',sub,{style:{fontSize:'9px',color:'var(--muted)'}}));
-        b.onclick=()=>{srUpdate(di,ci,q);idx++;showCard();};
-        b.addEventListener('touchend',e=>{e.preventDefault();srUpdate(di,ci,q);idx++;showCard();});
+        b.onclick=()=>rate(q);
+        b.addEventListener('touchend',e=>{e.preventDefault();rate(q);});
         btnRow.appendChild(b);
       });
       rateDiv.appendChild(btnRow);
       immersiveContent.appendChild(rateDiv);
-    };
+    }
+    curShow=flip;curRate=null;
+    showBtn.onclick=flip;
+    front.onclick=flip;
   }
   showCard();
 }
@@ -25609,6 +25639,10 @@ function renderDeckList(){
     const dueN=srDueCount(di);
     if(dueN>0)srsBtn.textContent='SRS Review ('+dueN+' due)';
     btns.appendChild(srsBtn);
+    const cramBtn=txt('button','Cram all',{className:'btn small'});
+    cramBtn.title='Review the whole deck now, ignoring the due schedule';
+    cramBtn.onclick=()=>studySR(di,true);
+    btns.appendChild(cramBtn);
     const del=txt('button','x',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
     del.onclick=()=>{kindleConfirm('Delete deck?',ok=>{if(ok){S.flashDecks.splice(di,1);save();renderDeckList();}});};
     btns.appendChild(del);h.appendChild(btns);d.appendChild(h);

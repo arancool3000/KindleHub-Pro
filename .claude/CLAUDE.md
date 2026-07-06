@@ -709,6 +709,17 @@ Working through the documented "PENDING / bigger jobs" list, each a tested+commi
   (now 36 games, 0 flagged). Score = coins×10 + stomps×20 + 150 finish bonus → `S.games.platformer.best` +
   `_khSubmitScore`. Test `/tmp/platformer_test.cjs` (drives ►+jump: % climbs 4→23, coins collected, lives shown,
   clean exit with no leaked interval).
+- **Flashcard review polish** (Tools parity): the SRS was already strong (SM-2 due scheduling + Again/Hard/Easy
+  + 4 study modes Flashcard/MC/Written/Spell + CSV import + AI-from-notes). Added the two real gaps: (1)
+  **Cram mode** — `studySR(di,cram)` now takes a cram flag that reviews the WHOLE deck shuffled, ignoring the
+  due schedule (fixes the dead-end where a deck with nothing due just toasted "come back later"); a **Cram all**
+  button sits next to SRS Review in `renderDeckList`, and the session-complete screen shows a "Cram again" /
+  "Review again" button + how many are still due. (2) **Keyboard shortcuts** — Space/Enter flips, 1/2/3 =
+  Again/Hard/Easy (handlers stashed in `curShow`/`curRate`, swapped per card); the front card is also
+  tap-to-flip. The keydown listener is removed via `immersiveRoot._trackStop=cleanup` (exitImmersive) AND on
+  session-complete, so no leak. Rating still updates the SRS schedule in cram mode (reinforcement). Test
+  `/tmp/flash_test.cjs` (0 due → cram runs all 3, Space flips, key-3 rates, completes, schedule advanced, no
+  stray handler after exit).
 
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
