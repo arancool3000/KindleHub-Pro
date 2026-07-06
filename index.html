@@ -2060,6 +2060,140 @@ function _khAppMsgCard(code,own){
 }
 window._khAppCode=_khAppCode;window._khInstallAppFromCode=_khInstallAppFromCode;window._khAppCodeLabel=_khAppCodeLabel;window._khAppMsgCard=_khAppMsgCard;
 
+/* ── Polls in chat ─────────────────────────────────────────────────────────
+   A poll travels as a plain "KHPOLL1:" message (base64 of {pid,q,opts}); votes
+   travel as separate "KHVOTE1:<pid>:<optIdx>" messages, so nothing needs the
+   append-only message store to be mutable — the client tallies votes by
+   scanning the loaded messages (latest vote per user wins). pid is a random id
+   so votes can reference the poll before it even has a server message id. */
+function _khPollCode(q,opts){
+  try{
+    var pid='p'+Math.random().toString(36).slice(2,9);
+    var clean=(opts||[]).map(function(o){return String(o||'').slice(0,60);}).filter(function(o){return o.trim();}).slice(0,6);
+    if(clean.length<2)return '';
+    var payload={pid:pid,q:String(q||'').slice(0,140),opts:clean};
+    return 'KHPOLL1:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  }catch(e){return '';}
+}
+function _khPollParse(text){
+  try{
+    text=String(text||'');
+    if(text.indexOf('KHPOLL1:')!==0)return null;
+    var o=JSON.parse(decodeURIComponent(escape(atob(text.slice(8)))));
+    if(!o||!o.pid||!Array.isArray(o.opts)||o.opts.length<2)return null;
+    return o;
+  }catch(e){return null;}
+}
+function _khIsVoteMsg(text){return String(text||'').indexOf('KHVOTE1:')===0;}
+/* Tally votes for a poll id from a message list. Returns {counts:[],total,mine}.
+   mine = the option index THIS user last voted for (or -1). */
+function _khPollTally(pid,opts,msgs){
+  var byUser={};/* userId → optIdx (latest wins) */
+  (msgs||[]).forEach(function(m){
+    var t=String(m&&m.text||'');
+    if(t.indexOf('KHVOTE1:'+pid+':')!==0)return;
+    var idx=parseInt(t.slice(('KHVOTE1:'+pid+':').length),10);
+    if(isNaN(idx)||idx<0||idx>=opts.length)return;
+    var uid=(m.userId||m.displayName||'?');
+    byUser[uid]=idx;/* messages are in order, so the last one seen wins */
+  });
+  var counts=opts.map(function(){return 0;});var total=0;
+  Object.keys(byUser).forEach(function(u){counts[byUser[u]]++;total++;});
+  var myUid=(S.userId||(typeof displayName==='function'?'':'')||'');
+  var mine=(myUid&&byUser[myUid]!=null)?byUser[myUid]:-1;
+  return {counts:counts,total:total,mine:mine};
+}
+window._khPollCode=_khPollCode;window._khPollParse=_khPollParse;window._khIsVoteMsg=_khIsVoteMsg;window._khPollTally=_khPollTally;
+
+/* ── Images, screenshots & stickers in chat ───────────────────────────────
+   Photos and screenshots travel INLINE as a "KHIMG1:" message whose body is a
+   hard-downscaled JPEG data URL — kept small enough (~<12 KB) to ride the SAME
+   E2E-encrypted, size-capped message path as text, so no media backend/upload
+   is needed (consistent with how KHAPP1 app codes already ship). Stickers
+   travel as a tiny "KHSTK1:<id>" that renders a BUILT-IN inline SVG, so they
+   cost almost nothing on the wire and never lag on e-ink — the honest,
+   non-laggy answer to "GIFs" (real animated-GIF search needs a Tenor/Giphy key
+   and animates poorly on e-ink anyway). The chat bubble dispatch decodes both;
+   _khMediaLabel keeps raw codes out of reply previews, notifications & Copy. */
+function _khImgCode(dataUrl){var s=String(dataUrl||'');if(s.indexOf('data:image/')!==0)return '';return 'KHIMG1:'+s;}
+function _khImgParse(text){var v=String(text||'');if(v.indexOf('KHIMG1:')!==0)return null;var u=v.slice(7);return (u.indexOf('data:image/')===0)?u:null;}
+function _khIsImgMsg(text){return String(text||'').indexOf('KHIMG1:')===0;}
+function _khStickerCode(id){return 'KHSTK1:'+String(id||'').slice(0,24);}
+function _khStickerParse(text){var v=String(text||'');if(v.indexOf('KHSTK1:')!==0)return null;var id=v.slice(7).trim();return (_KH_STICKERS&&_KH_STICKERS[id])?id:null;}
+function _khIsStickerMsg(text){return String(text||'').indexOf('KHSTK1:')===0;}
+/* One-word label so a media message never shows its raw code in a reply
+   preview, notification toast, or when copied. Returns '' for plain text. */
+function _khMediaLabel(text){if(_khIsImgMsg(text))return '[Image]';if(_khIsStickerMsg(text)){var id=_khStickerParse(text);return '[Sticker'+(id&&_KH_STICKERS[id]?' · '+_KH_STICKERS[id].label:'')+']';}return '';}
+/* Built-in sticker pack — inline SVG line/fill art in currentColor, so it's
+   crisp on e-ink (no tofu, no animation to lag) and adopts the theme colour. */
+var _KH_STICKERS={
+  like:{label:'Thumbs up',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"><rect x="14" y="44" width="16" height="38" rx="3"/><path d="M30 44 L44 14 C51 14 55 20 53 27 L49 42 H78 C84 42 88 47 86 53 L80 78 C79 82 75 84 71 84 H30 Z"/></svg>'},
+  love:{label:'Heart',svg:'<svg viewBox="0 0 100 100" fill="currentColor"><path d="M50 84 C20 62 10 44 10 30 C10 18 20 10 31 10 C39 10 46 15 50 22 C54 15 61 10 69 10 C80 10 90 18 90 30 C90 44 80 62 50 84 Z"/></svg>'},
+  smile:{label:'Smile',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"><circle cx="50" cy="50" r="40"/><circle cx="37" cy="42" r="4" fill="currentColor"/><circle cx="63" cy="42" r="4" fill="currentColor"/><path d="M33 60 Q50 76 67 60" stroke-linecap="round"/></svg>'},
+  haha:{label:'Laughing',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"><circle cx="50" cy="50" r="40"/><path d="M33 40 L44 46 L33 52" stroke-linecap="round" stroke-linejoin="round"/><path d="M67 40 L56 46 L67 52" stroke-linecap="round" stroke-linejoin="round"/><path d="M30 60 Q50 82 70 60 Z" fill="currentColor" stroke="none"/></svg>'},
+  wow:{label:'Wow',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"><circle cx="50" cy="50" r="40"/><circle cx="37" cy="40" r="4" fill="currentColor"/><circle cx="63" cy="40" r="4" fill="currentColor"/><circle cx="50" cy="66" r="10"/></svg>'},
+  sad:{label:'Sad',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"><circle cx="50" cy="50" r="40"/><circle cx="37" cy="42" r="4" fill="currentColor"/><circle cx="63" cy="42" r="4" fill="currentColor"/><path d="M33 68 Q50 54 67 68" stroke-linecap="round"/></svg>'},
+  fire:{label:'Fire',svg:'<svg viewBox="0 0 100 100" fill="currentColor"><path d="M52 8 C54 26 68 30 68 46 C74 42 76 34 75 28 C84 38 88 52 88 62 C88 80 72 92 50 92 C30 92 14 79 14 61 C14 46 24 36 32 30 C33 40 38 44 44 44 C42 30 46 16 52 8 Z"/></svg>'},
+  yes:{label:'Yes',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><circle cx="50" cy="50" r="40"/><path d="M32 52 L45 65 L70 36"/></svg>'},
+  no:{label:'No',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"><circle cx="50" cy="50" r="40"/><path d="M36 36 L64 64 M64 36 L36 64"/></svg>'},
+  star:{label:'Star',svg:'<svg viewBox="0 0 100 100" fill="currentColor"><path d="M50 8 L61 38 L93 38 L67 58 L77 90 L50 70 L23 90 L33 58 L7 38 L39 38 Z"/></svg>'},
+  party:{label:'Party',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"><path d="M18 84 L40 34 L72 66 Z" fill="currentColor" stroke="none"/><path d="M62 20 l6 -6 M80 30 l7 -2 M70 48 l8 3 M55 12 l2 -7" stroke-linecap="round"/></svg>'},
+  hundred:{label:'100',svg:'<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 32 L28 26 V74"/><rect x="42" y="28" width="20" height="44" rx="10"/><rect x="70" y="28" width="20" height="44" rx="10"/></svg>'}
+};
+/* Downscale any source image (data URL) to a small JPEG data URL that fits a
+   character budget so it can ride the normal message path. Lowers quality,
+   then shrinks dimensions, until it fits. Resolves to a dataURL or null. */
+function _khDownscaleImage(src,maxDim,budget){
+  maxDim=maxDim||240;budget=budget||12000;
+  return new Promise(function(resolve){
+    try{
+      var img=new Image();
+      img.onload=function(){
+        try{
+          var w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+          if(!w||!h){resolve(null);return;}
+          function tryAt(dim,q){
+            var scale=Math.min(1,dim/Math.max(w,h));
+            var cw=Math.max(1,Math.round(w*scale)),ch=Math.max(1,Math.round(h*scale));
+            var c=document.createElement('canvas');c.width=cw;c.height=ch;
+            var ctx=c.getContext('2d');if(!ctx)return null;
+            try{ctx.fillStyle='#ffffff';ctx.fillRect(0,0,cw,ch);ctx.drawImage(img,0,0,cw,ch);}catch(e){return null;}
+            var url=null;try{url=c.toDataURL('image/jpeg',q);}catch(e){url=null;}
+            return url;
+          }
+          var dims=[maxDim,Math.round(maxDim*0.78),Math.round(maxDim*0.58),Math.round(maxDim*0.42)];
+          var qs=[0.6,0.46,0.34,0.24];
+          for(var di=0;di<dims.length;di++){
+            for(var qi=0;qi<qs.length;qi++){
+              var out=tryAt(dims[di],qs[qi]);
+              if(out&&out.indexOf('data:image/jpeg')===0&&out.length<=budget){resolve(out);return;}
+            }
+          }
+          var last=tryAt(dims[dims.length-1],0.2);
+          resolve((last&&last.indexOf('data:image/jpeg')===0&&last.length<=budget*1.12)?last:null);
+        }catch(e){resolve(null);}
+      };
+      img.onerror=function(){resolve(null);};
+      img.src=src;
+    }catch(e){resolve(null);}
+  });
+}
+/* Fullscreen image viewer (tap a chat image to enlarge). */
+function _khOpenImageViewer(dataUrl){
+  try{
+    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.9)',zIndex:'100010',display:'flex',alignItems:'center',justifyContent:'center',padding:'12px'}});
+    var im=el('img',{src:dataUrl,style:{maxWidth:'100%',maxHeight:'84%',borderRadius:'8px'}});
+    var bar=el('div',{style:{position:'absolute',top:'0',left:'0',right:'0',display:'flex',justifyContent:'flex-end',padding:'10px'}});
+    var cl=txt('button','Close',{className:'btn small'});cl.onclick=function(){ov.remove();};
+    bar.appendChild(cl);ov.appendChild(im);ov.appendChild(bar);
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }catch(e){}
+}
+window._khImgCode=_khImgCode;window._khImgParse=_khImgParse;window._khIsImgMsg=_khIsImgMsg;
+window._khStickerCode=_khStickerCode;window._khStickerParse=_khStickerParse;window._khIsStickerMsg=_khIsStickerMsg;
+window._khMediaLabel=_khMediaLabel;window._khDownscaleImage=_khDownscaleImage;window._khOpenImageViewer=_khOpenImageViewer;window._KH_STICKERS=_KH_STICKERS;
+
 /* ── Admin AI: "ask about a user" ─────────────────────────────────────────
    Gathers a user's cloud METADATA (email, last sync, message count + recent
    group/ts/device/location hints, presence last_seen) and asks the AI to answer
@@ -3473,6 +3607,9 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   /* Always dedup. If the caller passed an id, use that. Otherwise build
      a synthetic key from name + text + the current minute so two
      identical messages within the same minute also collapse to one toast. */
+  /* Media messages (images/stickers) carry a raw code as their text — show a
+     friendly label in the toast/notification instead of base64 gibberish. */
+  try{if(typeof _khMediaLabel==='function'){var _ml=_khMediaLabel(text);if(_ml)text=_ml;}}catch(_){}
   const key=msgId||(String(name||'')+'|'+String(text||'').slice(0,80)+'|'+Math.floor(Date.now()/60000));
   if(_khAlreadyNotified(key))return;
   _khMarkNotified(key);
@@ -37848,6 +37985,49 @@ settings:()=>{
   _statusInp.oninput=()=>{S.profileStatus=_statusInp.value.slice(0,80);save();};
   c1.appendChild(_statusInp);
 
+  /* ── Profile background — cosmetic banner behind your avatar. A few are free;
+     the fancier ones are an Ultra/Creator perk (a light "buy" gate). Stored in
+     S.profileBg; the banner + avatar preview reflect the pick live. (On e-ink
+     these read as tasteful greys; on colour screens they pop.) */
+  const PROFILE_BGS=[
+    {id:'none',name:'None',css:'',prem:false},
+    {id:'sky',name:'Sky',css:'linear-gradient(135deg,#60a5fa,#a78bfa)',prem:false},
+    {id:'sunset',name:'Sunset',css:'linear-gradient(135deg,#fb7185,#fbbf24)',prem:false},
+    {id:'mint',name:'Mint',css:'linear-gradient(135deg,#34d399,#0ea5e9)',prem:false},
+    {id:'slate',name:'Slate',css:'linear-gradient(135deg,#334155,#0f172a)',prem:false},
+    {id:'aurora',name:'Aurora',css:'linear-gradient(135deg,#22d3ee,#818cf8,#c084fc)',prem:true},
+    {id:'gold',name:'Gold',css:'linear-gradient(135deg,#fde68a,#f59e0b,#b45309)',prem:true},
+    {id:'rose',name:'Rose',css:'linear-gradient(135deg,#fda4af,#a78bfa,#f9a8d4)',prem:true},
+    {id:'neon',name:'Neon',css:'linear-gradient(120deg,#f472b6,#22d3ee)',prem:true}
+  ];
+  function _bgCss(id){for(var i=0;i<PROFILE_BGS.length;i++)if(PROFILE_BGS[i].id===id)return PROFILE_BGS[i].css;return '';}
+  function _isPremTier(){return (typeof _khTier==='function')&&(_khTier()==='ultra'||_khTier()==='creator');}
+  c1.appendChild(txt('div','PROFILE BACKGROUND',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',margin:'12px 0 4px'}}));
+  const _bgBanner=el('div',{id:'profileBgBanner',style:{height:'46px',borderRadius:'10px',border:'var(--thin)',marginBottom:'8px'}});
+  function _paintBanner(){var css=_bgCss(S.profileBg||'none');_bgBanner.style.background=css||'var(--highlight)';}
+  _paintBanner();
+  c1.appendChild(_bgBanner);
+  const _bgGrid=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
+  PROFILE_BGS.forEach(function(bg){
+    const active=(S.profileBg||'none')===bg.id;
+    const sw=el('button',{className:'btn small'+(active?' primary':''),style:{padding:'0',width:'46px',height:'34px',borderRadius:'8px',overflow:'hidden',position:'relative',flexShrink:'0'}});
+    if(bg.css)sw.style.background=bg.css; else sw.textContent='—';
+    if(bg.prem)sw.appendChild(txt('span','★',{style:{position:'absolute',top:'1px',right:'3px',fontSize:'10px',color:'#fff',textShadow:'0 0 3px #000'}}));
+    sw.title=bg.name+(bg.prem?' (Ultra)':'');
+    sw.onclick=function(){
+      if(bg.prem&&!_isPremTier()){
+        if(typeof _khRequireUltra==='function'){if(!_khRequireUltra('Premium profile backgrounds'))return;}
+        else{toast('“'+bg.name+'” is an Ultra perk — reach Ultra to unlock it.',3500);return;}
+      }
+      S.profileBg=bg.id;save();_paintBanner();
+      _bgGrid.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});sw.classList.add('primary');
+      toast('Profile background: '+bg.name);
+    };
+    _bgGrid.appendChild(sw);
+  });
+  c1.appendChild(_bgGrid);
+  c1.appendChild(txt('div','★ = Ultra perk. Free backgrounds work for everyone.',{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'2px'}}));
+
   /* Location picker */
   c1.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'10px 0'}}));
   c1.appendChild(txt('div','HOME LOCATION',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -54882,12 +55062,150 @@ messages:()=>{
        sent through the normal message path (just text), so no send/encryption
        changes are needed; the recipient's bubble renders an Install button. */
     const attachBtn=txt('button','+',{className:'btn small',style:{flexShrink:'0',borderRadius:'20px',minWidth:'38px',minHeight:'40px',padding:'0',fontSize:'20px',lineHeight:'1',fontWeight:'700'}});
-    attachBtn.title='Share an app';
+    attachBtn.title='Attach — image, screenshot, sticker, poll or app';
+    /* Poll creation form (question + 2-6 options) → sends a KHPOLL1 message. */
+    function _khOpenPollMaker(){
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+      const box=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'420px',maxHeight:'86vh',overflowY:'auto',borderRadius:'14px',padding:'16px',boxShadow:'var(--shadow-md)'}});
+      box.appendChild(txt('h3','Create a poll',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 8px'}}));
+      const qi=el('input',{type:'text',placeholder:'Ask a question…',style:{width:'100%',boxSizing:'border-box',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
+      box.appendChild(qi);
+      const optWrap=el('div',{});box.appendChild(optWrap);
+      const optIns=[];
+      function addOpt(ph){
+        if(optIns.length>=6)return;
+        const oi=el('input',{type:'text',placeholder:ph||('Option '+(optIns.length+1)),style:{width:'100%',boxSizing:'border-box',fontSize:'13px',padding:'8px 10px',marginBottom:'6px'}});
+        optIns.push(oi);optWrap.appendChild(oi);
+      }
+      addOpt('Option 1');addOpt('Option 2');
+      const addBtn=txt('button','+ Add option',{className:'btn small',style:{marginBottom:'10px'}});
+      addBtn.onclick=function(){addOpt();if(optIns.length>=6)addBtn.style.display='none';};
+      box.appendChild(addBtn);
+      const row=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+      const canc=txt('button','Cancel',{className:'btn small'});canc.onclick=function(){ov.remove();};
+      const mk=txt('button','Post poll',{className:'btn small primary'});
+      mk.onclick=function(){
+        const q=(qi.value||'').trim();const opts=optIns.map(function(x){return (x.value||'').trim();}).filter(function(x){return x;});
+        if(!q){toast('Add a question.');return;}
+        if(opts.length<2){toast('Add at least two options.');return;}
+        const code=(typeof _khPollCode==='function')?_khPollCode(q,opts):'';
+        if(!code){toast('Could not create the poll.');return;}
+        ov.remove();_sendPayload(code);
+      };
+      row.append(canc,mk);box.appendChild(row);
+      ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      setTimeout(function(){try{qi.focus();}catch(_){}},60);
+    }
+    /* Pick + send a photo from the device. Downscaled hard so it fits the
+       normal message path (no upload backend). */
+    function _khPickAndSendImage(){
+      var fi=document.createElement('input');fi.type='file';fi.accept='image/*';fi.style.position='fixed';fi.style.left='-9999px';
+      fi.onchange=function(){
+        var f=fi.files&&fi.files[0];
+        try{fi.remove();}catch(_){}
+        if(!f)return;
+        if(!/^image\//.test(f.type||'')){if(typeof toast==='function')toast('Please pick an image file.');return;}
+        if(typeof toast==='function')toast('Preparing image…',1500);
+        var rd=new FileReader();
+        rd.onload=function(){
+          _khDownscaleImage(rd.result,240,12000).then(function(url){
+            if(!url){if(typeof toast==='function')toast('Could not process that image — try a smaller one.',3600);return;}
+            _sendPayload(_khImgCode(url));
+          });
+        };
+        rd.onerror=function(){if(typeof toast==='function')toast('Could not read that file.');};
+        rd.readAsDataURL(f);
+      };
+      document.body.appendChild(fi);
+      try{fi.click();}catch(e){if(typeof toast==='function')toast('Image picker unavailable on this device.');}
+    }
+    /* Send a screenshot — capture the current page, or pick one you took
+       earlier (window._khShots). Downscaled before send. */
+    function _khOpenScreenshotPicker(){
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
+      const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'76vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
+      sheet.appendChild(txt('h3','Send a screenshot',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 4px'}}));
+      sheet.appendChild(txt('div','Capture the app right now, or pick one you took earlier. It is shrunk to a thumbnail before sending.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+      const capBtn=txt('button','Capture this page now',{className:'btn small primary',style:{marginBottom:'12px'}});
+      capBtn.onclick=function(){
+        capBtn.disabled=true;capBtn.textContent='Capturing…';
+        var host=document.getElementById('app')||document.body;
+        (window.khCaptureScreen?window.khCaptureScreen(host,'Chat screenshot'):Promise.resolve(null)).then(function(url){
+          if(!url){capBtn.disabled=false;capBtn.textContent='Capture this page now';if(typeof toast==='function')toast('Screenshot failed on this device.');return;}
+          ov.remove();
+          if(typeof toast==='function')toast('Preparing screenshot…',1500);
+          _khDownscaleImage(url,300,12000).then(function(small){if(small){_sendPayload(_khImgCode(small));}else if(typeof toast==='function'){toast('Screenshot too detailed to send — try a simpler page.',3600);}});
+        });
+      };
+      sheet.appendChild(capBtn);
+      const shots=(window._khShots&&window._khShots.length)?window._khShots:[];
+      if(shots.length){
+        sheet.appendChild(txt('div','YOUR RECENT SCREENSHOTS',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.4px',margin:'2px 0 6px'}}));
+        const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}});
+        shots.forEach(function(shot){
+          const cell=el('button',{title:shot.name||'Screenshot',style:{padding:'0',border:'var(--thin)',borderRadius:'8px',overflow:'hidden',background:'var(--bg)',cursor:'pointer',height:'84px'}});
+          const im=el('img',{src:shot.url,style:{width:'100%',height:'84px',objectFit:'cover',display:'block'}});
+          cell.appendChild(im);
+          cell.onclick=function(){
+            ov.remove();
+            if(typeof toast==='function')toast('Preparing screenshot…',1500);
+            _khDownscaleImage(shot.url,300,12000).then(function(small){if(small){_sendPayload(_khImgCode(small));}else if(typeof toast==='function'){toast('That screenshot is too large to send.',3600);}});
+          };
+          grid.appendChild(cell);
+        });
+        sheet.appendChild(grid);
+      } else {
+        sheet.appendChild(txt('div','No saved screenshots yet — capture one above, or use the Screenshot app.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'6px 0'}}));
+      }
+      const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=function(){ov.remove();};
+      sheet.appendChild(cl);
+      ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    }
+    /* Pick a built-in sticker (instant, no API, e-ink-safe). */
+    function _khOpenStickerPicker(){
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
+      const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
+      sheet.appendChild(txt('h3','Stickers',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 8px'}}));
+      const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px'}});
+      var pack=(typeof _KH_STICKERS!=='undefined')?_KH_STICKERS:{};
+      Object.keys(pack).forEach(function(id){
+        const b=el('button',{title:pack[id].label,style:{height:'72px',padding:'10px',border:'var(--thin)',borderRadius:'10px',background:'var(--card)',color:'var(--fg)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}});
+        b.innerHTML=pack[id].svg;const svg=b.querySelector('svg');if(svg){svg.style.width='46px';svg.style.height='46px';svg.style.display='block';}
+        b.onclick=function(){ov.remove();_sendPayload(_khStickerCode(id));};
+        grid.appendChild(b);
+      });
+      sheet.appendChild(grid);
+      const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=function(){ov.remove();};
+      sheet.appendChild(cl);
+      ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    }
     function _khOpenAppShareMenu(){
       const apps=(typeof osState!=='undefined'&&osState&&Array.isArray(osState.customApps))?osState.customApps:[];
       const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
       const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
-      sheet.appendChild(txt('h3','Share an app',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 4px'}}));
+      sheet.appendChild(txt('h3','Attach',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 8px'}}));
+      /* A tappable row: coloured badge + description + action button. */
+      function _attachRow(badge,desc,btnLabel,fn){
+        const r=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 4px',borderBottom:'var(--thin)',marginBottom:'6px'}});
+        r.appendChild(txt('span',badge,{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+        r.appendChild(txt('span',desc,{style:{flex:'1',fontSize:'12px'}}));
+        const bt=txt('button',btnLabel,{className:'btn small primary'});bt.onclick=function(){ov.remove();fn();};
+        r.appendChild(bt);sheet.appendChild(r);
+      }
+      _attachRow('IMG','Send a photo from your device.','Choose',_khPickAndSendImage);
+      _attachRow('SHOT','Send a screenshot of the app.','Pick',_khOpenScreenshotPicker);
+      _attachRow('STK','Stickers — quick visual reactions, no lag.','Pick',_khOpenStickerPicker);
+      /* Create a poll */
+      const pollRow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 4px',borderBottom:'var(--thin)',marginBottom:'6px'}});
+      pollRow.appendChild(txt('span','POLL',{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+      pollRow.appendChild(txt('span','Create a poll — ask a question, everyone votes.',{style:{flex:'1',fontSize:'12px'}}));
+      const pollBtn=txt('button','New',{className:'btn small primary'});pollBtn.onclick=function(){ov.remove();_khOpenPollMaker();};
+      pollRow.appendChild(pollBtn);
+      sheet.appendChild(pollRow);
+      sheet.appendChild(txt('div','SHARE AN APP',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.4px',margin:'6px 0 2px'}}));
       sheet.appendChild(txt('div','Send one of your KindleOS apps — the recipient taps Install to add it to their home screen.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
       if(!apps.length){
         sheet.appendChild(txt('div','You have no custom apps yet. Build one in KindleOS (AI App Builder), then share it here.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'8px 0'}}));
@@ -55691,7 +56009,10 @@ messages:()=>{
         log.appendChild(txt('div','Loading messages…',{className:'msg-empty',style:{fontStyle:'italic'}}));
         return;
       }
-      const filtered=_searchTerm?(msgs||[]).filter(m=>(m.text||'').toLowerCase().indexOf(_searchTerm)>=0):(msgs||[]);
+      /* Vote records (KHVOTE1:) are tallied into their poll card, never shown
+         as their own bubble. */
+      const _noVotes=(msgs||[]).filter(m=>!(typeof _khIsVoteMsg==='function'&&_khIsVoteMsg(m.text)));
+      const filtered=_searchTerm?_noVotes.filter(m=>(m.text||'').toLowerCase().indexOf(_searchTerm)>=0):_noVotes;
       /* Pinned-messages strip — shown above the chronological log so
          users can find the group's important messages at a glance. */
       const pins=(msgs||[]).filter(m=>m.pinned);
@@ -55760,7 +56081,7 @@ messages:()=>{
         if(m.replyTo&&msgById[m.replyTo]){
           const rq=el('div',{className:'msg-reply-quote'});
           const orig=msgById[m.replyTo];
-          rq.innerHTML='<b>'+String(_dispName(orig.displayName||'Unknown')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+(_censorText(orig.text||'')).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((orig.text||'').length>80?'…':'');
+          rq.innerHTML='<b>'+String(_dispName(orig.displayName||'Unknown')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+':</b> '+(_msgPreview(orig.text)).slice(0,80).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+((_msgPreview(orig.text)).length>80?'…':'');
           bubble.appendChild(rq);
         }
         if(m.important)bubble.appendChild(txt('span','IMPORTANT',{className:'msg-important-tag'}));
@@ -55773,8 +56094,17 @@ messages:()=>{
            message is a shared app code, a compact Install card instead of the
            raw base64. */
         const textBox=document.createElement('span');
+        var _poll=(typeof _khPollParse==='function')?_khPollParse(m.text):null;
+        var _imgUrl=(typeof _khImgParse==='function')?_khImgParse(m.text):null;
+        var _stkId=(typeof _khStickerParse==='function')?_khStickerParse(m.text):null;
         if(String(m.text||'').indexOf('KHAPP1:')===0&&typeof _khAppMsgCard==='function'){
           textBox.appendChild(_khAppMsgCard(m.text,own));
+        } else if(_imgUrl){
+          textBox.appendChild(_renderImgCard(_imgUrl));
+        } else if(_stkId){
+          textBox.appendChild(_renderStickerCard(_stkId));
+        } else if(_poll){
+          textBox.appendChild(_renderPollCard(_poll,msgs));
         } else {
           textBox.appendChild(_renderMessageText(m.text));
           _linkifyEl(textBox);
@@ -55811,7 +56141,7 @@ messages:()=>{
           actionRow=el('div',{className:'msg-action-row'});
           /* Reply */
           const rBtn=txt('button','Reply',{className:'msg-action-btn'});
-          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+_dispName(String(m.displayName||'?')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_censorText(m.text||'')).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
+          rBtn.onclick=()=>{_replyTo=m;replyLabel.innerHTML='Replying to <b>'+_dispName(String(m.displayName||'?')).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</b>: '+(_msgPreview(m.text)).slice(0,60).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));replyStrip.style.display='flex';txtArea.focus();actionRow.remove();actionRow=null;};
           actionRow.appendChild(rBtn);
           /* React — opens a small inline picker */
           const reactBtn=txt('button','React',{className:'msg-action-btn'});
@@ -56051,6 +56381,58 @@ messages:()=>{
       }
     }
 
+    /* Send an arbitrary payload string (poll / vote) through the normal group
+       send path WITHOUT touching the composer draft. Used by polls. */
+    async function _sendPayload(text){
+      try{
+        const msg={id:msgId(),userId:S.userId||'',displayName:displayName(),text:text,ts:new Date().toISOString(),replyTo:null};
+        const updated=await _groupSend(g.code,msg);
+        _messages=updated;renderMessages(_messages);
+      }catch(e){if(typeof toast==='function')toast('Could not send — try again.');}
+    }
+    /* Preview text for a message in a reply strip / quote — media messages show
+       a label ("[Image]") instead of their raw KHIMG1/KHSTK1 code. */
+    function _msgPreview(t){var ml=(typeof _khMediaLabel==='function')?_khMediaLabel(t):'';return ml||(typeof _censorText==='function'?_censorText(t||''):String(t||''));}
+    /* Inline image bubble — a downscaled thumbnail; tap to view full-size. */
+    function _renderImgCard(dataUrl){
+      const wrap=el('div',{style:{maxWidth:'220px'}});
+      const im=el('img',{src:dataUrl,alt:'Image',style:{maxWidth:'100%',width:'auto',height:'auto',borderRadius:'10px',border:'var(--thin)',display:'block',cursor:'pointer'}});
+      im.onclick=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(typeof _khOpenImageViewer==='function')_khOpenImageViewer(dataUrl);};
+      wrap.appendChild(im);
+      return wrap;
+    }
+    /* Inline sticker bubble — renders the built-in SVG from the fixed pack. */
+    function _renderStickerCard(id){
+      const st=(typeof _KH_STICKERS!=='undefined'&&_KH_STICKERS[id])?_KH_STICKERS[id]:null;
+      const box=el('div',{title:(st?st.label:'Sticker'),style:{width:'92px',height:'92px',color:'var(--fg)'}});
+      if(st){box.innerHTML=st.svg;const svg=box.querySelector('svg');if(svg){svg.style.width='100%';svg.style.height='100%';svg.style.display='block';}}
+      else{box.textContent='[sticker]';}
+      return box;
+    }
+    /* Render a poll bubble with a live tally + vote buttons. Votes are sent as
+       KHVOTE1 messages and tallied from the loaded set (latest vote per user). */
+    function _renderPollCard(poll,msgs){
+      const card=el('div',{style:{minWidth:'200px',maxWidth:'260px'}});
+      card.appendChild(txt('div','POLL',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',color:'var(--accent)',marginBottom:'2px'}}));
+      card.appendChild(txt('div',(typeof _censorText==='function'?_censorText(poll.q):poll.q)||'Poll',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'6px',lineHeight:'1.3'}}));
+      const tally=(typeof _khPollTally==='function')?_khPollTally(poll.pid,poll.opts,msgs):{counts:poll.opts.map(function(){return 0;}),total:0,mine:-1};
+      poll.opts.forEach(function(opt,idx){
+        const n=tally.counts[idx]||0;const pct=tally.total?Math.round(n/tally.total*100):0;
+        const chosen=(tally.mine===idx);
+        const row=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',padding:'7px 10px',marginBottom:'5px',cursor:'pointer',overflow:'hidden',background:'var(--card)'}});
+        /* Result bar fill */
+        const fill=el('div',{style:{position:'absolute',left:'0',top:'0',bottom:'0',width:pct+'%',background:'var(--highlight)',zIndex:'0'}});
+        row.appendChild(fill);
+        const line=el('div',{style:{position:'relative',zIndex:'1',display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'center'}});
+        line.appendChild(txt('span',(chosen?'• ':'')+(typeof _censorText==='function'?_censorText(opt):opt),{style:{fontSize:'13px',fontWeight:chosen?'800':'500',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        line.appendChild(txt('span',pct+'% · '+n,{style:{fontSize:'11px',color:'var(--muted)',flexShrink:'0',fontVariantNumeric:'tabular-nums'}}));
+        row.appendChild(line);
+        row.onclick=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(tally.mine===idx)return;_sendPayload('KHVOTE1:'+poll.pid+':'+idx);};
+        card.appendChild(row);
+      });
+      card.appendChild(txt('div',tally.total+' vote'+(tally.total===1?'':'s')+(tally.mine>=0?' · tap to change':' · tap an option to vote'),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+      return card;
+    }
     /* ── Send ── */
     async function sendMessage(){
       let text=txtArea.value.trim();
