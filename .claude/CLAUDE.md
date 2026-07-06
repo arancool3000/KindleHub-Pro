@@ -682,7 +682,56 @@ screenshots/stickers/apps/profile-bg/friends) is now delivered. Remaining honest
 search** (still needs a Tenor/Giphy key) and **cross-device profile-background display** (needs a profile-sync
 channel) — both offered to the user as opt-in follow-ups.
 
-## Account upkeep / staying under Cloudflare limits
+## ⚡ Round: finish the PENDING todo list (streak fix, cross-device profile bg, platformer, games, online play)
+Working through the documented "PENDING / bigger jobs" list, each a tested+committed batch on
+`claude/keen-tesla-n73rpc` (restarted from `main` after PR #35 merged):
+- **Non-UTC streak date-keys FIXED** (was: habits/notes/daily-goal keyed the day off UTC `toISOString().slice(
+  0,10)` → a habit ticked at 8pm in New York recorded under tomorrow's UTC date and broke the streak). New
+  global helper **`_localDayKey(t)`** right after `NOW()` — returns LOCAL `YYYY-MM-DD` from `getFullYear/Month/
+  Date` (clock-offset aware via NOW()). Repointed: habits `todayKey`/`calcStreak`/`thirtyDayRate`/week-dots/
+  30-day heatmap, the home **daily-goal** streak (`_today`+yesterday-carry), the Sheets `TODAY()` formula, and
+  the calendar event date-input default. LEFT as UTC (correct — they match SERVER date buckets or are benign):
+  shared-API daily cap (`readSharedKeyUsage`/proxy), admin stats `isoDaysAgo`, `kh_visit_last_day` throttle,
+  announcement date, and **Ultra accrual** (`_ultraDayStr`+cutoffs — internally consistent, gates premium, not
+  worth the risk). Notes streak `_currentDailyStreak` + global `todayKey()` were ALREADY local (`toDateString()`/
+  local parts). Test `/tmp/streak_test.cjs` (runs in America/New_York; asserts an instant that's next-day in UTC
+  keys to the LOCAL day).
+- **Pixel Hop — a real Mario-style platformer** (`const Platformer`, game #36, id `platformer`): the "dedicated
+  platformer" the user asked for (DigQuest is a dig-and-smash; this is a clean run-and-jump). LEFT/RIGHT/JUMP
+  (hold ◄/► buttons + tap Jump, arrow keys/Space, or tap the canvas one-handed). Hand-authored beatable level
+  (`PLATS` ground+floaters with ≤70px pits, `COIN_DEF`, `ENEMY_DEF` patrollers), AABB collision (move-X-resolve
+  then move-Y-resolve), **jump BUFFER + COYOTE time** (`JBUF`/`COY`, the DigQuest feel-fix), stomp-from-above
+  vs side-hurt enemies, coin rings, a goal flag, 3 lives with **auto ledge-checkpoints** (`g.safe` updated each
+  grounded tick → respawn there on pit/hit). ~30fps `setInterval`, flat fills, guarded HUD writes (e-ink-safe),
+  `stop()` no-op guard. Wired at ALL points: `_doLaunch` case + **added to the exitImmersive stop-list**
+  (bare `Platformer` ref, safe — it's a normally-initialised const, not lazy like `window.CandyCrush`) +
+  `GAME_HELP` + `GAME_MAP` + a `gc('Pixel Hop',…data-game=platformer)` card in rowArc + `tools/games_test.cjs`
+  (now 36 games, 0 flagged). Score = coins×10 + stomps×20 + 150 finish bonus → `S.games.platformer.best` +
+  `_khSubmitScore`. Test `/tmp/platformer_test.cjs` (drives ►+jump: % climbs 4→23, coins collected, lives shown,
+  clean exit with no leaked interval).
+- **Flashcard review polish** (Tools parity): the SRS was already strong (SM-2 due scheduling + Again/Hard/Easy
+  + 4 study modes Flashcard/MC/Written/Spell + CSV import + AI-from-notes). Added the two real gaps: (1)
+  **Cram mode** — `studySR(di,cram)` now takes a cram flag that reviews the WHOLE deck shuffled, ignoring the
+  due schedule (fixes the dead-end where a deck with nothing due just toasted "come back later"); a **Cram all**
+  button sits next to SRS Review in `renderDeckList`, and the session-complete screen shows a "Cram again" /
+  "Review again" button + how many are still due. (2) **Keyboard shortcuts** — Space/Enter flips, 1/2/3 =
+  Again/Hard/Easy (handlers stashed in `curShow`/`curRate`, swapped per card); the front card is also
+  tap-to-flip. The keydown listener is removed via `immersiveRoot._trackStop=cleanup` (exitImmersive) AND on
+  session-complete, so no leak. Rating still updates the SRS schedule in cram mode (reinforcement). Test
+  `/tmp/flash_test.cjs` (0 due → cram runs all 3, Space flips, key-3 rates, completes, schedule advanced, no
+  stray handler after exit).
+- **Two new e-ink games from the "feasible-but-missing" list** (now 38 games, `tools/games_test.cjs` 0 flagged):
+  - **Maze** (`const Maze`, id `maze`): recursive-backtracker maze; navigate top-left → ★ bottom-right via
+    D-pad / arrow keys / swipe; solving advances a slightly larger level. Static board (only the player dot
+    moves) + a 1s clock — no render loop, e-ink-perfect. Best level → `S.games.maze.best`.
+  - **Perfect Circle** (`const PerfectCircle`, id `perfectcircle`): drag one stroke; on release it's scored
+    0–100% on roundness (radius stddev/mean + closure penalty, no Math.hypot — Silk-safe sqrt). Draws the ideal
+    circle overlay + score. Best → `S.games.perfectcircle.best`.
+  Both wired at ALL points (`_doLaunch`, exitImmersive stop-list, GAME_HELP, GAME_MAP, rowArc cards, games_test).
+  Test `/tmp/maze_circle_test.cjs` (maze drives + New-maze + clean exit; a traced circle scores 98%, best saved).
+  Remaining from that batch (optional, not started): Nerdle, Yahtzee, Dino (GeometryDash reskin), Connections,
+  Spelling Bee, Strands, Mini Crossword.
+
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
   never the data-pruning supercompress (that stays reserved for a real out-of-space emergency,
