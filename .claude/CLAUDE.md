@@ -626,6 +626,27 @@ end. `typeChar`/`typeBackspace`/`insertSugg`/`getPrefix` route through `_kbCaret
 Tests: `/tmp/sportsfarm_test.cjs` (sports structure + date nav + image build; farm barn/animals/sprinkler/
 market buy-flow) + `tools/games_test.cjs` (35, 0 flagged) + minify Silk gate. Merged to `main`.
 
+## ⚡ Round: chat Polls + profile backgrounds (Messages upgrade, no media backend)
+User wants a full Messages recreation (images/polls/threads/screenshots/GIFs/apps/profile-backgrounds/friend
+requests). Reply/threads (`m.replyTo`+quote), **app sharing** (`KHAPP1:`), and **friend requests** already
+exist. This round added the two big pieces that need NO media backend:
+- **Polls** (global `_khPollCode`/`_khPollParse`/`_khIsVoteMsg`/`_khPollTally` near `_khAppMsgCard`): a poll
+  is a plain `KHPOLL1:`+b64`{pid,q,opts}` message; each vote is a separate `KHVOTE1:<pid>:<optIdx>` message,
+  so the append-only encrypted store needs NO mutation — the client tallies from the loaded messages (latest
+  vote per user wins). `renderMessages` filters out `KHVOTE1:` bubbles (`_noVotes`) and renders a `KHPOLL1:`
+  message via `_renderPollCard` (question + option bars + %/count + tap-to-vote/change; sends votes through
+  `_sendPayload`, a draft-free send). Composer `+` menu (was app-only, now "Attach") gains **Create a poll**
+  (`_khOpenPollMaker`: question + 2–6 options). Test `/tmp/msg_test.cjs` (encode/parse/tally + hide).
+- **Profile backgrounds** (Settings → Profile card): `PROFILE_BGS` gradient banners behind the avatar,
+  stored in `S.profileBg`; 4 free + 4 **Ultra/Creator-gated** "premium" (★) via `_khRequireUltra`/`_khTier`.
+  A live `#profileBgBanner` + swatch grid; premium taps are blocked for non-Ultra. (Cosmetic + local — sharing
+  your background to OTHERS' clients would need a profile-sync channel, deferred.)
+- **Still deferred (need an external host/API, honestly told to the user):** sending **images / screenshots**
+  (base64 blows the per-message cap → needs an image host upload) and **GIFs** (no reliable keyless GIF API —
+  Tenor/Giphy public keys are dead). Everything else the user listed now works.
+Tests: `/tmp/msg_test.cjs` (polls + profile-bg + friend/app globals) + `tools/games_test.cjs` (35, 0) + minify
+Silk gate. Merged to `main`.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,

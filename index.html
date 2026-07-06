@@ -2060,6 +2060,51 @@ function _khAppMsgCard(code,own){
 }
 window._khAppCode=_khAppCode;window._khInstallAppFromCode=_khInstallAppFromCode;window._khAppCodeLabel=_khAppCodeLabel;window._khAppMsgCard=_khAppMsgCard;
 
+/* ── Polls in chat ─────────────────────────────────────────────────────────
+   A poll travels as a plain "KHPOLL1:" message (base64 of {pid,q,opts}); votes
+   travel as separate "KHVOTE1:<pid>:<optIdx>" messages, so nothing needs the
+   append-only message store to be mutable — the client tallies votes by
+   scanning the loaded messages (latest vote per user wins). pid is a random id
+   so votes can reference the poll before it even has a server message id. */
+function _khPollCode(q,opts){
+  try{
+    var pid='p'+Math.random().toString(36).slice(2,9);
+    var clean=(opts||[]).map(function(o){return String(o||'').slice(0,60);}).filter(function(o){return o.trim();}).slice(0,6);
+    if(clean.length<2)return '';
+    var payload={pid:pid,q:String(q||'').slice(0,140),opts:clean};
+    return 'KHPOLL1:'+btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  }catch(e){return '';}
+}
+function _khPollParse(text){
+  try{
+    text=String(text||'');
+    if(text.indexOf('KHPOLL1:')!==0)return null;
+    var o=JSON.parse(decodeURIComponent(escape(atob(text.slice(8)))));
+    if(!o||!o.pid||!Array.isArray(o.opts)||o.opts.length<2)return null;
+    return o;
+  }catch(e){return null;}
+}
+function _khIsVoteMsg(text){return String(text||'').indexOf('KHVOTE1:')===0;}
+/* Tally votes for a poll id from a message list. Returns {counts:[],total,mine}.
+   mine = the option index THIS user last voted for (or -1). */
+function _khPollTally(pid,opts,msgs){
+  var byUser={};/* userId → optIdx (latest wins) */
+  (msgs||[]).forEach(function(m){
+    var t=String(m&&m.text||'');
+    if(t.indexOf('KHVOTE1:'+pid+':')!==0)return;
+    var idx=parseInt(t.slice(('KHVOTE1:'+pid+':').length),10);
+    if(isNaN(idx)||idx<0||idx>=opts.length)return;
+    var uid=(m.userId||m.displayName||'?');
+    byUser[uid]=idx;/* messages are in order, so the last one seen wins */
+  });
+  var counts=opts.map(function(){return 0;});var total=0;
+  Object.keys(byUser).forEach(function(u){counts[byUser[u]]++;total++;});
+  var myUid=(S.userId||(typeof displayName==='function'?'':'')||'');
+  var mine=(myUid&&byUser[myUid]!=null)?byUser[myUid]:-1;
+  return {counts:counts,total:total,mine:mine};
+}
+window._khPollCode=_khPollCode;window._khPollParse=_khPollParse;window._khIsVoteMsg=_khIsVoteMsg;window._khPollTally=_khPollTally;
+
 /* ── Admin AI: "ask about a user" ─────────────────────────────────────────
    Gathers a user's cloud METADATA (email, last sync, message count + recent
    group/ts/device/location hints, presence last_seen) and asks the AI to answer
@@ -37848,6 +37893,49 @@ settings:()=>{
   _statusInp.oninput=()=>{S.profileStatus=_statusInp.value.slice(0,80);save();};
   c1.appendChild(_statusInp);
 
+  /* ── Profile background — cosmetic banner behind your avatar. A few are free;
+     the fancier ones are an Ultra/Creator perk (a light "buy" gate). Stored in
+     S.profileBg; the banner + avatar preview reflect the pick live. (On e-ink
+     these read as tasteful greys; on colour screens they pop.) */
+  const PROFILE_BGS=[
+    {id:'none',name:'None',css:'',prem:false},
+    {id:'sky',name:'Sky',css:'linear-gradient(135deg,#60a5fa,#a78bfa)',prem:false},
+    {id:'sunset',name:'Sunset',css:'linear-gradient(135deg,#fb7185,#fbbf24)',prem:false},
+    {id:'mint',name:'Mint',css:'linear-gradient(135deg,#34d399,#0ea5e9)',prem:false},
+    {id:'slate',name:'Slate',css:'linear-gradient(135deg,#334155,#0f172a)',prem:false},
+    {id:'aurora',name:'Aurora',css:'linear-gradient(135deg,#22d3ee,#818cf8,#c084fc)',prem:true},
+    {id:'gold',name:'Gold',css:'linear-gradient(135deg,#fde68a,#f59e0b,#b45309)',prem:true},
+    {id:'rose',name:'Rose',css:'linear-gradient(135deg,#fda4af,#a78bfa,#f9a8d4)',prem:true},
+    {id:'neon',name:'Neon',css:'linear-gradient(120deg,#f472b6,#22d3ee)',prem:true}
+  ];
+  function _bgCss(id){for(var i=0;i<PROFILE_BGS.length;i++)if(PROFILE_BGS[i].id===id)return PROFILE_BGS[i].css;return '';}
+  function _isPremTier(){return (typeof _khTier==='function')&&(_khTier()==='ultra'||_khTier()==='creator');}
+  c1.appendChild(txt('div','PROFILE BACKGROUND',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',margin:'12px 0 4px'}}));
+  const _bgBanner=el('div',{id:'profileBgBanner',style:{height:'46px',borderRadius:'10px',border:'var(--thin)',marginBottom:'8px'}});
+  function _paintBanner(){var css=_bgCss(S.profileBg||'none');_bgBanner.style.background=css||'var(--highlight)';}
+  _paintBanner();
+  c1.appendChild(_bgBanner);
+  const _bgGrid=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
+  PROFILE_BGS.forEach(function(bg){
+    const active=(S.profileBg||'none')===bg.id;
+    const sw=el('button',{className:'btn small'+(active?' primary':''),style:{padding:'0',width:'46px',height:'34px',borderRadius:'8px',overflow:'hidden',position:'relative',flexShrink:'0'}});
+    if(bg.css)sw.style.background=bg.css; else sw.textContent='—';
+    if(bg.prem)sw.appendChild(txt('span','★',{style:{position:'absolute',top:'1px',right:'3px',fontSize:'10px',color:'#fff',textShadow:'0 0 3px #000'}}));
+    sw.title=bg.name+(bg.prem?' (Ultra)':'');
+    sw.onclick=function(){
+      if(bg.prem&&!_isPremTier()){
+        if(typeof _khRequireUltra==='function'){if(!_khRequireUltra('Premium profile backgrounds'))return;}
+        else{toast('“'+bg.name+'” is an Ultra perk — reach Ultra to unlock it.',3500);return;}
+      }
+      S.profileBg=bg.id;save();_paintBanner();
+      _bgGrid.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});sw.classList.add('primary');
+      toast('Profile background: '+bg.name);
+    };
+    _bgGrid.appendChild(sw);
+  });
+  c1.appendChild(_bgGrid);
+  c1.appendChild(txt('div','★ = Ultra perk. Free backgrounds work for everyone.',{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'2px'}}));
+
   /* Location picker */
   c1.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'10px 0'}}));
   c1.appendChild(txt('div','HOME LOCATION',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -54882,12 +54970,54 @@ messages:()=>{
        sent through the normal message path (just text), so no send/encryption
        changes are needed; the recipient's bubble renders an Install button. */
     const attachBtn=txt('button','+',{className:'btn small',style:{flexShrink:'0',borderRadius:'20px',minWidth:'38px',minHeight:'40px',padding:'0',fontSize:'20px',lineHeight:'1',fontWeight:'700'}});
-    attachBtn.title='Share an app';
+    attachBtn.title='Attach — poll or app';
+    /* Poll creation form (question + 2-6 options) → sends a KHPOLL1 message. */
+    function _khOpenPollMaker(){
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+      const box=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'420px',maxHeight:'86vh',overflowY:'auto',borderRadius:'14px',padding:'16px',boxShadow:'var(--shadow-md)'}});
+      box.appendChild(txt('h3','Create a poll',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 8px'}}));
+      const qi=el('input',{type:'text',placeholder:'Ask a question…',style:{width:'100%',boxSizing:'border-box',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
+      box.appendChild(qi);
+      const optWrap=el('div',{});box.appendChild(optWrap);
+      const optIns=[];
+      function addOpt(ph){
+        if(optIns.length>=6)return;
+        const oi=el('input',{type:'text',placeholder:ph||('Option '+(optIns.length+1)),style:{width:'100%',boxSizing:'border-box',fontSize:'13px',padding:'8px 10px',marginBottom:'6px'}});
+        optIns.push(oi);optWrap.appendChild(oi);
+      }
+      addOpt('Option 1');addOpt('Option 2');
+      const addBtn=txt('button','+ Add option',{className:'btn small',style:{marginBottom:'10px'}});
+      addBtn.onclick=function(){addOpt();if(optIns.length>=6)addBtn.style.display='none';};
+      box.appendChild(addBtn);
+      const row=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+      const canc=txt('button','Cancel',{className:'btn small'});canc.onclick=function(){ov.remove();};
+      const mk=txt('button','Post poll',{className:'btn small primary'});
+      mk.onclick=function(){
+        const q=(qi.value||'').trim();const opts=optIns.map(function(x){return (x.value||'').trim();}).filter(function(x){return x;});
+        if(!q){toast('Add a question.');return;}
+        if(opts.length<2){toast('Add at least two options.');return;}
+        const code=(typeof _khPollCode==='function')?_khPollCode(q,opts):'';
+        if(!code){toast('Could not create the poll.');return;}
+        ov.remove();_sendPayload(code);
+      };
+      row.append(canc,mk);box.appendChild(row);
+      ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      setTimeout(function(){try{qi.focus();}catch(_){}},60);
+    }
     function _khOpenAppShareMenu(){
       const apps=(typeof osState!=='undefined'&&osState&&Array.isArray(osState.customApps))?osState.customApps:[];
       const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
       const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
-      sheet.appendChild(txt('h3','Share an app',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 4px'}}));
+      sheet.appendChild(txt('h3','Attach',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 8px'}}));
+      /* Create a poll */
+      const pollRow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 4px',borderBottom:'var(--thin)',marginBottom:'6px'}});
+      pollRow.appendChild(txt('span','POLL',{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
+      pollRow.appendChild(txt('span','Create a poll — ask a question, everyone votes.',{style:{flex:'1',fontSize:'12px'}}));
+      const pollBtn=txt('button','New',{className:'btn small primary'});pollBtn.onclick=function(){ov.remove();_khOpenPollMaker();};
+      pollRow.appendChild(pollBtn);
+      sheet.appendChild(pollRow);
+      sheet.appendChild(txt('div','SHARE AN APP',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.4px',margin:'6px 0 2px'}}));
       sheet.appendChild(txt('div','Send one of your KindleOS apps — the recipient taps Install to add it to their home screen.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
       if(!apps.length){
         sheet.appendChild(txt('div','You have no custom apps yet. Build one in KindleOS (AI App Builder), then share it here.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'8px 0'}}));
@@ -55691,7 +55821,10 @@ messages:()=>{
         log.appendChild(txt('div','Loading messages…',{className:'msg-empty',style:{fontStyle:'italic'}}));
         return;
       }
-      const filtered=_searchTerm?(msgs||[]).filter(m=>(m.text||'').toLowerCase().indexOf(_searchTerm)>=0):(msgs||[]);
+      /* Vote records (KHVOTE1:) are tallied into their poll card, never shown
+         as their own bubble. */
+      const _noVotes=(msgs||[]).filter(m=>!(typeof _khIsVoteMsg==='function'&&_khIsVoteMsg(m.text)));
+      const filtered=_searchTerm?_noVotes.filter(m=>(m.text||'').toLowerCase().indexOf(_searchTerm)>=0):_noVotes;
       /* Pinned-messages strip — shown above the chronological log so
          users can find the group's important messages at a glance. */
       const pins=(msgs||[]).filter(m=>m.pinned);
@@ -55773,8 +55906,11 @@ messages:()=>{
            message is a shared app code, a compact Install card instead of the
            raw base64. */
         const textBox=document.createElement('span');
+        var _poll=(typeof _khPollParse==='function')?_khPollParse(m.text):null;
         if(String(m.text||'').indexOf('KHAPP1:')===0&&typeof _khAppMsgCard==='function'){
           textBox.appendChild(_khAppMsgCard(m.text,own));
+        } else if(_poll){
+          textBox.appendChild(_renderPollCard(_poll,msgs));
         } else {
           textBox.appendChild(_renderMessageText(m.text));
           _linkifyEl(textBox);
@@ -56051,6 +56187,39 @@ messages:()=>{
       }
     }
 
+    /* Send an arbitrary payload string (poll / vote) through the normal group
+       send path WITHOUT touching the composer draft. Used by polls. */
+    async function _sendPayload(text){
+      try{
+        const msg={id:msgId(),userId:S.userId||'',displayName:displayName(),text:text,ts:new Date().toISOString(),replyTo:null};
+        const updated=await _groupSend(g.code,msg);
+        _messages=updated;renderMessages(_messages);
+      }catch(e){if(typeof toast==='function')toast('Could not send — try again.');}
+    }
+    /* Render a poll bubble with a live tally + vote buttons. Votes are sent as
+       KHVOTE1 messages and tallied from the loaded set (latest vote per user). */
+    function _renderPollCard(poll,msgs){
+      const card=el('div',{style:{minWidth:'200px',maxWidth:'260px'}});
+      card.appendChild(txt('div','POLL',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',color:'var(--accent)',marginBottom:'2px'}}));
+      card.appendChild(txt('div',(typeof _censorText==='function'?_censorText(poll.q):poll.q)||'Poll',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'6px',lineHeight:'1.3'}}));
+      const tally=(typeof _khPollTally==='function')?_khPollTally(poll.pid,poll.opts,msgs):{counts:poll.opts.map(function(){return 0;}),total:0,mine:-1};
+      poll.opts.forEach(function(opt,idx){
+        const n=tally.counts[idx]||0;const pct=tally.total?Math.round(n/tally.total*100):0;
+        const chosen=(tally.mine===idx);
+        const row=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',padding:'7px 10px',marginBottom:'5px',cursor:'pointer',overflow:'hidden',background:'var(--card)'}});
+        /* Result bar fill */
+        const fill=el('div',{style:{position:'absolute',left:'0',top:'0',bottom:'0',width:pct+'%',background:'var(--highlight)',zIndex:'0'}});
+        row.appendChild(fill);
+        const line=el('div',{style:{position:'relative',zIndex:'1',display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'center'}});
+        line.appendChild(txt('span',(chosen?'• ':'')+(typeof _censorText==='function'?_censorText(opt):opt),{style:{fontSize:'13px',fontWeight:chosen?'800':'500',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        line.appendChild(txt('span',pct+'% · '+n,{style:{fontSize:'11px',color:'var(--muted)',flexShrink:'0',fontVariantNumeric:'tabular-nums'}}));
+        row.appendChild(line);
+        row.onclick=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(tally.mine===idx)return;_sendPayload('KHVOTE1:'+poll.pid+':'+idx);};
+        card.appendChild(row);
+      });
+      card.appendChild(txt('div',tally.total+' vote'+(tally.total===1?'':'s')+(tally.mine>=0?' · tap to change':' · tap an option to vote'),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+      return card;
+    }
     /* ── Send ── */
     async function sendMessage(){
       let text=txtArea.value.trim();
