@@ -19467,18 +19467,35 @@ const Farm=(()=>{
     melon:  {name:'Melon',  cost:24, grow:6, sell:66, lv:5}
   };
   const ORDER=['wheat','carrot','berry','pumpkin','corn','melon'];
+  /* Animals give PASSIVE income every day — the core "grow your farm" loop. */
+  const ANIMALS={
+    chicken:{name:'Chicken',cost:20, yield:3,  lv:1},
+    cow:    {name:'Cow',    cost:60, yield:10, lv:2},
+    pig:    {name:'Pig',    cost:120,yield:22, lv:3}
+  };
+  const AORDER=['chicken','cow','pig'];
+  const SPRINKLER_COST=80;
   const WEATHER={
     sun: {name:'Sunny',    note:'normal growth'},
     rain:{name:'Rainy',    note:'everything grows twice as fast today'},
-    dry: {name:'Dry spell',note:'crops only grow where you water'}
+    dry: {name:'Dry spell',note:'crops only grow where you water / sprinkle'}
   };
   const WKEYS=['sun','sun','sun','rain','rain','dry'];/* weighted toward sun */
+  /* A daily MARKET event adds variety + timing decisions. */
+  const MARKET={
+    normal:  {name:'Steady market', mult:1,   note:'normal prices'},
+    boom:    {name:'Market day',     mult:1.5, note:'crops sell for +50% today'},
+    festival:{name:'Harvest festival',mult:1,  note:'a coin bonus at dawn'}
+  };
+  const MKEYS=['normal','normal','normal','normal','boom','festival'];
   const WATER_PER_DAY=3;
   function xpNeed(lv){return lv*40;}
   let st=null;
   function _rnd(n){return Math.floor(Math.random()*n);}
   function _load(){if(!S.games)S.games={};var g=S.games.farm;return (g&&Array.isArray(g.plots)&&g.plots.length===PLOTS)?g:null;}
   function _pickWeather(){return WKEYS[_rnd(WKEYS.length)];}
+  function _pickMarket(){return MKEYS[_rnd(MKEYS.length)];}
+  function _sellPrice(c){return Math.round(c.sell*((MARKET[st.market]&&MARKET[st.market].mult)||1));}
   function _makeOrder(level){
     var pool=ORDER.filter(function(k){return CROPS[k].lv<=level;});
     var crop=pool[_rnd(pool.length)]||'wheat';
@@ -19486,7 +19503,7 @@ const Farm=(()=>{
     var reward=Math.round(CROPS[crop].sell*need*0.8)+5;
     return {crop:crop,need:need,have:0,reward:reward,done:false};
   }
-  function _fresh(prevBest){return {plots:new Array(PLOTS).fill(null),coins:15,day:1,seed:'wheat',best:prevBest||0,xp:0,level:1,weather:_pickWeather(),water:WATER_PER_DAY,order:_makeOrder(1)};}
+  function _fresh(prevBest){return {plots:new Array(PLOTS).fill(null),coins:15,day:1,seed:'wheat',best:prevBest||0,xp:0,level:1,weather:_pickWeather(),water:WATER_PER_DAY,order:_makeOrder(1),animals:{chicken:0,cow:0,pig:0},sprinkler:false,market:'normal'};}
   function _norm(){
     if(typeof st.coins!=='number')st.coins=15;if(typeof st.day!=='number')st.day=1;
     if(!st.seed||!CROPS[st.seed])st.seed='wheat';if(typeof st.best!=='number')st.best=0;
@@ -19494,6 +19511,10 @@ const Farm=(()=>{
     if(!st.weather||!WEATHER[st.weather])st.weather=_pickWeather();
     if(typeof st.water!=='number')st.water=WATER_PER_DAY;
     if(!st.order||!CROPS[st.order.crop])st.order=_makeOrder(st.level);
+    if(!st.animals||typeof st.animals!=='object')st.animals={chicken:0,cow:0,pig:0};
+    AORDER.forEach(function(k){if(typeof st.animals[k]!=='number')st.animals[k]=0;});
+    if(typeof st.sprinkler!=='boolean')st.sprinkler=false;
+    if(!st.market||!MARKET[st.market])st.market='normal';
   }
   function persist(){try{if(!S.games)S.games={};S.games.farm=st;if(typeof save==='function')save();}catch(_){}}
   function start(){
@@ -19506,13 +19527,14 @@ const Farm=(()=>{
   function _gainXp(n){
     st.xp+=n;var leveled=false;
     while(st.xp>=xpNeed(st.level)){st.xp-=xpNeed(st.level);st.level++;leveled=true;}
-    if(leveled){var bonus=st.level*8;st.coins+=bonus;if(typeof toast==='function')toast('Level '+st.level+'! New crop unlocked · +'+bonus+' coins',3000);}
+    if(leveled){var bonus=st.level*8;st.coins+=bonus;if(typeof toast==='function')toast('Level '+st.level+'! New crop/animal unlocked · +'+bonus+' coins',3000);}
   }
   function _creditOrder(cropKey){
     var o=st.order;if(!o||o.done||o.crop!==cropKey)return;
     o.have++;
     if(o.have>=o.need){o.done=true;st.coins+=o.reward;_gainXp(Math.round(o.reward/2));if(typeof toast==='function')toast('Order filled! +'+o.reward+' coins',2600);}
   }
+  function _animalIncome(){var inc=0;AORDER.forEach(function(k){inc+=(st.animals[k]||0)*ANIMALS[k].yield;});return inc;}
   function plant(i){
     var c=CROPS[st.seed];if(!c||st.plots[i])return;
     if(st.level<c.lv){toast(c.name+' unlocks at level '+c.lv+'.');return;}
@@ -19521,13 +19543,33 @@ const Farm=(()=>{
   }
   function harvest(i){
     var p=st.plots[i];if(!p)return;var c=CROPS[p.k];if(!c||p.age<c.grow)return;
-    st.coins+=c.sell;_gainXp(Math.max(1,Math.round(c.sell/3)));_creditOrder(p.k);
+    st.coins+=_sellPrice(c);_gainXp(Math.max(1,Math.round(c.sell/3)));_creditOrder(p.k);
     st.plots[i]=null;persist();render();
+  }
+  function harvestAll(){
+    var n=0,got=0;
+    for(var i=0;i<st.plots.length;i++){var p=st.plots[i];if(p){var c=CROPS[p.k];if(c&&p.age>=c.grow){got+=_sellPrice(c);_gainXp(Math.max(1,Math.round(c.sell/3)));_creditOrder(p.k);st.plots[i]=null;n++;}}}
+    if(n){st.coins+=got;if(typeof toast==='function')toast('Sold '+n+' crop'+(n===1?'':'s')+' for +'+got+' coins',2400);persist();render();}
   }
   function water(i){
     var p=st.plots[i];if(!p)return;var c=CROPS[p.k];if(!c||p.age>=c.grow)return;
     if(st.water<=0){toast('Out of watering cans today — tap Next day to refill.');return;}
     st.water--;p.age=Math.min(c.grow,p.age+1);persist();render();
+  }
+  function buyAnimal(k){
+    var a=ANIMALS[k];if(!a)return;
+    if(st.level<a.lv){toast(a.name+' unlocks at level '+a.lv+'.');return;}
+    if(st.coins<a.cost){toast('Not enough coins for a '+a.name+' ('+a.cost+').');return;}
+    st.coins-=a.cost;st.animals[k]=(st.animals[k]||0)+1;
+    if(typeof toast==='function')toast('Bought a '+a.name+' — earns +'+a.yield+' coins every day.',2600);
+    persist();render();
+  }
+  function buySprinkler(){
+    if(st.sprinkler){toast('You already own a sprinkler.');return;}
+    if(st.coins<SPRINKLER_COST){toast('Not enough coins for a sprinkler ('+SPRINKLER_COST+').');return;}
+    st.coins-=SPRINKLER_COST;st.sprinkler=true;
+    if(typeof toast==='function')toast('Sprinkler installed — it waters every crop each day.',2800);
+    persist();render();
   }
   function nextDay(){
     var w=st.weather;
@@ -19535,8 +19577,13 @@ const Farm=(()=>{
       if(w==='rain')p.age=Math.min(c.grow,p.age+2);
       else if(w==='dry'){/* no passive growth — must water */}
       else p.age=Math.min(c.grow,p.age+1);
+      if(st.sprinkler&&p.age<c.grow)p.age=Math.min(c.grow,p.age+1);/* sprinkler = one free water everywhere */
     }}}
-    st.day++;st.weather=_pickWeather();st.water=WATER_PER_DAY;
+    /* Passive animal income */
+    var inc=_animalIncome();
+    if(inc>0){st.coins+=inc;if(typeof toast==='function')toast('Your animals earned +'+inc+' coins overnight.',2400);}
+    st.day++;st.weather=_pickWeather();st.water=WATER_PER_DAY;st.market=_pickMarket();
+    if(st.market==='festival'){var fb=8+st.level*4;st.coins+=fb;if(typeof toast==='function')toast('Harvest festival! +'+fb+' coins.',2400);}
     if(st.order&&st.order.done)st.order=_makeOrder(st.level);
     persist();render();
   }
@@ -19552,11 +19599,14 @@ const Farm=(()=>{
     xpWrap.appendChild(el('div',{style:{height:'100%',width:Math.round(Math.min(1,st.xp/need)*100)+'%',background:'var(--accent)'}}));
     wrap.appendChild(xpWrap);
     wrap.appendChild(txt('div','XP '+st.xp+'/'+need+' to level '+(st.level+1),{style:{fontSize:'9px',color:'var(--muted)',textAlign:'center',marginBottom:'6px'}}));
-    /* Weather + watering cans */
-    const wx=WEATHER[st.weather];
-    const info=el('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',fontSize:'11px',color:'var(--muted)',marginBottom:'8px',lineHeight:'1.3'}});
-    info.appendChild(txt('span','Today: '+wx.name+' — '+wx.note));
-    info.appendChild(txt('span','Cans: '+st.water,{style:{fontWeight:'800',flexShrink:'0',color:'var(--fg)'}}));
+    /* Weather + market + watering cans */
+    const wx=WEATHER[st.weather],mk=MARKET[st.market];
+    const info=el('div',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px',lineHeight:'1.4'}});
+    const inf1=el('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px'}});
+    inf1.appendChild(txt('span','Weather: '+wx.name+' — '+wx.note));
+    inf1.appendChild(txt('span','Cans: '+st.water+(st.sprinkler?' + sprinkler':''),{style:{fontWeight:'800',flexShrink:'0',color:'var(--fg)'}}));
+    info.appendChild(inf1);
+    info.appendChild(txt('div','Market: '+mk.name+' — '+mk.note+(_animalIncome()>0?('  ·  animals +'+_animalIncome()+'/day'):''),{style:{marginTop:'2px'}}));
     wrap.appendChild(info);
     /* Rolling daily order */
     const o=st.order;
@@ -19567,12 +19617,12 @@ const Farm=(()=>{
       if(o.done)ocard.appendChild(txt('span','FILLED',{style:{fontWeight:'800',color:'var(--success)',flexShrink:'0'}}));
       wrap.appendChild(ocard);
     }
-    wrap.appendChild(txt('div','Pick a seed, tap a plot to plant. Tap a growing plot to water it (rushes growth 1 day). Next day grows everything by the weather. Tap a ripe crop to sell.',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'0 0 8px',lineHeight:'1.4'}}));
     /* Seed shop — locked crops greyed with their unlock level */
-    const shop=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',justifyContent:'center',marginBottom:'8px'}});
+    wrap.appendChild(txt('div','SEEDS',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.4px',marginBottom:'3px'}}));
+    const shop=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'8px'}});
     ORDER.forEach(function(k){
       var c=CROPS[k],locked=st.level<c.lv,on=(st.seed===k&&!locked);
-      var label=locked?(c.name+' · Lv '+c.lv):(c.name+' '+c.cost+'/'+c.sell);
+      var label=locked?(c.name+' · Lv '+c.lv):(c.name+' '+c.cost+'/'+_sellPrice(c));
       var b=txt('button',label,{className:'btn small'+(on?' primary':''),style:{fontSize:'11px',opacity:locked?'0.45':'1'}});
       b.onclick=function(){if(locked){toast(c.name+' unlocks at level '+c.lv+'.');return;}st.seed=k;persist();render();};
       shop.appendChild(b);
@@ -19582,14 +19632,34 @@ const Farm=(()=>{
     const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat('+COLS+',1fr)',gap:'8px'}});
     for(let i=0;i<PLOTS;i++){(function(i){
       const p=st.plots[i];
-      const cell=el('button',{className:'btn',style:{minHeight:'64px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',padding:'4px'}});
+      const cell=el('button',{className:'btn',style:{minHeight:'62px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'2px',padding:'4px'}});
       if(!p){cell.appendChild(txt('span','+',{style:{fontSize:'18px',fontWeight:'900',color:'var(--muted)'}}));cell.appendChild(txt('span','Plant',{style:{fontSize:'9px',color:'var(--muted)'}}));cell.onclick=function(){plant(i);};}
       else{const c=CROPS[p.k];const ready=p.age>=c.grow;cell.appendChild(txt('span',c.name,{style:{fontSize:'11px',fontWeight:'700'}}));
-        if(ready){cell.style.background='var(--accent)';cell.style.color='var(--accent-inv)';cell.style.borderColor='var(--accent)';cell.appendChild(txt('span','RIPE +'+c.sell,{style:{fontSize:'9px'}}));cell.onclick=function(){harvest(i);};}
+        if(ready){cell.style.background='var(--accent)';cell.style.color='var(--accent-inv)';cell.style.borderColor='var(--accent)';cell.appendChild(txt('span','RIPE +'+_sellPrice(c),{style:{fontSize:'9px'}}));cell.onclick=function(){harvest(i);};}
         else{cell.appendChild(txt('span',p.age+'/'+c.grow+' days',{style:{fontSize:'9px',color:'var(--muted)'}}));cell.appendChild(txt('span',st.water>0?'tap to water':'needs time',{style:{fontSize:'8px',color:'var(--muted)'}}));cell.onclick=function(){water(i);};}}
       grid.appendChild(cell);
     })(i);}
     wrap.appendChild(grid);
+    /* Harvest-all convenience */
+    var ripe=0;st.plots.forEach(function(p){if(p&&p.age>=CROPS[p.k].grow)ripe++;});
+    if(ripe>1){const ha=txt('button','Harvest all ('+ripe+')',{className:'btn small',style:{marginTop:'8px',width:'100%'}});ha.onclick=harvestAll;wrap.appendChild(ha);}
+    /* Barn — animals (passive income) + sprinkler upgrade */
+    wrap.appendChild(txt('div','BARN & UPGRADES',{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.4px',margin:'12px 0 3px'}}));
+    const barn=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}});
+    AORDER.forEach(function(k){
+      var a=ANIMALS[k],locked=st.level<a.lv,owned=st.animals[k]||0;
+      var label=(locked?(a.name+' · Lv '+a.lv):('Buy '+a.name+' '+a.cost))+(owned?(' ×'+owned):'');
+      var b=txt('button',label,{className:'btn small',style:{fontSize:'11px',opacity:locked?'0.45':'1'}});
+      b.onclick=function(){buyAnimal(k);};
+      barn.appendChild(b);
+    });
+    var spLabel=st.sprinkler?'Sprinkler ✓':('Sprinkler '+SPRINKLER_COST);
+    var sp=txt('button',spLabel,{className:'btn small'+(st.sprinkler?' primary':''),style:{fontSize:'11px'}});
+    sp.onclick=function(){buySprinkler();};
+    barn.appendChild(sp);
+    wrap.appendChild(barn);
+    wrap.appendChild(txt('div','Animals earn coins automatically every day. A sprinkler waters all crops for you. Watch the market — sell on a Market Day for +50%.',{style:{fontSize:'10px',color:'var(--muted)',margin:'6px 0 0',lineHeight:'1.4'}}));
+    /* Controls */
     const ctrl=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center',marginTop:'12px',flexWrap:'wrap'}});
     const nd=txt('button','Next day',{className:'btn primary'});nd.onclick=nextDay;ctrl.appendChild(nd);
     const ng=txt('button','New farm',{className:'btn'});
@@ -19597,7 +19667,7 @@ const Farm=(()=>{
     ctrl.appendChild(ng);
     wrap.appendChild(ctrl);
     const anyGrowing=st.plots.some(function(x){return !!x;});
-    if(st.coins<CROPS.wheat.cost&&!anyGrowing){wrap.appendChild(txt('div','Out of coins and crops — tap New farm to start fresh.',{style:{fontSize:'11px',color:'var(--danger)',textAlign:'center',marginTop:'8px',fontWeight:'700'}}));}
+    if(st.coins<CROPS.wheat.cost&&!anyGrowing&&_animalIncome()===0){wrap.appendChild(txt('div','Out of coins and crops — tap New farm to start fresh.',{style:{fontSize:'11px',color:'var(--danger)',textAlign:'center',marginTop:'8px',fontWeight:'700'}}));}
     immersiveContent.appendChild(wrap);
   }
   function stop(){/* turn-based — no timers to clear */}
@@ -29909,13 +29979,13 @@ home:()=>{
     const _mast=el('div',{className:'simple-masthead'});
     const _mbar=el('div',{className:'smh-bar'});
     _mbar.appendChild(el('span',{className:'smh-dot'}));
-    _mbar.appendChild(txt('span','KindleHub'));
+    _mbar.appendChild(txt('span','HOME'));
     _mbar.appendChild(el('span',{className:'smh-spacer'}));
     try{_mbar.appendChild(txt('span',new Date(NOW()).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toUpperCase()));}catch(_){}
     _mast.appendChild(_mbar);
     const _mbody=el('div',{className:'smh-body'});
     const _nm=S.user||(S.email?S.email.split('@')[0]:'');
-    _mbody.appendChild(txt('div',_nm?('Hello, '+_nm):'KindleHub',{className:'smh-title'}));
+    _mbody.appendChild(txt('div',_nm?('Hello, '+_nm):'Welcome',{className:'smh-title'}));
     _mbody.appendChild(txt('div',(function(){var h=new Date(NOW()).getHours();var g=h<12?'Good morning':(h<18?'Good afternoon':'Good evening');var wd='';try{wd=' · '+new Date(NOW()).toLocaleDateString(undefined,{weekday:'long'});}catch(_){}return g+wd;})(),{className:'smh-sub'}));
     _mast.appendChild(_mbody);
     wrap.appendChild(_mast);
@@ -47424,59 +47494,234 @@ sleeplog:()=>{
 
 /* ─── CHESS CLOCK ────────────────────────────────────── */
 sports:()=>{
-  /* Live & recent scores via ESPN's public scoreboard JSON (CORS-open, no key).
-     Covers what users asked for: World Cup + the big football/soccer leagues,
-     plus NBA/NFL/MLB/NHL/college. Soccer slugs are ESPN league codes. */
+  /* Rich scores/fixtures via ESPN's public JSON (CORS-open, no key). The
+     scoreboard endpoint takes ?dates=YYYYMMDD so you can walk past / today /
+     future days; the summary?event= endpoint gives the box score, lineups /
+     formation and per-player stats. Avoids Array.find (old Silk). */
   const v=el('section',{id:'view-sports',className:'view'});
-  v.appendChild(txt('h2','Sports Scores',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
-  v.appendChild(txt('div','Live and recent scores — football (World Cup & top leagues) plus the major US leagues.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  v.appendChild(txt('h2','Sports',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'4px'}}));
+  v.appendChild(txt('div','Past, live and upcoming games. Tap a game for the score, lineups and player stats.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
   const LEAGUES=[['World Cup','soccer','fifa.world'],['Premier Lg','soccer','eng.1'],['Champions Lg','soccer','uefa.champions'],['La Liga','soccer','esp.1'],['Serie A','soccer','ita.1'],['Bundesliga','soccer','ger.1'],['MLS','soccer','usa.1'],['Women’s WC','soccer','fifa.wwc'],['NBA','basketball','nba'],['NFL','football','nfl'],['MLB','baseball','mlb'],['NHL','hockey','nhl'],['NCAAF','football','college-football'],['NCAAB','basketball','mens-college-basketball']];
-  const tabs=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}});
+  const tabs=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}});
+  let _cur=0,_busy=false,_day=new Date(NOW());
+  function _pad(n){return (n<10?'0':'')+n;}
+  function _ymd(d){return d.getFullYear()+''+_pad(d.getMonth()+1)+_pad(d.getDate());}
+  function _dayLabel(d){var t=new Date(NOW());var same=d.getFullYear()===t.getFullYear()&&d.getMonth()===t.getMonth()&&d.getDate()===t.getDate();try{return (same?'Today · ':'')+d.toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'});}catch(_){return _ymd(d);}}
+  function _pick(arr,ha){for(let i=0;i<(arr||[]).length;i++){if(arr[i]&&arr[i].homeAway===ha)return arr[i];}return null;}
+  function _teamName(c){return (c&&c.team&&(c.team.displayName||c.team.shortDisplayName||c.team.name||c.team.abbreviation))||'—';}
+  function _abbr(c){return (c&&c.team&&(c.team.abbreviation||c.team.shortDisplayName))||'';}
+  /* Date bar */
+  const dateBar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}});
+  const prevBtn=txt('button','‹ Prev',{className:'btn small'});
+  const dayLbl=txt('div','',{style:{flex:'1',textAlign:'center',fontSize:'12px',fontWeight:'800'}});
+  const nextBtn=txt('button','Next ›',{className:'btn small'});
+  const todayBtn=txt('button','Today',{className:'btn small'});
+  prevBtn.onclick=()=>{_day=new Date(_day.getTime()-86400000);load(_cur);};
+  nextBtn.onclick=()=>{_day=new Date(_day.getTime()+86400000);load(_cur);};
+  todayBtn.onclick=()=>{_day=new Date(NOW());load(_cur);};
+  dateBar.append(prevBtn,dayLbl,nextBtn,todayBtn);
   const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px',minHeight:'16px'}});
   const list=el('div',{});
-  let _cur=0,_busy=false;
-  function _pick(arr,ha){for(let i=0;i<(arr||[]).length;i++){if(arr[i]&&arr[i].homeAway===ha)return arr[i];}return null;}
-  function _teamName(c){return (c&&c.team&&(c.team.displayName||c.team.shortDisplayName||c.team.abbreviation))||'—';}
+  const detail=el('div',{style:{display:'none'}});
+
+  function _statusText(comp){
+    var st=(comp&&comp.status)||{};var t=st.type||{};
+    return t.shortDetail||t.detail||t.description||'';
+  }
+  function _isLive(comp){var s=comp&&comp.status&&comp.status.type;return !!(s&&s.state==='in');}
+  async function _getJSON(url){
+    const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+    const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
+    try{const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});clearTimeout(tid);if(!r.ok)throw new Error('HTTP '+r.status);return await r.json();}
+    finally{clearTimeout(tid);}
+  }
   async function load(i){
     if(_busy)return;
-    _cur=i;
+    _cur=i;detail.style.display='none';list.style.display='';dateBar.style.display='flex';
     const bs=tabs.querySelectorAll('button');for(let j=0;j<bs.length;j++)bs[j].className='btn small'+(j===i?' primary':'');
+    dayLbl.textContent=_dayLabel(_day);
     list.innerHTML='';
-    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to see scores.';return;}
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to see games.';return;}
     _busy=true;status.textContent='Loading '+LEAGUES[i][0]+'…';
     try{
-      const url='https://site.api.espn.com/apis/site/v2/sports/'+LEAGUES[i][1]+'/'+LEAGUES[i][2]+'/scoreboard';
-      const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
-      const tid=setTimeout(()=>{if(ctrl)ctrl.abort();},12000);
-      const r=await fetch(url,{signal:ctrl?ctrl.signal:undefined});
-      clearTimeout(tid);
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      const data=await r.json();
+      const lg=LEAGUES[i];
+      const data=await _getJSON('https://site.api.espn.com/apis/site/v2/sports/'+lg[1]+'/'+lg[2]+'/scoreboard?dates='+_ymd(_day));
       const events=(data&&data.events)||[];
-      if(!events.length){status.textContent='No '+LEAGUES[i][0]+' games right now.';_busy=false;return;}
-      status.textContent=events.length+' game'+(events.length===1?'':'s')+' — tap Refresh to update.';
+      if(!events.length){status.textContent='No '+lg[0]+' games on '+_dayLabel(_day).replace('Today · ','')+'. Try Prev / Next.';_busy=false;return;}
+      var live=0;events.forEach(function(ev){var comp=(ev.competitions&&ev.competitions[0])||{};if(_isLive(comp))live++;});
+      status.textContent=events.length+' game'+(events.length===1?'':'s')+(live?(' · '+live+' live'):'')+' — tap one for details.';
       events.forEach(ev=>{
         const comp=(ev.competitions&&ev.competitions[0])||{};
         const cs=comp.competitors||[];
         const away=_pick(cs,'away')||cs[0]||{}, home=_pick(cs,'home')||cs[1]||{};
-        const st=(ev.status&&ev.status.type&&(ev.status.type.shortDetail||ev.status.type.detail))||'';
-        const row=el('div',{className:'card',style:{padding:'9px 12px',marginBottom:'6px'}});
+        const st=_statusText(comp), lv=_isLive(comp);
+        const row=el('div',{className:'card',style:{padding:'9px 12px',marginBottom:'6px',cursor:'pointer'}});
+        if(lv){const b=txt('span','LIVE',{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'1px 6px',borderRadius:'4px',marginBottom:'4px',display:'inline-block'}});row.appendChild(b);}
         [away,home].forEach(t=>{
           const rr=el('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'14px',padding:'2px 0'}});
           rr.appendChild(txt('span',_teamName(t),{style:{fontWeight:t.winner?'800':'500'}}));
           rr.appendChild(txt('span',(t.score!=null?String(t.score):''),{style:{fontWeight:t.winner?'800':'500',fontVariantNumeric:'tabular-nums'}}));
           row.appendChild(rr);
         });
-        if(st)row.appendChild(txt('div',st,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'4px'}}));
+        const foot=el('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'4px'}});
+        if(st)foot.appendChild(txt('span',st,{style:{fontSize:'11px',color:'var(--muted)'}}));
+        foot.appendChild(txt('span','Details ›',{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700'}}));
+        row.appendChild(foot);
+        row.onclick=()=>openGame(ev.id,i);
         list.appendChild(row);
       });
-    }catch(e){status.textContent='Couldn’t load scores (network issue). Try again.';}
+    }catch(e){status.textContent='Couldn’t load games (network issue). Try again.';}
     _busy=false;
   }
-  LEAGUES.forEach((lg,i)=>{const b=txt('button',lg[0],{className:'btn small'});b.onclick=()=>load(i);tabs.appendChild(b);});
-  v.appendChild(tabs);v.appendChild(status);v.appendChild(list);
-  const refresh=txt('button','Refresh',{className:'btn small',style:{marginTop:'10px'}});refresh.onclick=()=>load(_cur);v.appendChild(refresh);
-  v.appendChild(txt('div','Scores via ESPN. Unofficial feed — may occasionally be unavailable.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px',fontStyle:'italic'}}));
+
+  /* ── Game detail (box score, lineups/formation, per-player stats) ── */
+  function _statPairs(statsArr){
+    /* ESPN player stats: [{name/displayName/abbreviation, displayValue}] */
+    var out=[];(statsArr||[]).forEach(function(s){if(!s)return;var k=s.displayName||s.shortDisplayName||s.name||s.abbreviation||'';var val=(s.displayValue!=null)?s.displayValue:(s.value!=null?String(s.value):'');if(k&&val!=='')out.push([k,val]);});return out;
+  }
+  function _showPlayer(name,pos,pairs){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.55)',zIndex:'600500',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+    const box=el('div',{className:'card',style:{width:'100%',maxWidth:'360px',maxHeight:'80vh',overflowY:'auto',padding:'14px'}});
+    box.appendChild(txt('div',name,{style:{fontSize:'17px',fontWeight:'900',fontFamily:'var(--title-font)'}}));
+    if(pos)box.appendChild(txt('div',pos,{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px'}}));
+    if(!pairs.length)box.appendChild(txt('div','No individual stats available for this player.',{style:{fontSize:'12px',color:'var(--muted)',marginTop:'6px'}}));
+    else{const g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr auto',gap:'4px 12px',marginTop:'8px'}});pairs.forEach(function(p){g.appendChild(txt('div',p[0],{style:{fontSize:'12px',color:'var(--muted)'}}));g.appendChild(txt('div',String(p[1]),{style:{fontSize:'13px',fontWeight:'800',textAlign:'right',fontVariantNumeric:'tabular-nums'}}));});box.appendChild(g);}
+    const cls=txt('button','Close',{className:'btn small primary',style:{marginTop:'12px',width:'100%'}});cls.onclick=()=>ov.remove();box.appendChild(cls);
+    ov.onclick=e=>{if(e.target===ov)ov.remove();};
+    ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
+  function _playerRow(name,pos,pairs){
+    const b=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',padding:'7px 4px',borderBottom:'1px dashed var(--muted)',cursor:'pointer'}});
+    const l=el('div',{style:{minWidth:'0'}});
+    l.appendChild(txt('div',name,{style:{fontSize:'13px',fontWeight:'700',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}));
+    if(pos)l.appendChild(txt('div',pos,{style:{fontSize:'10px',color:'var(--muted)'}}));
+    b.appendChild(l);
+    b.appendChild(txt('span','stats ›',{style:{fontSize:'10px',color:'var(--accent)',fontWeight:'700',flexShrink:'0'}}));
+    b.onclick=()=>_showPlayer(name,pos,pairs);
+    return b;
+  }
+  function _teamStatsBlock(box){
+    /* boxscore.teams[].statistics → side-by-side comparison */
+    const teams=(box&&box.teams)||[];if(teams.length<2)return null;
+    const a=teams[0],b=teams[1];
+    const namesA={};(a.statistics||[]).forEach(function(s){namesA[s.name||s.label]=s.displayValue;});
+    const wrap=el('div',{style:{marginTop:'10px'}});
+    wrap.appendChild(txt('div','TEAM STATS',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'4px'}}));
+    const head=el('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'11px',fontWeight:'800',marginBottom:'2px'}});
+    head.appendChild(txt('span',_abbr(a)||'Home'));head.appendChild(txt('span',_abbr(b)||'Away'));wrap.appendChild(head);
+    (b.statistics||[]).forEach(function(s){
+      const label=s.label||s.name;const va=namesA[s.name||s.label];const vb=s.displayValue;
+      if(va==null&&vb==null)return;
+      const rr=el('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:'6px',fontSize:'12px',padding:'2px 0',alignItems:'center'}});
+      rr.appendChild(txt('span',va!=null?String(va):'—',{style:{fontWeight:'700',fontVariantNumeric:'tabular-nums'}}));
+      rr.appendChild(txt('span',label,{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center'}}));
+      rr.appendChild(txt('span',vb!=null?String(vb):'—',{style:{fontWeight:'700',textAlign:'right',fontVariantNumeric:'tabular-nums'}}));
+      wrap.appendChild(rr);
+    });
+    return wrap.children.length>1?wrap:null;
+  }
+  function _soccerLineups(rosters){
+    /* rosters[]: {team, formation, roster:[{athlete, position, stats, starter, jersey}]} */
+    if(!rosters||!rosters.length)return null;
+    const wrap=el('div',{style:{marginTop:'10px'}});
+    rosters.forEach(function(rt){
+      const tn=(rt.team&&(rt.team.displayName||rt.team.name))||'Team';
+      const hdr=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginTop:'8px',borderTop:'var(--thin)',paddingTop:'6px'}});
+      hdr.appendChild(txt('span',tn,{style:{fontSize:'13px',fontWeight:'800'}}));
+      if(rt.formation)hdr.appendChild(txt('span','Formation '+rt.formation,{style:{fontSize:'11px',color:'var(--muted)',fontWeight:'700'}}));
+      wrap.appendChild(hdr);
+      const starters=[],subs=[];
+      (rt.roster||[]).forEach(function(p){(p.starter?starters:subs).push(p);});
+      function addPlayers(arr,label){
+        if(!arr.length)return;
+        wrap.appendChild(txt('div',label,{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.4px',margin:'4px 0 1px'}}));
+        arr.forEach(function(p){
+          const ath=p.athlete||{};const nm=(p.jersey?(p.jersey+'  '):'')+(ath.displayName||ath.fullName||'Player');
+          const pos=(p.position&&(p.position.abbreviation||p.position.name))||'';
+          wrap.appendChild(_playerRow(nm,pos,_statPairs(p.stats)));
+        });
+      }
+      addPlayers(starters,'STARTING XI');
+      addPlayers(subs,'SUBS / BENCH');
+    });
+    return wrap;
+  }
+  function _boxPlayers(players){
+    /* boxscore.players[]: {team, statistics:[{names, athletes:[{athlete, stats}]}]} */
+    if(!players||!players.length)return null;
+    const wrap=el('div',{style:{marginTop:'10px'}});
+    players.forEach(function(tp){
+      const tn=(tp.team&&(tp.team.displayName||tp.team.name||tp.team.abbreviation))||'Team';
+      wrap.appendChild(txt('div',tn,{style:{fontSize:'13px',fontWeight:'800',marginTop:'8px',borderTop:'var(--thin)',paddingTop:'6px'}}));
+      const grp=(tp.statistics&&tp.statistics[0])||{};
+      const names=grp.names||grp.labels||[];
+      const aths=grp.athletes||[];
+      if(!aths.length){wrap.appendChild(txt('div','No player stats posted yet.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
+      aths.forEach(function(a){
+        const ath=a.athlete||{};const nm=ath.displayName||ath.shortName||'Player';
+        const pos=(ath.position&&(ath.position.abbreviation))||'';
+        const pairs=[];(a.stats||[]).forEach(function(val,idx){var k=names[idx];if(k)pairs.push([k,val]);});
+        wrap.appendChild(_playerRow(nm,pos,pairs));
+      });
+    });
+    return wrap;
+  }
+  function _leadersBlock(leaders){
+    if(!leaders||!leaders.length)return null;
+    const wrap=el('div',{style:{marginTop:'10px'}});
+    wrap.appendChild(txt('div','TOP PERFORMERS',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',letterSpacing:'.5px',marginBottom:'4px'}}));
+    leaders.forEach(function(cat){
+      const arr=cat.leaders||[];if(!arr.length)return;
+      const ld=arr[0];const ath=(ld.athlete)||{};
+      const rr=el('div',{style:{display:'flex',justifyContent:'space-between',fontSize:'12px',padding:'2px 0'}});
+      rr.appendChild(txt('span',(cat.displayName||cat.name||'')+': '+(ath.displayName||ath.shortName||''),{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+      rr.appendChild(txt('span',ld.displayValue||'',{style:{fontWeight:'800',flexShrink:'0',marginLeft:'8px'}}));
+      wrap.appendChild(rr);
+    });
+    return wrap.children.length>1?wrap:null;
+  }
+  async function openGame(eventId,leagueIdx){
+    if(!eventId)return;
+    const lg=LEAGUES[leagueIdx];
+    list.style.display='none';dateBar.style.display='none';detail.style.display='';detail.innerHTML='';
+    const back=txt('button','‹ Back to games',{className:'btn small',style:{marginBottom:'8px'}});back.onclick=()=>load(leagueIdx);detail.appendChild(back);
+    const loading=txt('div','Loading game details…',{style:{fontSize:'12px',color:'var(--muted)'}});detail.appendChild(loading);
+    try{
+      const sum=await _getJSON('https://site.api.espn.com/apis/site/v2/sports/'+lg[1]+'/'+lg[2]+'/summary?event='+encodeURIComponent(eventId));
+      detail.removeChild(loading);
+      const head=(sum.header&&sum.header.competitions&&sum.header.competitions[0])||{};
+      const cs=head.competitors||[];
+      const away=_pick(cs,'away')||cs[0]||{}, home=_pick(cs,'home')||cs[1]||{};
+      const stTxt=(head.status&&head.status.type&&(head.status.type.detail||head.status.type.description))||'';
+      const venue=(sum.gameInfo&&sum.gameInfo.venue&&sum.gameInfo.venue.fullName)||'';
+      /* Scoreline card */
+      const sc=el('div',{className:'card',style:{padding:'12px'}});
+      [away,home].forEach(function(t){
+        const rr=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'18px',padding:'3px 0'}});
+        rr.appendChild(txt('span',_teamName(t),{style:{fontWeight:t.winner?'900':'600'}}));
+        rr.appendChild(txt('span',(t.score!=null?String(t.score):'-'),{style:{fontWeight:'900',fontVariantNumeric:'tabular-nums'}}));
+        sc.appendChild(rr);
+      });
+      if(stTxt)sc.appendChild(txt('div',stTxt,{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px',fontWeight:'700'}}));
+      if(venue)sc.appendChild(txt('div',venue,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
+      detail.appendChild(sc);
+      detail.appendChild(txt('div','Tap any player to see their stats for this game.',{style:{fontSize:'10px',color:'var(--muted)',margin:'8px 0 2px',fontStyle:'italic'}}));
+      /* Blocks — best available for the sport */
+      var added=0;
+      const ts=_teamStatsBlock(sum.boxscore);if(ts){detail.appendChild(ts);added++;}
+      const soc=_soccerLineups(sum.rosters);if(soc){detail.appendChild(soc);added++;}
+      const box=_boxPlayers(sum.boxscore&&sum.boxscore.players);if(box){detail.appendChild(box);added++;}
+      if(!added){const ld=_leadersBlock(sum.leaders);if(ld){detail.appendChild(ld);added++;}}
+      if(!added)detail.appendChild(txt('div','Detailed stats aren’t published for this game yet — they usually appear once it kicks off.',{style:{fontSize:'12px',color:'var(--muted)',marginTop:'10px'}}));
+    }catch(e){
+      try{detail.removeChild(loading);}catch(_){}
+      detail.appendChild(txt('div','Couldn’t load game details (network issue). Tap Back and try again.',{style:{fontSize:'12px',color:'var(--danger)',marginTop:'8px'}}));
+    }
+  }
+
+  LEAGUES.forEach((lg,i)=>{const b=txt('button',lg[0],{className:'btn small'});b.onclick=()=>{_day=new Date(NOW());load(i);};tabs.appendChild(b);});
+  v.appendChild(tabs);v.appendChild(dateBar);v.appendChild(status);v.appendChild(list);v.appendChild(detail);
+  v.appendChild(txt('div','Games, lineups & player stats via ESPN. Unofficial feed — may occasionally be unavailable.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px',fontStyle:'italic'}}));
   setTimeout(()=>load(0),30);
   return v;
 },
@@ -47553,10 +47798,16 @@ imagesearch:()=>{
     let data=null,err=null;
     try{ data=await _imgFetch(apiUrl); }
     catch(e){
+      /* Retry via CORS proxies on ANY failure — including an HTTP error such as
+         Openverse's low anonymous rate limit (429) or a 5xx, not just a
+         network/CORS error. A proxy fetch is a genuinely different route, so it
+         often rescues the "image app not working" case. Two proxies in case one
+         is down. */
       err=e;
-      if(!(e&&e._http)){
-        try{ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(apiUrl)); err=null; }
-        catch(e2){ err=e2; }
+      try{ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(apiUrl)); err=null; }
+      catch(e2){
+        try{ data=await _imgFetch('https://corsproxy.io/?url='+encodeURIComponent(apiUrl)); err=null; }
+        catch(e3){ err=e3; }
       }
     }
     if(!data){ status.textContent=_imgErrMsg(err); _busy=false; return; }
