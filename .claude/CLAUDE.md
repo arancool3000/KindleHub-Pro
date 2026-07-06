@@ -696,6 +696,19 @@ Working through the documented "PENDING / bigger jobs" list, each a tested+commi
   worth the risk). Notes streak `_currentDailyStreak` + global `todayKey()` were ALREADY local (`toDateString()`/
   local parts). Test `/tmp/streak_test.cjs` (runs in America/New_York; asserts an instant that's next-day in UTC
   keys to the LOCAL day).
+- **Pixel Hop — a real Mario-style platformer** (`const Platformer`, game #36, id `platformer`): the "dedicated
+  platformer" the user asked for (DigQuest is a dig-and-smash; this is a clean run-and-jump). LEFT/RIGHT/JUMP
+  (hold ◄/► buttons + tap Jump, arrow keys/Space, or tap the canvas one-handed). Hand-authored beatable level
+  (`PLATS` ground+floaters with ≤70px pits, `COIN_DEF`, `ENEMY_DEF` patrollers), AABB collision (move-X-resolve
+  then move-Y-resolve), **jump BUFFER + COYOTE time** (`JBUF`/`COY`, the DigQuest feel-fix), stomp-from-above
+  vs side-hurt enemies, coin rings, a goal flag, 3 lives with **auto ledge-checkpoints** (`g.safe` updated each
+  grounded tick → respawn there on pit/hit). ~30fps `setInterval`, flat fills, guarded HUD writes (e-ink-safe),
+  `stop()` no-op guard. Wired at ALL points: `_doLaunch` case + **added to the exitImmersive stop-list**
+  (bare `Platformer` ref, safe — it's a normally-initialised const, not lazy like `window.CandyCrush`) +
+  `GAME_HELP` + `GAME_MAP` + a `gc('Pixel Hop',…data-game=platformer)` card in rowArc + `tools/games_test.cjs`
+  (now 36 games, 0 flagged). Score = coins×10 + stomps×20 + 150 finish bonus → `S.games.platformer.best` +
+  `_khSubmitScore`. Test `/tmp/platformer_test.cjs` (drives ►+jump: % climbs 4→23, coins collected, lives shown,
+  clean exit with no leaked interval).
 
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,

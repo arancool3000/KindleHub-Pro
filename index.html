@@ -13709,6 +13709,7 @@ const appNode=$('app');
    polish lift across the whole Arcade). */
 const GAME_HELP={
   digquest:{name:'Deep Dig',how:'A dig-and-smash story platformer over SIX chapters. ◄ ► move, JUMP leaps (grab a Spring-cap for a double-jump), DIG smashes the earth you face, DIG▼ digs straight down (keyboard: arrows/WASD, Space, Z). Tunnel for crystals, coins and gate-stones; a drilling-charm breaks solid stone and a ward-shield keeps you safe for a while; STOMP the crawling grubs from above (touch one and it bites). Touch a checkpoint flag and you respawn there. Bank crystals to buy permanent upgrades between runs. Clear each exit, then stomp the Gravecrawler boss three times to free the Heartspring. Toggle E-ink mode for fewer, chunkier frames.'},
+  platformer:{name:'Pixel Hop',how:'A Mario-style platformer. Hold ◄ / ► to run and tap Jump to leap (keyboard: arrow keys or Space; tap the screen to jump one-handed). Run and jump across the gaps — falling in a pit costs a life. Land ON TOP of a walking enemy to stomp it; touching one from the side hurts you. Grab the coin rings along the way and reach the flag at the end. You have 3 lives and respawn at the last ledge you stood on. Score = coins + stomps + a bonus for finishing.'},
   hanoi:{name:'Tower of Hanoi',how:'Move the whole stack of disks from the left peg to the right peg. Tap a peg to lift its top disk, then tap another peg to drop it. You can never place a bigger disk on a smaller one. Fewer moves is better — the minimum is 2ⁿ−1 for n disks. Choose 3 to 7 disks.'},
   blackjack:{name:'Blackjack',how:'Get closer to 21 than the dealer without going over. Hit for another card, Stand to hold. Face cards are 10; an Ace counts as 1 or 11. The dealer draws to 17. A two-card 21 (Blackjack) pays 3:2. Adjust your bet, then Deal — build the biggest chip stack you can.'},
   crazy8:{name:'Crazy Eights',how:'An Uno-style card game — play the computer or a friend online. Empty your hand first. Play a card that matches the discard by COLOUR (shown by the letter R/Y/G/B and the coloured border) or by NUMBER/symbol. Action cards: Skip and Reverse skip the other player, Draw Two makes them draw 2 and miss a turn. Wild lets you pick the colour; Wild Draw Four also makes them draw 4. Can’t play? Tap the deck to Draw, then play it or Pass. From the start menu choose “Play vs Computer” or “Play Online — 2 players”; online, the host runs the game so each player only ever sees their own hand, and there’s a chat panel to talk.'},
@@ -13834,7 +13835,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -14808,6 +14809,7 @@ function _doLaunch(g){
     case 'snake':      Snake.start();break;
     case 'slither':    Slither.start();break;
     case 'geometrydash': GeometryDash.start();break;
+    case 'platformer': Platformer.start();break;
     case 'crossyroad': CrossyRoad.start();break;
     case 'anagrams': Anagrams.start();break;
     case 'nonogram': Nonogram.start();break;
@@ -18835,6 +18837,234 @@ const GeometryDash=(()=>{
   document.addEventListener('keydown',e=>{
     if(immersiveRoot.style.display!=='block'||!game)return;
     if(e.key===' '||e.key==='ArrowUp'||e.key==='Up'){onTap();e.preventDefault();}
+  });
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  return{start,stop};
+})();
+
+/* ── Pixel Hop — a Mario-style side-scrolling platformer ──────────────
+   A REAL platformer (LEFT / RIGHT / JUMP), not an auto-runner: run and jump
+   across gaps, stomp the walkers, grab coins, reach the flag. Big touch buttons
+   (hold ◄/► to run, tap Jump) + arrow keys; tap the canvas to jump one-handed.
+   e-ink-friendly (flat fills, ~30fps setInterval, guarded HUD writes). Jump
+   BUFFER + COYOTE time for forgiving feel (same fix as DigQuest). Hand-authored
+   beatable level; 3 lives with auto ledge-checkpoints. Same conventions as the
+   other canvas games (setInterval tick, stop() no-op guard, _trackStop, score). */
+const Platformer=(()=>{
+  const W=360,H=240,PW=16,PH=22;
+  const GRAV=0.7,MOVE=0.7,MAXVX=3.1,FRICT=0.78,JUMP=-9.6,ESPD=0.85;
+  const JBUF=7,COY=6,EW=20,EH=16,GROUND_TOP=212,GOAL=1690,WORLDW=1760;
+  const SPAWN={x:30,y:180};
+  /* Solid platforms/ground {x,y,w,h} (y = TOP). Gaps between ground rects are
+     pits you fall into. Floaters are coin routes / stepping stones. Every gap is
+     <=70px so a full-power jump (reach ~86px) clears it — beatable by design. */
+  const PLATS=[
+    {x:0,y:212,w:360,h:28},{x:430,y:212,w:250,h:28},{x:740,y:212,w:210,h:28},
+    {x:1010,y:212,w:330,h:28},{x:1400,y:212,w:360,h:28},
+    {x:250,y:150,w:80,h:14},{x:560,y:150,w:90,h:14},{x:850,y:158,w:80,h:14},
+    {x:1120,y:146,w:80,h:14},{x:1250,y:170,w:80,h:14}
+  ];
+  const COIN_DEF=[[60,180],[110,180],[160,180],[270,120],[300,120],[470,180],[520,180],
+    [575,120],[610,120],[770,180],[820,180],[870,128],[1040,180],[1090,180],
+    [1150,116],[1275,140],[1440,180],[1500,180],[1560,180],[1620,180]];
+  const ENEMY_DEF=[[200,120,340],[500,440,660],[800,750,930],[1120,1015,1320],[1500,1410,1680]];
+  let game=null,timer=null,_submitted=false;
+
+  function _best(){return (S.games&&S.games.platformer&&S.games.platformer.best)||0;}
+  function aabb(px,py,p){return px<p.x+p.w&&px+PW>p.x&&py<p.y+p.h&&py+PH>p.y;}
+  function rectHit(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;}
+
+  function start(){
+    if(timer){clearInterval(timer);timer=null;}
+    _submitted=false;
+    game={x:SPAWN.x,y:SPAWN.y,vx:0,vy:0,onGround:false,face:1,camX:0,coins:0,stomps:0,
+      lives:3,jbuf:0,coy:0,inv:0,dead:false,won:false,active:true,left:false,right:false,
+      safe:{x:SPAWN.x,y:SPAWN.y},
+      coinGot:COIN_DEF.map(function(){return false;}),
+      enemies:ENEMY_DEF.map(function(e){return {x:e[0],y:GROUND_TOP-EH,x0:e[1],x1:e[2],dir:1,alive:true};})};
+    enterImmersive('Pixel Hop','0%');
+    immersiveRoot._trackStop=stop;
+    buildUI();
+    timer=setInterval(function(){if(!document.hidden)tick();},33);
+    draw();
+  }
+
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    const bar=txt('div','',{id:'phBar',style:{textAlign:'center',fontSize:'12px',fontWeight:'700',margin:'2px 0 4px',color:'var(--fg)'}});
+    immersiveContent.appendChild(bar);
+    const canvas=el('canvas',{id:'phCanvas',width:W,height:H});
+    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;border:2px solid var(--fg);touch-action:none;';
+    canvas.addEventListener('touchstart',function(e){e.preventDefault();tapJump();},{passive:false});
+    canvas.addEventListener('mousedown',function(e){e.preventDefault();tapJump();});
+    immersiveContent.appendChild(canvas);
+    immersiveContent.appendChild(txt('div','Hold ◄ / ► to run, tap Jump (or arrow keys / Space). Stomp the walkers, grab coins, reach the flag.',{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',margin:'2px auto',maxWidth:'340px'}}));
+    const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center',gap:'8px'}});
+    ctrl.appendChild(holdBtn('◄',function(){if(game){game.left=true;game.face=-1;}},function(){if(game)game.left=false;}));
+    const jb=txt('button','Jump',{className:'btn primary',style:{minWidth:'110px',fontSize:'16px'}});
+    jb.addEventListener('touchstart',function(e){e.preventDefault();tapJump();},{passive:false});
+    jb.addEventListener('mousedown',function(e){e.preventDefault();tapJump();});
+    ctrl.appendChild(jb);
+    ctrl.appendChild(holdBtn('►',function(){if(game){game.right=true;game.face=1;}},function(){if(game)game.right=false;}));
+    immersiveContent.appendChild(ctrl);
+    const ctrl2=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center'}});
+    ctrl2.appendChild(Object.assign(txt('button','Restart',{className:'btn small'}),{onclick:function(){start();}}));
+    immersiveContent.appendChild(ctrl2);
+  }
+  function holdBtn(label,onDown,onUp){
+    const b=txt('button',label,{className:'btn',style:{minWidth:'70px',fontSize:'20px',fontWeight:'800'}});
+    const d=function(e){if(e)e.preventDefault();onDown();};
+    const u=function(e){if(e)e.preventDefault();onUp();};
+    b.addEventListener('touchstart',d,{passive:false});b.addEventListener('touchend',u);b.addEventListener('touchcancel',u);
+    b.addEventListener('mousedown',d);b.addEventListener('mouseup',u);b.addEventListener('mouseleave',u);
+    return b;
+  }
+  function tapJump(){
+    if(!game)return;
+    if(game.dead||game.won){start();return;}
+    game.jbuf=JBUF;/* buffered — consumed in tick if grounded/coyote */
+  }
+
+  function tick(){
+    if(!game||!game.active)return;
+    const g=game;
+    /* horizontal */
+    if(g.left&&!g.right){g.vx-=MOVE;g.face=-1;}
+    else if(g.right&&!g.left){g.vx+=MOVE;g.face=1;}
+    else g.vx*=FRICT;
+    if(g.vx>MAXVX)g.vx=MAXVX;if(g.vx<-MAXVX)g.vx=-MAXVX;if(Math.abs(g.vx)<0.06)g.vx=0;
+    g.x+=g.vx;if(g.x<0){g.x=0;g.vx=0;}
+    for(let i=0;i<PLATS.length;i++){const p=PLATS[i];if(aabb(g.x,g.y,p)){if(g.vx>0)g.x=p.x-PW;else if(g.vx<0)g.x=p.x+p.w;g.vx=0;}}
+    /* vertical */
+    g.vy+=GRAV;if(g.vy>14)g.vy=14;
+    g.y+=g.vy;g.onGround=false;
+    for(let i=0;i<PLATS.length;i++){const p=PLATS[i];if(aabb(g.x,g.y,p)){
+      if(g.vy>0){g.y=p.y-PH;g.vy=0;g.onGround=true;}
+      else if(g.vy<0){g.y=p.y+p.h;g.vy=0;}
+    }}
+    if(g.onGround){g.coy=COY;g.safe={x:g.x,y:g.y};}else if(g.coy>0)g.coy--;
+    if(g.jbuf>0){if(g.coy>0){g.vy=JUMP;g.onGround=false;g.coy=0;g.jbuf=0;}else g.jbuf--;}
+    if(g.inv>0)g.inv--;
+    /* enemies */
+    for(let i=0;i<g.enemies.length;i++){const e=g.enemies[i];if(!e.alive)continue;
+      e.x+=e.dir*ESPD;
+      if(e.x<=e.x0){e.x=e.x0;e.dir=1;}else if(e.x+EW>=e.x1){e.x=e.x1-EW;e.dir=-1;}
+      if(rectHit(g.x,g.y,PW,PH,e.x,e.y,EW,EH)){
+        if(g.vy>0&&(g.y+PH)<=e.y+11){e.alive=false;g.stomps++;g.vy=JUMP*0.6;}
+        else hurt();
+      }
+    }
+    /* coins */
+    const cxp=g.x+PW/2,cyp=g.y+PH/2;
+    for(let i=0;i<COIN_DEF.length;i++){if(g.coinGot[i])continue;
+      const dx=COIN_DEF[i][0]-cxp,dy=COIN_DEF[i][1]-cyp;
+      if(dx*dx+dy*dy<16*16){g.coinGot[i]=true;g.coins++;}
+    }
+    /* fell in a pit */
+    if(g.y>H+50)hurt();
+    /* reached the flag */
+    if(g.x+PW>GOAL)return win();
+    /* camera + HUD */
+    g.camX=Math.max(0,Math.min(WORLDW-W,g.x-130));
+    const pct=Math.max(0,Math.min(100,Math.round(g.x/GOAL*100)));
+    const hearts=(g.lives>0?new Array(g.lives+1).join('♥'):'')+(g.lives<3?new Array(3-g.lives+1).join('·'):'');
+    const sb=$('phBar');if(sb){const v='Coins '+g.coins+'  ·  '+hearts+'  ·  '+pct+'%';if(sb.textContent!==v)sb.textContent=v;}
+    updateImmersiveScore(pct+'%');
+    draw();
+  }
+
+  function hurt(){
+    if(!game||game.inv>0||!game.active)return;
+    game.lives--;
+    if(game.lives<=0){lose();return;}
+    game.inv=45;game.x=game.safe.x;game.y=game.safe.y-1;game.vx=0;game.vy=0;
+    toast('Ouch! '+game.lives+' '+(game.lives===1?'life':'lives')+' left');
+  }
+  function _score(g){return g.coins*10+g.stomps*20+(g.won?150:0);}
+  function lose(){
+    if(!game||!game.active)return;
+    game.active=false;game.dead=true;
+    if(timer){clearInterval(timer);timer=null;}
+    saveBest(false);draw();
+    toast('Game over — tap to try again');
+  }
+  function win(){
+    if(!game||!game.active)return;
+    game.active=false;game.won=true;
+    if(timer){clearInterval(timer);timer=null;}
+    saveBest(true);draw();
+    toast('You reached the flag! '+game.coins+' coins');
+  }
+  function saveBest(won){
+    if(!S.games.platformer)S.games.platformer={best:0};
+    const sc=_score(game);
+    S.games.platformer.best=Math.max(S.games.platformer.best||0,sc);
+    saveNow();
+    if(!_submitted){_submitted=true;try{_khSubmitScore('platformer',sc);}catch(_){}}
+    recordStat('platformer',!!won);
+  }
+
+  function draw(){
+    const c=$('phCanvas');if(!c)return;const ctx=c.getContext('2d');const g=game;
+    const dark=document.body.classList.contains('dark');
+    const ink=dark?'#eee':'#161616',paper=dark?'#111':'#f5f5f5',faint=dark?'#333':'#dcdcdc',sky=dark?'#0d0d0d':'#fbfbfb';
+    ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+    if(!g)return;
+    const cam=g.camX;
+    /* faint parallax hills */
+    ctx.strokeStyle=faint;ctx.lineWidth=1;
+    for(let hx=-((cam*0.4)%160);hx<W;hx+=160){ctx.beginPath();ctx.arc(hx+60,GROUND_TOP,70,Math.PI,0);ctx.stroke();}
+    /* platforms */
+    for(let i=0;i<PLATS.length;i++){const p=PLATS[i],sx=p.x-cam;if(sx>W||sx+p.w<0)continue;
+      ctx.fillStyle=ink;ctx.fillRect(sx,p.y,p.w,p.h);
+      ctx.strokeStyle=paper;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,p.y+2.5);ctx.lineTo(sx+p.w,p.y+2.5);ctx.stroke();
+    }
+    /* coins — ring */
+    for(let i=0;i<COIN_DEF.length;i++){if(g.coinGot[i])continue;const sx=COIN_DEF[i][0]-cam,sy=COIN_DEF[i][1];if(sx<-10||sx>W+10)continue;
+      ctx.strokeStyle=ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(sx,sy,6,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx,sy-3);ctx.lineTo(sx,sy+3);ctx.stroke();
+    }
+    /* enemies */
+    for(let i=0;i<g.enemies.length;i++){const e=g.enemies[i];if(!e.alive)continue;const sx=e.x-cam;if(sx<-EW||sx>W)continue;
+      ctx.fillStyle=ink;ctx.fillRect(sx,e.y,EW,EH);
+      ctx.fillStyle=paper;ctx.fillRect(sx+4,e.y+4,3,3);ctx.fillRect(sx+EW-7,e.y+4,3,3);
+      ctx.fillRect(sx+2,e.y+EH,4,3);ctx.fillRect(sx+EW-6,e.y+EH,4,3);/* feet */
+    }
+    /* goal flag */
+    const gx=GOAL-cam;if(gx>-30&&gx<W+30){ctx.strokeStyle=ink;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(gx,GROUND_TOP);ctx.lineTo(gx,GROUND_TOP-70);ctx.stroke();
+      ctx.fillStyle=ink;ctx.beginPath();ctx.moveTo(gx,GROUND_TOP-70);ctx.lineTo(gx+26,GROUND_TOP-60);ctx.lineTo(gx,GROUND_TOP-50);ctx.closePath();ctx.fill();}
+    /* player — blink while invulnerable */
+    if(!(g.inv>0&&Math.floor(g.inv/4)%2)){
+      const sx=g.x-cam;
+      ctx.fillStyle=ink;ctx.fillRect(sx,g.y,PW,PH);
+      ctx.fillStyle=paper;ctx.fillRect(sx+2,g.y+2,PW-4,PH-4);
+      ctx.fillStyle=ink;/* eye + cap band show facing */
+      ctx.fillRect(sx+(g.face>0?PW-6:2),g.y+5,3,3);
+      ctx.fillRect(sx+2,g.y+2,PW-4,3);
+    }
+    /* progress bar */
+    ctx.fillStyle=faint;ctx.fillRect(8,8,W-16,5);
+    ctx.fillStyle=ink;ctx.fillRect(8,8,Math.round((W-16)*Math.min(1,g.x/GOAL)),5);
+    /* banner */
+    if(g.dead||g.won){
+      ctx.fillStyle=dark?'rgba(0,0,0,.6)':'rgba(255,255,255,.78)';ctx.fillRect(0,H/2-28,W,56);
+      ctx.fillStyle=ink;ctx.textAlign='center';ctx.font='bold 18px sans-serif';
+      ctx.fillText(g.won?'LEVEL COMPLETE!':'GAME OVER',W/2,H/2-2);
+      ctx.font='12px sans-serif';ctx.fillText((g.won?'Coins '+g.coins+' · Stomps '+g.stomps:'')+'  Tap to '+(g.won?'play again':'retry'),W/2,H/2+16);
+      ctx.textAlign='left';
+    }
+  }
+
+  document.addEventListener('keydown',function(e){
+    if(immersiveRoot.style.display!=='block'||!game||!game.active)return;
+    if(e.key==='ArrowLeft'||e.key==='Left'){game.left=true;game.face=-1;e.preventDefault();}
+    else if(e.key==='ArrowRight'||e.key==='Right'){game.right=true;game.face=1;e.preventDefault();}
+    else if(e.key===' '||e.key==='ArrowUp'||e.key==='Up'||e.key==='w'||e.key==='W'){tapJump();e.preventDefault();}
+  });
+  document.addEventListener('keyup',function(e){
+    if(!game)return;
+    if(e.key==='ArrowLeft'||e.key==='Left')game.left=false;
+    else if(e.key==='ArrowRight'||e.key==='Right')game.right=false;
   });
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
   return{start,stop};
@@ -26576,6 +26806,7 @@ const GAME_MAP=[
   {keys:['word search','wordsearch'],g:'wordsearch'},
   {keys:['tower defence','tower defense','towerdef'],g:'towerdef'},
   {keys:['geometry dash','geometrydash','geo dash','stereo madness','cube jump','rhythm runner'],g:'geometrydash'},
+  {keys:['pixel hop','platformer','mario','jump and run','side scroller','super','platform game'],g:'platformer'},
   {keys:['crossy road','crossyroad','crossy','crosser','frogger','cross the road','chicken road'],g:'crossyroad'},
   {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
@@ -31057,6 +31288,11 @@ games:()=>{
     c.appendChild(txt('p','One-button rhythm runner. Tap to jump the spikes, ride the blocks, reach 100% on "Stereo Madness".',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.geometrydash&&S.games.geometrydash.best||0)+'%',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'geometrydash',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('Pixel Hop',null,c=>{
+    c.appendChild(txt('p','A Mario-style platformer — run and jump across gaps, stomp enemies, grab coins, reach the flag.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.platformer&&S.games.platformer.best||0),{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'platformer',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('Crossy Road',null,c=>{
     c.appendChild(txt('p','Hop the chicken across endless lanes of traffic. Tap to move, time the gaps, go as far as you can.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
