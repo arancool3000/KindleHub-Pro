@@ -647,6 +647,41 @@ exist. This round added the two big pieces that need NO media backend:
 Tests: `/tmp/msg_test.cjs` (polls + profile-bg + friend/app globals) + `tools/games_test.cjs` (35, 0) + minify
 Silk gate. Merged to `main`.
 
+## ⚡ Round: Messages media — inline Images + Screenshots + Sticker pack (the deferred pieces, now shipped)
+Delivered what the last round deferred, WITHOUT a media backend — images ride the same E2E-encrypted,
+size-capped message path as text (like `KHAPP1:` app codes already do), just hard-downscaled first. Global
+helpers live right after the poll helpers (`window._khImgCode` etc.):
+- **Images / Screenshots** travel as a `KHIMG1:`+`<jpeg data URL>` message. `_khDownscaleImage(src,maxDim,
+  budget)` (canvas) shrinks any source to a JPEG under a **char budget (~12 000)** by stepping quality
+  0.6→0.2 then dimension 240→~100px until it fits — a 25 KB PNG → ~8.8 KB JPEG in tests, so it stays under the
+  16 KB app-share precedent even after encryption. `_khImgParse`/`_khIsImgMsg`; render = `_renderImgCard`
+  (thumbnail, tap → `_khOpenImageViewer` fullscreen). NB canvas JPEG encode works on Silk (same `toDataURL`
+  the screenshot app uses); if an engine returns PNG instead, the budget check fails gracefully → a toast.
+- **Screenshots** reuse the app's own `window._khShots` (html2canvas data URLs) — the attach picker shows a
+  "Capture this page now" button + a thumbnail grid of recent shots, each downscaled before send. No new
+  capture code.
+- **Stickers = the honest "GIFs" answer** (`_KH_STICKERS`, 12 built-in **inline-SVG** in `currentColor`):
+  travel as a tiny `KHSTK1:<id>` (just an id — ~zero bytes/wire, instant, never animates so it can't lag on
+  e-ink; real animated-GIF search needs a Tenor/Giphy key AND animates terribly on e-ink). `_khStickerParse`
+  validates the id against the fixed pack; render = `_renderStickerCard` (92px SVG). Pack: like/love/smile/
+  haha/wow/sad/fire/yes/no/star/party/100.
+- **Composer `+` "Attach" sheet** (`_khOpenAppShareMenu`) now leads with **Image** (`_khPickAndSendImage`,
+  hidden file input), **Screenshot** (`_khOpenScreenshotPicker`), **Sticker** (`_khOpenStickerPicker`, 4-col
+  grid), then Poll + app list. Grids use explicit heights (NOT `aspect-ratio`, unsupported on old Silk).
+- **No raw codes leak into text surfaces**: `_khMediaLabel(text)` → `[Image]`/`[Sticker · X]`; wired into
+  `notifyMsg` (toast/notification body) and a closure `_msgPreview()` used by the reply-quote + reply-strip.
+  The render dispatch (55999) gained `else if(_imgUrl)`/`else if(_stkId)` branches before the poll branch.
+- Send path unchanged: media goes through `_sendPayload`/`sendMessage`→`_groupSend` as a normal (encrypted)
+  message; `renderMessages` decodes the prefix. So it works over the existing D1/Supabase transport, no worker
+  or schema change.
+Tests: `/tmp/media_test.cjs` (codec/label/downscale-to-budget, 12 stickers) + `/tmp/media_integ_test.cjs`
+(opens a real chat, sends a sticker + image via the composer, asserts `<svg>`/`<img>` bubbles + no raw code +
+the Attach sheet's 3 media rows + sticker grid) + `/tmp/msg_test.cjs` (polls/profile-bg still pass) +
+`tools/games_test.cjs` (35, 0) + minify Silk gate. So the FULL Messages request (images/polls/threads/
+screenshots/stickers/apps/profile-bg/friends) is now delivered. Remaining honest gap: **live animated GIF
+search** (still needs a Tenor/Giphy key) and **cross-device profile-background display** (needs a profile-sync
+channel) — both offered to the user as opt-in follow-ups.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
