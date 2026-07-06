@@ -10677,16 +10677,24 @@ async function authRegister(email,password){
 }
 
 async function authLogin(email,password){
+  /* These two pre-checks are secondary (both are ALSO enforced server-side),
+     but each is a network round-trip that runs BEFORE the real lookup — on a
+     slow/flaky Kindle connection they could each hang for the full 12s fetch
+     timeout, so "Signing in…" appeared to take forever. Time-box them to a few
+     seconds and fail OPEN (proceed with login) so a slow gate can't lock out a
+     legitimate user. */
+  const _raceTO=(pr,ms)=>Promise.race([Promise.resolve(pr).catch(function(){return '__err__';}),new Promise(function(r){setTimeout(function(){r('__timeout__');},ms);})]);
   try{
     /* Banned usernames can't sign in either (covers accounts created before
        the ban). Checked before the lookup so it short-circuits cleanly. */
-    try{ if(typeof _khIsBanned==='function'&&await _khIsBanned(email)){
-      return{success:false,error:'This account has been suspended for an inappropriate username.'};
+    try{ if(typeof _khIsBanned==='function'){
+      const _ban=await _raceTO(_khIsBanned(email),3500);
+      if(_ban===true)return{success:false,error:'This account has been suspended for an inappropriate username.'};
     } }catch(_){}
     /* Capacity lockdown: new sign-ins are paused while over quota. Admins are
        exempt; anyone already signed in never reaches authLogin, so they're
        unaffected. Checked BEFORE the egress-heavy state lookup below. */
-    try{ await _refreshCapacity(); if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
+    try{ await _raceTO(_refreshCapacity(),3500); if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
     const key=await _userKey(email,password);
     let packed=null;
     let needsMigration=false; /* true if found in legacy jsonstorage but not the backend */
@@ -38670,7 +38678,7 @@ settings:()=>{
   const isKindle=window._khKeyboard&&window._khKeyboard.isKindleBrowser?window._khKeyboard.isKindleBrowser():false;
   cKbd.appendChild(txt('p','Floating on-screen keyboard. Choose when it appears.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px',lineHeight:'1.5'}}));
   const detectBanner=el('div',{style:{fontSize:'11px',padding:'7px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'8px',lineHeight:'1.5'}});
-  detectBanner.innerHTML='Detected device: <b>'+(isKindle?'Kindle (auto = on)':'phone / PC (auto = off)')+'</b>';
+  detectBanner.innerHTML='Detected device: <b>'+(isKindle?'Kindle (auto = landscape only)':'phone / PC (auto = off)')+'</b>';
   cKbd.appendChild(detectBanner);
   const currentMode=function(){
     if(S.kindleKeyboardMode==='always'||S.kindleKeyboardMode==='landscape'||S.kindleKeyboardMode==='off')return S.kindleKeyboardMode;
@@ -38678,7 +38686,7 @@ settings:()=>{
     if(S.kindleKeyboardManual===true||S.kindleKeyboardManual===false)return S.kindleKeyboard===false?'off':'always';
     return 'auto';
   };
-  const modes=[['auto','Auto (device-aware)'],['always','Always on'],['landscape','Landscape only'],['off','Off']];
+  const modes=[['auto','Auto (Kindle: landscape only · PC: off)'],['always','Always on'],['landscape','Landscape only'],['off','Off']];
   const modeRow=el('div',{style:{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'8px'}});
   modes.forEach(([k,l])=>{
     const active=currentMode()===k;
@@ -60038,7 +60046,10 @@ function _kbdWantedNow(){
   if(mode==='landscape')return isLandscape();
   var manual=S.kindleKeyboardManual;
   if(manual===true||manual===false)return (S.kindleKeyboard!==false);
-  return isKindleBrowser();
+  /* DEFAULT (auto): on a Kindle, only show in LANDSCAPE (portrait leaves the
+     native keyboard room and the on-screen one covers too much); on a phone/PC
+     it's OFF (those have real keyboards). */
+  return isKindleBrowser()?isLandscape():false;
 }
 function refreshKbd(){
   var want=_kbdWantedNow();

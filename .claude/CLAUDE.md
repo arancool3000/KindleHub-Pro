@@ -586,6 +586,19 @@ end. `typeChar`/`typeBackspace`/`insertSugg`/`getPrefix` route through `_kbCaret
 `selectionStart→0` (the Silk behaviour) and asserts typing "hello" yields "hello", not "olleh". Supersedes the
 "typeChar writes value programmatically so readOnly is fine" claim in the earlier double-keyboard note.
 
+## ⚡ Fix: keyboard default = landscape-on-Kindle/off-on-PC + slow Kindle sign-in
+- **Keyboard default** (`_kbdWantedNow`, the AUTO case): was `return isKindleBrowser()` (always-on on Kindle).
+  Now `return isKindleBrowser()?isLandscape():false` — on a Kindle the on-screen keyboard defaults to
+  **landscape only**; on a phone/PC it defaults **off** (they have real keyboards). Explicit modes
+  (always/landscape/off) unchanged; legacy `kindleKeyboardManual` path unchanged. Settings card banner +
+  the Auto label updated ("Kindle: landscape only · PC: off"). Re-eval already wired to resize/orientationchange.
+- **Slow "Signing in…"** (`authLogin`): the two PRE-checks before the real lookup — `_khIsBanned` and
+  `_refreshCapacity` — are each a network round-trip that, on flaky Kindle Wi-Fi, could hang for the full 12s
+  `_sbFetch` timeout, stacking ~24s+ before the account fetch even starts. Both are now wrapped in a
+  `_raceTO(promise,3500)` (Promise.race vs a 3.5s timer, fail-OPEN) so a slow gate can't block a legit login;
+  both are ALSO enforced server-side so nothing is weakened. The actual `_sbSelect('kh_users')` lookup keeps
+  its 12s bound. (Tested: minify Silk gate + boot regression; login needs a live backend so verified by code.)
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
