@@ -682,7 +682,21 @@ screenshots/stickers/apps/profile-bg/friends) is now delivered. Remaining honest
 search** (still needs a Tenor/Giphy key) and **cross-device profile-background display** (needs a profile-sync
 channel) — both offered to the user as opt-in follow-ups.
 
-## Account upkeep / staying under Cloudflare limits
+## ⚡ Round: finish the PENDING todo list (streak fix, cross-device profile bg, platformer, games, online play)
+Working through the documented "PENDING / bigger jobs" list, each a tested+committed batch on
+`claude/keen-tesla-n73rpc` (restarted from `main` after PR #35 merged):
+- **Non-UTC streak date-keys FIXED** (was: habits/notes/daily-goal keyed the day off UTC `toISOString().slice(
+  0,10)` → a habit ticked at 8pm in New York recorded under tomorrow's UTC date and broke the streak). New
+  global helper **`_localDayKey(t)`** right after `NOW()` — returns LOCAL `YYYY-MM-DD` from `getFullYear/Month/
+  Date` (clock-offset aware via NOW()). Repointed: habits `todayKey`/`calcStreak`/`thirtyDayRate`/week-dots/
+  30-day heatmap, the home **daily-goal** streak (`_today`+yesterday-carry), the Sheets `TODAY()` formula, and
+  the calendar event date-input default. LEFT as UTC (correct — they match SERVER date buckets or are benign):
+  shared-API daily cap (`readSharedKeyUsage`/proxy), admin stats `isoDaysAgo`, `kh_visit_last_day` throttle,
+  announcement date, and **Ultra accrual** (`_ultraDayStr`+cutoffs — internally consistent, gates premium, not
+  worth the risk). Notes streak `_currentDailyStreak` + global `todayKey()` were ALREADY local (`toDateString()`/
+  local parts). Test `/tmp/streak_test.cjs` (runs in America/New_York; asserts an instant that's next-day in UTC
+  keys to the LOCAL day).
+
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
   never the data-pruning supercompress (that stays reserved for a real out-of-space emergency,

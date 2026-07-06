@@ -2787,6 +2787,12 @@ function saveNow(){
    timestamp (e.g. saving a note, logging a session).
 ────────────────────────────────────────────────────────────────────────── */
 function NOW(){return new Date(Date.now()+((typeof S!=='undefined'&&S.clockOffset)||0));}
+/* LOCAL calendar day-key (YYYY-MM-DD) for streaks/habits/daily-goal. Uses the
+   device's LOCAL date parts, NOT toISOString() (which is UTC) — so a habit
+   marked done at 8pm in New York records under the correct local day instead of
+   rolling to tomorrow's UTC date and breaking the streak. Defaults to NOW() so
+   it stays clock-offset aware. Pass a Date or ms timestamp to key another day. */
+function _localDayKey(t){var d=(t==null)?NOW():((t instanceof Date)?t:new Date(t));var y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate();return y+'-'+(m<10?'0':'')+m+'-'+(day<10?'0':'')+day;}
 
 function isPro(){return true;}
 function showProModal(reason,onSuccess){if(onSuccess)onSuccess();}
@@ -30492,7 +30498,7 @@ home:()=>{
 
   /* Daily Goal + streak — set a goal, mark it done, build a day streak. */
   if(HW.goal!==false){
-    const _today=NOW().toISOString().slice(0,10);
+    const _today=_localDayKey();
     S.dailyGoal=S.dailyGoal||{text:'',doneDate:'',streak:0};
     const dg=S.dailyGoal;
     const gc=el('div',{className:'card'});
@@ -30503,7 +30509,7 @@ home:()=>{
     const doneToday=dg.doneDate===_today;
     const grow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}});
     const doneBtn=txt('button',doneToday?'Done today ✓':'Mark done',{className:'btn small'+(doneToday?' primary':'')});
-    doneBtn.onclick=()=>{if(dg.doneDate===_today)return;const y=new Date(NOW().getTime()-86400000).toISOString().slice(0,10);dg.streak=(dg.doneDate===y?(dg.streak||0)+1:1);dg.doneDate=_today;if(typeof saveNow==='function')saveNow();delete VIEWS['home'];showView('home');};
+    doneBtn.onclick=()=>{if(dg.doneDate===_today)return;const y=_localDayKey(NOW().getTime()-86400000);dg.streak=(dg.doneDate===y?(dg.streak||0)+1:1);dg.doneDate=_today;if(typeof saveNow==='function')saveNow();delete VIEWS['home'];showView('home');};
     grow.appendChild(doneBtn);
     grow.appendChild(txt('span','Streak: '+(dg.streak||0)+' day'+((dg.streak||0)===1?'':'s'),{style:{fontSize:'12px',color:'var(--muted)',fontWeight:'700'}}));
     gc.appendChild(grow);
@@ -44723,7 +44729,7 @@ sheets:()=>{
       const _ISBLANK=x=>x===''||x==null;
       const _ROW=()=>activeR+1,_COL=()=>activeC+1;
       const _NOW=()=>new Date().toISOString().slice(0,19).replace('T',' ');
-      const _TODAY=()=>new Date().toISOString().slice(0,10);
+      const _TODAY=()=>_localDayKey();
       const _RAND=()=>Math.random();
       const _RANDBETWEEN=(a,b)=>Math.floor(Math.random()*(num(b)-num(a)+1))+num(a);
       return Function('SUM','AVG','AVERAGE','MIN','MAX','COUNT','COUNTA','COUNTIF','SUMIF','AVERAGEIF',
@@ -47487,7 +47493,7 @@ sleeplog:()=>{
     const form=el('div',{className:'card',style:{marginBottom:'12px'}});
     form.appendChild(txt('h2','Log Sleep'));
     const dateRow=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}});
-    const dateInp=el('input',{type:'date',value:NOW().toISOString().slice(0,10)});
+    const dateInp=el('input',{type:'date',value:_localDayKey()});
     const bedInp=el('input',{type:'time',placeholder:'Bedtime',value:'22:30'});
     const wakeInp=el('input',{type:'time',placeholder:'Wake time',value:'07:00'});
     const qualInp=el('input',{type:'range',min:'1',max:'10',value:'7',style:{width:'100%'}});
@@ -50627,7 +50633,7 @@ habits:()=>{
   const v=el('section',{id:'view-habits',className:'view'});
   function loadHabits(){try{const d=localStorage.getItem('kh_habits');return d?JSON.parse(d):[];}catch(e){return[];}}
   function saveHabits(h){try{localStorage.setItem('kh_habits',JSON.stringify(h));}catch(e){}}
-  const todayKey=()=>NOW().toISOString().slice(0,10);
+  const todayKey=()=>_localDayKey();
   let habits=loadHabits();
   /* Expanded mode per habit — true shows the 30-day heatmap below the
      compact row. Tracked in a Set scoped to this view so it resets on
@@ -50637,7 +50643,7 @@ habits:()=>{
   /* Current streak (consecutive days ending today). */
   function calcStreak(h){
     let streak=0;const today=NOW();
-    for(let i=0;i<365;i++){const d=new Date(today);d.setDate(d.getDate()-i);const k=d.toISOString().slice(0,10);if(h.log&&h.log[k])streak++;else if(i>0)break;}
+    for(let i=0;i<365;i++){const d=new Date(today);d.setDate(d.getDate()-i);const k=_localDayKey(d);if(h.log&&h.log[k])streak++;else if(i>0)break;}
     return streak;
   }
   /* Longest streak EVER for this habit. Scans the log keys and finds
@@ -50668,7 +50674,7 @@ habits:()=>{
     let done=0;const today=NOW();
     for(let i=0;i<30;i++){
       const d=new Date(today);d.setDate(d.getDate()-i);
-      const k=d.toISOString().slice(0,10);
+      const k=_localDayKey(d);
       if(h.log&&h.log[k])done++;
     }
     return Math.round((done/30)*100);
@@ -50751,7 +50757,7 @@ habits:()=>{
       info.appendChild(statsLine);
       /* 7-day mini grid still on the compact row */
       const mini=el('div',{style:{display:'flex',gap:'2px',marginTop:'4px'}});
-      for(let j=6;j>=0;j--){const d=NOW();d.setDate(d.getDate()-j);const k=d.toISOString().slice(0,10);const dot=el('div',{style:{width:'14px',height:'14px',borderRadius:'3px',background:h.log&&h.log[k]?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',cursor:'pointer'},title:k+(h.log&&h.log[k]?' — done':'')});
+      for(let j=6;j>=0;j--){const d=NOW();d.setDate(d.getDate()-j);const k=_localDayKey(d);const dot=el('div',{style:{width:'14px',height:'14px',borderRadius:'3px',background:h.log&&h.log[k]?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',cursor:'pointer'},title:k+(h.log&&h.log[k]?' — done':'')});
         dot.onclick=()=>{if(!h.log)h.log={};if(h.log[k])delete h.log[k];else h.log[k]=true;saveHabits(habits);render();};
         mini.appendChild(dot);
       }
@@ -50786,7 +50792,7 @@ habits:()=>{
         const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:'3px'}});
         for(let j=29;j>=0;j--){
           const d=NOW();d.setDate(d.getDate()-j);
-          const k=d.toISOString().slice(0,10);
+          const k=_localDayKey(d);
           const cellDone=!!(h.log&&h.log[k]);
           const cell=el('div',{style:{aspectRatio:'1',background:cellDone?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',borderRadius:'3px',cursor:'pointer',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:cellDone?'var(--bg)':'var(--muted)',fontWeight:'700'}});
           cell.textContent=d.getDate();
