@@ -514,6 +514,66 @@ Ten-item "fix all in 1 go" batch on `claude/keen-tesla-n73rpc` (all in `index.ht
 Tests: `/tmp/round_test.cjs` (header/JB-gone/sports/OS-apps/star-search — all green vs index.min.html) +
 `tools/games_test.cjs` (35 games, 0 flagged). Minifier Silk syntax gate passed.
 
+## ⚡ Round: kill tofu emoji + retro home reorganised + Farm depth + Find button removed
+User was (rightly) annoyed: "remove ALL NOT SUPPORTED UNICODE… retro home SO DISORGANISED… Farm most
+boring thing ever… what is the new Find button". Four fixes on `claude/keen-tesla-n73rpc`:
+- **Tofu emoji purge**: recent features shipped astral-plane emoji that render as □ on Kindle Silk. Removed from
+  DASHBOARD (🎯🔥📚📝📔💬🗓🎮📖🗞⚡🤖 → clean text headers + **inline-SVG** stat tiles via `_DSVG`), GAZETTE (📰/✎
+  segment buttons → plain "Daily"/"Custom"), NOTIFICATION CENTER (icons were emoji rendered via `textContent`;
+  now a keyword→SVG map `_NICONS`/`_nIcon` — callers pass `'friend'|'ok'|'chat'|'game'|'bell'`, render switched
+  to innerHTML for `<svg…>`; legacy emoji notifs fall back to the bell), plus stray toasts/labels (🎱 8-ball,
+  ✈ flight sim, ⚖ BMI, ⚐ report tags, 📖 habit-tool AI example → ★). KEPT: chess `♚♛♜` + card `♠♥♦♣` (game-
+  critical, render fine) and everything already on the `EINK_SYMBOLS` safe list (✓✗★☆✦♥ arrows · °). Scan tool:
+  a node one-liner over U+1F000–1FAFF/U+2600–27BF minus the safe set — down to just chess glyphs + one comment.
+- **Retro home reorganised** (`uiMode==='simple'` branch): the flat 40-icon "All Applications" wall was the
+  "disorganised" look. Now grouped into labelled shelves — **Read / Create / Play / Connect / Organise / Tools /
+  Explore / More** (`CATS`), each a `.simple-section-hdr` + its own `.simple-app-grid`; Edit button rides the
+  first header; hidden apps (`S.retroHidden`) skipped; any NAV_TABS view not in a category auto-appends to More
+  so nothing can vanish. Masthead + featured row unchanged.
+- **Farm made fun** (`const Farm`): was plant→next-day→harvest with zero depth. Now a real progression loop —
+  **XP/level** unlocks crops (Wheat/Carrot→Berry→Pumpkin→Corn→Melon by `lv`); daily **weather** (`WEATHER`/
+  `WKEYS`: Sunny normal, Rainy 2× growth, Dry spell = no passive growth); **watering cans** (`WATER_PER_DAY=3`,
+  tap a growing plot to rush +1 day); a rolling **daily order** (`_makeOrder`, deliver N of a crop for a coin
+  bonus). Still turn-based (no loop, e-ink-safe), persists to `S.games.farm` (`_norm` back-fills old saves).
+- **Find button removed**: the `.nav-launcher` "Find" chip (from the earlier navigation round) confused the user
+  (they'd asked for a STARS search, not a header Find). Deleted the nav chip; `_khOpenLauncher` left as inert
+  dead code. The Stars page search bar (last round) stays.
+Tests: `/tmp/fix_test.cjs` (find-gone, dash/gazette/retro/notif emoji-free, 6 SVG tiles, 8 retro shelves, full
+Farm plant→water→ripen→harvest→persist) + `tools/games_test.cjs` (35 games, 0 flagged). Minify Silk gate passed.
+
+## ⚡ Round: Find restored + Gazette→News tab + Dashboard removed + tofu purge 2 + shared auto-switch + walk ETA
+Autonomous batch on `claude/keen-tesla-n73rpc` (user stepped away, asked to finish + merge):
+- **Find chip back + Settings findable**: restored the `.nav-launcher` "Find" chip in the nav (user changed
+  their mind — wanted it back); `_khOpenLauncher` page list now appends `['settings','Settings']` (Settings
+  isn't in NAV_TABS) so you can search-jump to Settings too.
+- **Gazette lives INSIDE News now** (not a standalone page): removed the `gazette` nav tab (HTML + NAV_TABS +
+  BUILTIN_APPS + retro ICON_LIB/CATS). Added a **Gazette view-tab** to the News (`rss`) view — `VIEW_DEFS` gains
+  `{id:'gazette'}`, `renderContent` dispatches `renderGazette()` which lazily mounts `BUILDERS.gazette()` (still
+  closure-based, so it hosts fine) into `contentDiv` and caches it. Feed-filter tabs hide off the Feed tab.
+- **Dashboard removed ENTIRELY** (user: "remove dashboard page entirely"): deleted `BUILDERS.dashboard` (+ its
+  `_go/_num/_gamesPlayed` locals), the nav tab, NAV_TABS entry, BUILTIN_APPS entry, retro ICON_LIB `dashboard`,
+  retro CATS `dashboard`, and `dashboard` from `ALWAYS_REBUILD`. The Home daily-goal widget (shares S.dailyGoal)
+  is untouched.
+- **Tofu emoji purge #2** ("make sure no not working emojis get through"): a full non-ASCII scan (safe set =
+  ASCII + EINK_SYMBOLS + basic punctuation/accents) found & fixed every remaining rendered emoji/dingbat —
+  ⚠→"!" (incl. the `⚠?` strip-regex → `!?`), ✕→× (close buttons, Latin-1 renders), gazette `↻ Refresh`→Refresh,
+  and one-offs (⤓ Import, ↺ reset btn, ⇌ swap-lang btn→Swap, ☰ menu hint, chem `⇌`→`<=>`, Wikipedia ↗, `⇪`→↑,
+  atbash `A↔Z`→`A=Z`). Only KEPT: chess `♚♛♜♝♞♟` (game-critical, render fine) + two code comments (😀 in the
+  EINK explanation, ↔ in a palette comment). Scan is repeatable (node one-liner in the round tooling).
+- **Public/shared AI: auto-switch on 503 + a real model picker** (user: "public api always overloaded → auto
+  switch + model picker"): `callSharedGeminiStream` — a 503/500 from a model now `continue`s to the NEXT model
+  in `SHARED_KEY_FALLBACK_CHAIN` (it used to just retry the SAME model then give up = "always overloaded"); if
+  the WHOLE chain is overloaded, one backoff-retry (`_ai503Retry`) then a clear message. NEW `S.sharedModel`
+  preference is tried FIRST (chain reordered), rescued by the rest. The **model picker** (`buildAIModelPicker`)
+  now, when provider==='shared', lists exactly the `SHARED_MODEL_QUOTAS` public models and a pick writes
+  `S.sharedModel` (was writing the ignored `hbGeminiModel`); `chatModelLabel` shows "Public: <model>".
+- **Maps walking ETA fixed** (user: "2.31 km = 6 min walk?!"): the public OSRM demo server only has the CAR
+  profile loaded, so `/route/v1/foot/…` still returned car-speed `duration` (walk ETA == drive ETA). Now for
+  `mode==='walking'` we IGNORE OSRM's duration and derive time from road distance at `WALK_KMH=4.8`
+  (2.31 km → ~29 min, not 6); driving keeps OSRM's car duration. Note updated to "~4.8 km/h".
+Tests: `/tmp/round3_test.cjs` (find/settings/gazette-tab/dashboard-gone/no-emoji/shared-picker — all green) +
+`tools/games_test.cjs` (35, 0 flagged) + minify Silk gate. Merged to `main` at the user's request.
+
 ## Account upkeep / staying under Cloudflare limits
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,
