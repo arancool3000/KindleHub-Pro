@@ -10677,16 +10677,24 @@ async function authRegister(email,password){
 }
 
 async function authLogin(email,password){
+  /* These two pre-checks are secondary (both are ALSO enforced server-side),
+     but each is a network round-trip that runs BEFORE the real lookup — on a
+     slow/flaky Kindle connection they could each hang for the full 12s fetch
+     timeout, so "Signing in…" appeared to take forever. Time-box them to a few
+     seconds and fail OPEN (proceed with login) so a slow gate can't lock out a
+     legitimate user. */
+  const _raceTO=(pr,ms)=>Promise.race([Promise.resolve(pr).catch(function(){return '__err__';}),new Promise(function(r){setTimeout(function(){r('__timeout__');},ms);})]);
   try{
     /* Banned usernames can't sign in either (covers accounts created before
        the ban). Checked before the lookup so it short-circuits cleanly. */
-    try{ if(typeof _khIsBanned==='function'&&await _khIsBanned(email)){
-      return{success:false,error:'This account has been suspended for an inappropriate username.'};
+    try{ if(typeof _khIsBanned==='function'){
+      const _ban=await _raceTO(_khIsBanned(email),3500);
+      if(_ban===true)return{success:false,error:'This account has been suspended for an inappropriate username.'};
     } }catch(_){}
     /* Capacity lockdown: new sign-ins are paused while over quota. Admins are
        exempt; anyone already signed in never reaches authLogin, so they're
        unaffected. Checked BEFORE the egress-heavy state lookup below. */
-    try{ await _refreshCapacity(); if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
+    try{ await _raceTO(_refreshCapacity(),3500); if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
     const key=await _userKey(email,password);
     let packed=null;
     let needsMigration=false; /* true if found in legacy jsonstorage but not the backend */
@@ -38670,7 +38678,7 @@ settings:()=>{
   const isKindle=window._khKeyboard&&window._khKeyboard.isKindleBrowser?window._khKeyboard.isKindleBrowser():false;
   cKbd.appendChild(txt('p','Floating on-screen keyboard. Choose when it appears.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px',lineHeight:'1.5'}}));
   const detectBanner=el('div',{style:{fontSize:'11px',padding:'7px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'8px',lineHeight:'1.5'}});
-  detectBanner.innerHTML='Detected device: <b>'+(isKindle?'Kindle (auto = on)':'phone / PC (auto = off)')+'</b>';
+  detectBanner.innerHTML='Detected device: <b>'+(isKindle?'Kindle (auto = landscape only)':'phone / PC (auto = off)')+'</b>';
   cKbd.appendChild(detectBanner);
   const currentMode=function(){
     if(S.kindleKeyboardMode==='always'||S.kindleKeyboardMode==='landscape'||S.kindleKeyboardMode==='off')return S.kindleKeyboardMode;
@@ -38678,7 +38686,7 @@ settings:()=>{
     if(S.kindleKeyboardManual===true||S.kindleKeyboardManual===false)return S.kindleKeyboard===false?'off':'always';
     return 'auto';
   };
-  const modes=[['auto','Auto (device-aware)'],['always','Always on'],['landscape','Landscape only'],['off','Off']];
+  const modes=[['auto','Auto (Kindle: landscape only · PC: off)'],['always','Always on'],['landscape','Landscape only'],['off','Off']];
   const modeRow=el('div',{style:{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'8px'}});
   modes.forEach(([k,l])=>{
     const active=currentMode()===k;
@@ -59314,6 +59322,12 @@ function suggestFromPrefix(prefix,n){
 /* ── State ── */
 var _enabled=true;
 var _target=null;
+/* Keyboard-owned caret position. We CANNOT trust _target.selectionStart while
+   the field is readOnly (the trick used to suppress the native keyboard): old
+   Kindle Silk reports it as 0 and ignores the selectionStart setter, so every
+   keystroke was inserted at position 0 — "it goes back to the start of the box".
+   We track the caret ourselves instead, seeded from the tap on first attach. */
+var _caret=null;
 var _visible=false;
 var _shifted=false;
 var _capsLock=false;
@@ -59557,13 +59571,28 @@ function renderKbd(){
 }
 
 /* ── Typing ── */
+/* Where should the next character go? Prefer OUR tracked caret; only fall back
+   to the field's selectionStart when it's genuinely editable (not readOnly) so
+   a readOnly-reported 0 can't drag us back to the start. Clamp to the value. */
+function _kbCaret(v){
+  var s=_caret;
+  if(s==null){
+    try{ if(_target&&!_target.readOnly&&typeof _target.selectionStart==='number') s=_target.selectionStart; }catch(_){}
+    if(s==null)s=v.length;
+  }
+  return Math.max(0,Math.min(s,v.length));
+}
+function _kbSetCaret(pos){
+  _caret=pos;
+  /* Best-effort — works when the field isn't readOnly; harmless no-op on Silk. */
+  try{ if(_target&&!_target.readOnly){_target.selectionStart=_target.selectionEnd=pos;} }catch(_){}
+}
 function typeChar(ch){
   if(!_target)return;
-  var s=_target.selectionStart||0;
-  var e=_target.selectionEnd||s;
   var v=_target.value||'';
-  _target.value=v.slice(0,s)+ch+v.slice(e);
-  _target.selectionStart=_target.selectionEnd=s+ch.length;
+  var s=_kbCaret(v);
+  _target.value=v.slice(0,s)+ch+v.slice(s);
+  _kbSetCaret(s+ch.length);
   _target.dispatchEvent(new Event('input',{bubbles:true}));
   if(_shifted&&!_capsLock){_shifted=false;renderKbd();}
   _aiSuggs=[];
@@ -59571,11 +59600,9 @@ function typeChar(ch){
 }
 function typeBackspace(){
   if(!_target)return;
-  var s=_target.selectionStart||0;
-  var e=_target.selectionEnd||s;
   var v=_target.value||'';
-  if(s!==e){_target.value=v.slice(0,s)+v.slice(e);_target.selectionStart=_target.selectionEnd=s;}
-  else if(s>0){_target.value=v.slice(0,s-1)+v.slice(s);_target.selectionStart=_target.selectionEnd=s-1;}
+  var s=_kbCaret(v);
+  if(s>0){_target.value=v.slice(0,s-1)+v.slice(s);_kbSetCaret(s-1);}
   _target.dispatchEvent(new Event('input',{bubbles:true}));
   _aiSuggs=[];updateSugg();
 }
@@ -59589,13 +59616,13 @@ function typeReturn(){
 }
 function insertSugg(word){
   if(!_target||!word)return;
-  var s=_target.selectionStart||0;
   var v=_target.value||'';
+  var s=_kbCaret(v);
   var ws=s;
   while(ws>0&&/\S/.test(v[ws-1]))ws--;
   var before=v.slice(0,ws)+word+' ';
   _target.value=before+v.slice(s);
-  _target.selectionStart=_target.selectionEnd=before.length;
+  _kbSetCaret(before.length);
   _target.dispatchEvent(new Event('input',{bubbles:true}));
   _aiSuggs=[];updateSugg();
 }
@@ -59603,8 +59630,8 @@ function insertSugg(word){
 /* ── Suggestions ── */
 function getPrefix(){
   if(!_target)return'';
-  var s=_target.selectionStart||0;
   var v=_target.value||'';
+  var s=_kbCaret(v);
   var ws=s;while(ws>0&&/\S/.test(v[ws-1]))ws--;
   return v.slice(ws,s);
 }
@@ -59778,6 +59805,11 @@ function _attachToTarget(el){
     el.dataset.khOrigInputmode=el.getAttribute('inputmode')||'__none__';
   }
   el.setAttribute('inputmode','none');
+  /* Seed our caret from where the user actually tapped — but ONLY on the very
+     first attach, BEFORE the field becomes readOnly (once readOnly, Silk reports
+     selectionStart as 0). khOrigRo is unset only on that first attach. */
+  var _seed=null;
+  try{ if(el.dataset.khOrigRo==null && typeof el.selectionStart==='number') _seed=el.selectionStart; }catch(_){}
   /* readOnly reliably suppresses the native keyboard on EVERY engine (old
      Kindle WebKit ignores inputmode=none) while typeChar() still writes the
      value programmatically. Set here too so a tap that fires pointerdown/focusin
@@ -59787,6 +59819,8 @@ function _attachToTarget(el){
   /* Stop the soft keyboard summons */
   try{el.setAttribute('autocomplete','off');}catch(e){}
   _target=el;
+  /* Caret: the tap position when we could read it, else the end of the text. */
+  _caret=(_seed!=null&&_seed>=0)?_seed:((el.value||'').length);
   clearTimeout(_blurTimer);
   buildKbd();
   renderKbd();
@@ -60012,7 +60046,10 @@ function _kbdWantedNow(){
   if(mode==='landscape')return isLandscape();
   var manual=S.kindleKeyboardManual;
   if(manual===true||manual===false)return (S.kindleKeyboard!==false);
-  return isKindleBrowser();
+  /* DEFAULT (auto): on a Kindle, only show in LANDSCAPE (portrait leaves the
+     native keyboard room and the on-screen one covers too much); on a phone/PC
+     it's OFF (those have real keyboards). */
+  return isKindleBrowser()?isLandscape():false;
 }
 function refreshKbd(){
   var want=_kbdWantedNow();
