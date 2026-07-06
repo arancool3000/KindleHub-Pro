@@ -1179,6 +1179,7 @@ body.launcher-ui .view{padding-bottom:80px;}
        Home stays first, Settings goes last to match the runtime
        enforcement inside applyNavOrder(). ───────────────────── -->
   <nav id="mainNav">
+    <div class="nav-launcher" onclick="try{_khOpenLauncher()}catch(e){}" title="Search &amp; jump to any page (incl. Settings)" style="flex-shrink:0;cursor:pointer;padding:7px 12px;font-weight:800;font-size:12px;background:var(--accent,#111);color:var(--accent-inv,#fff);border-radius:6px;margin:3px 6px 3px 4px;white-space:nowrap;align-self:center;">Find</div>
     <div class="tab active nav-essential" data-view="home">Home</div>
     <div class="tab" data-view="games">Arcade</div>
     <div class="tab" data-view="chat">Assistant</div>
@@ -1194,9 +1195,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="feedback">Feedback</div>
     <div class="tab" data-view="dictionary">Dict</div>
     <div class="tab" data-view="maps">Maps</div>
-    <div class="tab" data-view="dashboard">Dashboard</div>
     <div class="tab" data-view="rss">News</div>
-    <div class="tab" data-view="gazette">Gazette</div>
     <div class="tab" data-view="stocks">Stocks</div>
     <div class="tab" data-view="discover">Discover</div>
     <div class="tab" data-view="translate">Translate</div>
@@ -2754,12 +2753,12 @@ function applyHomeCity(city){
    Users who reordered get their saved order; getNavOrder() appends any
    tabs missing from saved order so updates still surface them. */
 const NAV_TABS=[
-  ['games','Arcade'],['chat','Assistant'],['dashboard','Dashboard'],['tools','Tools'],['calc','Calc'],
+  ['games','Arcade'],['chat','Assistant'],['tools','Tools'],['calc','Calc'],
   ['reading','Reading'],['draw','Draw'],
   ['breathe','Mindfulness'],['kanban','To-Do'],
   ['messages','Messages'],['calendar','Calendar'],['weather','Weather'],
   ['feedback','Feedback'],['dictionary','Dict'],['maps','Maps'],
-  ['rss','News'],['gazette','Gazette'],['stocks','Stocks'],
+  ['rss','News'],['stocks','Stocks'],
   ['discover','Discover'],['translate','Translate'],['cipher','Cipher'],['mdjournal','Journal'],
   ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
@@ -2796,7 +2795,10 @@ function applyNavOrder(){
    showView stay correct; works in every UI mode. */
 function _khOpenLauncher(){
   const old=document.getElementById('kh-launcher');if(old){old.remove();return;}
-  const all=[['home','Home']].concat(Array.isArray(NAV_TABS)?NAV_TABS:[]);
+  /* Home first, then every nav page, then Settings (which isn't in NAV_TABS —
+     it's a fixed nav-essential tab — so add it explicitly so "settings" is
+     findable here too). */
+  const all=[['home','Home']].concat(Array.isArray(NAV_TABS)?NAV_TABS:[]).concat([['settings','Settings']]);
   const seen={},pages=[];all.forEach(function(p){if(p&&p[0]&&!seen[p[0]]){seen[p[0]]=1;pages.push(p);}});
   const lbl={};pages.forEach(function(p){lbl[p[0]]=p[1];});
   const ov=el('div',{id:'kh-launcher',style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.55)',zIndex:'600400',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'46px 12px 12px'}});
@@ -3046,7 +3048,7 @@ window.khOpenBookReader=(function(){
     var titleEl=txt('div',(meta.title||b.title||'Reading'),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700',fontSize:'14px'}});
     var progEl=txt('div','',{style:{fontSize:'12px',color:'var(--muted)',whiteSpace:'nowrap'}});
     var finishBtn=txt('button','✓ Finished',{className:'btn small'});
-    var closeBtn=txt('button','✕ Close',{className:'btn small'});
+    var closeBtn=txt('button','× Close',{className:'btn small'});
     var aMinus=txt('button','A−',{className:'btn small'});
     var aPlus=txt('button','A+',{className:'btn small'});
 
@@ -3730,8 +3732,6 @@ function launchKindleDesktop(){
     {id:'sheets',    label:'Sheets',      nav:'sheets',    color:'#15803d',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="6" fill="#fff"/><rect x="4" y="4" width="40" height="10" rx="6" fill="#15803d"/><line x1="4" y1="22" x2="44" y2="22" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="30" x2="44" y2="30" stroke="#15803d" stroke-width="1.5"/><line x1="4" y1="38" x2="44" y2="38" stroke="#15803d" stroke-width="1.5"/><line x1="18" y1="14" x2="18" y2="44" stroke="#15803d" stroke-width="1.5"/><line x1="32" y1="14" x2="32" y2="44" stroke="#15803d" stroke-width="1.5"/></svg>'},
     {id:'cookbook',  label:'Cookbook',    nav:'cookbook',  color:'#b91c1c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" fill="#fff"/><rect x="6" y="6" width="36" height="8" rx="6" fill="#b91c1c"/><circle cx="24" cy="28" r="9" fill="none" stroke="#b91c1c" stroke-width="2.5"/><path d="M15 28 Q24 18 33 28" stroke="#b91c1c" stroke-width="2" fill="none"/><line x1="20" y1="28" x2="28" y2="28" stroke="#b91c1c" stroke-width="2"/><circle cx="22" cy="26" r="1.5" fill="#b91c1c"/><circle cx="26" cy="26" r="1.5" fill="#b91c1c"/></svg>'},
     {id:'files',     label:'Files',       nav:'files',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="32" rx="4" fill="#fff"/><path d="M6 14 L20 14 L24 18 L42 18 L42 42 L6 42 Z" fill="#475569" opacity=".15" stroke="#475569" stroke-width="2"/><line x1="6" y1="22" x2="42" y2="22" stroke="#475569" stroke-width="1.5"/><rect x="11" y="27" width="26" height="3" rx="1" fill="#475569" opacity=".4"/><rect x="11" y="32" width="18" height="3" rx="1" fill="#475569" opacity=".3"/></svg>'},
-    {id:'dashboard', label:'Dashboard',   nav:'dashboard', color:'#4f46e5',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="5" width="38" height="38" rx="6" fill="#fff"/><rect x="10" y="10" width="12" height="12" rx="2" fill="#4f46e5"/><rect x="26" y="10" width="12" height="8" rx="2" fill="#4f46e5" opacity=".5"/><rect x="26" y="22" width="12" height="16" rx="2" fill="#4f46e5" opacity=".8"/><rect x="10" y="26" width="12" height="12" rx="2" fill="#4f46e5" opacity=".6"/></svg>'},
-    {id:'gazette',   label:'Gazette',     nav:'gazette',   color:'#44403c',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="7" width="38" height="34" rx="3" fill="#fff"/><rect x="9" y="11" width="30" height="6" rx="1" fill="#44403c"/><rect x="9" y="20" width="13" height="14" rx="1" fill="#44403c" opacity=".18"/><line x1="25" y1="21" x2="39" y2="21" stroke="#44403c" stroke-width="2"/><line x1="25" y1="26" x2="39" y2="26" stroke="#44403c" stroke-width="1.6" opacity=".6"/><line x1="25" y1="31" x2="39" y2="31" stroke="#44403c" stroke-width="1.6" opacity=".6"/><line x1="9" y1="38" x2="39" y2="38" stroke="#44403c" stroke-width="1.4" opacity=".4"/></svg>'},
     {id:'sports',    label:'Sports',      nav:'sports',    color:'#166534',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="20" fill="none" stroke="#166534" stroke-width="2"/><polygon points="24,14 30,18.5 27.7,25.5 20.3,25.5 18,18.5" fill="#166534"/><path d="M24 4 L24 14 M40.6 17 L30 18.5 M37.5 38 L27.7 25.5 M10.5 38 L20.3 25.5 M7.4 17 L18 18.5" stroke="#166534" stroke-width="1.6"/></svg>'},
     {id:'imagesearch',label:'Images',     nav:'imagesearch',color:'#0891b2',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="38" height="32" rx="5" fill="#fff"/><circle cx="16" cy="18" r="4" fill="#0891b2"/><path d="M8 38 L20 24 L28 32 L36 22 L40 27 L40 38 Z" fill="#0891b2" opacity=".35"/><path d="M8 38 L20 24 L28 32 L36 22 L44 32" stroke="#0891b2" stroke-width="2.5" fill="none" stroke-linejoin="round"/></svg>'},
   ]);
@@ -5314,7 +5314,7 @@ function launchKindleDesktop(){
   stInstalledTitle.textContent='Installed Apps';
   stInstalledTitle.style.cssText='margin:0;color:var(--muted,#888);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;flex:1;';
   const stImportBtn=document.createElement('button');
-  stImportBtn.textContent='⤓ Import';stImportBtn.className='btn small';
+  stImportBtn.textContent='Import';stImportBtn.className='btn small';
   stImportBtn.onclick=()=>_khAppShareDialog('import',null);
   stInstalledHd.appendChild(stInstalledTitle);stInstalledHd.appendChild(stImportBtn);
   stBody.appendChild(stInstalledHd);
@@ -8041,7 +8041,7 @@ async function _khRefreshModerationCard(){
       const info=el('div',{style:{flex:'1',minWidth:'0'}});
       const who=(Array.isArray(a.targets)?a.targets:[]).map(x=>_dispName(String(x))).join(', ')||'unknown';
       info.appendChild(txt('div','To: '+who,{style:{fontWeight:'800',fontSize:'12px'}}));
-      info.appendChild(txt('div',_censorText(_dispAnnText(a.text)).replace(/^⚠?\s*WARNING from the moderators\s*/,'').slice(0,160),{style:{fontSize:'11px',color:'var(--muted)',whiteSpace:'pre-wrap',lineHeight:'1.4',marginTop:'2px'}}));
+      info.appendChild(txt('div',_censorText(_dispAnnText(a.text)).replace(/^!?\s*WARNING from the moderators\s*/,'').slice(0,160),{style:{fontSize:'11px',color:'var(--muted)',whiteSpace:'pre-wrap',lineHeight:'1.4',marginTop:'2px'}}));
       info.appendChild(txt('div',new Date(a.created_at).toLocaleString(),{style:{fontSize:'9px',color:'var(--muted)',marginTop:'2px'}}));
       row.appendChild(info);
       const del=txt('button','Delete',{className:'btn small'});
@@ -8457,7 +8457,7 @@ async function _renderAnnouncementWidget(card){
       }
       block.appendChild(body);
       if(!isAdmin){
-        const x=txt('button','✕',{className:'btn small',style:{minWidth:'30px',flexShrink:'0'}});
+        const x=txt('button','×',{className:'btn small',style:{minWidth:'30px',flexShrink:'0'}});
         x.title='Dismiss';
         x.onclick=()=>{try{const d=JSON.parse(localStorage.getItem('kh_ann_dismissed')||'[]');const arr=Array.isArray(d)?d:[];arr.push(a.id);localStorage.setItem('kh_ann_dismissed',JSON.stringify(arr.slice(-200)));}catch(_){}_renderAnnouncementWidget(card);};
         block.appendChild(x);
@@ -8546,7 +8546,7 @@ async function _openAnnouncementComments(a,card){
       const text=(inp.value||'').trim();
       if(!text)return toast('Type something first');
       if(!_sbActive()){toast('Commenting requires internet');return;}
-      if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('⚠ Heads up: flagged language will be hidden for others.',3000);
+      if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('! Heads up: flagged language will be hidden for others.',3000);
       post.disabled=true;post.textContent='Posting…';
       const author=S.email?S.email.split('@')[0]:(S.user||'Anon');
       const entry={id:'c_'+Date.now().toString(36),text:text.slice(0,500),author:String(author).slice(0,40),date:new Date().toISOString()};
@@ -9726,7 +9726,7 @@ function _parseItemIds(text){
       b.style.cssText='position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:2000000;max-width:min(94vw,460px);background:#16161c;color:#fff;border:1px solid #3a3a44;border-radius:12px;padding:11px 13px;box-shadow:0 8px 30px rgba(0,0,0,.55);font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:12px;display:flex;flex-direction:column;gap:8px;';
       var loc=e.where?(' ('+esc(e.where)+(e.line&&e.line!=='?'?(':'+esc(e.line)):'')+')'):'';
       var msg=document.createElement('div');
-      msg.innerHTML='<b>⚠ A bug just occurred'+loc+'</b><br><span style="opacity:.82;">'+esc((e.msg||'Something went wrong')).slice(0,130)+'</span>';
+      msg.innerHTML='<b>! A bug just occurred'+loc+'</b><br><span style="opacity:.82;">'+esc((e.msg||'Something went wrong')).slice(0,130)+'</span>';
       var row=document.createElement('div');row.style.cssText='display:flex;gap:7px;justify-content:flex-end;';
       var dis=document.createElement('button');dis.textContent='Dismiss';dis.style.cssText='background:transparent;color:#bbb;border:1px solid #555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;';
       dis.onclick=function(){b.remove();};
@@ -13327,7 +13327,7 @@ function appendRelatedPages(viewId,viewEl){
        has its own internal render() that mutates on demand; full
        rebuild is wasted work. They use ON_SHOW handlers (or
        per-action refreshes) to stay current. */
-const ALWAYS_REBUILD=new Set(['games','messages','pet','dashboard']);
+const ALWAYS_REBUILD=new Set(['games','messages','pet']);
 
 /* ════════════════════════════════════════════════════════════════════
    Split screen — "2 pages in 1" multitasking. mainHost normally holds ONE
@@ -13361,7 +13361,7 @@ function _fillPaneBar(which){
   bar.appendChild(txt('span','',{id:'kh-pane-'+which+'-label',style:{flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
   if(which==='secondary'){
     const mk=(label,fn,danger)=>{const b=txt('button',label,{className:'btn small',style:{minHeight:'26px',fontSize:'10px',padding:'2px 8px'}});if(danger){b.style.borderColor='var(--danger)';b.style.color='var(--danger)';}b.onclick=fn;return b;};
-    bar.append(mk('⇄ Swap',()=>_swapSplit()),mk('Change',()=>_khOpenMultitask()),mk('✕ Close',()=>exitSplit(),true));
+    bar.append(mk('Swap',()=>_swapSplit()),mk('Change',()=>_khOpenMultitask()),mk('× Close',()=>exitSplit(),true));
   }else{
     bar.appendChild(txt('span','tabs ↓ control this pane',{style:{fontSize:'9px',fontWeight:'600',color:'var(--muted)',flexShrink:'0'}}));
   }
@@ -13436,8 +13436,8 @@ function _khOpenMultitask(){
   if(_splitOn){
     const banner=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap',padding:'8px 10px',background:'var(--highlight)',borderRadius:'8px',marginBottom:'10px'}});
     banner.appendChild(txt('span','Split on: ▣ '+_viewLabel(currentView)+'  +  '+_viewLabel(_splitSecondary),{style:{flex:'1',fontSize:'12px',fontWeight:'800',minWidth:'140px'}}));
-    const sw=txt('button','⇄ Swap',{className:'btn small'});sw.onclick=()=>{_swapSplit();ov.remove();};
-    const cl=txt('button','✕ Close split',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});cl.onclick=()=>{exitSplit();ov.remove();};
+    const sw=txt('button','Swap',{className:'btn small'});sw.onclick=()=>{_swapSplit();ov.remove();};
+    const cl=txt('button','× Close split',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});cl.onclick=()=>{exitSplit();ov.remove();};
     banner.append(sw,cl);
     box.appendChild(banner);
   }
@@ -17480,7 +17480,7 @@ const Chess=(()=>{
       const eloWarn=txt('div','',{style:'flex-basis:100%;font-size:9.5px;font-weight:800;color:var(--danger);text-align:center;font-family:var(--ui-font);letter-spacing:0.2px;line-height:1.3;'});
       function _updateEloWarn(){
         if(_elo>1000){
-          eloWarn.textContent='⚠ Above 1000 ELO your Kindle will likely freeze or crash while the AI thinks.';
+          eloWarn.textContent='! Above 1000 ELO your Kindle will likely freeze or crash while the AI thinks.';
           eloWarn.style.display='block';
         } else {
           eloWarn.textContent='';
@@ -19383,7 +19383,7 @@ const Nonogram=(()=>{
     immersiveContent.appendChild(txt('div','Solved: 0  |  Best: '+_best(),{id:'nonoScore',className:'snake-score-bar'}));
     immersiveContent.appendChild(txt('div','Fill cells so each row & column matches its number clues (each number = a run of filled cells, in order).',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px',lineHeight:'1.4'}}));
     var modeBtn=txt('button','Mode: Fill',{className:'btn small',id:'nonoMode',style:{display:'block',margin:'8px auto'}});
-    modeBtn.onclick=function(){mode=(mode==='fill')?'mark':'fill';modeBtn.textContent='Mode: '+(mode==='fill'?'Fill':'Mark ✕');};
+    modeBtn.onclick=function(){mode=(mode==='fill')?'mark':'fill';modeBtn.textContent='Mode: '+(mode==='fill'?'Fill':'Mark ×');};
     immersiveContent.appendChild(modeBtn);
     immersiveContent.appendChild(el('div',{id:'nonoGrid',style:{margin:'8px auto'}}));
     var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',gap:'6px',marginTop:'10px'}});
@@ -19410,7 +19410,7 @@ const Nonogram=(()=>{
         (function(r,c){
           var v=game.grid[r][c];
           var cell=el('div',{style:{width:'40px',height:'40px',border:'1px solid '+(dark?'#555':'#bbb'),borderRadius:'3px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',fontWeight:'800',boxSizing:'border-box',color:dark?'#888':'#888',background:v===1?(dark?'#eee':'#222'):(dark?'#141414':'#fff')}});
-          if(v===2)cell.textContent='✕';
+          if(v===2)cell.textContent='×';
           cell.onclick=function(){tap(r,c);};
           host.appendChild(cell);
         })(r,c2);
@@ -19835,14 +19835,14 @@ const Trivia=(()=>{
    device. Scroll loop pauses when the screen is off (e-ink + battery). */
 function khTeleprompter(){
   var saved='';try{saved=localStorage.getItem('kh_teleprompter')||'';}catch(_){}
-  var text=saved||'Paste or type your script here.\n\nTap Edit to change it, then ▶ Play to start scrolling. Use Speed and A± to tune how fast it moves and how big the text is.\n\nGreat for reading a speech, a presentation, or lines aloud — the words come to you.';
+  var text=saved||'Paste or type your script here.\n\nTap Edit to change it, then Play to start scrolling. Use Speed and A± to tune how fast it moves and how big the text is.\n\nGreat for reading a speech, a presentation, or lines aloud — the words come to you.';
   var fontSize=32,speed=1.2,playing=false,pos=0,timer=null,editing=false;
   var ov=document.createElement('div');
   ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;z-index:600050;background:#000;color:#fff;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
   var bar=document.createElement('div');
   bar.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:8px;background:#111;border-bottom:1px solid #333;flex-shrink:0;';
   function mkBtn(label){var b=document.createElement('button');b.textContent=label;b.style.cssText='background:#222;color:#fff;border:1px solid #444;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700;min-height:40px;';return b;}
-  var playBtn=mkBtn('▶ Play'),spDn=mkBtn('Speed −'),spUp=mkBtn('Speed +'),fnDn=mkBtn('A−'),fnUp=mkBtn('A+'),rst=mkBtn('↺'),editBtn=mkBtn('Edit'),closeBtn=mkBtn('✕');
+  var playBtn=mkBtn('Play'),spDn=mkBtn('Speed −'),spUp=mkBtn('Speed +'),fnDn=mkBtn('A−'),fnUp=mkBtn('A+'),rst=mkBtn('Reset'),editBtn=mkBtn('Edit'),closeBtn=mkBtn('×');
   [playBtn,spDn,spUp,fnDn,fnUp,rst,editBtn,closeBtn].forEach(function(b){bar.appendChild(b);});
   var body=document.createElement('div');
   body.style.cssText='flex:1;overflow:hidden;position:relative;';
@@ -19854,9 +19854,9 @@ function khTeleprompter(){
   ta.style.cssText='width:100%;height:100%;box-sizing:border-box;background:#111;color:#fff;border:none;padding:16px;font-size:16px;line-height:1.5;font-family:inherit;resize:none;display:none;';
   ta.value=text;body.appendChild(ta);
   ov.appendChild(bar);ov.appendChild(body);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
-  function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='▶ Play';}
+  function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='Play';}
   function tick(){if(!playing||editing)return;pos+=speed;inner.style.transform='translateY('+(-pos)+'px)';if(pos>inner.offsetHeight+body.offsetHeight){pos=0;}}
-  playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='⏸ Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='▶ Play';}};
+  playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='Play';}};
   spDn.onclick=function(){speed=Math.max(0.3,speed-0.3);};
   spUp.onclick=function(){speed=Math.min(6,speed+0.3);};
   fnDn.onclick=function(){fontSize=Math.max(16,fontSize-4);applyText();};
@@ -21063,7 +21063,7 @@ function _initTowerDef(){if(TowerDef)return;TowerDef=(()=>{
       const upcoming=buildWave(nextWave,G.biome);
       const isBoss=nextWave%5===0;
       const parts=upcoming.map(g=>`${g.count}× ${g.type.charAt(0).toUpperCase()+g.type.slice(1)}`).join(', ');
-      wavePreview.textContent=(isBoss?'⚠ BOSS WAVE '+nextWave+': ':'Next wave '+nextWave+': ')+parts;
+      wavePreview.textContent=(isBoss?'! BOSS WAVE '+nextWave+': ':'Next wave '+nextWave+': ')+parts;
       wavePreview.style.color=isBoss?'var(--danger)':'var(--muted)';
     }
     immersiveContent.appendChild(wavePreview);
@@ -21113,7 +21113,7 @@ function _initTowerDef(){if(TowerDef)return;TowerDef=(()=>{
 
     function syncWaveBtn(){
       const isBoss=(G.wave+1)%5===0;
-      btnWave.textContent=G.betweenWaves?(isBoss?'⚠ Send BOSS Wave':'Send Wave'):'Wave Active';
+      btnWave.textContent=G.betweenWaves?(isBoss?'! Send BOSS Wave':'Send Wave'):'Wave Active';
       btnWave.style.background=G.betweenWaves&&isBoss?'#c00':'';
       btnWave.style.color=G.betweenWaves&&isBoss?'#fff':'';
       btnWave.disabled=!G.betweenWaves;
@@ -25018,7 +25018,7 @@ function renderBooks(){
         if(!out)return toast('KHI unavailable — check your Gemini key');
         const box=el('div',{className:'khi-output',style:{position:'relative'}});
         box.textContent=out.trim();
-        const cls=txt('button','✕',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
+        const cls=txt('button','×',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
         cls.onclick=()=>box.remove();
         box.appendChild(cls);
         d.parentNode.insertBefore(box,d.nextSibling);
@@ -25028,7 +25028,7 @@ function renderBooks(){
         if(!out)return toast('KHI unavailable — check your Gemini key');
         const box=el('div',{className:'khi-output',style:{position:'relative'}});
         box.textContent=out.trim();
-        const cls=txt('button','✕',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
+        const cls=txt('button','×',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
         cls.onclick=()=>box.remove();
         box.appendChild(cls);
         d.parentNode.insertBefore(box,d.nextSibling);
@@ -25679,7 +25679,7 @@ async function callOpenRouterStream(messages, onChunk){
 /* ── Anthropic (Claude) + OpenAI direct-key providers ───────────────────
    Both are PAID (need billing on the key). Model id lists live here so every
    picker can reuse them. Labels say "(paid)" so it's obvious they cost money.
-   ⚠ Anthropic requires the `anthropic-dangerous-direct-browser-access` header
+   ! Anthropic requires the `anthropic-dangerous-direct-browser-access` header
    or the browser request is blocked by CORS — without it nothing works. */
 const ANTHROPIC_MODELS=[
   ['claude-opus-4-8','Claude Opus 4.8 — most capable (paid)'],
@@ -25923,9 +25923,16 @@ async function callSharedGeminiStream(messages, onChunk){
      default; if the user turns it off (S.autoSwitchShared===false) we only try
      the primary model and report the rate-limit rather than hopping around. */
   const _autoSwitchShared=S.autoSwitchShared!==false;
-  const _chain=_autoSwitchShared?SHARED_KEY_FALLBACK_CHAIN:[SHARED_KEY_FALLBACK_CHAIN[0]];
+  /* The user's picked public model (S.sharedModel, from the model picker) is
+     tried FIRST; the rest of the fallback chain follows so auto-switch can
+     still rescue an overloaded pick. */
+  const _pref=(S.sharedModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(S.sharedModel)>=0)?S.sharedModel:null;
+  let _chain;
+  if(_autoSwitchShared){_chain=SHARED_KEY_FALLBACK_CHAIN.slice();if(_pref)_chain=[_pref].concat(_chain.filter(function(m){return m!==_pref;}));}
+  else{_chain=[_pref||SHARED_KEY_FALLBACK_CHAIN[0]];}
   const tried=[];
   let _gotResponse=false;/* did we ever reach the proxy and get HTTP headers back? */
+  let _sawOverload=false;/* any model returned 503/500 (overloaded) */
   for(const model of _chain){
     tried.push(model);
     /* 25s timeout so a hung/unreachable proxy fails fast instead of spinning
@@ -25962,10 +25969,14 @@ async function callSharedGeminiStream(messages, onChunk){
       }
       if(!res.ok){
         const txt=await res.text().catch(()=>'');
-        /* Non-recoverable error — surface it */
         if(res.status===503||res.status===500){
-          if(await _ai503Retry(messages,'_shr503','Public AI'))return await callSharedGeminiStream(messages,onChunk);
-          return '(Public AI is overloaded (503) — it kept retrying but stayed busy. Please try again in a minute.)';
+          /* This model is overloaded — try the NEXT model in the chain right
+             away (503 used to just retry the SAME model and give up, which is
+             why the public AI felt "always overloaded"). If the whole chain is
+             overloaded we do one backoff-retry after the loop. */
+          _sawOverload=true;
+          console.warn('Model '+model+' overloaded ('+res.status+'), trying next…');
+          continue;
         }
         return '(Shared key error '+res.status+' on '+model+': '+txt.slice(0,140)+')';
       }
@@ -26021,6 +26032,12 @@ async function callSharedGeminiStream(messages, onChunk){
      that as a rate limit. */
   if(!_gotResponse){
     return '(Couldn\'t reach the shared-key proxy. The kh-gemini-proxy Edge Function is probably not deployed, or "Verify JWT" is still enabled on it — turn that off. Open Admin → Diagnostics → Shared API Key for the exact steps.)';
+  }
+  /* Every model in the chain was overloaded — wait with backoff and retry the
+     whole chain once before giving up (this is the "always overloaded" case). */
+  if(_sawOverload){
+    if(await _ai503Retry(messages,'_shr503','Public AI'))return await callSharedGeminiStream(messages,onChunk);
+    return '(Public AI is overloaded across every model right now — please try again in a minute, or add your own free Gemini key in Settings → AI Provider for unlimited use.)';
   }
   return '(All shared models are rate-limited right now. Try again in a minute, or add your own Gemini key for unlimited use.)';
 }
@@ -26117,7 +26134,7 @@ function buildAIModelPicker(opts){
 
   function chatModelLabel(){
     if(!hasAnyKey()) return 'Offline';
-    if(S.aiProvider==='shared')return 'Shared (free)';
+    if(S.aiProvider==='shared'){const m=S.sharedModel;if(m){const f=CHAT_GEMINI_MODELS.find(x=>x[0]===m);return 'Public: '+(f?f[1].replace(/\s*\(.*/,''):m);}return 'Shared (free)';}
     if(S.aiProvider==='anthropic'){const m=S.anthropicModel||'claude-haiku-4-5-20251001';const f=ANTHROPIC_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
     if(S.aiProvider==='openai'){const m=S.openaiModel||'gpt-5.4-mini';const f=OPENAI_MODELS.find(x=>x[0]===m);return f?f[1].replace(' (paid)',''):m;}
     if(S.aiProvider==='openrouter'){
@@ -26198,8 +26215,11 @@ function buildAIModelPicker(opts){
     else if(S.aiProvider==='anthropic')groups=[{group:'Paid — needs billing on your key',items:ANTHROPIC_MODELS}];
     else if(S.aiProvider==='openai')groups=[{group:'Paid — needs billing on your key',items:OPENAI_MODELS}];
     else groups=CHAT_GEMINI_GROUPS;
-    if(S.aiProvider==='shared')groups=groups.filter(g=>!/paid/i.test(g.group));
-    const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.aiProvider==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(S.aiProvider==='openai'?(S.openaiModel||'gpt-5.4-mini'):(S.hbGeminiModel||'gemini-3.1-flash-lite')));
+    /* Public/shared: list ONLY the models the proxy actually allows (the
+       auto-switch chain), so a pick always takes effect. Your pick is tried
+       first; the rest still auto-rescue it if it's overloaded. */
+    if(S.aiProvider==='shared')groups=[{group:'Public models — your pick is tried first',items:SHARED_MODEL_QUOTAS.map(function(m){return [m.id,m.name];})}];
+    const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.aiProvider==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(S.aiProvider==='openai'?(S.openaiModel||'gpt-5.4-mini'):(S.aiProvider==='shared'?(S.sharedModel||SHARED_KEY_FALLBACK_CHAIN[0]):(S.hbGeminiModel||'gemini-3.1-flash-lite'))));
     const listEl=el('div',{style:{maxHeight:'280px',overflowY:'auto'}});
     groups.forEach(g=>{
       const hdr=txt('div',g.group,{style:{padding:'6px 12px 4px',fontSize:'9px',fontWeight:'800',letterSpacing:'0.8px',textTransform:'uppercase',color:'var(--muted)',background:'var(--highlight)',borderBottom:'var(--thin)',borderTop:'var(--thin)'}});
@@ -26213,7 +26233,8 @@ function buildAIModelPicker(opts){
         const nameEl=txt('span',name,{style:{fontSize:'12px',fontWeight:isActive?'800':'400',flex:'1'}});
         row.appendChild(check);row.appendChild(nameEl);
         row.onclick=()=>{
-          if(S.aiProvider==='openrouter') S.openrouterModel=id;
+          if(S.aiProvider==='shared') S.sharedModel=id;
+          else if(S.aiProvider==='openrouter') S.openrouterModel=id;
           else if(S.aiProvider==='anthropic') S.anthropicModel=id;
           else if(S.aiProvider==='openai') S.openaiModel=id;
           else S.hbGeminiModel=id;
@@ -27291,7 +27312,7 @@ function renderToolResultCards(results,container){
   results.forEach(r=>{
     const card=el('div',{style:{border:'var(--thin)',borderRadius:'6px',padding:'8px 10px',margin:'4px 0 0',background:r.error?'rgba(192,57,43,0.08)':'var(--highlight)',display:'flex',alignItems:'center',gap:'8px'}});
     const icon=el('span',{style:{fontSize:'14px',flexShrink:'0'}});
-    icon.textContent=r.error?'⚠':'✓';
+    icon.textContent=r.error?'!':'✓';
     card.appendChild(icon);
     const info=el('div',{style:{flex:'1',fontSize:'11px',lineHeight:'1.4'}});
     info.appendChild(txt('div',r.name.replace(/_/g,' '),{style:{fontSize:'9px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px'}}));
@@ -29962,9 +29983,7 @@ home:()=>{
       files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
       screenshot:'<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6l1.3-2h4.4l1.3 2"/>',
       imagesearch:'<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="M4 16l4.5-4 3 2.5L16 9l4 5"/>',
-      sports:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/><path d="M6 6l12 12M18 6L6 18" opacity=".45"/>',
-      gazette:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="6" y1="8" x2="13" y2="8"/><line x1="6" y1="12" x2="11" y2="12"/><line x1="6" y1="15" x2="11" y2="15"/><rect x="14" y="11" width="4" height="5"/>',
-      dashboard:'<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/>'
+      sports:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/><path d="M6 6l12 12M18 6L6 18" opacity=".45"/>'
     };
     const FALLBACK_ICON='<rect x="4" y="4" width="16" height="16" rx="2"/>';
     /* Build from NAV_TABS so it stays in sync with the rest of the app.
@@ -29976,11 +29995,11 @@ home:()=>{
     const _LABELS={};SIMPLE_LIST.forEach(([v,l])=>{_LABELS[v]=l;});
     /* Apps grouped by purpose so the home reads as tidy labelled shelves. */
     const CATS=[
-      ['Read',   ['reading','rss','gazette','wikipedia','dictionary','imagesearch','cookbook']],
+      ['Read',   ['reading','rss','wikipedia','dictionary','imagesearch','cookbook']],
       ['Create', ['notes','mdjournal','slides','sheets','draw']],
       ['Play',   ['games','sports']],
       ['Connect',['chat','messages','mail']],
-      ['Organise',['dashboard','calendar','kanban','sleeplog','breathe']],
+      ['Organise',['calendar','kanban','sleeplog','breathe']],
       ['Tools',  ['calc','tools','translate','qrgen','cipher','files','screenshot','browser']],
       ['Explore',['weather','maps','starmap','discover','science','periodic','formulas','stocks']],
       ['More',   ['feedback','settings']],
@@ -31784,7 +31803,7 @@ dictionary:()=>{
         const left=el('div',{style:{flex:'1',minWidth:'0'}});
         left.appendChild(txt('div',sw.word,{style:{fontWeight:'700',fontSize:'13px',fontFamily:'var(--title-font)'}}));
         if(sw.definition)left.appendChild(txt('div',sw.definition,{style:{fontSize:'10px',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
-        const rm=txt('button','✕',{className:'btn small',style:{fontSize:'10px',padding:'2px 6px',minHeight:'22px',color:'var(--muted)'}});
+        const rm=txt('button','×',{className:'btn small',style:{fontSize:'10px',padding:'2px 6px',minHeight:'22px',color:'var(--muted)'}});
         rm.onclick=e=>{e.stopPropagation();S.savedWords.splice(i,1);saveNow();savedToggle.click();savedToggle.click();savedToggle.textContent='★ '+S.savedWords.length+' saved words';};
         row.append(left,rm);
         row.onclick=()=>{searchIn.value=sw.word;doSearch();};
@@ -32717,12 +32736,17 @@ maps:()=>{
         routePolyline[mode]=coords;
 
         const distKm=route.distance/1000;
-        const durMin=Math.round(route.duration/60);
-        /* OSRM walking profile (~5km/h) and driving profile (~car speed) are already different APIs */
+        /* The public OSRM demo server only has the CAR profile loaded, so its
+           `duration` comes back at car speed EVEN when we ask for the foot
+           profile — that's the "2.3 km walk = 6 min" bug. For walking we ignore
+           that duration and derive the time from the road distance at a real
+           pedestrian pace (~4.8 km/h); driving keeps OSRM's car duration. */
+        const WALK_KMH=4.8;
+        const durMin=mode==='walking'?Math.max(1,Math.round(distKm/WALK_KMH*60)):Math.round(route.duration/60);
         const durStr=durMin>=60?Math.floor(durMin/60)+'h '+(durMin%60)+'m':durMin+'min';
         const modeIcon=mode==='walking'?'(walk)':'(drive)';
         const modeLabel=mode==='walking'?'Walk':'Drive';
-        const speedNote=mode==='walking'?'~5 km/h':'est. traffic';
+        const speedNote=mode==='walking'?'~4.8 km/h':'est. traffic';
         const _lbl=modeIcon+' '+modeLabel+': '+fmtDist(distKm)+' · '+durStr+' ('+speedNote+')';
         routeInfo.textContent=_lbl;
         if(!routePolyline)routePolyline={};
@@ -32920,7 +32944,7 @@ chat:()=>{
   _aiReplyCtx=null;
   const aiReplyStrip=el('div',{id:'aiReplyStrip',style:{display:'none',alignItems:'center',gap:'8px',padding:'6px 10px',borderTop:'var(--thin)',background:'var(--highlight)',fontSize:'11px',flexShrink:'0'}});
   aiReplyStrip.appendChild(el('div',{id:'aiReplyStripLabel',style:{flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--muted)'}}));
-  const aiReplyCancel=txt('button','✕',{className:'btn small',style:{flexShrink:'0',minHeight:'30px',padding:'2px 10px'}});
+  const aiReplyCancel=txt('button','×',{className:'btn small',style:{flexShrink:'0',minHeight:'30px',padding:'2px 10px'}});
   aiReplyCancel.onclick=()=>_clearAiReply();
   aiReplyStrip.appendChild(aiReplyCancel);
   chatPanel.appendChild(aiReplyStrip);
@@ -35641,7 +35665,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
 
           /* ── Playback controls ── */
           const ctrlRow=el('div',{style:'display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;'});
-          const playBtn=txt('button','▶ Play',{className:'btn small primary'});
+          const playBtn=txt('button','Play',{className:'btn small primary'});
           const stepBack=txt('button','◀',{className:'btn small'});
           const stepFwd=txt('button','▶',{className:'btn small'});
           const nowBtn=txt('button','Now',{className:'btn small'});
@@ -35649,9 +35673,9 @@ body.sepia #view-weather{--muted:#4a3a26;}
           [{v:600,l:'Slow'},{v:300,l:'Normal'},{v:100,l:'Fast'}].forEach(({v:val,l})=>{const o=el('option',{value:val});o.textContent=l;speedSel.appendChild(o);});
           speedSel.value='300';
 
-          function stopAnim(){if(animTimer){clearInterval(animTimer);animTimer=null;}isPlaying=false;playBtn.textContent='▶ Play';}
+          function stopAnim(){if(animTimer){clearInterval(animTimer);animTimer=null;}isPlaying=false;playBtn.textContent='Play';}
           function startAnim(){
-            stopAnim();isPlaying=true;playBtn.textContent='⏸ Pause';
+            stopAnim();isPlaying=true;playBtn.textContent='Pause';
             animTimer=setInterval(()=>{
               if(document.hidden)return;/* don't advance frames nobody can see */
               frameIdx=(frameIdx+1)%allFrames.length;
@@ -35930,7 +35954,7 @@ tools:()=>{
   // Input row
   const inputRow=el('div',{style:{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:'8px',alignItems:'center',marginBottom:'8px'}});
   const fromInp=el('input',{type:'number',placeholder:'Value',style:{fontSize:'15px',fontWeight:'700'}});
-  const swapBtn=txt('button','⇌',{className:'btn small',style:{fontSize:'16px',fontWeight:'900',padding:'6px 10px'}});
+  const swapBtn=txt('button','Swap',{className:'btn small',style:{fontSize:'16px',fontWeight:'900',padding:'6px 10px'}});
   const resultDisp=el('div',{style:{padding:'8px 10px',border:'var(--thin)',borderRadius:'8px',background:'var(--highlight)',fontSize:'15px',fontWeight:'700',fontFamily:'monospace',minHeight:'38px',display:'flex',alignItems:'center'}});
   resultDisp.textContent='—';
   inputRow.appendChild(fromInp);inputRow.appendChild(swapBtn);inputRow.appendChild(resultDisp);
@@ -36028,7 +36052,7 @@ tools:()=>{
   wc.appendChild(wcBtn);
   g.appendChild(wc);
   const pom=el('div',{className:'card',style:{gridColumn:'1/-1'}});
-  pom.appendChild(txt('h2','⏱ Timer, Stopwatch & Pomodoro'));
+  pom.appendChild(txt('h2','Timer, Stopwatch & Pomodoro'));
   pom.appendChild(txt('div','',{id:'pomodoroMode',style:{fontSize:'12px',color:'var(--muted)',marginBottom:'4px'}}));
   const pomTask=el('input',{id:'pomoTask',placeholder:'What are you working on? (optional)',style:{marginBottom:'6px',fontSize:'12px'}});
   pom.appendChild(pomTask);
@@ -36247,7 +36271,7 @@ tools:()=>{
     const LANGS=[['auto','Auto-detect'],['English','English'],['Spanish','Spanish'],['French','French'],['German','German'],['Italian','Italian'],['Portuguese','Portuguese'],['Dutch','Dutch'],['Russian','Russian'],['Chinese','Chinese'],['Japanese','Japanese'],['Korean','Korean'],['Arabic','Arabic'],['Hindi','Hindi'],['Turkish','Turkish'],['Polish','Polish'],['Swedish','Swedish'],['Norwegian','Norwegian'],['Danish','Danish'],['Greek','Greek'],['Hebrew','Hebrew'],['Thai','Thai'],['Vietnamese','Vietnamese'],['Indonesian','Indonesian'],['Malay','Malay']];
     LANGS.forEach(([v,t])=>{const o=el('option',{value:v});o.textContent=t;transFrom.appendChild(o);});
     LANGS.filter(([v])=>v!=='auto').forEach(([v,t])=>{const o=el('option',{value:v});o.textContent=t;if(v==='French')o.selected=true;transTo.appendChild(o);});
-    const swapLangBtn=txt('button','⇌',{className:'btn small',style:{padding:'6px 10px'}});
+    const swapLangBtn=txt('button','Swap',{className:'btn small',style:{padding:'6px 10px'}});
     swapLangBtn.onclick=()=>{const f=transFrom.value,t=transTo.value;if(f==='auto')return;transFrom.value=t;transTo.value=f;};
     transRow.appendChild(transFrom);transRow.appendChild(swapLangBtn);transRow.appendChild(transTo);
     transCard.appendChild(transRow);
@@ -38026,7 +38050,7 @@ settings:()=>{
   const _accPwConfirm=el('input',{type:'password',placeholder:'Confirm password',autocomplete:'new-password',name:'confirm-password',style:{fontSize:'12px',display:'none'}});
   const _pwNote=txt('p','Use a unique password for KindleHub Pro only.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0',lineHeight:'1.5',padding:'6px 8px',background:'var(--highlight)',borderRadius:'7px'}});
   const _privacyNote=el('div',{style:{fontSize:'11px',lineHeight:'1.55',padding:'8px 10px',background:'rgba(192,57,43,0.10)',borderRadius:'7px',borderLeft:'3px solid var(--danger)',color:'var(--fg)',fontWeight:'600'}});
-  _privacyNote.innerHTML='<strong style="color:var(--danger);">⚠ Do not save private or sensitive information.</strong><br>Do not store passwords, bank details, ID numbers, medical records, addresses, or anything you would not want a stranger to see. Sync is convenient but the cloud file is shared infrastructure — treat KindleHub Pro like a public notebook.';
+  _privacyNote.innerHTML='<strong style="color:var(--danger);">! Do not save private or sensitive information.</strong><br>Do not store passwords, bank details, ID numbers, medical records, addresses, or anything you would not want a stranger to see. Sync is convenient but the cloud file is shared infrastructure — treat KindleHub Pro like a public notebook.';
   const _secNote=el('div',{style:{fontSize:'11px',lineHeight:'1.55',padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',borderLeft:'3px solid var(--danger)',color:'var(--fg)'}});
   _secNote.innerHTML='<strong>How sync works:</strong> Your data is encrypted with your password before upload, so only you can read it — but use a password you do not use elsewhere. Your email and password are never stored in plaintext.';
   _accForm.append(_accEmail,_accPw,_accPwConfirm,_pwNote,_privacyNote,_secNote);
@@ -38253,7 +38277,7 @@ settings:()=>{
       } else if(pushErr){
         /* PUSH FAILED — this is what was happening before: pull succeeded
            and the merged state never made it back to the cloud. */
-        msg='Pulled '+cloudEvts+' from cloud → local has '+afterEvts+'\n⚠ PUSH FAILED: '+pushErr;
+        msg='Pulled '+cloudEvts+' from cloud → local has '+afterEvts+'\n! PUSH FAILED: '+pushErr;
       } else if(pushed){
         /* On success, keep the toast tiny — the verbose
            "Cloud now has X events · Y KB uploaded" line was useful
@@ -38843,7 +38867,7 @@ settings:()=>{
       khiKeyStatus.style.color='';return;
     }
     if(!hasAnyKey()){
-      khiKeyStatus.innerHTML='⚠ No API key configured — add a Gemini or OpenRouter key in the <strong>AI Provider</strong> card above, or switch KHI to the Shared key.';
+      khiKeyStatus.innerHTML='! No API key configured — add a Gemini or OpenRouter key in the <strong>AI Provider</strong> card above, or switch KHI to the Shared key.';
       khiKeyStatus.style.color='var(--danger)';
     } else {
       khiKeyStatus.textContent='✓ API key ready. KHI will use your '+(_p==='openrouter'?'OpenRouter':(_p==='gemini'?'Gemini':'available'))+' key.';
@@ -39125,7 +39149,7 @@ feedback:()=>{
       const masterOv=(function(){try{return localStorage.getItem('kh_master_override');}catch(e){return null;}})();
       if(!_sbActive()){
         const midRow=el('div',{style:{padding:'8px 10px',background:'var(--highlight)',borderRadius:'7px',marginBottom:'10px',fontSize:'11px',fontFamily:'monospace'}});
-        midRow.innerHTML='<strong>Master item:</strong> '+(masterOv?String(masterOv).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))+'<br><span style="color:var(--danger);">⚠ Recovery override active — paste this ID into KH_REG in the source so other devices can find it.</span>':KH_REG);
+        midRow.innerHTML='<strong>Master item:</strong> '+(masterOv?String(masterOv).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))+'<br><span style="color:var(--danger);">! Recovery override active — paste this ID into KH_REG in the source so other devices can find it.</span>':KH_REG);
         c.appendChild(midRow);
       }
       c.appendChild(txt('div','ORPHAN ITEM CLEANUP (jsonstorage only)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -40235,7 +40259,7 @@ feedback:()=>{
         const cfg=_khBackupCfg();
         let html='';
         if(!cfg){html='<b>No backup target set.</b> Add the backup project below to enable weekly backups.';}
-        else if(cfg.url.toLowerCase()===active){html='<b style="color:var(--danger)">⚠ Backup target is the SAME project as the live backend.</b> Choose a different project for real redundancy.';}
+        else if(cfg.url.toLowerCase()===active){html='<b style="color:var(--danger)">! Backup target is the SAME project as the live backend.</b> Choose a different project for real redundancy.';}
         else{
           const ref=(cfg.url.match(/https:\/\/([a-z0-9-]+)\.the backend/i)||[])[1]||cfg.url;
           html='<b>Backup → '+ref+'</b><br>';
@@ -40317,7 +40341,7 @@ feedback:()=>{
       (async function(){
         try{
           const u=sharedKeyProxyUrl();
-          if(!u){statusLine.textContent='⚠ Supabase not configured — set SUPABASE_URL and SUPABASE_ANON_KEY first.';return;}
+          if(!u){statusLine.textContent='! Supabase not configured — set SUPABASE_URL and SUPABASE_ANON_KEY first.';return;}
           /* OPTIONS preflight — cheap, doesn\'t burn quota */
           /* A no-cors POST succeeds (opaque) whenever the URL is network-
              reachable at all, and only throws on a DNS/connection failure.
@@ -40964,7 +40988,7 @@ Deno.serve(async (req)=>{
           /* Lighter option than a ban: warn the reported user instead, then
              clear the report. Shown right alongside Approve & ban so the admin
              can choose the proportionate response to a ban request. */
-          const warnBtn=txt('button','⚠ Warn instead',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+          const warnBtn=txt('button','! Warn instead',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
           warnBtn.onclick=async()=>{
             warnBtn.disabled=true;
             const ok=await _khWarnUsername(_banName);
@@ -40974,7 +40998,7 @@ Deno.serve(async (req)=>{
               renderItems();
             } else { warnBtn.disabled=false; }
           };
-          if(window._khWarnedSet&&window._khWarnedSet.has(String(_banName).toLowerCase()))actRow.appendChild(txt('span','⚠ already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
+          if(window._khWarnedSet&&window._khWarnedSet.has(String(_banName).toLowerCase()))actRow.appendChild(txt('span','! already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
           actRow.appendChild(warnBtn);
           const banBtn=txt('button','Approve & ban "'+_banDisp.slice(0,24)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           banBtn.onclick=async()=>{
@@ -40998,14 +41022,14 @@ Deno.serve(async (req)=>{
         const _rName=_rm?_rm[1].trim():'';
         const _rDisp=(typeof _dispName==='function'?_dispName(_rName):_rName);
         if(_rName){
-          const rWarn=txt('button','⚠ Warn '+_rDisp.slice(0,18),{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+          const rWarn=txt('button','! Warn '+_rDisp.slice(0,18),{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
           rWarn.onclick=async()=>{
             rWarn.disabled=true;
             const ok=await _khWarnUsername(_rName);
             if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
             else { rWarn.disabled=false; }
           };
-          if(window._khWarnedSet&&window._khWarnedSet.has(String(_rName).toLowerCase()))actRow.appendChild(txt('span','⚠ already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
+          if(window._khWarnedSet&&window._khWarnedSet.has(String(_rName).toLowerCase()))actRow.appendChild(txt('span','! already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
           actRow.appendChild(rWarn);
           const rBan=txt('button','Ban "'+_rDisp.slice(0,18)+'"',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
           rBan.onclick=async()=>{
@@ -41081,7 +41105,7 @@ Deno.serve(async (req)=>{
     post.onclick=async()=>{
       const text=(inp.value||'').trim();
       if(!text)return toast('Type something first');
-      if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('⚠ Heads up: flagged language will be hidden for others.',3000);
+      if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('! Heads up: flagged language will be hidden for others.',3000);
       post.disabled=true;post.textContent='Posting…';
       if(await _addComment(item.id,text)){
         inp.value='';
@@ -41121,7 +41145,7 @@ Deno.serve(async (req)=>{
 
   submitBtn.onclick=async()=>{
     const text=ta.value.trim();if(!text)return toast('Please write something first.');
-    if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('⚠ Heads up: flagged language will be hidden (blacked out) for others.',3000);
+    if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('! Heads up: flagged language will be hidden (blacked out) for others.',3000);
     if(!navigator.onLine)return toast('Submitting requires internet.');
     submitBtn.disabled=true;setStatus('Submitting...');
     try{
@@ -43005,7 +43029,7 @@ starmap:()=>{
   };
   /* First-run hint over the sky */
   const skyHint=el('div',{className:'sm-hint'});
-  skyHint.textContent='Tap a star to identify · ☰ for settings';
+  skyHint.textContent='Tap a star to identify · use the menu button for settings';
   v.appendChild(skyHint);
   setTimeout(()=>{if(skyHint.parentNode)skyHint.remove();},5500);
 
@@ -44477,8 +44501,8 @@ sheets:()=>{
   /* ── Top toolbar ── */
   const toolbar=el('div',{className:'sh-toolbar'});
   const title=el('div',{className:'sh-title'});title.textContent='Spreadsheet';
-  const undoBtn=txt('button','↶ Undo',{className:'btn small'});
-  const redoBtn=txt('button','↷ Redo',{className:'btn small'});
+  const undoBtn=txt('button','Undo',{className:'btn small'});
+  const redoBtn=txt('button','Redo',{className:'btn small'});
   const addRowBtn=txt('button','+ Row',{className:'btn small'});
   const addColBtn=txt('button','+ Col',{className:'btn small'});
   const sortBtn=txt('button','Sort col',{className:'btn small'});
@@ -44875,7 +44899,7 @@ cipher:()=>{
       Object.assign(txt('button','Swap',{className:'btn small'}),{onclick:()=>swapIO(inp,out)}),
     ));
     wrap.appendChild(out);
-    const note=txt('p','Atbash replaces each letter with its mirror: A↔Z, B↔Y, C↔X... Encoding and decoding are the same operation.',{style:'font-size:11px;color:var(--muted);margin-top:8px;'});
+    const note=txt('p','Atbash replaces each letter with its mirror: A=Z, B=Y, C=X... Encoding and decoding are the same operation.',{style:'font-size:11px;color:var(--muted);margin-top:8px;'});
     wrap.appendChild(note);
     return wrap;
   }
@@ -45363,9 +45387,10 @@ rss:()=>{
   searchRow.appendChild(searchIn);searchRow.appendChild(refreshAllBtn);
   topbar.appendChild(searchRow);
 
-  /* View tabs: Feed | Saved | Manage */
+  /* View tabs: Feed | Gazette | Saved | Manage. The Gazette lives INSIDE the
+     News page as a tab now (it used to be a separate top-level page). */
   const viewTabRow=el('div',{className:'rss-view-tabs'});
-  const VIEW_DEFS=[{id:'feed',label:'Feed'},{id:'saved',label:'Saved'},{id:'manage',label:'Manage'}];
+  const VIEW_DEFS=[{id:'feed',label:'Feed'},{id:'gazette',label:'Gazette'},{id:'saved',label:'Saved'},{id:'manage',label:'Manage'}];
   function refreshViewTabs(){
     viewTabRow.innerHTML='';
     const savedCount=(S.rssSaved||[]).length;
@@ -45413,9 +45438,20 @@ rss:()=>{
   function artId(item){return item.guid||item.link||item.title||'';}
 
   /* ── Render main content ── */
+  /* Gazette now lives INSIDE News as a tab (no longer a standalone page).
+     Built once and cached so switching tabs doesn't refetch the wire. */
+  let _gzEl=null;
+  function renderGazette(){
+    if(!_gzEl){try{_gzEl=(typeof BUILDERS==='object'&&BUILDERS.gazette)?BUILDERS.gazette():null;}catch(_){_gzEl=null;}}
+    if(_gzEl)contentDiv.appendChild(_gzEl);
+    else contentDiv.appendChild(txt('div','Gazette is unavailable right now.',{className:'rss-empty'}));
+  }
   function renderContent(){
     contentDiv.innerHTML='';
+    /* Feed-filter tabs only make sense on the Feed tab. */
+    tabsRow.style.display=activeView==='feed'?'flex':'none';
     if(activeView==='feed'){renderFeedTabs();renderArticles();}
+    else if(activeView==='gazette'){renderGazette();}
     else if(activeView==='saved'){renderSaved();}
     else{renderManage();}
   }
@@ -45856,7 +45892,7 @@ gazette:()=>{
   const segCus=txt('button','Custom',{});
   seg.appendChild(segPub);seg.appendChild(segCus);
   controls.appendChild(seg);
-  const refreshBtn=txt('button','↻ Refresh',{className:'btn small'});
+  const refreshBtn=txt('button','Refresh',{className:'btn small'});
   controls.appendChild(refreshBtn);
   wrap.appendChild(controls);
   /* Custom row — the SAME picker as the Assistant page + interests. */
@@ -46010,136 +46046,6 @@ gazette:()=>{
   const cache=_gzLoad();
   if(cache.date===_gzToday()&&cache[mode]){renderEdition(cache[mode]);status.textContent='Today’s edition · '+(mode==='public'?'shared public edition':'your custom edition');}
   else generate(false);
-  return v;
-},
-
-/* ── Dashboard — a personalised, tailored-to-you home ────────────────
-   A fast, build-once overview: a greeting, your daily goal + streak,
-   at-a-glance tappable stat tiles, a "continue reading" nudge, today's
-   Gazette headline, and quick actions. All data is read defensively from
-   existing state (no new storage); it's in ALWAYS_REBUILD so counts are
-   always fresh, and it uses only theme vars so it looks right in every
-   theme incl. Retro/dark/sepia. */
-dashboard:()=>{
-  const v=el('section',{id:'view-dashboard',className:'view'});
-  if(!document.getElementById('dash-css')){
-    const st=document.createElement('style');st.id='dash-css';
-    st.textContent=[
-      '.dash-hero{padding:4px 2px 14px;}',
-      '.dash-hi{font-family:var(--title-font);font-size:24px;font-weight:800;line-height:1.12;}',
-      '.dash-date{font-size:12px;color:var(--muted);margin-top:4px;}',
-      '.dash-card{background:var(--card);border:var(--thin);border-radius:12px;padding:14px;margin-bottom:12px;}',
-      '.dash-card h3{margin:0 0 8px;font-size:13px;font-family:var(--title-font);}',
-      '.dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;}',
-      '@media(max-width:380px){.dash-grid{grid-template-columns:repeat(2,1fr);}}',
-      '.dash-tile{background:var(--card);border:var(--thin);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;min-height:76px;justify-content:center;}',
-      '.dash-tile:active{background:var(--highlight);}',
-      '.dash-tile-ic{font-size:18px;line-height:1;}',
-      '.dash-tile-num{font-size:22px;font-weight:900;font-family:var(--title-font);line-height:1;color:var(--accent);}',
-      '.dash-tile-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;}',
-      '.dash-qa{display:flex;flex-wrap:wrap;gap:8px;}',
-      '.dash-goal-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
-    ].join('');
-    document.head.appendChild(st);
-  }
-  function _num(a){return Array.isArray(a)?a.length:0;}
-  function _go(view){var t=document.querySelector('nav .tab[data-view="'+view+'"]');if(t){t.style.display='';t.click();}else{try{showView(view);}catch(_){}}}
-  function _gamesPlayed(){try{var s=S.stats||{},t=0;Object.keys(s).forEach(function(k){t+=(s[k]&&s[k].played)||0;});return t;}catch(_){return 0;}}
-  const now=new Date(NOW());
-  const hr=now.getHours();
-  const greet=hr<12?'Good morning':(hr<18?'Good afternoon':'Good evening');
-  const nm=S.user||(S.email?S.email.split('@')[0]:'');
-
-  /* Hero greeting */
-  const hero=el('div',{className:'dash-hero'});
-  hero.appendChild(txt('div',greet+(nm?(', '+nm):'')+'.',{className:'dash-hi'}));
-  try{hero.appendChild(txt('div',now.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}),{className:'dash-date'}));}catch(_){}
-  v.appendChild(hero);
-
-  /* Daily goal + streak (shares S.dailyGoal with the Home widget). */
-  const dg=S.dailyGoal||(S.dailyGoal={text:'',doneDate:'',streak:0});
-  const _today=(function(){try{return now.toISOString().slice(0,10);}catch(_){return '';}})();
-  const goalCard=el('div',{className:'dash-card'});
-  goalCard.appendChild(txt('h3','Daily goal'));
-  if(dg.text){
-    const gr=el('div',{className:'dash-goal-row'});
-    gr.appendChild(txt('span',dg.text,{style:{flex:'1',minWidth:'140px',fontSize:'14px',fontWeight:'700'}}));
-    if(dg.doneDate===_today){
-      gr.appendChild(txt('span','✓ Done today',{style:{fontSize:'12px',color:'var(--success)',fontWeight:'800'}}));
-    } else {
-      const done=txt('button','Mark done',{className:'btn small primary'});
-      done.onclick=()=>{const y=new Date(NOW().getTime()-86400000).toISOString().slice(0,10);dg.streak=(dg.doneDate===y?(dg.streak||0)+1:1);dg.doneDate=_today;if(typeof saveNow==='function')saveNow();delete VIEWS['dashboard'];delete VIEWS['home'];showView('dashboard');};
-      gr.appendChild(done);
-    }
-    goalCard.appendChild(gr);
-    goalCard.appendChild(txt('div','Streak: '+(dg.streak||0)+' day'+((dg.streak||0)===1?'':'s'),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'6px',fontWeight:'700'}}));
-  } else {
-    const gr=el('div',{className:'dash-goal-row'});
-    const gin=el('input',{type:'text',placeholder:'Set today’s goal…'});
-    gin.style.cssText='flex:1;min-width:150px;font-size:13px;padding:7px 9px;border:var(--thin);border-radius:8px;background:var(--bg);color:var(--fg);';
-    const gsave=txt('button','Save',{className:'btn small primary'});
-    gsave.onclick=()=>{const t=(gin.value||'').trim();if(!t)return;dg.text=t.slice(0,120);if(typeof saveNow==='function')saveNow();delete VIEWS['dashboard'];delete VIEWS['home'];showView('dashboard');};
-    gr.appendChild(gin);gr.appendChild(gsave);
-    goalCard.appendChild(gr);
-  }
-  v.appendChild(goalCard);
-
-  /* At-a-glance stat tiles — tappable, jump to the relevant view. Icons are
-     inline SVG (NOT emoji) so they render crisply on Kindle e-ink instead of
-     showing as tofu boxes. */
-  const grid=el('div',{className:'dash-grid'});
-  const _DSVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="22" height="22">';
-  [
-    {icon:'<rect x="4" y="4" width="7" height="16" rx="1"/><rect x="13" y="4" width="7" height="16" rx="1"/>',num:_num(S.books),lbl:'Books',view:'reading'},
-    {icon:'<rect x="5" y="4" width="14" height="16" rx="1.5"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',num:_num(S.notes),lbl:'Notes',view:'notes'},
-    {icon:'<rect x="6" y="3" width="13" height="18" rx="1.5"/><line x1="6" y1="3" x2="6" y2="21"/><line x1="10" y1="9" x2="16" y2="9"/><line x1="10" y1="13" x2="16" y2="13"/>',num:_num(S.mdJournals),lbl:'Journal',view:'mdjournal'},
-    {icon:'<path d="M20 4H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3v4l4-4h9a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/>',num:_num(S.msgGroups),lbl:'Chats',view:'messages'},
-    {icon:'<rect x="4" y="5" width="16" height="15" rx="2"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="9" y1="3" x2="9" y2="7"/><line x1="15" y1="3" x2="15" y2="7"/>',num:_num(S.calEvents),lbl:'Events',view:'calendar'},
-    {icon:'<rect x="3" y="8" width="18" height="10" rx="4"/><line x1="8" y1="11" x2="8" y2="15"/><line x1="6" y1="13" x2="10" y2="13"/><circle cx="16" cy="12" r="1"/><circle cx="18" cy="15" r="1"/>',num:_gamesPlayed(),lbl:'Games',view:'games'}
-  ].forEach(t=>{
-    const tile=el('div',{className:'dash-tile'});
-    const ic=el('div',{className:'dash-tile-ic'});ic.innerHTML=_DSVG+t.icon+'</svg>';
-    tile.appendChild(ic);
-    tile.appendChild(txt('div',String(t.num),{className:'dash-tile-num'}));
-    tile.appendChild(txt('div',t.lbl,{className:'dash-tile-lbl'}));
-    tile.onclick=()=>_go(t.view);
-    grid.appendChild(tile);
-  });
-  v.appendChild(grid);
-
-  /* Continue reading — most recent book, if any. */
-  const _books=Array.isArray(S.books)?S.books:[];
-  if(_books.length){
-    const b=_books[_books.length-1];
-    const _bt=String((b&&(b.title||b.name))||'').trim();
-    if(_bt){
-      const rc=el('div',{className:'dash-card',style:{cursor:'pointer'}});
-      rc.appendChild(txt('h3','Continue reading'));
-      rc.appendChild(txt('div',_bt,{style:{fontSize:'14px',fontWeight:'700'}}));
-      rc.onclick=()=>_go('reading');
-      v.appendChild(rc);
-    }
-  }
-
-  /* Today's Gazette headline (from the per-day cache, if generated). */
-  const _gazHead=(function(){try{var o=JSON.parse(localStorage.getItem('kh_gazette')||'null');if(!o)return null;var key=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');if(o.date!==key)return null;return (o.public&&o.public.headline)||(o.custom&&o.custom.headline)||null;}catch(_){return null;}})();
-  const gc=el('div',{className:'dash-card',style:{cursor:'pointer'}});
-  gc.appendChild(txt('h3','The Kindle Gazette'));
-  gc.appendChild(txt('div',_gazHead?_gazHead:'Tap to read today’s edition — a free daily digest of world headlines.',{style:{fontSize:'14px',fontWeight:_gazHead?'700':'400',color:_gazHead?'var(--fg)':'var(--muted)',lineHeight:'1.4'}}));
-  gc.onclick=()=>_go('gazette');
-  v.appendChild(gc);
-
-  /* Quick actions. */
-  const qaCard=el('div',{className:'dash-card'});
-  qaCard.appendChild(txt('h3','Quick actions'));
-  const qa=el('div',{className:'dash-qa'});
-  [['Assistant','chat'],['Gazette','gazette'],['Reading','reading'],['Draw','draw'],['Notes','notes']].forEach(a=>{
-    const bq=txt('button',a[0],{className:'btn small'});
-    bq.onclick=()=>_go(a[1]);
-    qa.appendChild(bq);
-  });
-  qaCard.appendChild(qa);
-  v.appendChild(qaCard);
   return v;
 },
 
@@ -46640,7 +46546,7 @@ kanban:()=>{
         const box=el('div',{className:'khi-output',style:{position:'relative',marginBottom:'10px'}});
         box.setAttribute('data-kb-khi','1');
         box.textContent=out.trim();
-        const cls=txt('button','✕',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
+        const cls=txt('button','×',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
         cls.onclick=()=>box.remove();
         box.appendChild(cls);
         hdr.insertAdjacentElement('afterend',box);
@@ -47097,7 +47003,7 @@ formulas:()=>{
       F('Arrhenius equation','k = A·e^(−Eₐ/RT)',['Eₐ = activation energy (J/mol)','R = 8.314','T in K'],'Higher T → larger k (faster reaction)'),
       F('Enthalpy','ΔH = H_products − H_reactants',['Negative = exothermic, Positive = endothermic'],'Combustion of methane: ΔH = −890 kJ/mol'),
       F('Gibbs free energy','ΔG = ΔH − TΔS',['ΔG<0 spontaneous','T in K'],'Spontaneous at high T if ΔS>0',{inputs:['ΔH (kJ)','T (K)','ΔS (kJ/K)'],compute:([h,t,s])=>`ΔG = ${(h-t*s).toFixed(3)} kJ`}),
-      F('Equilibrium constant','K = [products] / [reactants]',['Each conc raised to its coefficient'],'aA+bB⇌cC+dD: K = [C]ᶜ[D]ᵈ/([A]ᵃ[B]ᵇ)'),
+      F('Equilibrium constant','K = [products] / [reactants]',['Each conc raised to its coefficient'],'aA+bB <=> cC+dD: K = [C]ᶜ[D]ᵈ/([A]ᵃ[B]ᵇ)'),
     ]},
     {name:'Biology',formulas:[
       F('BMI','BMI = mass(kg) / height(m)²',['<18.5 under, 18.5–24.9 normal, 25–29.9 over, ≥30 obese'],'70 kg, 1.75 m: BMI ≈ 22.9',{inputs:['mass (kg)','height (m)'],compute:([m,h])=>`BMI = ${(m/(h*h)).toFixed(2)}`}),
@@ -47561,7 +47467,7 @@ sports:()=>{
   }
   LEAGUES.forEach((lg,i)=>{const b=txt('button',lg[0],{className:'btn small'});b.onclick=()=>load(i);tabs.appendChild(b);});
   v.appendChild(tabs);v.appendChild(status);v.appendChild(list);
-  const refresh=txt('button','↻ Refresh',{className:'btn small',style:{marginTop:'10px'}});refresh.onclick=()=>load(_cur);v.appendChild(refresh);
+  const refresh=txt('button','Refresh',{className:'btn small',style:{marginTop:'10px'}});refresh.onclick=()=>load(_cur);v.appendChild(refresh);
   v.appendChild(txt('div','Scores via ESPN. Unofficial feed — may occasionally be unavailable.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px',fontStyle:'italic'}}));
   setTimeout(()=>load(0),30);
   return v;
@@ -49258,7 +49164,7 @@ wikipedia:()=>{
     }
     v.appendChild(aCard);
     if(article.content_urls){
-      const link=txt('button','Read full article on Wikipedia ↗',{className:'btn small',style:{marginTop:'10px',display:'block'}});
+      const link=txt('button','Read full article on Wikipedia',{className:'btn small',style:{marginTop:'10px',display:'block'}});
       link.onclick=()=>window.open((article.content_urls.mobile&&article.content_urls.mobile.page)||'about:blank','_blank','noopener,noreferrer');
       v.appendChild(link);
     }
@@ -50428,7 +50334,7 @@ habits:()=>{
         });
       };
       actCol.appendChild(editBtn);
-      const del=txt('button','✕',{className:'btn small',style:{fontSize:'11px',padding:'3px 8px',minHeight:'24px',color:'var(--danger)',borderColor:'var(--danger)'},title:'Delete habit'});
+      const del=txt('button','×',{className:'btn small',style:{fontSize:'11px',padding:'3px 8px',minHeight:'24px',color:'var(--danger)',borderColor:'var(--danger)'},title:'Delete habit'});
       del.onclick=()=>{kindleConfirm('Delete habit "'+h.name+'"? This wipes its tracking history.',ok=>{if(ok){habits.splice(i,1);saveHabits(habits);render();}});};
       actCol.appendChild(del);
       topRow.appendChild(actCol);
@@ -53741,7 +53647,7 @@ calendar:()=>{
     s2.appendChild(txt('div','If you have a calendar file already downloaded, pick it here.',{className:'cim-section-hint'}));
     const fileWrap=el('label',{className:'cim-file-pick'});
     const fileLabel=el('span');fileLabel.textContent='Tap to choose a .ics file';
-    const fileIcon=el('span');fileIcon.style.cssText='font-size:18px;';fileIcon.textContent='⇪';
+    const fileIcon=el('span');fileIcon.style.cssText='font-size:18px;';fileIcon.textContent='↑';
     fileWrap.appendChild(fileIcon);fileWrap.appendChild(fileLabel);
     const fileInp=el('input',{type:'file',accept:'.ics,text/calendar',style:{display:'none'}});
     fileWrap.appendChild(fileInp);
@@ -53915,7 +53821,7 @@ calendar:()=>{
     if(!out)return toast('KHI unavailable — check your Gemini key');
     const box=el('div',{className:'khi-output',style:{marginTop:'10px',position:'relative'}});
     box.textContent=out.trim();
-    const cls=txt('button','✕',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
+    const cls=txt('button','×',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
     cls.onclick=()=>box.remove();
     box.appendChild(cls);
     detailPanel.appendChild(box);
@@ -54216,7 +54122,7 @@ messages:()=>{
           const msg=txt('button','Message',{className:'btn small primary'});
           msg.onclick=()=>{msg.disabled=true;msg.textContent='…';if(typeof _khMessageFriend==='function')_khMessageFriend(fr,render);};
           row.appendChild(msg);
-          const rem=txt('button','✕',{className:'btn small'});rem.title='Remove friend';
+          const rem=txt('button','×',{className:'btn small'});rem.title='Remove friend';
           rem.onclick=async()=>{if(await kindleConfirm('Remove '+_dispName(fr.name||'this friend')+' from your friends?')){if(typeof _khRemoveFriend==='function')_khRemoveFriend(fr.hash);render();}};
           row.appendChild(rem);
           body.appendChild(row);
@@ -55331,7 +55237,7 @@ messages:()=>{
       if(_nm){
         /* Warn — a lighter action than a ban: sends a private warning notice
            instead of removing the account. */
-        const warnBtn=txt('button','⚠ Warn',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+        const warnBtn=txt('button','! Warn',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
         warnBtn.onclick=async()=>{
           warnBtn.disabled=true;
           const ok=await _khWarnUsername(_nm);
@@ -55913,7 +55819,7 @@ messages:()=>{
       /* Warn the sender if their message contains flagged language — it still
          sends, but everyone (including them) sees it blacked out. */
       if(typeof _hasProfanity==='function'&&_hasProfanity(text)){
-        toast('⚠ Heads up: flagged language will be hidden (blacked out) for everyone.',3200);
+        toast('! Heads up: flagged language will be hidden (blacked out) for everyone.',3200);
       }
       sendBtn.disabled=true;
       /* Clear the composer UP-FRONT (optimistic) so a debounced draft-save
@@ -57335,7 +57241,7 @@ BUILDERS.browser=()=>{
   const info=el('div',{className:'br-info'});
   const infoTxt=el('span');
   infoTxt.innerHTML='<b>Heads up:</b> many big sites (Google, YouTube, social networks, banks) block being shown inside another page and will appear blank here. Tap <b>Private</b> to route through a proxy (hides your IP and loads more sites), or <b>&#10548;</b> to open in a full browser.';
-  const infoX=el('span',{className:'br-info-x',title:'Dismiss'});infoX.textContent='✕';
+  const infoX=el('span',{className:'br-info-x',title:'Dismiss'});infoX.textContent='×';
   infoX.onclick=()=>{info.style.display='none';};
   info.appendChild(infoTxt);info.appendChild(infoX);
 
@@ -57357,7 +57263,7 @@ BUILDERS.browser=()=>{
       const ttl=el('span',{className:'br-tab-ttl'});ttl.textContent=t.title||hostOf(t.url)||'New Tab';
       chip.appendChild(ttl);
       if(B.tabs.length>1){
-        const x=el('span',{className:'br-tab-x'});x.textContent='✕';
+        const x=el('span',{className:'br-tab-x'});x.textContent='×';
         x.onclick=e=>{e.stopPropagation();closeTab(i);};
         chip.appendChild(x);
       }
@@ -59613,10 +59519,10 @@ function renderKbd(){
   /* Bottom row */
   var rb=document.createElement('div');rb.className='kh-row';
 
-  /* "✕ off" — turn the floating keyboard OFF for good (persisted). Without this
+  /* "× off" — turn the floating keyboard OFF for good (persisted). Without this
      the only dismiss was tap-away, which is session-only, so it reappeared on
      every input focus and users had to dig into Settings repeatedly. */
-  var offBtn=mk('✕','kh-key-wide kh-key-muted',function(){
+  var offBtn=mk('×','kh-key-wide kh-key-muted',function(){
     if(typeof S!=='undefined'){S.kindleKeyboardMode='off';delete S.kindleKeyboardManual;delete S.kindleKeyboard;try{if(typeof save==='function')save();}catch(_){}}
     try{disable();}catch(_){}
     if(typeof toast==='function')toast('Floating keyboard off. Turn it back on in Settings → Keyboard.',5000);
