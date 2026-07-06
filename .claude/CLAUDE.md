@@ -720,6 +720,17 @@ Working through the documented "PENDING / bigger jobs" list, each a tested+commi
   session-complete, so no leak. Rating still updates the SRS schedule in cram mode (reinforcement). Test
   `/tmp/flash_test.cjs` (0 due → cram runs all 3, Space flips, key-3 rates, completes, schedule advanced, no
   stray handler after exit).
+- **Two new e-ink games from the "feasible-but-missing" list** (now 38 games, `tools/games_test.cjs` 0 flagged):
+  - **Maze** (`const Maze`, id `maze`): recursive-backtracker maze; navigate top-left → ★ bottom-right via
+    D-pad / arrow keys / swipe; solving advances a slightly larger level. Static board (only the player dot
+    moves) + a 1s clock — no render loop, e-ink-perfect. Best level → `S.games.maze.best`.
+  - **Perfect Circle** (`const PerfectCircle`, id `perfectcircle`): drag one stroke; on release it's scored
+    0–100% on roundness (radius stddev/mean + closure penalty, no Math.hypot — Silk-safe sqrt). Draws the ideal
+    circle overlay + score. Best → `S.games.perfectcircle.best`.
+  Both wired at ALL points (`_doLaunch`, exitImmersive stop-list, GAME_HELP, GAME_MAP, rowArc cards, games_test).
+  Test `/tmp/maze_circle_test.cjs` (maze drives + New-maze + clean exit; a traced circle scores 98%, best saved).
+  Remaining from that batch (optional, not started): Nerdle, Yahtzee, Dino (GeometryDash reskin), Connections,
+  Spelling Bee, Strands, Mini Crossword.
 
 - **Weekly staggered auto-compress** (`_maybeWeeklyCompress`, fired ~30s after load): re-packs each synced
   account into the compact gzip form and pushes one compressed re-sync ~once a week — NORMAL compress only,

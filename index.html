@@ -13709,6 +13709,8 @@ const appNode=$('app');
    polish lift across the whole Arcade). */
 const GAME_HELP={
   digquest:{name:'Deep Dig',how:'A dig-and-smash story platformer over SIX chapters. ◄ ► move, JUMP leaps (grab a Spring-cap for a double-jump), DIG smashes the earth you face, DIG▼ digs straight down (keyboard: arrows/WASD, Space, Z). Tunnel for crystals, coins and gate-stones; a drilling-charm breaks solid stone and a ward-shield keeps you safe for a while; STOMP the crawling grubs from above (touch one and it bites). Touch a checkpoint flag and you respawn there. Bank crystals to buy permanent upgrades between runs. Clear each exit, then stomp the Gravecrawler boss three times to free the Heartspring. Toggle E-ink mode for fewer, chunkier frames.'},
+  maze:{name:'Maze',how:'Find your way from the top-left corner to the ★ exit in the bottom-right. Move with the on-screen arrows, the keyboard arrow keys, or a swipe. Solve a maze to advance to the next, slightly larger level — see how far you can get and how fast. Best level reached is saved.'},
+  perfectcircle:{name:'Perfect Circle',how:'Draw the roundest circle you can in ONE continuous stroke — press down, loop all the way around, and release. When you let go it is scored from 0 to 100% on how circular it was (consistent radius + a clean closure). Chase a perfect 100%. Tap Clear to try again.'},
   platformer:{name:'Pixel Hop',how:'A Mario-style platformer. Hold ◄ / ► to run and tap Jump to leap (keyboard: arrow keys or Space; tap the screen to jump one-handed). Run and jump across the gaps — falling in a pit costs a life. Land ON TOP of a walking enemy to stomp it; touching one from the side hurts you. Grab the coin rings along the way and reach the flag at the end. You have 3 lives and respawn at the last ledge you stood on. Score = coins + stomps + a bonus for finishing.'},
   hanoi:{name:'Tower of Hanoi',how:'Move the whole stack of disks from the left peg to the right peg. Tap a peg to lift its top disk, then tap another peg to drop it. You can never place a bigger disk on a smaller one. Fewer moves is better — the minimum is 2ⁿ−1 for n disks. Choose 3 to 7 disks.'},
   blackjack:{name:'Blackjack',how:'Get closer to 21 than the dealer without going over. Hit for another card, Stand to hold. Face cards are 10; an Ace counts as 1 or 11. The dealer draws to 17. A two-card 21 (Blackjack) pays 3:2. Adjust your bet, then Deal — build the biggest chip stack you can.'},
@@ -13835,7 +13837,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,PerfectCircle,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -14810,6 +14812,8 @@ function _doLaunch(g){
     case 'slither':    Slither.start();break;
     case 'geometrydash': GeometryDash.start();break;
     case 'platformer': Platformer.start();break;
+    case 'maze': Maze.start();break;
+    case 'perfectcircle': PerfectCircle.start();break;
     case 'crossyroad': CrossyRoad.start();break;
     case 'anagrams': Anagrams.start();break;
     case 'nonogram': Nonogram.start();break;
@@ -19067,6 +19071,181 @@ const Platformer=(()=>{
     else if(e.key==='ArrowRight'||e.key==='Right')game.right=false;
   });
   function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  return{start,stop};
+})();
+
+/* ── Maze — recursive-backtracker maze, solve to advance ──────────────
+   Classic maze runner: navigate start (top-left) to exit (bottom-right) with a
+   D-pad / arrow keys / swipe. Each solved maze advances a level (a little
+   bigger). Static board (only the player dot moves) so it's e-ink-perfect — no
+   loop except a 1s clock. stop() no-op guard, _trackStop teardown. */
+const Maze=(()=>{
+  let game=null,timer=null;const CW=300,CH=246;
+  function _best(){return (S.games&&S.games.maze&&S.games.maze.best)||0;}
+  function gen(cols,rows){
+    const cells=[];
+    for(let y=0;y<rows;y++)for(let x=0;x<cols;x++)cells.push({x:x,y:y,n:true,e:true,s:true,w:true,v:false});
+    const at=function(x,y){return cells[y*cols+x];};
+    const stack=[at(0,0)];at(0,0).v=true;
+    while(stack.length){
+      const c=stack[stack.length-1];const nb=[];
+      if(c.y>0&&!at(c.x,c.y-1).v)nb.push(['n',at(c.x,c.y-1)]);
+      if(c.x<cols-1&&!at(c.x+1,c.y).v)nb.push(['e',at(c.x+1,c.y)]);
+      if(c.y<rows-1&&!at(c.x,c.y+1).v)nb.push(['s',at(c.x,c.y+1)]);
+      if(c.x>0&&!at(c.x-1,c.y).v)nb.push(['w',at(c.x-1,c.y)]);
+      if(!nb.length){stack.pop();continue;}
+      const pick=nb[Math.floor(Math.random()*nb.length)],dir=pick[0],nx=pick[1];
+      if(dir==='n'){c.n=false;nx.s=false;}else if(dir==='e'){c.e=false;nx.w=false;}
+      else if(dir==='s'){c.s=false;nx.n=false;}else{c.w=false;nx.e=false;}
+      nx.v=true;stack.push(nx);
+    }
+    return {cols:cols,rows:rows,at:at};
+  }
+  function startLevel(lvl,total){
+    const cols=Math.min(9+lvl*2,23),rows=Math.min(7+lvl*2,17);
+    game={m:gen(cols,rows),cols:cols,rows:rows,px:0,py:0,ex:cols-1,ey:rows-1,lvl:lvl,secs:0,total:total||0,done:false};
+  }
+  function start(){
+    if(timer){clearInterval(timer);timer=null;}
+    startLevel(1,0);
+    enterImmersive('Maze','Level 1');
+    immersiveRoot._trackStop=stop;
+    buildUI();draw();updateHud();
+    timer=setInterval(function(){if(game&&!game.done&&!document.hidden){game.secs++;updateHud();}},1000);
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','',{id:'mzHud',style:{textAlign:'center',fontSize:'12px',fontWeight:'700',margin:'2px 0 4px',color:'var(--fg)'}}));
+    const canvas=el('canvas',{id:'mzCanvas',width:CW,height:CH});
+    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;border:2px solid var(--fg);touch-action:none;';
+    /* swipe to move */
+    let sx=0,sy=0;
+    canvas.addEventListener('touchstart',function(e){if(e.touches[0]){sx=e.touches[0].clientX;sy=e.touches[0].clientY;}},{passive:true});
+    canvas.addEventListener('touchend',function(e){var t=e.changedTouches[0];if(!t)return;var dx=t.clientX-sx,dy=t.clientY-sy;if(Math.abs(dx)<14&&Math.abs(dy)<14)return;if(Math.abs(dx)>Math.abs(dy))move(dx>0?1:-1,0);else move(0,dy>0?1:-1);},{passive:true});
+    immersiveContent.appendChild(canvas);
+    /* D-pad */
+    const pad=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,54px)',gridGap:'6px',justifyContent:'center',marginTop:'8px'}});
+    function pd(label,dx,dy,col,rowSpan){const b=txt('button',label,{className:'btn',style:{fontSize:'20px',fontWeight:'800',minHeight:'44px',gridColumn:String(col)}});b.onclick=function(){move(dx,dy);};return b;}
+    const up=pd('▲',0,-1,'2');pad.appendChild(up);up.style.gridColumn='2';
+    const left=pd('◄',-1,0,'1');pad.appendChild(left);left.style.gridColumn='1';left.style.gridRow='2';
+    const dn=pd('▼',0,1,'2');dn.style.gridColumn='2';dn.style.gridRow='2';pad.appendChild(dn);
+    const right=pd('►',1,0,'3');right.style.gridColumn='3';right.style.gridRow='2';pad.appendChild(right);
+    immersiveContent.appendChild(pad);
+    immersiveContent.appendChild(txt('div','Reach the ★ exit. Swipe, tap the arrows, or use the keyboard.',{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',marginTop:'6px'}}));
+    const rr=el('div',{className:'card-row',style:{justifyContent:'center',marginTop:'6px'}});
+    rr.appendChild(Object.assign(txt('button','New maze',{className:'btn small'}),{onclick:function(){startLevel(game?game.lvl:1,game?game.total:0);draw();updateHud();}}));
+    immersiveContent.appendChild(rr);
+  }
+  function updateHud(){const h=$('mzHud');if(!h)return;const v='Level '+game.lvl+'  ·  '+game.secs+'s  ·  Best Lv '+_best();if(h.textContent!==v)h.textContent=v;updateImmersiveScore('Lv '+game.lvl);}
+  function move(dx,dy){
+    if(!game||game.done)return;const c=game.m.at(game.px,game.py);
+    if(dx===1&&!c.e)game.px++;else if(dx===-1&&!c.w)game.px--;
+    else if(dy===1&&!c.s)game.py++;else if(dy===-1&&!c.n)game.py--;else return;
+    if(game.px===game.ex&&game.py===game.ey)winLevel();else draw();
+  }
+  function winLevel(){
+    if(!game)return;game.done=true;
+    if(!S.games.maze)S.games.maze={best:0};
+    S.games.maze.best=Math.max(S.games.maze.best||0,game.lvl);saveNow();
+    try{_khSubmitScore('maze',game.lvl);}catch(_){}recordStat('maze',true);
+    draw();toast('Level '+game.lvl+' solved in '+game.secs+'s!');
+    const nl=game.lvl+1,tot=game.total+game.secs;
+    setTimeout(function(){if(!game)return;startLevel(nl,tot);draw();updateHud();},750);
+  }
+  function draw(){
+    const c=$('mzCanvas');if(!c||!game)return;const ctx=c.getContext('2d');
+    const dark=document.body.classList.contains('dark');const ink=dark?'#eee':'#161616',paper=dark?'#111':'#f6f6f6';
+    const cs=Math.min((CW-2)/game.cols,(CH-2)/game.rows),ox=(CW-cs*game.cols)/2,oy=(CH-cs*game.rows)/2;
+    ctx.fillStyle=paper;ctx.fillRect(0,0,CW,CH);
+    ctx.strokeStyle=ink;ctx.lineWidth=2;ctx.lineCap='round';ctx.beginPath();
+    for(let y=0;y<game.rows;y++)for(let x=0;x<game.cols;x++){const cell=game.m.at(x,y),X=ox+x*cs,Y=oy+y*cs;
+      if(cell.n){ctx.moveTo(X,Y);ctx.lineTo(X+cs,Y);}
+      if(cell.w){ctx.moveTo(X,Y);ctx.lineTo(X,Y+cs);}
+      if(cell.e){ctx.moveTo(X+cs,Y);ctx.lineTo(X+cs,Y+cs);}
+      if(cell.s){ctx.moveTo(X,Y+cs);ctx.lineTo(X+cs,Y+cs);}
+    }
+    ctx.stroke();
+    /* exit star */
+    ctx.fillStyle=ink;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold '+Math.round(cs*0.8)+'px sans-serif';
+    ctx.fillText('★',ox+game.ex*cs+cs/2,oy+game.ey*cs+cs/2+1);
+    /* player */
+    ctx.fillStyle=ink;ctx.beginPath();ctx.arc(ox+game.px*cs+cs/2,oy+game.py*cs+cs/2,cs*0.3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=paper;ctx.beginPath();ctx.arc(ox+game.px*cs+cs/2,oy+game.py*cs+cs/2,cs*0.14,0,Math.PI*2);ctx.fill();
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  }
+  document.addEventListener('keydown',function(e){
+    if(immersiveRoot.style.display!=='block'||!game)return;
+    if(e.key==='ArrowUp'||e.key==='Up'){move(0,-1);e.preventDefault();}
+    else if(e.key==='ArrowDown'||e.key==='Down'){move(0,1);e.preventDefault();}
+    else if(e.key==='ArrowLeft'||e.key==='Left'){move(-1,0);e.preventDefault();}
+    else if(e.key==='ArrowRight'||e.key==='Right'){move(1,0);e.preventDefault();}
+  });
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  return{start,stop};
+})();
+
+/* ── Perfect Circle — draw the roundest circle you can ─────────────────
+   Drag to draw a loop; on release it's scored 0–100% on how circular it is
+   (radius consistency + closure). No loop (renders as you draw), stop() guard. */
+const PerfectCircle=(()=>{
+  let game=null;const SZ=300;
+  function _best(){return (S.games&&S.games.perfectcircle&&S.games.perfectcircle.best)||0;}
+  function start(){
+    game={pts:[],drawing:false,score:null};
+    enterImmersive('Perfect Circle','Best '+_best()+'%');
+    immersiveRoot._trackStop=stop;
+    buildUI();draw();
+  }
+  function buildUI(){
+    immersiveContent.innerHTML='';
+    immersiveContent.appendChild(txt('div','',{id:'pcHud',style:{textAlign:'center',fontSize:'13px',fontWeight:'800',margin:'2px 0 4px',color:'var(--fg)',minHeight:'18px'}}));
+    const canvas=el('canvas',{id:'pcCanvas',width:SZ,height:SZ});
+    canvas.style.cssText='display:block;margin:4px auto;max-width:100%;border:2px solid var(--fg);touch-action:none;';
+    function pos(e){const r=canvas.getBoundingClientRect(),t=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e;const sx=SZ/r.width,sy=SZ/r.height;return {x:(t.clientX-r.left)*sx,y:(t.clientY-r.top)*sy};}
+    function down(e){e.preventDefault();game={pts:[],drawing:true,score:null};const p=pos(e);game.pts.push(p);setHud('Keep going… draw a full loop');}
+    function mv(e){if(!game||!game.drawing)return;e.preventDefault();const p=pos(e);game.pts.push(p);draw();}
+    function up(e){if(!game||!game.drawing)return;e.preventDefault();game.drawing=false;evaluate();}
+    canvas.addEventListener('touchstart',down,{passive:false});canvas.addEventListener('touchmove',mv,{passive:false});canvas.addEventListener('touchend',up,{passive:false});
+    canvas.addEventListener('mousedown',down);canvas.addEventListener('mousemove',mv);window.addEventListener('mouseup',up);
+    immersiveContent.appendChild(canvas);
+    immersiveContent.appendChild(txt('div','Draw a circle in one stroke — no cheating with the edges! Released stroke is scored on roundness.',{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',marginTop:'6px'}}));
+    const rr=el('div',{className:'card-row',style:{justifyContent:'center',marginTop:'6px'}});
+    rr.appendChild(Object.assign(txt('button','Clear',{className:'btn small'}),{onclick:function(){game={pts:[],drawing:false,score:null};setHud('');draw();}}));
+    immersiveContent.appendChild(rr);
+  }
+  function setHud(t){const h=$('pcHud');if(h&&h.textContent!==t)h.textContent=t;}
+  function dist(ax,ay,bx,by){var dx=ax-bx,dy=ay-by;return Math.sqrt(dx*dx+dy*dy);}
+  function evaluate(){
+    const pts=game.pts;if(pts.length<14){setHud('Too short — draw a full loop');return;}
+    let cx=0,cy=0;for(let i=0;i<pts.length;i++){cx+=pts[i].x;cy+=pts[i].y;}cx/=pts.length;cy/=pts.length;
+    const rs=[];for(let i=0;i<pts.length;i++)rs.push(dist(pts[i].x,pts[i].y,cx,cy));
+    let mean=0;for(let i=0;i<rs.length;i++)mean+=rs[i];mean/=rs.length;
+    if(mean<24){setHud('Too small — draw bigger');return;}
+    let varr=0;for(let i=0;i<rs.length;i++)varr+=(rs[i]-mean)*(rs[i]-mean);varr/=rs.length;
+    const sd=Math.sqrt(varr);
+    const closure=dist(pts[0].x,pts[0].y,pts[pts.length-1].x,pts[pts.length-1].y);
+    let score=Math.round(100*(1-sd/mean)-(closure/mean)*18);
+    if(score<0)score=0;if(score>100)score=100;
+    game.score=score;game.cx=cx;game.cy=cy;game.mean=mean;
+    if(!S.games.perfectcircle)S.games.perfectcircle={best:0};
+    const nb=Math.max(S.games.perfectcircle.best||0,score);S.games.perfectcircle.best=nb;saveNow();
+    try{_khSubmitScore('perfectcircle',score);}catch(_){}recordStat('perfectcircle',score>=85);
+    setHud(score+'%  ·  Best '+nb+'%'+(score>=90?' — perfect!':score>=75?' — nice circle':''));
+    updateImmersiveScore(score+'%');draw();
+  }
+  function draw(){
+    const c=$('pcCanvas');if(!c||!game)return;const ctx=c.getContext('2d');
+    const dark=document.body.classList.contains('dark');const ink=dark?'#eee':'#161616',paper=dark?'#111':'#f6f6f6',faint=dark?'#444':'#ccc';
+    ctx.fillStyle=paper;ctx.fillRect(0,0,SZ,SZ);
+    /* centre crosshair guide */
+    ctx.strokeStyle=faint;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(SZ/2-8,SZ/2);ctx.lineTo(SZ/2+8,SZ/2);ctx.moveTo(SZ/2,SZ/2-8);ctx.lineTo(SZ/2,SZ/2+8);ctx.stroke();
+    /* the ideal circle overlay after scoring */
+    if(game.score!=null&&game.mean){ctx.strokeStyle=faint;ctx.lineWidth=1;ctx.beginPath();ctx.arc(game.cx,game.cy,game.mean,0,Math.PI*2);ctx.stroke();}
+    /* the drawn stroke */
+    const pts=game.pts;if(pts&&pts.length>1){ctx.strokeStyle=ink;ctx.lineWidth=3;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.stroke();}
+    if(game.score!=null){ctx.fillStyle=ink;ctx.textAlign='center';ctx.font='bold 34px sans-serif';ctx.fillText(game.score+'%',SZ/2,SZ/2+12);ctx.textAlign='left';}
+  }
+  function stop(){game=null;}
   return{start,stop};
 })();
 
@@ -26841,6 +27020,8 @@ const GAME_MAP=[
   {keys:['tower defence','tower defense','towerdef'],g:'towerdef'},
   {keys:['geometry dash','geometrydash','geo dash','stereo madness','cube jump','rhythm runner'],g:'geometrydash'},
   {keys:['pixel hop','platformer','mario','jump and run','side scroller','super','platform game'],g:'platformer'},
+  {keys:['maze','labyrinth','maze runner','find the exit'],g:'maze'},
+  {keys:['perfect circle','draw a circle','roundest','circle game'],g:'perfectcircle'},
   {keys:['crossy road','crossyroad','crossy','crosser','frogger','cross the road','chicken road'],g:'crossyroad'},
   {keys:['anagram','anagrams','unscramble','word scramble','jumble','text twist','word unscramble'],g:'anagrams'},
   {keys:['nonogram','nonograms','picross','griddler','picture cross','logic grid picture'],g:'nonogram'},
@@ -31327,6 +31508,16 @@ games:()=>{
     c.appendChild(txt('p','A Mario-style platformer — run and jump across gaps, stomp enemies, grab coins, reach the flag.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.platformer&&S.games.platformer.best||0),{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'platformer',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('Maze',null,c=>{
+    c.appendChild(txt('p','Find the way from the corner to the ★ exit. Solve it to advance a level. Swipe, arrows or keyboard.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best level: '+(S.games&&S.games.maze&&S.games.maze.best||0),{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'maze',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('Perfect Circle',null,c=>{
+    c.appendChild(txt('p','Draw the roundest circle you can in one stroke — scored 0–100% on release. Chase a perfect 100%.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.perfectcircle&&S.games.perfectcircle.best||0)+'%',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'perfectcircle',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('Crossy Road',null,c=>{
     c.appendChild(txt('p','Hop the chicken across endless lanes of traffic. Tap to move, time the gaps, go as far as you can.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
