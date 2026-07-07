@@ -1205,6 +1205,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="slides">Slides</div>
     <div class="tab" data-view="sheets">Sheets</div>
     <div class="tab" data-view="starmap">Stars</div>
+    <div class="tab" data-view="explore">Explore</div>
+    <div class="tab" data-view="animals">Animals</div>
     <div class="tab nav-essential" data-view="browser">Browser</div>
     <div class="tab" data-view="periodic" style="display:none">Elements</div>
     <div class="tab" data-view="formulas" style="display:none">Formulas</div>
@@ -2657,8 +2659,12 @@ function _khGcTombstones(){
     var t=S.deletedItems;if(!t||typeof t!=='object')return;
     var cutoff=Date.now()-180*86400000,k;
     for(k in t){if(t.hasOwnProperty(k)&&(t[k]||0)<cutoff)delete t[k];}
+    /* Cap raised 2000 → 8000: a user who bulk-deletes thousands of items (e.g.
+       clearing ~4,000 calendar events) needs a tombstone for EACH, or the
+       cloud-merge resurrects the un-tombstoned ones on the next sync. The
+       newest tombstones are kept (sort ascending, drop oldest). */
     var ks=Object.keys(t);
-    if(ks.length>2000){ks.sort(function(a,b){return (t[a]||0)-(t[b]||0);});while(Object.keys(t).length>2000)delete t[ks.shift()];}
+    if(ks.length>8000){ks.sort(function(a,b){return (t[a]||0)-(t[b]||0);});while(Object.keys(t).length>8000)delete t[ks.shift()];}
   }catch(_){}
 }
 function _khTrackDeletions(){
@@ -2680,6 +2686,12 @@ function _khTrackDeletions(){
     _khGcTombstones();
   }catch(_){}
 }
+/* Seed _khPrevIds from the loaded state ONCE at boot (S is already loaded
+   above). Without this, the FIRST _khTrackDeletions of a session has no prior
+   snapshot, so items deleted before the session's first save() are NOT
+   tombstoned — and the cloud-merge resurrects them on the next sync. That was
+   the "delete all my calendar events, press Sync, they all come back" bug. */
+try{if(typeof S!=='undefined'&&S&&!window._khPrevIds)_khTrackDeletions();}catch(_){}
 /* Reclaim localStorage space when a write genuinely won't fit. The biggest
    easy win is `kh_offline_cred`, which caches whole encrypted state blobs for
    recent accounts (each ~the size of the main blob) — drop all but the most
@@ -2900,7 +2912,7 @@ const NAV_TABS=[
   ['feedback','Feedback'],['dictionary','Dict'],['maps','Maps'],
   ['rss','News'],['stocks','Stocks'],
   ['discover','Discover'],['translate','Translate'],['cipher','Cipher'],['mdjournal','Journal'],
-  ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['browser','Browser'],
+  ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['explore','Explore'],['animals','Animals'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
@@ -8731,9 +8743,15 @@ async function _openAnnouncementComments(a,card){
         refreshList();
         try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
       }catch(e){
-        console.error('[Announcement comment failed]',e);
-        if(typeof _isMissingColumnError==='function'&&_isMissingColumnError(e,'comments'))toast('Run the latest worker (comments column missing on kh_announcements)',6000);
-        else toast('Comment failed: '+String((e&&e.message)||e).slice(0,160),7000);
+        /* Handle GRACEFULLY (no console.error — that was being auto-reported as a
+           crash). On Supabase the RLS policy refuses a client PATCH of
+           kh_announcements ("update not allowed", 403); announcement comments
+           need the Cloudflare D1 backend, which limits the PATCH to the comments
+           column. On D1 this works; on plain Supabase it's simply not enabled. */
+        var _cm=String((e&&e.message)||e);
+        if(/403|not allowed|permission|denied/i.test(_cm))toast('Comments aren\'t enabled on this server yet — the admin needs the latest (Cloudflare) backend.',6500);
+        else if(typeof _isMissingColumnError==='function'&&_isMissingColumnError(e,'comments'))toast('Comments need a backend update (comments column missing).',6000);
+        else toast('Comment failed — try again in a moment.',5000);
       }
       post.disabled=false;post.textContent='Post comment';
     };
@@ -23908,12 +23926,12 @@ function _initFlightSim(){
       const b=document.createElement('button');b.className='btn';
       b.textContent=ap.id+'  '+ap.name;
       b.style.cssText='width:220px;font-size:11px;color:#ccc;border-color:#444;margin:2px;text-align:left;padding:8px 12px;';
-      b.onclick=()=>{document.body.removeChild(d);start(ap.id);};
+      b.onclick=()=>{try{d.remove();}catch(_){}start(ap.id);};
       d.appendChild(b);
     });
     const bCancel=document.createElement('button');bCancel.className='btn';bCancel.textContent='Cancel';
     bCancel.style.cssText='width:220px;color:#888;border-color:#333;margin-top:10px;font-size:11px;';
-    bCancel.onclick=()=>document.body.removeChild(d);
+    bCancel.onclick=()=>{try{d.remove();}catch(_){}};
     d.appendChild(bCancel);
     document.body.appendChild(d);
   }
@@ -39463,9 +39481,9 @@ settings:()=>{
     const row=el('div',{className:'card-row'});
     const cp=txt('button','Copy code',{className:'btn small primary'});
     cp.onclick=()=>{try{navigator.clipboard.writeText(code);toast('Worker code copied.');}catch(_){ta.focus();ta.select();toast('Select all + copy.');}};
-    const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>document.body.removeChild(ov);
+    const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>{ov.remove();};
     row.append(cp,cl);box.appendChild(row);
-    ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)document.body.removeChild(ov);};
+    ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   };
   proxRow.append(proxSave,proxTest,proxHelp);
@@ -40905,9 +40923,9 @@ feedback:()=>{
           const ov=el('div',{style:'position:fixed;top:0;right:0;bottom:0;left:0;z-index:600000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:14px;'});
           const box=el('div',{style:'background:var(--card);border:var(--border);border-radius:10px;padding:12px;max-width:720px;width:100%;'});
           const ta=el('textarea',{style:'width:100%;height:60vh;font-family:monospace;font-size:11px;'});ta.value=txt2;
-          const close=txt('button','Close',{className:'btn small',style:'margin-top:8px;'});close.onclick=()=>document.body.removeChild(ov);
+          const close=txt('button','Close',{className:'btn small',style:'margin-top:8px;'});close.onclick=()=>{ov.remove();};
           box.append(txt('p','Clipboard blocked — select all and copy manually.',{style:'margin:0 0 6px;font-size:12px;color:var(--muted);'}),ta,close);
-          ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)document.body.removeChild(ov);};
+          ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
           (document.getElementById('rotateRoot')||document.body).appendChild(ov);ta.focus();ta.select();
         }
       };
@@ -48681,6 +48699,280 @@ imagesearch:()=>{
   }
   btn.onclick=()=>{const q=inp.value.trim();if(q)run(q,1);else{status.textContent='Type something to search for.';}};
   inp.addEventListener('keydown',(e)=>{if(e.key==='Enter'){const q=inp.value.trim();if(q)run(q,1);}});
+  return v;
+},
+animals:()=>{
+  /* Animals — a zoo-companion encyclopedia. Browse by class, search by name,
+     tap an animal for its stat page: live Wikimedia images, a stat grid
+     (length/weight/speed/lifespan/location/diet), a size-vs-human graphic, a
+     long description, plus fun facts, a joke and a safety note. Curated data
+     (offline-safe); only the images need the network. */
+  const v=el('section',{id:'view-animals',className:'view'});
+  const CATS=['Mammals','Birds','Reptiles','Amphibians','Fish','Invertebrates','Insects'];
+  /* size:[metres, 'tall'|'long'] drives the human-comparison bar. */
+  const DB=[
+    {n:'Tiger',c:'Mammals',len:'2.5–3.9 m',wt:'90–310 kg',spd:'49–65 km/h',life:'10–15 yrs',loc:'Asia — forests & grassland',diet:'Carnivore',size:[1.0,'tall'],
+     desc:'The largest wild cat on Earth. A solitary, muscular ambush hunter whose orange-and-black stripes are unique to each individual — like a fingerprint — and grow from the skin as well as the fur.',
+     facts:['A tiger\'s roar carries up to 3 km.','They are strong swimmers and enjoy water.','Their night vision is roughly six times sharper than ours.'],
+     joke:'What do you call a tiger that likes to be alone? Solitary con-fur-med.',warn:'Endangered — fewer than about 4,500 remain in the wild.'},
+    {n:'African Elephant',c:'Mammals',len:'6–7.5 m',wt:'up to 6,000 kg',spd:'40 km/h',life:'60–70 yrs',loc:'Sub-Saharan Africa',diet:'Herbivore',size:[3.2,'tall'],
+     desc:'The largest land animal alive. Highly intelligent and deeply social, elephants use their trunk — with over 40,000 muscles — for breathing, smelling, drinking, grabbing and greeting.',
+     facts:['Elephants can recognise themselves in a mirror.','They "hear" distant rumbles through their feet.','A trunk can hold around 8 litres of water.'],
+     joke:'Why don\'t elephants use computers? They\'re afraid of the mouse.',warn:'Never get between an elephant and its calf — mothers are fiercely protective.'},
+    {n:'Giraffe',c:'Mammals',len:'4.3–5.7 m tall',wt:'800–1,200 kg',spd:'60 km/h',life:'20–25 yrs',loc:'African savanna',diet:'Herbivore',size:[5.5,'tall'],
+     desc:'The tallest animal on Earth. Despite its enormous neck, a giraffe has the same number of neck bones as you — just seven, each up to 25 cm long.',
+     facts:['A giraffe\'s tongue is about 45 cm long and bluish-purple.','They sleep as little as 30 minutes a day.','A powerful kick can fend off a lion.'],
+     joke:'How do giraffes apologise? They swallow their pride — it takes a while to go down.',warn:'Those long legs deliver a deadly kick — keep your distance.'},
+    {n:'Gorilla',c:'Mammals',len:'1.4–1.8 m',wt:'100–180 kg',spd:'40 km/h',life:'35–40 yrs',loc:'Central African forests',diet:'Herbivore',size:[1.7,'tall'],
+     desc:'The largest living primate and one of our closest relatives, sharing about 98% of our DNA. Gentle and family-oriented, troops are led by a mature "silverback" male.',
+     facts:['Gorillas can learn sign language.','Each gorilla has a unique nose print.','They build a fresh nest to sleep in every night.'],
+     joke:'What do you call a gorilla wearing headphones? Anything you like — it can\'t hear you.',warn:'Endangered — habitat loss and poaching threaten every gorilla species.'},
+    {n:'Red Panda',c:'Mammals',len:'50–64 cm',wt:'3–6 kg',spd:'24 km/h',life:'8–14 yrs',loc:'Eastern Himalayas',diet:'Omnivore (mostly bamboo)',size:[0.6,'long'],
+     desc:'A cat-sized tree-dweller and the "original" panda — described decades before the giant panda. It has a false thumb (an extended wrist bone) for gripping bamboo.',
+     facts:['They wrap their bushy tail around themselves like a blanket.','Red pandas are most active at dawn and dusk.','They "stand tall" with arms raised to look bigger when threatened.'],
+     joke:'Why did the red panda get an A? It was great at bam-boozling the test.',warn:'Endangered — fewer than 10,000 are thought to remain.'},
+    {n:'Polar Bear',c:'Mammals',len:'2–3 m',wt:'350–700 kg',spd:'40 km/h',life:'20–30 yrs',loc:'Arctic',diet:'Carnivore',size:[1.6,'tall'],
+     desc:'The largest land carnivore. Under that white-looking coat the skin is black to soak up heat, and each hair is actually clear and hollow.',
+     facts:['Polar bears can smell a seal nearly 1.5 km away.','They are excellent swimmers — paddling for days at a time.','A thick fat layer keeps them warm in icy water.'],
+     joke:'Why don\'t polar bears get cold feet? They wear snow boots.',warn:'Vulnerable — melting sea ice is shrinking their hunting grounds.'},
+    {n:'Emperor Penguin',c:'Birds',len:'1.1–1.3 m',wt:'22–45 kg',spd:'10 km/h (swim)',life:'15–20 yrs',loc:'Antarctica',diet:'Carnivore (fish, krill)',size:[1.2,'tall'],
+     desc:'The tallest and heaviest penguin. Males incubate the single egg on their feet through the Antarctic winter, huddling together against −40°C storms.',
+     facts:['They can dive over 500 m deep and hold their breath ~20 minutes.','Huddling penguins take turns on the cold outer edge.','Chicks are recognised by a unique call.'],
+     joke:'What do penguins wear on their heads? Ice caps.',warn:'Near-threatened — reliant on stable sea ice to breed.'},
+    {n:'Bald Eagle',c:'Birds',len:'70–102 cm',wt:'3–6.3 kg',spd:'160 km/h (dive)',life:'20–30 yrs',loc:'North America',diet:'Carnivore',size:[1.0,'tall'],
+     desc:'A huge sea-eagle with a wingspan over 2 m. Its eyesight is roughly four to eight times sharper than a human\'s, spotting a fish from hundreds of metres up.',
+     facts:['Bald eagles aren\'t bald — "balde" is an old word for white.','A nest can weigh over a tonne and be reused for years.','They can swim, using their wings like oars.'],
+     joke:'Why are eagles such good storytellers? They always tell tall tail-feathers.',warn:'Protected by law — a conservation success story after near-extinction.'},
+    {n:'Ostrich',c:'Birds',len:'2.1–2.8 m',wt:'63–145 kg',spd:'70 km/h',life:'40–45 yrs',loc:'African savanna',diet:'Omnivore',size:[2.4,'tall'],
+     desc:'The largest and fastest-running bird — far too heavy to fly, but able to sprint at highway speeds and cover 5 m in a single stride.',
+     facts:['An ostrich egg is the largest of any living bird (~1.5 kg).','Their eyes are bigger than their brains.','They don\'t bury their heads in sand — that\'s a myth.'],
+     joke:'Why did the ostrich cross the road? To prove it wasn\'t chicken.',warn:'A forward kick is powerful enough to injure a lion — don\'t corner one.'},
+    {n:'Flamingo',c:'Birds',len:'1.2–1.5 m',wt:'2–4 kg',spd:'55 km/h (flight)',life:'20–30 yrs',loc:'Africa, Americas, Asia',diet:'Filter-feeder',size:[1.3,'tall'],
+     desc:'A pink wading bird that feeds head-upside-down, filtering tiny algae and shrimp from the water. The pink comes from pigments in that food — not from birth.',
+     facts:['Flamingos often stand on one leg to save body heat.','A group is called a "flamboyance".','Chicks are born grey and turn pink over a couple of years.'],
+     joke:'Why do flamingos lift one leg? Because if they lifted both they\'d fall over.',warn:'Sensitive to habitat disturbance — admire them from a distance.'},
+    {n:'Barn Owl',c:'Birds',len:'33–39 cm',wt:'250–480 g',spd:'80 km/h',life:'4–15 yrs',loc:'Worldwide',diet:'Carnivore',size:[0.35,'tall'],
+     desc:'A silent night hunter with a heart-shaped face that funnels sound to its ears. Its hearing is so precise it can strike prey in total darkness.',
+     facts:['Owls can turn their heads about 270°.','Special soft-edged feathers make flight almost silent.','They swallow prey whole, then cough up pellets of bone and fur.'],
+     joke:'What do you call an owl magician? Hoo-dini.',warn:'Owls are protected in many countries — never disturb a nest.'},
+    {n:'Komodo Dragon',c:'Reptiles',len:'2.6–3 m',wt:'70–90 kg',spd:'20 km/h',life:'30 yrs',loc:'Indonesian islands',diet:'Carnivore',size:[2.8,'long'],
+     desc:'The largest lizard alive. It hunts deer and boar with serrated teeth and a venomous bite that lowers a victim\'s blood pressure, then tracks it by scent with a forked tongue.',
+     facts:['They can eat up to 80% of their body weight in one meal.','A Komodo can detect carrion from up to 9 km away.','Females can sometimes reproduce without a male.'],
+     joke:'What do you call a lizard that sings? A rep-tile of the charts.',warn:'Venomous and dangerous — Komodos have injured and killed people.'},
+    {n:'Green Sea Turtle',c:'Reptiles',len:'1–1.2 m',wt:'110–190 kg',spd:'35 km/h',life:'60–70 yrs',loc:'Tropical oceans',diet:'Herbivore (as adult)',size:[1.1,'long'],
+     desc:'A gentle ocean grazer named for the green fat under its shell. Females swim thousands of kilometres to lay eggs on the very beach where they hatched.',
+     facts:['They can hold their breath for hours while resting.','Hatchlings navigate using Earth\'s magnetic field.','Sea turtles have existed for over 100 million years.'],
+     joke:'Why are sea turtles so slow to apologise? It takes them ages to come out of their shell.',warn:'Endangered — threatened by plastic (which looks like jellyfish) and lost beaches.'},
+    {n:'King Cobra',c:'Reptiles',len:'3–5.5 m',wt:'6–9 kg',spd:'18 km/h',life:'20 yrs',loc:'South & Southeast Asia',diet:'Carnivore (mostly snakes)',size:[4.0,'long'],
+     desc:'The world\'s longest venomous snake. It can rear a third of its body off the ground — tall enough to look a person in the eye — and is the only snake that builds a nest for its eggs.',
+     facts:['One bite delivers enough venom to affect an elephant.','It mainly eats other snakes.','A "growl"-like hiss warns intruders away.'],
+     joke:'What did the snake give its teacher? A hiss-tory report.',warn:'Highly venomous — a bite is a medical emergency. Never approach.'},
+    {n:'Nile Crocodile',c:'Reptiles',len:'3.5–5 m',wt:'225–750 kg',spd:'35 km/h',life:'50–80 yrs',loc:'Africa — rivers & lakes',diet:'Carnivore',size:[4.5,'long'],
+     desc:'Africa\'s largest crocodilian and a living fossil little changed in 100 million years. It has the strongest measured bite of any animal, yet carries its own hatchlings gently in its jaws.',
+     facts:['Crocodiles can\'t chew — they swallow stones to help grind food.','They can go months between meals.','Nest temperature decides whether hatchlings are male or female.'],
+     joke:'What do you call a crocodile detective? An investi-gator.',warn:'Extremely dangerous — responsible for many attacks each year. Stay well back from water\'s edge.'},
+    {n:'Poison Dart Frog',c:'Amphibians',len:'1.5–6 cm',wt:'2–7 g',spd:'Slow',life:'8–12 yrs',loc:'Central & South America',diet:'Insectivore',size:[0.04,'long'],
+     desc:'A tiny, jewel-bright rainforest frog whose dazzling colours warn predators that its skin is toxic. In captivity, without their wild diet, most lose their toxicity entirely.',
+     facts:['Their poison comes from the ants and mites they eat.','Some species are no bigger than a fingernail.','Fathers often carry tadpoles on their backs.'],
+     joke:'Why was the little frog so confident? It knew it was dart to beat.',warn:'Wild individuals can be highly toxic — look, never touch.'},
+    {n:'Axolotl',c:'Amphibians',len:'15–30 cm',wt:'60–230 g',spd:'Slow',life:'10–15 yrs',loc:'Lake Xochimilco, Mexico',diet:'Carnivore',size:[0.25,'long'],
+     desc:'A salamander that never grows up — it keeps its feathery gills and stays underwater for life. Famous for regrowing legs, tail, and even parts of its heart and brain.',
+     facts:['Axolotls can regenerate entire limbs perfectly.','They come in wild, white and golden colours.','That "smile" is just the shape of their mouth.'],
+     joke:'How does an axolotl stay calm? It just goes with the flow — and grows back the rest.',warn:'Critically endangered in the wild — almost none remain in their lake.'},
+    {n:'American Bullfrog',c:'Amphibians',len:'9–15 cm',wt:'up to 500 g',spd:'Leaps ~1.8 m',life:'7–10 yrs',loc:'North America (spread worldwide)',diet:'Carnivore',size:[0.13,'long'],
+     desc:'A big, greedy frog with a deep "jug-o-rum" call you can hear from far off. It will eat almost anything it can fit in its mouth — insects, fish, mice, even other frogs.',
+     facts:['Only males have the loud booming call.','Tadpoles can take up to two years to transform.','They breathe partly through their skin.'],
+     joke:'What\'s a frog\'s favourite drink? Croak-a-cola.',warn:'An invasive species outside its home range — never release pets into the wild.'},
+    {n:'Great White Shark',c:'Fish',len:'4–6 m',wt:'680–1,100 kg',spd:'56 km/h',life:'70+ yrs',loc:'Cool coastal seas',diet:'Carnivore',size:[5.0,'long'],
+     desc:'The largest predatory fish. It senses tiny electric fields from hidden prey and can breach clear of the water when attacking a seal from below.',
+     facts:['A great white grows and replaces thousands of teeth in a lifetime.','They must keep moving to breathe.','They can smell a drop of blood in a huge volume of water.'],
+     joke:'What do you call a shark that delivers presents? Santa Jaws.',warn:'Vulnerable — far more sharks are killed by people than people by sharks.'},
+    {n:'Clownfish',c:'Fish',len:'7–11 cm',wt:'~30 g',spd:'Slow',life:'6–10 yrs',loc:'Indo-Pacific reefs',diet:'Omnivore',size:[0.09,'long'],
+     desc:'A small reef fish that lives unharmed among the stinging tentacles of a sea anemone, protected by a special mucus. Both partners benefit — a classic team-up.',
+     facts:['All clownfish are born male; the dominant one can become female.','They rarely stray far from their home anemone.','They "talk" with pops and clicks.'],
+     joke:'How do clownfish keep costs down? They share an anemone.',warn:'Wild-caught aquarium demand can harm reefs — choose captive-bred fish.'},
+    {n:'Manta Ray',c:'Fish',len:'up to 7 m wide',wt:'up to 2,000 kg',spd:'35 km/h',life:'40+ yrs',loc:'Tropical & subtropical seas',diet:'Filter-feeder',size:[7.0,'long'],
+     desc:'A gentle giant with the largest brain of any fish. It glides on wing-like fins and filters plankton from the water, sometimes doing backflips to feed.',
+     facts:['Each manta has a unique belly-spot pattern.','They visit "cleaning stations" where small fish tidy them up.','Mantas are curious and often approach divers.'],
+     joke:'Why did the manta ray blush? It saw the ocean\'s bottom.',warn:'Vulnerable — slow to reproduce, so populations recover slowly.'},
+    {n:'Seahorse',c:'Fish',len:'1.5–35 cm',wt:'Tiny',life:'1–5 yrs',spd:'Very slow',loc:'Shallow tropical seas',diet:'Carnivore',size:[0.15,'tall'],
+     desc:'An odd upright fish that swims with a fluttering back fin and anchors to seagrass with its curly tail. Uniquely, it\'s the father who becomes pregnant and gives birth.',
+     facts:['Seahorses have no stomach, so they eat almost constantly.','Their eyes move independently.','A pair may greet each other every morning.'],
+     joke:'Why did the seahorse feel proud? It was a stand-up guy.',warn:'Many species are threatened by the trade in dried seahorses.'},
+    {n:'Giant Pacific Octopus',c:'Invertebrates',len:'up to 5 m arm-span',wt:'15–50 kg',spd:'40 km/h (jet)',life:'3–5 yrs',loc:'North Pacific',diet:'Carnivore',size:[3.0,'long'],
+     desc:'The largest octopus species and astonishingly clever. With three hearts, blue blood, and a boneless body, it can squeeze through any gap bigger than its beak and change colour and texture in an instant.',
+     facts:['Two-thirds of its neurons are in its arms.','It can open jars and solve mazes.','It tastes with the suckers on its arms.'],
+     joke:'Why should you never argue with an octopus? It\'s well-armed.',warn:'Intelligent and strong — a large octopus can give a firm, surprising grip.'},
+    {n:'Moon Jellyfish',c:'Invertebrates',len:'25–40 cm wide',wt:'Light',spd:'Drifts',life:'~1 yr',loc:'Oceans worldwide',diet:'Carnivore (plankton)',size:[0.3,'long'],
+     desc:'A translucent, pulsing bell with four horseshoe-shaped rings visible through its body. It has no brain, heart or bones — just a simple net of nerves.',
+     facts:['Jellyfish are about 95% water.','They have drifted the seas for over 500 million years.','A group is called a "smack".'],
+     joke:'Why are jellyfish bad at sharing? They\'re a little shellfish — no wait, they\'re not even fish.',warn:'Even a calm-looking jelly can sting — don\'t touch beached ones.'},
+    {n:'Starfish',c:'Invertebrates',len:'12–24 cm',wt:'Light',spd:'Very slow',life:'up to 35 yrs',loc:'All oceans',diet:'Carnivore',size:[0.2,'long'],
+     desc:'Not a fish at all, but an echinoderm that walks on hundreds of tiny tube feet. It can regrow a lost arm — and a few species can regrow a whole body from one arm.',
+     facts:['A starfish has no brain and no blood.','It can push its stomach outside its body to eat.','Most have five arms, but some have dozens.'],
+     joke:'How do you make a starfish laugh? Ten-tickles… close enough.',warn:'Handling can harm them — keep them in the water where they belong.'},
+    {n:'Lobster',c:'Invertebrates',len:'25–50 cm',wt:'0.5–4 kg',spd:'Slow (walks)',life:'up to 50+ yrs',loc:'Cold sea floors',diet:'Omnivore',size:[0.4,'long'],
+     desc:'An armoured crustacean that walks the seabed on eight legs and grabs food with two large claws. It never really stops growing, moulting its shell to get bigger.',
+     facts:['Lobster blood is clear and turns blue in air.','They can be left- or right-clawed.','They taste with tiny hairs on their legs.'],
+     joke:'Why was the lobster so bad at sharing? It was a little shellfish.',warn:'Those claws can pinch hard — one is a crusher, one a cutter.'},
+    {n:'Monarch Butterfly',c:'Insects',len:'9–10 cm wingspan',wt:'~0.5 g',spd:'19 km/h',life:'2–6 weeks (most)',loc:'Americas',diet:'Nectar (adult)',size:[0.1,'long'],
+     desc:'A famous orange-and-black traveller. Each autumn, monarchs fly up to 4,800 km to the same Mexican forests — a journey no single butterfly could have made before, guided purely by instinct.',
+     facts:['Their bright colours warn that they taste bad.','They smell with their antennae and taste with their feet.','The migrating generation lives far longer than the summer ones.'],
+     joke:'What did the caterpillar say on its birthday? "I\'m going to be a social butterfly!"',warn:'Populations are falling fast — planting milkweed helps them survive.'},
+    {n:'Honey Bee',c:'Insects',len:'12–15 mm',wt:'~0.1 g',spd:'25 km/h',life:'6 weeks–5 months',loc:'Worldwide',diet:'Nectar & pollen',size:[0.015,'long'],
+     desc:'A social insect that pollinates a huge share of our crops. A hive of tens of thousands works as one, and bees share the location of flowers by "dancing".',
+     facts:['A single bee makes about a twelfth of a teaspoon of honey in its life.','They communicate directions with a "waggle dance".','Bees can recognise human faces.'],
+     joke:'What\'s a bee\'s favourite haircut? A buzz cut.',warn:'Bees only sting to defend the hive — stay calm and they usually leave you alone.'},
+    {n:'Praying Mantis',c:'Insects',len:'2–15 cm',wt:'Light',spd:'Strikes in ~0.05 s',life:'Up to 1 yr',loc:'Warm regions worldwide',diet:'Carnivore',size:[0.1,'long'],
+     desc:'A patient ambush predator that folds its spined front legs as if praying, then snatches prey faster than the eye can follow. It\'s the only insect that can turn its head to look over its "shoulder".',
+     facts:['A mantis has one ear, in the middle of its chest.','It can rotate its head almost 180°.','Camouflage lets some mimic leaves or flowers.'],
+     joke:'Why did the mantis get a job in a church? It was always praying.',warn:'Harmless to people — but a fierce hunter of other insects.'},
+    {n:'Ladybird',c:'Insects',len:'5–10 mm',wt:'Tiny',spd:'Flies',life:'~1 yr',loc:'Worldwide',diet:'Carnivore (aphids)',size:[0.008,'long'],
+     desc:'A tiny, dome-backed beetle and a gardener\'s best friend — a single ladybird can eat thousands of plant-eating aphids in its life. Its bright spots warn birds that it tastes foul.',
+     facts:['The number of spots depends on the species, not its age.','They play dead and ooze a bitter fluid when threatened.','A group is called a "loveliness".'],
+     joke:'What do you call a ladybird that won\'t stop chatting? A chatterbug.',warn:'Harmless and helpful — gently move them off crops rather than spraying.'},
+    {n:'Leafcutter Ant',c:'Insects',len:'2–15 mm',wt:'Tiny',spd:'Fast for its size',life:'Queen: 10–20 yrs',loc:'Central & South America',diet:'Fungus they farm',size:[0.01,'long'],
+     desc:'One of nature\'s farmers. These ants slice leaves and carry pieces many times their weight back to the nest — not to eat, but to grow a fungus garden that feeds the whole colony.',
+     facts:['A single colony can number several million ants.','They can carry ~50 times their own body weight.','Different-sized workers do different jobs.'],
+     joke:'Why are ants such good workers? They never call in sick — they just keep grinding.',warn:'A big colony can strip a garden overnight, but they rarely bother people.'}
+  ];
+  let _cat='Mammals',_q='',_sel=null;
+  v.appendChild(txt('h2','Animals',{style:{fontFamily:'var(--title-font)',fontSize:'18px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','A field guide for the zoo — browse by group or search a name, then tap for its stats, size and fun facts.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const body=el('div',{});v.appendChild(body);
+  function statTile(label,val){const t=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'7px 9px',background:'var(--card)'}});t.appendChild(txt('div',label,{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',textTransform:'uppercase'}}));t.appendChild(txt('div',val||'—',{style:{fontSize:'13px',fontWeight:'700',marginTop:'1px'}}));return t;}
+  function sizeSvg(a){
+    var m=a.size[0],dim=a.size[1],human=1.7,maxM=Math.max(m,human),barMax=190,ppm=barMax/maxM;
+    var hW=Math.max(6,Math.round(human*ppm)),aW=Math.max(6,Math.round(m*ppm));
+    var mLbl=(m<1?Math.round(m*100)+' cm':(Math.round(m*10)/10)+' m')+' '+dim;
+    return '<svg viewBox="0 0 300 84" width="100%" style="max-width:340px;color:var(--fg)">'
+      +'<rect x="64" y="20" width="'+hW+'" height="16" rx="3" fill="currentColor" opacity="0.32"/>'
+      +'<text x="0" y="32" font-size="11" fill="currentColor">You</text>'
+      +'<text x="'+(70+hW)+'" y="32" font-size="10" fill="currentColor" opacity="0.7">1.7 m</text>'
+      +'<rect x="64" y="46" width="'+aW+'" height="16" rx="3" fill="currentColor"/>'
+      +'<text x="0" y="58" font-size="11" fill="currentColor" font-weight="700">'+(a.n.length>10?a.n.slice(0,9)+'…':a.n)+'</text>'
+      +'<text x="'+(70+aW)+'" y="58" font-size="10" fill="currentColor" opacity="0.7">'+mLbl+'</text>'
+      +'</svg>';
+  }
+  function fetchImgs(name){
+    var api='https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch='+encodeURIComponent(name)+'&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url&iiurlwidth=300&origin=*';
+    return fetch(api).then(function(r){return r.json();}).then(function(d){
+      var pg=d&&d.query&&d.query.pages,out=[];
+      if(pg)Object.keys(pg).forEach(function(k){var ii=pg[k]&&pg[k].imageinfo&&pg[k].imageinfo[0];if(ii&&ii.thumburl&&/\.(jpe?g|png)$/i.test(String(ii.url||'')))out.push(ii.thumburl);});
+      return out.slice(0,4);
+    }).catch(function(){return [];});
+  }
+  function renderList(){
+    body.innerHTML='';
+    const sb=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+    const inp=el('input',{type:'text',placeholder:'Search an animal…',value:_q,style:{flex:'1',fontSize:'14px',padding:'9px 11px'}});
+    inp.oninput=khDebounce(function(){_q=inp.value.trim();paint();},180);
+    sb.appendChild(inp);body.appendChild(sb);
+    const tabs=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'10px'}});
+    CATS.forEach(function(cat){
+      const b=txt('button',cat,{className:'btn small'+(cat===_cat&&!_q?' primary':'')});
+      b.onclick=function(){_cat=cat;_q='';inp.value='';paint();};
+      tabs.appendChild(b);
+    });
+    body.appendChild(tabs);
+    const grid=el('div',{id:'anGrid',style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'8px'}});
+    body.appendChild(grid);
+    function paint(){
+      grid.innerHTML='';
+      const ql=_q.toLowerCase();
+      const list=DB.filter(function(a){return ql?a.n.toLowerCase().indexOf(ql)>=0:a.c===_cat;});
+      if(!list.length){grid.appendChild(txt('div',ql?('No animals match "'+_q+'".'):'None here yet.',{style:{color:'var(--muted)',fontSize:'13px',padding:'8px',gridColumn:'1/-1'}}));}
+      list.forEach(function(a){
+        const card=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',background:'var(--card)',cursor:'pointer'}});
+        card.appendChild(txt('div',a.n,{style:{fontWeight:'800',fontSize:'14px'}}));
+        card.appendChild(txt('div',a.c+' · '+a.diet,{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+        card.appendChild(txt('div',a.loc,{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+        card.onclick=function(){_sel=a;draw();try{v.scrollTop=0;var mn=document.querySelector('main');if(mn)mn.scrollTop=0;}catch(_){}};
+        grid.appendChild(card);
+      });
+      // keep the active tab styling in sync
+      Array.from(tabs.querySelectorAll('button')).forEach(function(x){if(x.textContent===_cat&&!_q)x.classList.add('primary');else x.classList.remove('primary');});
+    }
+    paint();
+  }
+  function renderDetail(a){
+    body.innerHTML='';
+    const back=txt('button','‹ All animals',{className:'btn small'});back.onclick=function(){_sel=null;draw();};
+    body.appendChild(back);
+    body.appendChild(txt('h2',a.n,{style:{fontFamily:'var(--title-font)',fontSize:'22px',margin:'8px 0 0'}}));
+    body.appendChild(txt('div',a.c+'  ·  '+a.diet+'  ·  '+a.loc,{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px'}}));
+    /* Images (async, Wikimedia) */
+    const imgWrap=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:'6px',marginBottom:'10px'}});
+    const imgNote=txt('div','Loading images…',{style:{fontSize:'11px',color:'var(--muted)'}});
+    body.appendChild(imgNote);body.appendChild(imgWrap);
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){imgNote.textContent='Connect to the internet to see photos.';}
+    else fetchImgs(a.n).then(function(urls){
+      if(!urls.length){imgNote.textContent='(No photos available right now.)';return;}
+      imgNote.remove();
+      urls.forEach(function(u){const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'8px',border:'var(--thin)',background:'var(--card)'}});const im=new Image();im.src=u;im.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';im.onerror=function(){cell.style.display='none';};cell.appendChild(im);imgWrap.appendChild(cell);});
+    });
+    /* Stat grid */
+    const stats=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(96px,1fr))',gap:'6px',marginBottom:'10px'}});
+    stats.appendChild(statTile('Length',a.len));
+    stats.appendChild(statTile('Weight',a.wt));
+    stats.appendChild(statTile('Speed',a.spd));
+    stats.appendChild(statTile('Lifespan',a.life));
+    stats.appendChild(statTile('Location',a.loc));
+    stats.appendChild(statTile('Diet',a.diet));
+    body.appendChild(stats);
+    /* Size vs human */
+    const sz=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',marginBottom:'10px',background:'var(--card)'}});
+    sz.appendChild(txt('div','SIZE VS A PERSON',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'4px'}}));
+    const svgHost=el('div',{});svgHost.innerHTML=sizeSvg(a);sz.appendChild(svgHost);
+    body.appendChild(sz);
+    /* Description */
+    body.appendChild(txt('p',a.desc,{style:{fontSize:'13px',lineHeight:'1.6',margin:'0 0 10px'}}));
+    /* Fun facts */
+    const ff=el('div',{style:{border:'var(--thin)',borderLeft:'4px solid var(--fg)',borderRadius:'8px',padding:'8px 12px',marginBottom:'8px',background:'var(--highlight)'}});
+    ff.appendChild(txt('div','FUN FACTS',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',marginBottom:'4px'}}));
+    const ul=el('ul',{style:{margin:'0',paddingLeft:'18px'}});
+    (a.facts||[]).forEach(function(f){ul.appendChild(txt('li',f,{style:{fontSize:'12px',lineHeight:'1.5',marginBottom:'3px'}}));});
+    ff.appendChild(ul);body.appendChild(ff);
+    /* Joke */
+    const jk=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'8px 12px',marginBottom:'8px'}});
+    jk.appendChild(txt('div','JOKE',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'2px'}}));
+    jk.appendChild(txt('div',a.joke,{style:{fontSize:'12.5px',fontStyle:'italic',lineHeight:'1.5'}}));
+    body.appendChild(jk);
+    /* Warning / conservation */
+    const wn=el('div',{style:{border:'var(--thin)',borderLeft:'4px solid var(--danger)',borderRadius:'8px',padding:'8px 12px'}});
+    wn.appendChild(txt('div','GOOD TO KNOW',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',color:'var(--danger)',marginBottom:'2px'}}));
+    wn.appendChild(txt('div',a.warn,{style:{fontSize:'12.5px',lineHeight:'1.5'}}));
+    body.appendChild(wn);
+  }
+  function draw(){if(_sel)renderDetail(_sel);else renderList();}
+  draw();
+  return v;
+},
+explore:()=>{
+  /* Explore — a hub that groups the "look things up" apps (Stars, Animals,
+     Science, Wikipedia, Weather, Elements) in one place. */
+  const v=el('section',{id:'view-explore',className:'view'});
+  v.appendChild(txt('h2','Explore',{style:{fontFamily:'var(--title-font)',fontSize:'18px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Look things up — the sky, the animal kingdom, science and more.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'12px',lineHeight:'1.5'}}));
+  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'10px'}});
+  const ITEMS=[
+    {view:'animals',label:'Animals',sub:'Zoo field guide — stats, photos & facts'},
+    {view:'starmap',label:'Stars',sub:'Live sky map — search stars, planets & satellites'},
+    {view:'science',label:'Science',sub:'Facts, glossary & experiments'},
+    {view:'wikipedia',label:'Wikipedia',sub:'Search the free encyclopedia'},
+    {view:'weather',label:'Weather',sub:'Forecast for your area'},
+    {view:'periodic',label:'Elements',sub:'The periodic table'},
+    {view:'imagesearch',label:'Images',sub:'Search free photos'},
+    {view:'sports',label:'Sports',sub:'Scores, past & upcoming games'}
+  ];
+  ITEMS.forEach(function(it){
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'12px',padding:'14px',background:'var(--card)',cursor:'pointer',minHeight:'78px',display:'flex',flexDirection:'column',gap:'3px'}});
+    card.appendChild(txt('div',it.label,{style:{fontSize:'15px',fontWeight:'800'}}));
+    card.appendChild(txt('div',it.sub,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
+    card.onclick=function(){if(typeof showView==='function')showView(it.view);};
+    grid.appendChild(card);
+  });
+  v.appendChild(grid);
   return v;
 },
 qrgen:()=>{
@@ -57087,13 +57379,19 @@ messages:()=>{
        KHVOTE1 messages and tallied from the loaded set (latest vote per user). */
     function _renderPollCard(poll,msgs){
       const card=el('div',{style:{minWidth:'200px',maxWidth:'260px'}});
-      card.appendChild(txt('div','POLL',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',color:'var(--accent)',marginBottom:'2px'}}));
+      /* POLL label + question + footer sit on the BUBBLE, so they inherit the
+         bubble's text colour (light on your own accent bubble, dark on others') —
+         inherit, don't force a colour, or they vanish on one side. */
+      card.appendChild(txt('div','POLL',{style:{fontSize:'9px',fontWeight:'900',letterSpacing:'.5px',opacity:'.7',marginBottom:'2px'}}));
       card.appendChild(txt('div',(typeof _censorText==='function'?_censorText(poll.q):poll.q)||'Poll',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'6px',lineHeight:'1.3'}}));
       const tally=(typeof _khPollTally==='function')?_khPollTally(poll.pid,poll.opts,msgs):{counts:poll.opts.map(function(){return 0;}),total:0,mine:-1};
       poll.opts.forEach(function(opt,idx){
         const n=tally.counts[idx]||0;const pct=tally.total?Math.round(n/tally.total*100):0;
         const chosen=(tally.mine===idx);
-        const row=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',padding:'7px 10px',marginBottom:'5px',cursor:'pointer',overflow:'hidden',background:'var(--card)'}});
+        /* Each option ROW has its OWN light (--card) background, so force dark
+           (--fg) text — otherwise on your own bubble the label inherits the
+           bubble's light text and is invisible (the "Yes/No not showing" bug). */
+        const row=el('div',{style:{position:'relative',border:'var(--thin)',borderRadius:'8px',padding:'7px 10px',marginBottom:'5px',cursor:'pointer',overflow:'hidden',background:'var(--card)',color:'var(--fg)'}});
         /* Result bar fill */
         const fill=el('div',{style:{position:'absolute',left:'0',top:'0',bottom:'0',width:pct+'%',background:'var(--highlight)',zIndex:'0'}});
         row.appendChild(fill);
@@ -57104,7 +57402,7 @@ messages:()=>{
         row.onclick=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(tally.mine===idx)return;_sendPayload('KHVOTE1:'+poll.pid+':'+idx);};
         card.appendChild(row);
       });
-      card.appendChild(txt('div',tally.total+' vote'+(tally.total===1?'':'s')+(tally.mine>=0?' · tap to change':' · tap an option to vote'),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+      card.appendChild(txt('div',tally.total+' vote'+(tally.total===1?'':'s')+(tally.mine>=0?' · tap to change':' · tap an option to vote'),{style:{fontSize:'10px',opacity:'.7',marginTop:'2px'}}));
       return card;
     }
     /* ── Send ── */
@@ -61090,6 +61388,36 @@ function hideKbd(){
 function isKindleBrowser(){
   return /Kindle|Silk/i.test(navigator.userAgent||'');
 }
+/* ── Kindle clipboard shim ────────────────────────────────────────────────
+   Old Kindle WebKit (Silk) REJECTS navigator.clipboard.writeText with a
+   "Write permission denied" error, so every "Copy" / "Copy code" button failed
+   (and the rejection was auto-reported as a crash). On Kindle we replace
+   navigator.clipboard.writeText with a legacy execCommand('copy') path (hidden
+   textarea + select), which works on Silk. This fixes ALL copy buttons at once
+   — no per-call-site changes — and resolves the promise so nothing is reported
+   as an error. Non-Kindle browsers keep the real Clipboard API. */
+(function(){
+  try{
+    if(!isKindleBrowser())return;
+    var legacyCopy=function(text){
+      return new Promise(function(resolve,reject){
+        try{
+          var ta=document.createElement('textarea');
+          ta.value=String(text==null?'':text);ta.setAttribute('readonly','');
+          ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+          (document.getElementById('rotateRoot')||document.body||document.documentElement).appendChild(ta);
+          ta.focus();ta.select();try{ta.setSelectionRange(0,ta.value.length);}catch(_){}
+          var ok=false;try{ok=document.execCommand('copy');}catch(_e){ok=false;}
+          try{ta.remove();}catch(_r){}
+          ok?resolve():reject(new Error('copy-unsupported'));
+        }catch(e){reject(e);}
+      });
+    };
+    var shim={writeText:legacyCopy,readText:function(){return Promise.reject(new Error('no-clipboard-read'));}};
+    try{Object.defineProperty(navigator,'clipboard',{configurable:true,value:shim});}
+    catch(_){try{if(navigator.clipboard)navigator.clipboard.writeText=legacyCopy;}catch(__){}}
+  }catch(_){}
+})();
 
 /* ── Focus / click tracking ──
    Kindle's browser sometimes drops the focus event on first tap of an

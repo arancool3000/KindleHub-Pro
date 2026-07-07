@@ -812,6 +812,37 @@ Tests: `/tmp/fixbatch_test.cjs` + `/tmp/acc_check.cjs` (accent picker gone) + mi
   `.simple-masthead` block (the `smh-bar` title bar + `smh-title` greeting + `smh-sub` "Good morning · <weekday>")
   is gone — the retro home now opens straight into the featured row. The `.simple-masthead` CSS is left unused.
 
+## ⚡ Round: Animals app + Explore hub + bug batch (clipboard/removeChild/announcement/calendar/poll)
+- **Animals encyclopedia** (`BUILDERS.animals`, nav tab + `['animals','Animals']`): a zoo field guide. 7 class
+  tabs (Mammals/Birds/Reptiles/Amphibians/Fish/Invertebrates/Insects) + search; tap an animal → a stat page:
+  live Wikimedia-Commons images (`fetchImgs`, keyless `origin=*`), a stat grid (Length/Weight/Speed/Lifespan/
+  Location/Diet), a **size-vs-human** SVG bar (`sizeSvg`, `size:[m,'tall'|'long']`), a long description, FUN
+  FACTS / JOKE / GOOD-TO-KNOW blocks. Curated `DB` of ~36 animals (offline-safe; only images need network).
+  In-view list⇄detail nav. Test `/tmp/animals_test.cjs`.
+- **Explore hub** (`BUILDERS.explore`, nav tab): cards linking Animals, Stars, Science, Wikipedia, Weather,
+  Elements, Images, Sports — the "look things up" apps grouped in one place (per the user's "put stars into it").
+- **Kindle clipboard fix** (`isKindleBrowser` shim IIFE): old Silk REJECTS `navigator.clipboard.writeText`
+  ("Write permission denied"), so every Copy button failed + the rejection was auto-reported as a crash. On
+  Kindle we now REPLACE `navigator.clipboard.writeText` with a legacy `execCommand('copy')` path (hidden
+  textarea + select) — fixes ALL copy buttons at once, no per-site edits. Non-Kindle keeps the real API.
+- **removeChild NotFoundError** (Worker-setup dialog + 2 siblings): `document.body.removeChild(ov)` threw when
+  the overlay was already gone OR was mounted on `rotateRoot` (landscape) not `body`. Switched to the safe
+  `ov.remove()` / `d.remove()` (guarded).
+- **Announcement comment 403** (`_openCommentThread` post): on Supabase the RLS refuses a client PATCH of
+  kh_announcements ("update not allowed", 403) — comments need the D1 backend. Replaced the `console.error`
+  (which was auto-reported as a crash) with a graceful toast; no functional change on D1 where it works.
+- **Calendar "delete all → Sync → they all come back"** (tombstone coverage, `_khTrackDeletions`/
+  `_khGcTombstones`): two gaps — (1) `window._khPrevIds` wasn't seeded until the session's first save(), so a
+  bulk delete before that recorded NO tombstones → cloud-merge resurrected everything; now seeded ONCE at boot
+  right after S loads. (2) the tombstone cap (2000) couldn't hold ~4,000 deletions → raised to **8000** (keeps
+  newest). Test `/tmp/bugbatch2_test.cjs`.
+- **Poll option labels invisible on your own bubble** (`_renderPollCard`): same class as the sticker bug — the
+  option ROWS have a light `--card` background but the label inherited the own-bubble's light `--accent-inv`
+  text = invisible. Forced `color:var(--fg)` on each option row; the POLL label + footer now inherit the bubble
+  colour (opacity .7) instead of the dark `--accent`.
+Tests: `/tmp/animals_test.cjs`, `/tmp/bugbatch2_test.cjs`, `/tmp/msg_test.cjs`, `tools/games_test.cjs` (38, 0),
+minify Silk gate.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
