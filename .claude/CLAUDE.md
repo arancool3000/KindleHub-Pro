@@ -802,6 +802,16 @@ Tests: `/tmp/fixbatch_test.cjs` + `/tmp/acc_check.cjs` (accent picker gone) + mi
   (`chem-ultra-ai-aran.base44.app`), **Math Master Pro** (`math-master-pro-aran.base44.app`), **Neural Lab**
   (`neural-lab-aran.base44.app`). All open via the scheme-safe `_khOpenExt`.
 
+## ⚡ Round: Pixel Hop one-tap directional jumps + retro masthead removed
+- **Pixel Hop directional jump buttons** (`Platformer` `jumpDir(dir)` + a new control row): Kindle e-ink has no
+  reliable multitouch, so holding ◄/► AND tapping Jump at once is awkward. Added one-tap **Jump ◄** / **Jump ►**
+  buttons — `jumpDir` sets `game.jbuf` (buffered jump) AND briefly holds that direction (`game.right/left=true`,
+  released after 430ms) so a single tap both jumps and carries you that way. The hold ◄/► + Jump controls stay.
+  Test `/tmp/hop_mast_test.cjs` (Jump ► taps advance 2%→16%).
+- **Retro "HOME / date / Hello, <name>" masthead REMOVED** (`uiMode==='simple'` home): the whole
+  `.simple-masthead` block (the `smh-bar` title bar + `smh-title` greeting + `smh-sub` "Good morning · <weekday>")
+  is gone — the retro home now opens straight into the featured row. The `.simple-masthead` CSS is left unused.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
