@@ -6280,8 +6280,11 @@ function applyCustomisation(){
        "did nothing" outside light mode. Inline-on-body outranks the class. */
     var targets=[document.documentElement,document.body].filter(Boolean);
     targets.forEach(function(t){
-      if(S.accent){var _acc=_accentForBg(S.accent);t.style.setProperty('--accent',_acc);t.style.setProperty('--accent-inv',_contrastColor(_acc));}
-      else{t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');}
+      /* Colour theming REMOVED (user request): always use each theme's built-in
+         --accent (which equals --fg), never override it from S.accent. This
+         reverts every account to the clean monochrome look — no coloured chat
+         bubbles / links / tiles. S.accent is left as an inert field. */
+      t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');
       var f=S.uiFont&&KH_FONTS[S.uiFont];
       if(f){
         t.style.setProperty('--ui-font',f[1]);
@@ -7985,6 +7988,25 @@ function _badUsername(name){
   }
   return '';
 }
+/* Reserved-username tokens: names that NEW sign-ups may not contain (leet-
+   normalised so "4ran"/"@ran"/"a.r.a.n" are caught too). Kept SEPARATE from the
+   profanity list on purpose — the profanity list also drives display-side
+   censorship, and we don't want a reserved brand word blacked-out in chat.
+   Enforced ONLY at registration, so existing accounts (incl. the admin's own)
+   still sign in. Anti-impersonation: nobody new can register as/around "aran". */
+var _RESERVED_USERNAME_TOKENS=['aran'];
+function _reservedUsername(name){
+  if(typeof name!=='string')return '';
+  var norm=name.toLowerCase()
+    .replace(/[0]/g,'o').replace(/[1!|]/g,'i').replace(/[3]/g,'e')
+    .replace(/[4@]/g,'a').replace(/[5$]/g,'s').replace(/[7]/g,'t').replace(/[8]/g,'b')
+    .replace(/[^a-z]/g,'');
+  for(var i=0;i<_RESERVED_USERNAME_TOKENS.length;i++){
+    if(_RESERVED_USERNAME_TOKENS[i]&&norm.indexOf(_RESERVED_USERNAME_TOKENS[i])>=0)return _RESERVED_USERNAME_TOKENS[i];
+  }
+  return '';
+}
+window._reservedUsername=_reservedUsername;
 /* Display a name with the ban-list applied: a banned username renders as
    "[removed]" everywhere it's shown. Uses the synchronous cache (preloaded
    at boot + after any ban) so rendering stays fast. */
@@ -10779,6 +10801,11 @@ async function authRegister(email,password){
     if(typeof _badUsername==='function'&&_badUsername(email)){
       return{success:false,error:'That username isn\'t allowed — please choose another (no offensive words).'};
     }
+    /* Block RESERVED usernames for NEW sign-ups (anti-impersonation) — existing
+       accounts are grandfathered (this runs only in authRegister, never login). */
+    if(typeof _reservedUsername==='function'&&_reservedUsername(email)){
+      return{success:false,error:'That username isn\'t available — please choose another.'};
+    }
     /* Block admin-banned usernames (approved username reports). */
     try{ if(typeof _khIsBanned==='function'&&await _khIsBanned(email)){
       return{success:false,error:'That username isn\'t available — please choose another.'};
@@ -10828,17 +10855,51 @@ async function authLogin(email,password){
      legitimate user. */
   const _raceTO=(pr,ms)=>Promise.race([Promise.resolve(pr).catch(function(){return '__err__';}),new Promise(function(r){setTimeout(function(){r('__timeout__');},ms);})]);
   try{
-    /* Banned usernames can't sign in either (covers accounts created before
-       the ban). Checked before the lookup so it short-circuits cleanly. */
-    try{ if(typeof _khIsBanned==='function'){
-      const _ban=await _raceTO(_khIsBanned(email),3500);
-      if(_ban===true)return{success:false,error:'This account has been suspended for an inappropriate username.'};
-    } }catch(_){}
-    /* Capacity lockdown: new sign-ins are paused while over quota. Admins are
-       exempt; anyone already signed in never reaches authLogin, so they're
-       unaffected. Checked BEFORE the egress-heavy state lookup below. */
-    try{ await _raceTO(_refreshCapacity(),3500); if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
+    /* Run BOTH pre-checks CONCURRENTLY (they're independent network reads) and
+       tighten the time-box to 2.5s — sequential 2×3.5s could stack ~7s of pure
+       gate-checking before the real lookup even started. Both fail OPEN and are
+       server-enforced anyway, so a slow gate can't lock out a legit user. */
+    let _banRes=false;
+    try{
+      const _pc=await Promise.all([
+        (typeof _khIsBanned==='function')?_raceTO(_khIsBanned(email),2500):Promise.resolve(false),
+        (typeof _refreshCapacity==='function')?_raceTO(_refreshCapacity(),2500):Promise.resolve(null)
+      ]);
+      _banRes=_pc[0];
+    }catch(_){}
+    if(_banRes===true)return{success:false,error:'This account has been suspended for an inappropriate username.'};
+    try{ if(_capEffective().blocked && !(await _isAdminUsername(email))) return{success:false,error:_capMessage()}; }catch(_){}
     const key=await _userKey(email,password);
+    /* ── FAST PATH: instant sign-in from this device's cached copy ──────────
+       The slow part of login was downloading the FULL encrypted state blob over
+       Kindle Wi-Fi and decrypting it — which is why a heavy account crawled while
+       a fresh sign-up (empty state) was instant. If this device already holds an
+       encrypted copy for this EXACT key (from a prior successful sign-in here),
+       decrypt it locally and sign in immediately, then reconcile with the cloud
+       in the BACKGROUND. The password still has to decrypt the local copy, so
+       it's not a bypass; a stale copy is merged forward by _maybePullFromCloud
+       (mergeCloudState unions by id + tombstones). Only taken when a local copy
+       exists — a first-ever sign-in on a new device still does the full load. */
+    try{
+      const _fc=_offlineCred(key);
+      if(_fc&&_fc.packed){
+        const _fast=await _decryptState(key,_fc.packed);
+        if(_fast&&typeof _fast==='object'){
+          S.userId=key.slice(0,16);S.authToken=key;S.email=email;S.syncEnabled=true;S._encKey=key;
+          window.__khStateLoadFailed=false;
+          if(Object.keys(_fast).length>0)mergeCloudState(_fast);
+          try{_cacheOfflineCred(key,email,_fc.packed);}catch(_){}
+          save();
+          try{if(typeof _resetAdminCache==='function')_resetAdminCache();}catch(_){}
+          try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}}).catch(function(){});}catch(_){}
+          try{_saveCreds(email,password);}catch(_){}
+          /* Reconcile with the cloud in the background (don't block sign-in). */
+          try{window._khLastPullAt=0;}catch(_){}
+          setTimeout(function(){try{if(navigator.onLine!==false&&typeof _maybePullFromCloud==='function')_maybePullFromCloud();}catch(_){}},500);
+          return{success:true,fast:true};
+        }
+      }
+    }catch(_){}
     let packed=null;
     let needsMigration=false; /* true if found in legacy jsonstorage but not the backend */
     /* State gateway (Cloudflare R2): when set, the encrypted blob lives in R2
@@ -11252,10 +11313,14 @@ async function _groupSend(code,msg){
     try{
       row.device_hint=(typeof _khDeviceLabel==='function'?_khDeviceLabel():'').slice(0,80);
     }catch(_){}
-    /* location_hint is now stamped SERVER-SIDE from Cloudflare's edge geo
-       (request.cf) on insert — reliable and spoof-proof. We no longer ping a
-       third-party IP-geo API from the client on send (it was empty on the first
-       send of every session anyway, and leaked the user's IP to ipapi.co). */
+    /* location_hint: the D1 worker stamps this SERVER-SIDE from Cloudflare's
+       edge geo (request.cf) — reliable + spoof-proof — and OVERRIDES whatever
+       the client sends. But on a backend that DOESN'T stamp it (Supabase, or a
+       worker with no edge geo) the column stayed empty, so the admin tap-a-
+       message location read "not recorded". So we ALSO send a best-effort
+       client label as a fallback (cached once/session, async, silent on
+       failure). Trusted-geo backends still win; everyone else gets it back. */
+    try{ if(typeof _khCachedLocationLabel==='function'){ const _loc=_khCachedLocationLabel(); if(_loc)row.location_hint=String(_loc).slice(0,120); } }catch(_){}
     try{
       await _sbInsert('kh_messages',row);
     }catch(eFirst){
@@ -38296,17 +38361,7 @@ settings:()=>{
       fsRow.appendChild(b);
     });
     apCard.appendChild(fsRow);
-    /* Accent colour — swatches set S.accent; applyCustomisation re-layers it
-       over the theme (survives Light/Dark/Sepia switches + reloads). */
-    apCard.appendChild(txt('div','Accent colour',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px',margin:'12px 0 6px'}}));
-    const acRow=el('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}});
-    KH_ACCENTS.forEach(function(a){
-      const cur=(S.accent||'').toLowerCase()===a[1].toLowerCase();
-      const sw=el('button',{title:a[0],style:{width:'30px',height:'30px',borderRadius:'50%',background:a[1],border:cur?'3px solid var(--fg)':'2px solid var(--muted)',cursor:'pointer',padding:'0',flexShrink:'0'}});
-      sw.onclick=function(){S.accent=a[1];if(typeof saveNow==='function')saveNow();if(typeof applyCustomisation==='function')applyCustomisation();acRow.querySelectorAll('button').forEach(function(x){x.style.border='2px solid var(--muted)';});sw.style.border='3px solid var(--fg)';if(typeof toast==='function')toast('Accent: '+a[0]);};
-      acRow.appendChild(sw);
-    });
-    apCard.appendChild(acRow);
+    /* Accent-colour picker removed (user request) — see applyCustomisation. */
     /* UI font */
     apCard.appendChild(txt('div','Font style',{style:{fontSize:'11px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px',margin:'12px 0 6px'}}));
     const fontRow=el('div',{className:'card-row'});
@@ -38443,8 +38498,24 @@ settings:()=>{
   const _shuf=txt('button','Shuffle avatar',{className:'btn small'});
   _shuf.onclick=()=>{S.avatarSeed=(S.user||'Reader')+'_'+Math.random().toString(36).slice(2,7);save();_paintAvatar();toast('New avatar');};
   _avatarRow.append(_avatarWrap,_shuf);c1.appendChild(_avatarRow);
-  c1.appendChild(el('input',{id:'userNameInput',value:S.user||'Reader'}));
-  c1.appendChild(txt('button','Save Name',{className:'btn',id:'saveUserName',style:{marginTop:'6px'}}));
+  /* DISPLAY NAME — the name everyone else sees on your chat messages. Prefilled
+     with what others CURRENTLY see (so a user whose username is a typo like
+     "qwerty" can see it and fix it). Drives displayName() via S.profileName. */
+  c1.appendChild(txt('div','DISPLAY NAME',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',margin:'6px 0 4px'}}));
+  c1.appendChild(txt('div','This is the name shown to everyone else on your messages. Leave it blank to use your username.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'4px'}}));
+  const _effName=(S.profileName||'').trim()||(S.email?String(S.email).split('@')[0]:(S.user||'Reader'));
+  const _dnInp=el('input',{id:'userNameInput',value:_effName,maxLength:40,placeholder:'Your display name',style:{width:'100%'}});
+  c1.appendChild(_dnInp);
+  const _dnSave=txt('button','Save display name',{className:'btn',id:'saveUserName',style:{marginTop:'6px'}});
+  _dnSave.onclick=function(){
+    var nm=(_dnInp.value||'').trim().slice(0,40);
+    if(nm&&typeof _badUsername==='function'&&_badUsername(nm)){if(typeof toast==='function')toast('That name isn\'t allowed — please choose another.');return;}
+    S.profileName=nm;if(nm)S.user=nm;
+    if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
+    try{const di=document.getElementById('displayName');if(di)di.textContent=nm||_effName;}catch(_){}
+    if(typeof toast==='function')toast(nm?('Others now see you as "'+nm+'".'):'Display name cleared — using your username.');
+  };
+  c1.appendChild(_dnSave);
   /* Status line — a short "about me" shown nowhere sensitive, just a bit of
      profile personality (community asked for more customisation). */
   c1.appendChild(txt('div','STATUS',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',margin:'10px 0 4px'}}));
@@ -39125,17 +39196,9 @@ settings:()=>{
   c2.appendChild(txt('div','Saves your language preference and sets the page language (drives the browser’s built-in translate + screen readers). Full interface translation is rolling out.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
   try{c2.appendChild(_langSelectEl());}catch(_){}
 
-  /* ── Accent colour ── */
-  c2.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'12px 0 8px'}}));
-  c2.appendChild(txt('div','Accent colour',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'6px'}}));
-  const _acRow=el('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}});
-  (typeof KH_ACCENTS!=='undefined'?KH_ACCENTS:[]).forEach(function(a){
-    const cur=(S.accent||'').toLowerCase()===a[1].toLowerCase();
-    const sw=el('button',{title:a[0],style:{width:'30px',height:'30px',borderRadius:'50%',background:a[1],border:cur?'3px solid var(--fg)':'2px solid var(--muted)',cursor:'pointer',padding:'0',flexShrink:'0'}});
-    sw.onclick=function(){S.accent=a[1];if(typeof saveNow==='function')saveNow();if(typeof applyCustomisation==='function')applyCustomisation();_acRow.querySelectorAll('button').forEach(function(x){x.style.border='2px solid var(--muted)';});sw.style.border='3px solid var(--fg)';if(typeof toast==='function')toast('Accent: '+a[0]);};
-    _acRow.appendChild(sw);
-  });
-  c2.appendChild(_acRow);
+  /* ── Colour theming removed (user request) — the app now uses each theme's
+     built-in monochrome palette; the accent-swatch picker is gone. Any
+     previously-chosen S.accent is neutralised in applyCustomisation. ── */
 
   /* ── Font style ── */
   c2.appendChild(txt('div','Font style',{style:{fontSize:'13px',fontWeight:'700',margin:'12px 0 6px'}}));
@@ -48429,6 +48492,53 @@ imagesearch:()=>{
       return await r.json();
     }finally{clearTimeout(tid);}
   }
+  /* ── Image sources, normalised to {thumbnail,url,title,creator,license,
+     foreign_landing_url}. Multi-source so a single provider going down (e.g.
+     Openverse started returning 403) can't kill the app. ── */
+  async function _srcWikimedia(q,page){
+    /* Wikimedia Commons: a REAL keyless image search, CORS-open via origin=*,
+       and extremely reliable — this is the primary now. */
+    const off=(page-1)*24;
+    const api='https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrsearch='+encodeURIComponent(q)+'&gsrnamespace=6&gsrlimit=24&gsroffset='+off+'&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=320&origin=*';
+    let data=null;
+    try{ data=await _imgFetch(api); }
+    catch(e){ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(api)); }
+    const pages=data&&data.query&&data.query.pages;
+    if(!pages)return [];
+    const out=[];
+    Object.keys(pages).forEach(function(k){
+      const pg=pages[k],ii=pg&&pg.imageinfo&&pg.imageinfo[0];
+      if(!ii||!ii.thumburl)return;
+      if(!/\.(jpe?g|png|gif|webp)$/i.test(String(ii.url||'')))return;/* skip pdf/svg/ogv/audio */
+      const em=ii.extmetadata||{};
+      out.push({thumbnail:ii.thumburl,url:ii.url,
+        title:String(pg.title||'').replace(/^File:/,'').replace(/\.[a-z0-9]+$/i,''),
+        foreign_landing_url:ii.descriptionurl||'',
+        creator:(em.Artist&&String(em.Artist.value||'').replace(/<[^>]+>/g,'').trim().slice(0,60))||'',
+        license:(em.LicenseShortName&&em.LicenseShortName.value)||'',
+        _i:(typeof pg.index==='number')?pg.index:0});
+    });
+    out.sort(function(a,b){return a._i-b._i;});
+    return out;
+  }
+  async function _srcOpenverse(q,page){
+    const apiUrl='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+page+'&mature=false';
+    let data=null;
+    try{ data=await _imgFetch(apiUrl); }
+    catch(e){ try{ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(apiUrl)); }
+      catch(e2){ data=await _imgFetch('https://corsproxy.io/?url='+encodeURIComponent(apiUrl)); } }
+    const rs=(data&&data.results)||[];
+    return rs.map(function(im){return {thumbnail:im.thumbnail||im.url,url:im.url,title:im.title||'',creator:im.creator||'',license:im.license||'',foreign_landing_url:im.foreign_landing_url||''};}).filter(function(x){return x.thumbnail;});
+  }
+  function _srcPicsum(q,page){
+    /* The exact source the Slides app uses — Lorem Picsum. Keyless, CORS-open,
+       never 403s, so the app always shows SOMETHING rather than a dead error.
+       Seeded per query so results are stable; honestly flagged as samples. */
+    const out=[],base=(String(q||'img').replace(/[^a-z0-9]/gi,'').toLowerCase())||'img';
+    for(let i=0;i<12;i++){const seed=base+'-'+page+'-'+i;
+      out.push({thumbnail:'https://picsum.photos/seed/'+seed+'/300/300',url:'https://picsum.photos/seed/'+seed+'/1200/800',title:q,creator:'',license:'Lorem Picsum (sample)',foreign_landing_url:'https://picsum.photos'});}
+    return out;
+  }
   async function run(q,page){
     if(_busy)return;
     _q=q;_page=page||1;
@@ -48436,48 +48546,28 @@ imagesearch:()=>{
     if(_page===1)grid.innerHTML='';
     if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to the internet to search images.';return;}
     _busy=true;status.textContent=_page===1?'Searching…':'Loading more…';
-    const apiUrl='https://api.openverse.org/v1/images/?q='+encodeURIComponent(q)+'&page_size=24&page='+_page+'&mature=false';
-    /* Try Openverse directly; on a network/CORS/timeout failure (NOT an HTTP
-       error status) retry ONCE through the allorigins CORS proxy — the same
-       resilience the reader + News feeds use. This is what actually rescues a
-       device where the direct request is blocked, and the message reports the
-       REAL reason instead of always blaming Wi‑Fi. */
-    let data=null,err=null;
-    try{ data=await _imgFetch(apiUrl); }
-    catch(e){
-      /* Retry via CORS proxies on ANY failure — including an HTTP error such as
-         Openverse's low anonymous rate limit (429) or a 5xx, not just a
-         network/CORS error. A proxy fetch is a genuinely different route, so it
-         often rescues the "image app not working" case. Two proxies in case one
-         is down. */
-      err=e;
-      try{ data=await _imgFetch('https://api.allorigins.win/raw?url='+encodeURIComponent(apiUrl)); err=null; }
-      catch(e2){
-        try{ data=await _imgFetch('https://corsproxy.io/?url='+encodeURIComponent(apiUrl)); err=null; }
-        catch(e3){ err=e3; }
-      }
-    }
-    if(!data){ status.textContent=_imgErrMsg(err); _busy=false; return; }
-    try{
-      const results=(data&&data.results)||[];
-      if(!results.length&&_page===1){status.textContent='No images found for “'+q+'”. Try a different search.';_busy=false;return;}
-      status.textContent=(data.result_count?(data.result_count.toLocaleString()+' results'):'')+' — tap an image to view it larger.';
-      results.forEach(im=>{
-        const thumb=im.thumbnail||im.url;if(!thumb)return;
-        const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'6px',background:'var(--card)',border:'var(--thin)',cursor:'pointer'}});
-        const img=new Image();img.alt=im.title||'image';img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
-        img.onerror=()=>{cell.style.display='none';};
-        img.src=thumb;cell.appendChild(img);
-        cell.onclick=()=>_openImage(im);
-        grid.appendChild(cell);
-      });
-      if(results.length>=24){
-        const more=txt('button','Load more',{className:'btn small imgMore',style:{display:'block',margin:'12px auto 0'}});
-        more.onclick=()=>run(_q,_page+1);
-        v.appendChild(more);
-      }
-    }catch(e){
-      status.textContent='Got a reply but couldn’t read the images — tap Search to retry.';
+    let items=null,err=null,note='';
+    /* 1) Wikimedia Commons — real, keyless, reliable. */
+    try{ items=await _srcWikimedia(q,_page); }catch(e){ err=e; }
+    /* 2) Openverse (+ CORS proxies) — openly-licensed catalogue as a backup. */
+    if(!items||!items.length){ try{ const ov=await _srcOpenverse(q,_page); if(ov&&ov.length){items=ov;err=null;} }catch(e){ if(!err)err=e; } }
+    /* 3) Picsum (the Slides source) — ALWAYS loads, so no dead 403 screen. */
+    if(!items||!items.length){ items=_srcPicsum(q,_page); note='Live image search is unavailable right now — showing sample images.'; }
+    if(!items||!items.length){ status.textContent=_imgErrMsg(err); _busy=false; return; }
+    status.textContent=note||'Tap an image to view it larger.';
+    items.forEach(function(im){
+      const thumb=im.thumbnail||im.url;if(!thumb)return;
+      const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'6px',background:'var(--card)',border:'var(--thin)',cursor:'pointer'}});
+      const img=new Image();img.alt=im.title||'image';img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+      img.onerror=function(){cell.style.display='none';};
+      img.src=thumb;cell.appendChild(img);
+      cell.onclick=function(){_openImage(im);};
+      grid.appendChild(cell);
+    });
+    if(items.length>=12){
+      const more=txt('button','Load more',{className:'btn small imgMore',style:{display:'block',margin:'12px auto 0'}});
+      more.onclick=function(){run(_q,_page+1);};
+      v.appendChild(more);
     }
     _busy=false;
   }
@@ -54844,6 +54934,12 @@ messages:()=>{
     return raw.replace(/[^0-9]/g,'').slice(0,12);
   }
   function displayName(){
+    /* Prefer an explicit, user-set display name (S.profileName) so someone whose
+       USERNAME is unfortunate (e.g. a typo like "qwerty") can control what
+       everyone else sees on their messages — this is stamped onto each message
+       at send time. Falls back to the email local-part, then a generic label. */
+    var pn=(S.profileName||'').trim();
+    if(pn)return pn.slice(0,40);
     return S.email ? S.email.split('@')[0] : (S.user||'Reader');
   }
   function msgId(){
@@ -56871,7 +56967,10 @@ messages:()=>{
     /* Inline sticker bubble — renders the built-in SVG from the fixed pack. */
     function _renderStickerCard(id){
       const st=(typeof _KH_STICKERS!=='undefined'&&_KH_STICKERS[id])?_KH_STICKERS[id]:null;
-      const box=el('div',{title:(st?st.label:'Sticker'),style:{width:'92px',height:'92px',color:'var(--fg)'}});
+      /* color:inherit so the currentColor SVG uses the BUBBLE's text colour — on
+         your OWN bubble that's --accent-inv (light) on the accent background, so
+         it's visible; forcing --fg drew it dark-on-dark = an invisible black box. */
+      const box=el('div',{title:(st?st.label:'Sticker'),style:{width:'92px',height:'92px',color:'inherit'}});
       if(st){box.innerHTML=st.svg;const svg=box.querySelector('svg');if(svg){svg.style.width='100%';svg.style.height='100%';svg.style.display='block';}}
       else{box.textContent='[sticker]';}
       return box;
