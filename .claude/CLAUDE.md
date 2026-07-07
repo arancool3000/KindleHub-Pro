@@ -744,6 +744,41 @@ Working through the documented "PENDING / bigger jobs" list, each a tested+commi
   nothing persists "every message ever sent", so the number only reflects rows currently in the cloud
   (bounded by groups×cap). No counter to grow, no extra storage.
 
+## ⚡ Round: user bug batch — reserved name, fast sign-in, image 403, sticker/theming/location/display-name
+Seven fixes from live user reports, all on `claude/keen-tesla-n73rpc`:
+- **Reserved "aran" for NEW sign-ups** (`_reservedUsername`, near `_badUsername`): a register-ONLY gate (kept
+  SEPARATE from `_badUsername` because that word list also drives display censorship — a reserved brand word must
+  NOT be blacked-out in chat). Leet-normalised so "4ran"/"@ran"/"a.r.a.n" are caught. `authRegister` rejects a
+  match BEFORE any network; existing accounts (incl. the admin's own `aran…`) still sign in (login untouched).
+  Usernames are hashed client-side so the server never sees them — necessarily a client gate.
+- **Sign-in slow, sign-up instant** (`authLogin`): the asymmetry was login downloading + decrypting the FULL
+  state blob over Kindle Wi-Fi (heavy account) while a fresh sign-up makes an empty state. Added an
+  **offline-first FAST PATH**: if this device holds an encrypted copy for the exact key, decrypt locally and sign
+  in IMMEDIATELY, then reconcile with the cloud in the background via `_maybePullFromCloud` (password still
+  decrypts the local copy → no bypass; stale copies merge forward). The two pre-check gates
+  (`_khIsBanned`/`_refreshCapacity`) now run CONCURRENTLY (`Promise.all`, 2.5s box) instead of 2×3.5s. First
+  sign-in on a NEW device still does the full network load.
+- **Image app 403** (`imagesearch` `run`): Openverse hard-403'd even through the CORS proxies. Rebuilt as
+  MULTI-SOURCE: **Wikimedia Commons** (real keyless search, `origin=*`, reliable) primary → Openverse(+proxies)
+  backup → **Picsum** (the source the Slides app uses — keyless, never 403s) guaranteed fallback so it's never a
+  dead screen (labelled "sample images"). Normalised to `{thumbnail,url,title,creator,license,foreign_landing_url}`.
+- **Sticker = black box on the SENDER's own bubble** (`_renderStickerCard`): forced `color:var(--fg)` (dark) but
+  the own bubble is `--accent` bg + `--accent-inv` (light) text → dark-on-dark invisible. Now `color:inherit`.
+- **Colour theming REMOVED from Settings** (user request): deleted BOTH accent-swatch pickers (`apCard` + `c2`)
+  and made `applyCustomisation` ALWAYS `removeProperty('--accent')` (never apply `S.accent`) → every account
+  reverts to each theme's built-in monochrome (`--accent===--fg`). `S.accent`/`KH_ACCENTS` left inert; font
+  picker kept.
+- **Message location "not recorded"** (`_groupSend`): a prior change dropped the client `location_hint` send and
+  relied on SERVER-side stamping — only the D1 worker does that (empty on Supabase/no edge geo). Restored the
+  best-effort client label (`_khCachedLocationLabel`, cached once/session) as a FALLBACK; the D1 worker still
+  OVERRIDES with trusted `request.cf` geo (spoof-proof there, works everywhere else).
+- **"Displays as qwerty to everyone but me"** (`displayName`): signed-in name was `S.email.split('@')[0]` and own
+  messages never show the author line, so users never saw their own name; the Profile "Save Name" field wrote
+  `S.user` which `displayName()` ignored. Fixed: `displayName()` prefers a new editable **`S.profileName`**; the
+  Profile field is relabelled **Display name**, PREFILLED with what others currently see, profanity-checked, and
+  its (previously unwired) Save button writes `S.profileName`.
+Tests: `/tmp/fixbatch_test.cjs` + `/tmp/acc_check.cjs` (accent picker gone) + minify Silk gate.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
