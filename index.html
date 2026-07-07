@@ -18967,7 +18967,7 @@ const Platformer=(()=>{
     canvas.addEventListener('touchstart',function(e){e.preventDefault();tapJump();},{passive:false});
     canvas.addEventListener('mousedown',function(e){e.preventDefault();tapJump();});
     immersiveContent.appendChild(canvas);
-    immersiveContent.appendChild(txt('div','Hold ◄ / ► to run, tap Jump (or arrow keys / Space). Stomp the walkers, grab coins, reach the flag.',{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',margin:'2px auto',maxWidth:'340px'}}));
+    immersiveContent.appendChild(txt('div','Hold ◄ / ► to run + tap Jump — or use the one-tap Jump ◄ / Jump ► buttons (easiest on Kindle). Arrow keys / Space work too.',{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',margin:'2px auto',maxWidth:'340px'}}));
     const ctrl=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center',gap:'8px'}});
     ctrl.appendChild(holdBtn('◄',function(){if(game){game.left=true;game.face=-1;}},function(){if(game)game.left=false;}));
     const jb=txt('button','Jump',{className:'btn primary',style:{minWidth:'110px',fontSize:'16px'}});
@@ -18976,6 +18976,12 @@ const Platformer=(()=>{
     ctrl.appendChild(jb);
     ctrl.appendChild(holdBtn('►',function(){if(game){game.right=true;game.face=1;}},function(){if(game)game.right=false;}));
     immersiveContent.appendChild(ctrl);
+    /* One-tap directional hops (Kindle-friendly — jump + move in one press). */
+    const ctrlJ=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center',gap:'8px'}});
+    function tapBtn(label,fn){const b=txt('button',label,{className:'btn',style:{minWidth:'120px',fontSize:'15px',fontWeight:'700'}});b.addEventListener('touchstart',function(e){e.preventDefault();fn();},{passive:false});b.addEventListener('mousedown',function(e){e.preventDefault();fn();});return b;}
+    ctrlJ.appendChild(tapBtn('Jump ◄',function(){jumpDir(-1);}));
+    ctrlJ.appendChild(tapBtn('Jump ►',function(){jumpDir(1);}));
+    immersiveContent.appendChild(ctrlJ);
     const ctrl2=el('div',{className:'card-row',style:{marginTop:'6px',justifyContent:'center'}});
     ctrl2.appendChild(Object.assign(txt('button','Restart',{className:'btn small'}),{onclick:function(){start();}}));
     immersiveContent.appendChild(ctrl2);
@@ -18992,6 +18998,19 @@ const Platformer=(()=>{
     if(!game)return;
     if(game.dead||game.won){start();return;}
     game.jbuf=JBUF;/* buffered — consumed in tick if grounded/coyote */
+  }
+  /* One-tap DIRECTIONAL jump — Kindle e-ink has no reliable multitouch, so
+     holding ◄/► AND tapping Jump at once is awkward. These buttons do both from
+     a single tap: jump, and hold that direction briefly so the hop carries you
+     forward/backward. */
+  function jumpDir(dir){
+    if(!game)return;
+    if(game.dead||game.won){start();return;}
+    game.face=dir;
+    if(dir>0){game.right=true;game.left=false;}else{game.left=true;game.right=false;}
+    game.jbuf=JBUF;
+    var g=game;
+    setTimeout(function(){if(game===g){if(dir>0)game.right=false;else game.left=false;}},430);
   }
 
   function tick(){
@@ -30727,21 +30746,8 @@ home:()=>{
      app grid with featured cards above it. */
   if(uiMode==='simple'){
     const wrap=el('div',{className:'simple-home'});
-    /* Windowed masthead — a title bar + personal greeting gives the retro
-       home a strong, cohesive identity (uses NOW() for clock-offset safety). */
-    const _mast=el('div',{className:'simple-masthead'});
-    const _mbar=el('div',{className:'smh-bar'});
-    _mbar.appendChild(el('span',{className:'smh-dot'}));
-    _mbar.appendChild(txt('span','HOME'));
-    _mbar.appendChild(el('span',{className:'smh-spacer'}));
-    try{_mbar.appendChild(txt('span',new Date(NOW()).toLocaleDateString(undefined,{month:'short',day:'numeric'}).toUpperCase()));}catch(_){}
-    _mast.appendChild(_mbar);
-    const _mbody=el('div',{className:'smh-body'});
-    const _nm=S.user||(S.email?S.email.split('@')[0]:'');
-    _mbody.appendChild(txt('div',_nm?('Hello, '+_nm):'Welcome',{className:'smh-title'}));
-    _mbody.appendChild(txt('div',(function(){var h=new Date(NOW()).getHours();var g=h<12?'Good morning':(h<18?'Good afternoon':'Good evening');var wd='';try{wd=' · '+new Date(NOW()).toLocaleDateString(undefined,{weekday:'long'});}catch(_){}return g+wd;})(),{className:'smh-sub'}));
-    _mast.appendChild(_mbody);
-    wrap.appendChild(_mast);
+    /* (Retro "HOME / date / Hello, <name>" masthead removed at the user's
+       request — the retro home now opens straight into the featured row.) */
     /* Featured row — three highlight cards across the top */
     const FEAT=[
       {view:'rss',     label:'News Reader',     sub:'Stay informed',
