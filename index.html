@@ -13801,7 +13801,7 @@ const GAME_HELP={
   dotsboxes:{name:'Dots & Boxes',how:'Take turns drawing one line between two dots. Complete the 4th side of a box to claim it and take another turn. Most boxes wins.'},
   snakesladders:{name:'Snakes & Ladders',how:'Roll the die and race to the last square. Ladders send you up; snakes slide you back down.'},
   spaceinv:{name:'Space Invaders',how:'Move left/right and fire at the descending aliens. Clear each wave before it reaches the bottom.'},
-  flightsim:{name:'Flight Simulator',how:'Fly a Cessna 172. Choose Free Flight to explore, or take on Challenges: engine failure, storms and crosswind landings.'},
+  flightsim:{name:'Flight Simulator',how:'Choose from three aircraft — a Cessna 172 (easy, forgiving), a Piper Arrow (faster) or a King Air 90 (twin turboprop). Then take Free Flight to explore, or Challenges: engine failure, storms and crosswind landings.'},
   towerdef:{name:'Tower Defence',how:'Place and upgrade towers along the path to stop waves of enemies reaching your castle. 8 towers, 8 enemy types, 40 waves.'},
   candycrush:{name:'Match 3',how:'Swap adjacent pieces to line up three or more of a kind. Matches clear and score — set up chains for big combos.'},
   blockblast:{name:'Block Blast',how:'Drag the block shapes onto the grid. Fill a full row or column to clear it. It ends when no piece can fit.'},
@@ -13810,7 +13810,7 @@ const GAME_HELP={
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
   farm:{name:'Farm',how:'A cosy turn-based farming sim. Pick a seed from the shop (Wheat is cheapest), tap an empty plot to plant it (costs coins), then tap "Next day" to grow every crop one day. When a crop is READY, tap it to harvest and sell it for coins — then buy pricier seeds (carrots, berries, pumpkins) that sell for more. Grow your coin pile as high as you can. Your farm saves automatically, so you can come back any time; "New farm" starts over.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
-  eightball:{name:'8-Ball',how:'A top-down pool table. Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot. The further you drag, the harder the hit. Sink every ball into a pocket to clear the table; potting the cue ball is a scratch and it just respawns. Try to clear it in as few shots as you can.'},
+  eightball:{name:'8-Ball',how:'A top-down pool table with three modes — 1 Player (practice: clear the table in as few shots as you can), 2 Players (pass-and-play on one device, taking turns) and Play Online (Ultra — match a friend on another device). Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot; the further you drag, the harder the hit. In 2-player/online, sink a ball to shoot again; miss or scratch and it passes to your opponent. Pot your balls, then the black 8-ball LAST to win — sinking the 8 early (or with a scratch) loses.'},
   trivia:{name:'Trivia',how:'A multiple-choice general-knowledge quiz. Read the question, tap the answer you think is right. A correct answer scores a point and the right choice lights up; a wrong answer costs one of your three ♥ lives. Keep going until you run out of lives — then beat your best score. All questions are built in, so it works with no internet.'},
 };
 function _showGameHelp(g){
@@ -20300,7 +20300,7 @@ const EightBall=(()=>{
   const W=280,H=452,R=9,POCK=15,FR=40;
   const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=26;
   const POCKETS=[[10,10],[W-10,10],[10,H-10],[W-10,H-10],[7,H/2],[W-7,H/2]];
-  let game=null,timer=null;
+  let game=null,timer=null,_sub=null;
   function _best(){return (S.games&&S.games.eightball&&S.games.eightball.best)||0;}
   function rack(){
     var balls=[{x:W/2,y:H*0.72,vx:0,vy:0,cue:true,live:true}];
@@ -20313,15 +20313,67 @@ const EightBall=(()=>{
   }
   function _cue(){for(var i=0;i<game.balls.length;i++)if(game.balls[i].cue)return game.balls[i];return null;}
   function allStopped(){return game.balls.every(function(b){return !b.live||(Math.abs(b.vx)<MINV&&Math.abs(b.vy)<MINV);});}
+  function _twoP(){return game&&(game.mode==='local2'||game.mode==='online');}
+  function _myTurn(){if(!game)return false;if(game.mode!=='online')return true;return game.turn===game.myIndex;}
+  function stopNet(){try{if(_sub&&_sub.close)_sub.close();}catch(_){}_sub=null;}
+  /* Launch shows a MODE MENU: 1 Player (solo practice), 2 Players (pass-and-play
+     on one device), or Play Online (Ultra-gated via KH_MP.openLobby). */
   function start(){
-    if(timer){clearInterval(timer);timer=null;}
-    game={balls:rack(),shots:0,sunk:0,aiming:false,ax:0,ay:0,over:false,moving:false};
-    enterImmersive('8-Ball','Sunk: 0');
+    if(timer){clearInterval(timer);timer=null;}stopNet();
+    enterImmersive('8-Ball','');
     immersiveRoot._trackStop=stop;
+    showMenu();
+  }
+  function showMenu(){
+    immersiveContent.innerHTML='';
+    var box=el('div',{style:{maxWidth:'320px',margin:'16px auto'}});
+    box.appendChild(txt('h2','8-Ball Pool',{style:{textAlign:'center',margin:'0 0 4px'}}));
+    box.appendChild(txt('p','Drag back from the white cue ball and release to shoot. Sink your balls, then the black 8-ball LAST.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 14px',lineHeight:'1.5',textAlign:'center'}}));
+    function mk(label,sub,fn){var b=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',background:'var(--card)'}});b.appendChild(txt('div',label,{style:{fontWeight:'800',fontSize:'15px'}}));if(sub)b.appendChild(txt('div',sub,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px',lineHeight:'1.4'}}));b.onclick=fn;return b;}
+    box.appendChild(mk('1 Player','Practice — clear the table in as few shots as you can.',function(){beginGame('solo');}));
+    box.appendChild(mk('2 Players','Pass-and-play on this device — take turns.',function(){beginGame('local2');}));
+    box.appendChild(mk('Play Online (Ultra)','Match a friend on another device, turn by turn.',function(){
+      if(typeof KH_MP==='undefined'||!KH_MP.openLobby){if(typeof toast==='function')toast('Online multiplayer is unavailable right now.');return;}
+      KH_MP.openLobby({gameName:'eightball',onConnected:function(s,opp){beginGame('online',s,opp);}});
+    }));
+    immersiveContent.appendChild(box);
+  }
+  function beginGame(mode,session,oppName){
+    if(timer){clearInterval(timer);timer=null;}stopNet();
+    game={balls:rack(),shots:0,sunk:0,aiming:false,ax:0,ay:0,over:false,moving:false,
+      mode:mode,turn:0,scores:[0,0],shooting:false,sankThisShot:0,scratchThisShot:false,eightThisShot:false,
+      net:session||null,myIndex:0,isHost:true,oppName:(oppName&&typeof _dispName==='function'?_dispName(oppName):(oppName||'Opponent')),winner:-1};
+    if(mode==='online'&&session){
+      /* host = white = index 0 breaks first; guest = black = index 1 */
+      game.myIndex=(session.myColor==='black')?1:0;
+      game.isHost=(game.myIndex===0);
+      var myId=(KH_MP.identity&&KH_MP.identity().userId)||'';
+      _sub=KH_MP.subscribe(session.code,function(env){onNet(env,myId);});
+      if(game.isHost){setTimeout(function(){if(game&&game.mode==='online')netSend({t:'ST',b:_serialize(),tn:game.turn,sc:game.scores,ov:false,wn:-1});},450);}
+    }
     buildUI();
-    if(timer)clearInterval(timer);
     timer=setInterval(function(){if(!document.hidden)tick();},FR);
-    draw();
+    draw();updateHud();
+  }
+  /* Online sync = shooter-authoritative: only the current shooter simulates and,
+     once the balls settle, broadcasts the full settled state; the opponent just
+     snaps to it. No physics-determinism / drift issues, no per-frame bandwidth. */
+  function _serialize(){return game.balls.map(function(b){return {x:Math.round(b.x*10)/10,y:Math.round(b.y*10)/10,c:!!b.cue,l:!!b.live,e:!!b.eight};});}
+  function _adopt(m){
+    if(!game)return;
+    game.balls=(m.b||[]).map(function(b){return {x:b.x,y:b.y,vx:0,vy:0,cue:!!b.c,live:!!b.l,eight:!!b.e};});
+    game.turn=m.tn||0;game.scores=m.sc||[0,0];game.over=!!m.ov;game.winner=(m.wn==null?-1:m.wn);
+    game.shooting=false;game.aiming=false;
+    updateHud();draw();
+    if(game.over)_announceWinner();
+  }
+  function netSend(payload){try{if(game&&game.net)KH_MP.send(game.net.code,payload);}catch(_){}}
+  function onNet(env,myId){
+    if(!game||game.mode!=='online')return;
+    if(env&&env.from&&env.from.userId&&myId&&env.from.userId===myId)return;/* ignore our own echoed messages */
+    var p=env&&env.payload;if(!p)return;
+    if(p.t==='ST'){_adopt(p);}
+    else if(p.t==='JOIN'||p.type==='JOIN'){ if(game.isHost)netSend({t:'ST',b:_serialize(),tn:game.turn,sc:game.scores,ov:game.over,wn:game.winner}); }
   }
   function tick(){
     if(!game)return;
@@ -20350,21 +20402,48 @@ const EightBall=(()=>{
       for(var pk=0;pk<POCKETS.length;pk++){
         var px=bb.x-POCKETS[pk][0],py=bb.y-POCKETS[pk][1];
         if(px*px+py*py<POCK*POCK){
-          if(bb.cue){bb.x=W/2;bb.y=H*0.72;bb.vx=0;bb.vy=0;toast('Scratch!');}
-          else{bb.live=false;game.sunk++;updateImmersiveScore('Sunk: '+game.sunk);var sb=$('ebScore');if(sb)sb.textContent='Sunk: '+game.sunk+'  |  Best: '+Math.max(_best(),game.sunk);}
+          if(bb.cue){bb.x=W/2;bb.y=H*0.72;bb.vx=0;bb.vy=0;game.scratchThisShot=true;if(!_twoP())toast('Scratch!');}
+          else{bb.live=false;game.sankThisShot++;if(bb.eight)game.eightThisShot=true;if(!_twoP()){game.sunk++;updateImmersiveScore('Sunk: '+game.sunk);var sb=$('ebScore');if(sb)sb.textContent='Sunk: '+game.sunk+'  |  Best: '+Math.max(_best(),game.sunk);}}
           break;
         }
       }
     }
+    if(game.shooting&&allStopped()){game.shooting=false;resolveShot();}
     if(moving||game.aiming)draw(); else if(game.moving){draw();}
     game.moving=moving;
-    if(!game.over&&B.filter(function(x){return x.live&&!x.cue;}).length===0){
-      game.over=true;
-      if(!S.games.eightball)S.games.eightball={best:0};
-      S.games.eightball.best=Math.max(S.games.eightball.best||0,game.sunk);
-      saveNow();try{_khSubmitScore('eightball',game.sunk);}catch(_){}recordStat('eightball',true);
-      toast('Table cleared in '+game.shots+' shots!');
+  }
+  /* Called when the balls settle after a shot. Solo = check table cleared;
+     2P/online = award sunk balls, decide turn pass, and handle the 8-ball
+     (sink it last to WIN, sink it early / with a scratch to LOSE). */
+  function resolveShot(){
+    if(!game)return;
+    var liveObj=game.balls.filter(function(x){return x.live&&!x.cue;}).length;
+    if(!_twoP()){
+      if(!game.over&&liveObj===0){
+        game.over=true;
+        if(!S.games.eightball)S.games.eightball={best:0};
+        S.games.eightball.best=Math.max(S.games.eightball.best||0,game.sunk);
+        saveNow();try{_khSubmitScore('eightball',game.sunk);}catch(_){}recordStat('eightball',true);
+        toast('Table cleared in '+game.shots+' shots!');
+      }
+      updateHud();return;
     }
+    var shooter=game.turn;
+    /* Online: the NON-shooter waits for the authoritative broadcast rather than
+       computing turn logic on its own (it never simulated the shot anyway). */
+    if(game.mode==='online'&&shooter!==game.myIndex){game.sankThisShot=0;game.scratchThisShot=false;game.eightThisShot=false;return;}
+    if(game.eightThisShot){
+      var win=(liveObj===0&&!game.scratchThisShot);
+      game.winner=win?shooter:(1-shooter);game.over=true;
+    } else {
+      game.scores[shooter]=(game.scores[shooter]||0)+game.sankThisShot;
+      var keep=(game.sankThisShot>0&&!game.scratchThisShot);
+      if(!keep)game.turn=1-shooter;
+    }
+    game.sankThisShot=0;game.scratchThisShot=false;game.eightThisShot=false;
+    if(game.mode==='online')netSend({t:'ST',b:_serialize(),tn:game.turn,sc:game.scores,ov:game.over,wn:game.winner});
+    updateHud();draw();
+    if(game.over)_announceWinner();
   }
   function draw(){
     var canvas=$('ebCanvas');if(!canvas||!game)return;
@@ -20390,20 +20469,22 @@ const EightBall=(()=>{
     }
   }
   function _pt(e){var canvas=$('ebCanvas'),r=canvas.getBoundingClientRect();var t=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e;return {x:(t.clientX-r.left)*(W/r.width),y:(t.clientY-r.top)*(H/r.height)};}
-  function _down(e){if(!game||game.over||!allStopped())return;e.preventDefault();var p=_pt(e);game.aiming=true;game.ax=p.x;game.ay=p.y;draw();}
+  function _down(e){if(!game||game.over||!allStopped())return;if(game.mode==='online'&&game.turn!==game.myIndex){if(typeof toast==='function')toast('Wait for your turn.');return;}e.preventDefault();var p=_pt(e);game.aiming=true;game.ax=p.x;game.ay=p.y;draw();}
   function _move(e){if(!game||!game.aiming)return;e.preventDefault();var p=_pt(e);game.ax=p.x;game.ay=p.y;draw();}
   function _up(e){
     if(!game||!game.aiming)return;e.preventDefault();
     game.aiming=false;
     var cue=_cue();if(!cue){draw();return;}
     var dx=cue.x-game.ax,dy=cue.y-game.ay,dl=Math.sqrt(dx*dx+dy*dy);
-    if(dl>6){var pow=Math.min(MAXPOW,dl/5);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;}
+    if(dl>6){var pow=Math.min(MAXPOW,dl/5);cue.vx=(dx/dl)*pow;cue.vy=(dy/dl)*pow;game.shots++;game.shooting=true;game.sankThisShot=0;game.scratchThisShot=false;game.eightThisShot=false;}
     draw();
   }
   function buildUI(){
     immersiveContent.innerHTML='';
-    immersiveContent.appendChild(txt('div','Sunk: 0  |  Best: '+_best(),{id:'ebScore',className:'snake-score-bar'}));
-    immersiveContent.appendChild(txt('div','Drag back from the white ball and release to shoot. Sink every ball.',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'6px 12px'}}));
+    immersiveContent.appendChild(txt('div',_twoP()?'':('Sunk: 0  |  Best: '+_best()),{id:'ebScore',className:'snake-score-bar'}));
+    immersiveContent.appendChild(txt('div','',{id:'ebHud',style:{textAlign:'center',fontSize:'12px',fontWeight:'700',color:'var(--fg)',minHeight:'16px',margin:'2px 12px'}}));
+    var hint=game.mode==='online'?'Take turns with your opponent across devices. Drag back from the white ball and release to shoot.':(game.mode==='local2'?'Pass-and-play: take turns on this device. Sink a ball to shoot again; miss or scratch and it passes over.':'Drag back from the white ball and release to shoot. Sink every ball.');
+    immersiveContent.appendChild(txt('div',hint,{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',margin:'4px 12px'}}));
     var canvas=el('canvas',{id:'ebCanvas',width:W,height:H});
     canvas.style.cssText='display:block;margin:6px auto;max-width:100%;border:2px solid var(--fg);border-radius:6px;touch-action:none;';
     canvas.addEventListener('touchstart',_down,{passive:false});
@@ -20412,11 +20493,29 @@ const EightBall=(()=>{
     canvas.addEventListener('mousedown',_down);canvas.addEventListener('mousemove',_move);canvas.addEventListener('mouseup',_up);
     immersiveContent.appendChild(canvas);
     var ctrl=el('div',{className:'card-row',style:{justifyContent:'center',marginTop:'8px'}});
-    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(function(){return game&&!game.over&&game.shots>0;},start)}));
+    ctrl.appendChild(Object.assign(txt('button','New Game',{className:'btn small'}),{onclick:newGameGuard(function(){return game&&!game.over&&game.shots>0;},function(){start();})}));
     immersiveContent.appendChild(ctrl);
+    updateHud();
   }
-  $('immersiveExit').addEventListener('click',function(){if(timer){clearInterval(timer);timer=null;}});
-  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;}
+  /* ── Turn / score HUD for 2-player + online ── */
+  function _pname(idx){if(game.mode==='online')return idx===game.myIndex?'You':(game.oppName||'Opponent');return 'Player '+(idx+1);}
+  function _winText(idx){var n=_pname(idx);return n==='You'?'You win!':n+' wins!';}
+  function _announceWinner(){if(game&&game.winner>=0&&typeof toast==='function')toast(_winText(game.winner)+' The 8-ball is down.',5000);}
+  function updateHud(){
+    var hud=$('ebHud');
+    if(!_twoP()){if(hud)hud.textContent='';updateImmersiveScore('Sunk: '+(game?game.sunk:0));return;}
+    updateImmersiveScore(game.scores[0]+' - '+game.scores[1]);
+    if(!hud)return;
+    var s;
+    if(game.over&&game.winner>=0){s=_winText(game.winner)+'  New Game to play again.';}
+    else{
+      var whose=game.mode==='online'?(_myTurn()?'Your turn':'Opponent to shoot'):(_pname(game.turn)+' to shoot');
+      s=_pname(0)+': '+game.scores[0]+'  ·  '+_pname(1)+': '+game.scores[1]+'  —  '+whose;
+    }
+    if(hud.textContent!==s)hud.textContent=s;
+  }
+  $('immersiveExit').addEventListener('click',function(){if(timer){clearInterval(timer);timer=null;}stopNet();});
+  function stop(){if(timer){clearInterval(timer);timer=null;}stopNet();game=null;}
   return{start,stop};
 })();
 
@@ -31590,7 +31689,7 @@ games:()=>{
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'crossyroad',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('8-Ball',null,c=>{
-    c.appendChild(txt('p','Top-down pool — drag back from the cue ball and release to shoot. Sink every ball.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
+    c.appendChild(txt('p','Top-down pool — 1 player, 2-player pass-and-play, or online (Ultra). Drag back from the cue ball and release to shoot.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
     c.appendChild(txt('p','Best sunk: '+(S.games&&S.games.eightball&&S.games.eightball.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     const ebBtn=txt('button','Play',{className:'btn primary',style:{width:'100%'}});
     ebBtn.onclick=()=>launchGame('eightball');
@@ -31628,7 +31727,7 @@ games:()=>{
   v.appendChild(secHdr('Simulation & Strategy','Longer, more complex games'));
   const rowSim=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(165px,1fr))',gap:'10px',marginBottom:'4px'}});
   rowSim.appendChild(gc('Flight Sim',null,c=>{
-    c.appendChild(txt('p','Cessna 172. Free Flight or Challenges: engine failure, storms, crosswinds and more.',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('p','Pick from 3 aircraft (Cessna 172, Piper Arrow, King Air 90). Free Flight or Challenges: engine failure, storms, crosswinds and more.',{style:{fontSize:'11px',color:'var(--muted)'}}));
     const fb=txt('button','Fly',{className:'btn primary',style:{marginTop:'4px'}});
     fb.onclick=()=>launchGame('flightsim');
     c.appendChild(fb);
@@ -39740,7 +39839,10 @@ settings:()=>{
   const alsoGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'8px'}});
   [
     {name:'EmberAI',desc:'An AI project — view the source on GitHub.',url:'https://github.com/arancool3000/emberai',cta:'Open on GitHub'},
-    {name:'DungeonQuest3D',desc:'A 3D dungeon-crawler game.',url:'',cta:''}
+    {name:'DungeonQuest3D',desc:'A 3D dungeon-crawler game — play it in your browser.',url:'https://dungeonquest3d.pages.dev',cta:'Play DungeonQuest3D'},
+    {name:'Chem Ultra AI',desc:'An AI-powered chemistry helper.',url:'https://chem-ultra-ai-aran.base44.app',cta:'Open Chem Ultra AI'},
+    {name:'Math Master Pro',desc:'Practise and master maths.',url:'https://math-master-pro-aran.base44.app',cta:'Open Math Master Pro'},
+    {name:'Neural Lab',desc:'Experiment with neural networks.',url:'https://neural-lab-aran.base44.app',cta:'Open Neural Lab'}
   ].forEach(function(p){
     const card=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',background:'var(--highlight)',display:'flex',flexDirection:'column',gap:'4px'}});
     card.appendChild(txt('div',p.name,{style:{fontSize:'14px',fontWeight:'800'}}));

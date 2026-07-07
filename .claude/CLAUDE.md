@@ -779,6 +779,29 @@ Seven fixes from live user reports, all on `claude/keen-tesla-n73rpc`:
   its (previously unwired) Save button writes `S.profileName`.
 Tests: `/tmp/fixbatch_test.cjs` + `/tmp/acc_check.cjs` (accent picker gone) + minify Silk gate.
 
+## ⚡ Round: pool 2-player (local + online), flight-sim 3 planes, creator links
+- **8-Ball pool: 1P / 2P / Online modes** (`const EightBall` rewrite). Launch now shows a MODE MENU (`showMenu`)
+  → `beginGame(mode,session,oppName)`. **Local 2-player** (`local2`): turn-based on one device — sink a ball to
+  shoot again; miss OR scratch passes the turn; a turn/score HUD (`ebHud`, `updateHud`); the **8-ball must be
+  sunk LAST** (`resolveShot`: sink it with all your balls gone + no scratch → WIN; sink it early / with a scratch
+  → LOSE). Per-shot flags (`sankThisShot`/`scratchThisShot`/`eightThisShot`) set in the pocket loop; a shot
+  "settles" when `game.shooting && allStopped()` → `resolveShot`. **Online** (`online`, Ultra-gated automatically
+  by `KH_MP.openLobby`): host=white=index0 breaks first, guest=black=index1. **Shooter-authoritative sync** —
+  only the current shooter simulates; when the balls settle it broadcasts the full settled state
+  (`{t:'ST',b:_serialize(),tn,sc,ov,wn}`) via `KH_MP.send`; the opponent `_adopt`s it (snap), so there are NO
+  physics-determinism/drift problems and no per-frame bandwidth. `KH_MP.subscribe` (its built-in 3s poll works on
+  the D1 gateway) delivers moves; `onNet` ignores our own echoed messages by userId and re-broadcasts state on a
+  guest `JOIN`. `_down` blocks aiming when it isn't your turn. Solo mode is unchanged (best score + submit). Help
+  + games-grid card updated; `tools/games_test.cjs` still 0/38 (launch now opens the menu). Test
+  `/tmp/pool_test.cjs` (menu 3 modes; 2P board+HUD; a miss passes the turn to Player 2; online option Ultra-gated,
+  no crash).
+- **Flight Sim description fixed** (`GAME_HELP.flightsim` + the games-grid card): said "Cessna 172" but there are
+  THREE aircraft (`AIRCRAFT`: Cessna 172, Piper Arrow, King Air 90). Now names all three / says "pick from 3".
+- **"Also by the creator" card** (`cAlso`, Settings): added the missing **DungeonQuest3D** link
+  (`https://dungeonquest3d.pages.dev`, was name-only, no button) + three new base44 projects — **Chem Ultra AI**
+  (`chem-ultra-ai-aran.base44.app`), **Math Master Pro** (`math-master-pro-aran.base44.app`), **Neural Lab**
+  (`neural-lab-aran.base44.app`). All open via the scheme-safe `_khOpenExt`.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
