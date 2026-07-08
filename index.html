@@ -1182,6 +1182,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="nav-launcher" onclick="try{_khOpenLauncher()}catch(e){}" title="Search &amp; jump to any page (incl. Settings)" style="flex-shrink:0;cursor:pointer;padding:7px 12px;font-weight:800;font-size:12px;background:var(--accent,#111);color:var(--accent-inv,#fff);border-radius:6px;margin:3px 6px 3px 4px;white-space:nowrap;align-self:center;">Find</div>
     <div class="tab active nav-essential" data-view="home">Home</div>
     <div class="tab" data-view="games">Arcade</div>
+    <div class="tab" data-view="appstore">App Store</div>
     <div class="tab" data-view="chat">Assistant</div>
     <div class="tab" data-view="tools">Tools</div>
     <div class="tab nav-essential" data-view="calc">Calc</div>
@@ -1438,6 +1439,7 @@ function defaultState(){
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,tutorialSeen:false,feedbackUrl:'',
+    publishedApps:[],appReviewQueue:[],
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -2905,7 +2907,7 @@ function applyHomeCity(city){
    Users who reordered get their saved order; getNavOrder() appends any
    tabs missing from saved order so updates still surface them. */
 const NAV_TABS=[
-  ['games','Arcade'],['chat','Assistant'],['tools','Tools'],['calc','Calc'],
+  ['games','Arcade'],['appstore','App Store'],['chat','Assistant'],['tools','Tools'],['calc','Calc'],
   ['reading','Reading'],['draw','Draw'],
   ['breathe','Mindfulness'],['kanban','To-Do'],
   ['messages','Messages'],['calendar','Calendar'],['weather','Weather'],
@@ -3853,6 +3855,7 @@ function launchKindleDesktop(){
   const BUILTIN_APPS=window._kh_builtin_apps||(window._kh_builtin_apps=[
     {id:'chat',      label:'Assistant',   nav:'chat',      color:'#2563eb',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="6" width="40" height="28" rx="7" fill="#fff"/><path d="M12 34 L8 42 L26 34" fill="#fff"/><circle cx="16" cy="20" r="3" fill="#2563eb"/><circle cx="24" cy="20" r="3" fill="#2563eb"/><circle cx="32" cy="20" r="3" fill="#2563eb"/></svg>'},
     {id:'games',     label:'Arcade',      nav:'games',     color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="14" width="40" height="22" rx="9" fill="#fff"/><rect x="11" y="22" width="8" height="2" rx="1" fill="#7c3aed"/><rect x="14" y="19" width="2" height="8" rx="1" fill="#7c3aed"/><circle cx="32" cy="20" r="2.5" fill="#ef4444"/><circle cx="37" cy="25" r="2.5" fill="#3b82f6"/><circle cx="27" cy="25" r="2.5" fill="#22c55e"/><circle cx="32" cy="30" r="2.5" fill="#a3a3a3"/></svg>'},
+    {id:'appstore',  label:'App Store',   nav:'appstore',  color:'#0b7ff2',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="11" fill="#0b7ff2"/><path d="M24 13 L31 33 M24 13 L17 33 M14.5 33 L33.5 33 M20 27 L28 27" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
     {id:'notes',     label:'Notes',       nav:'notes',     color:'#f59e0b',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="4" width="32" height="40" rx="5" fill="#fff"/><line x1="15" y1="16" x2="33" y2="16" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="23" x2="33" y2="23" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/><line x1="15" y1="30" x2="25" y2="30" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="round"/></svg>'},
     {id:'maps',      label:'Maps',        nav:'maps',      color:'#10b981',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="20" r="15" fill="#fff"/><circle cx="24" cy="20" r="6" fill="#10b981"/><path d="M24 35 L24 44" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>'},
     {id:'weather',   label:'Weather',     nav:'weather',   color:'#0ea5e9',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="18" cy="15" r="8" fill="#fbbf24"/><rect x="6" y="22" width="36" height="14" rx="7" fill="#fff"/><line x1="14" y1="40" x2="12" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/><line x1="24" y1="40" x2="22" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/><line x1="34" y1="40" x2="32" y2="46" stroke="#bfdbfe" stroke-width="2.5" stroke-linecap="round"/></svg>'},
@@ -8019,6 +8022,221 @@ function _reservedUsername(name){
   return '';
 }
 window._reservedUsername=_reservedUsername;
+
+/* ══ App Store ═══════════════════════════════════════════════════════════════
+   A real in-app marketplace. First-party apps (Slides, Sheets, Stars, Animals,
+   …) are moved OUT of the default top nav and INTO the store — "installing" one
+   just un-hides its nav tab (reuses S.navHidden), "removing" hides it again, so
+   nothing is deleted. Community apps are USER-PUBLISHED: their HTML lives in the
+   device's localStorage/account state (S.publishedApps) — NOT in index.html —
+   and runs in a sandboxed iframe. Publishing runs an automated AI review that
+   can ONLY approve or decline (never edit), trying the strongest available
+   Gemini review model first and falling back; if all are rate-limited the app
+   waits in a review queue and is retried. */
+var STORE_APPS=[
+  {view:'slides',    name:'Slides',      cat:'Productivity', desc:'Build and present slide decks.'},
+  {view:'sheets',    name:'Sheets',      cat:'Productivity', desc:'A lightweight spreadsheet.'},
+  {view:'kanban',    name:'To-Do Board', cat:'Productivity', desc:'Organise tasks on a kanban board.'},
+  {view:'animals',   name:'Animals',     cat:'Reference',    desc:'A zoo field guide — photos, stats & facts.'},
+  {view:'starmap',   name:'Stars',       cat:'Reference',    desc:'A live sky map — stars, planets & satellites.'},
+  {view:'periodic',  name:'Elements',    cat:'Reference',    desc:'The periodic table.'},
+  {view:'formulas',  name:'Formulas',    cat:'Reference',    desc:'Handy maths & science formulas.'},
+  {view:'wikipedia', name:'Wikipedia',   cat:'Reference',    desc:'Search the free encyclopedia.'},
+  {view:'science',   name:'Science',     cat:'Reference',    desc:'Facts, a glossary and experiments.'},
+  {view:'cipher',    name:'Cipher',      cat:'Utilities',    desc:'Encode & decode secret messages.'},
+  {view:'qrgen',     name:'QR Code',     cat:'Utilities',    desc:'Generate QR codes.'},
+  {view:'teleprompter',name:'Teleprompter',cat:'Utilities', desc:'Scroll your script hands-free.'},
+  {view:'draw',      name:'Draw',        cat:'Creativity',   desc:'A sketch pad.'},
+  {view:'cookbook',  name:'Cookbook',    cat:'Lifestyle',    desc:'Save and browse recipes.'},
+  {view:'sleeplog',  name:'Sleep',       cat:'Lifestyle',    desc:'Track your sleep.'},
+  {view:'stocks',    name:'Stocks',      cat:'Lifestyle',    desc:'Watch the markets.'}
+];
+/* Apps hidden from the top nav by DEFAULT once the store exists (moved to the
+   store; the user re-adds any they want). */
+var STORE_DEFAULT_MOVED=['slides','sheets','kanban','starmap','animals','cipher','teleprompter','draw','cookbook','sleeplog','stocks','science'];
+/* Only these Gemini models are trusted to REVIEW apps, strongest first. */
+var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
+function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
+/* Every OTHER top-menu page (not a first-party store app, not permanent) stays
+   manageable from the store under "More Pages" — so now that the Settings
+   tab-picker is gone, nothing a user hid can get stranded. */
+function _khOtherStorePages(){
+  var out=[],known={},perm={home:1,settings:1,appstore:1};
+  for(var i=0;i<STORE_APPS.length;i++)known[STORE_APPS[i].view]=1;
+  if(typeof NAV_TABS!=='undefined')NAV_TABS.forEach(function(t){var v=t[0],l=t[1];if(known[v]||perm[v])return;out.push({view:v,name:l,cat:'More Pages',desc:'A top-menu page.'});});
+  return out;
+}
+function _khStoreInstalled(view){if(!S.navHidden||typeof S.navHidden!=='object')return true;return S.navHidden[view]!==true;}
+function _khStoreInstall(view){if(!S.navHidden)S.navHidden={};S.navHidden[view]=false;try{save();}catch(_){}try{if(typeof setNavTabVisible==='function')setNavTabVisible(view,true);}catch(_){}}
+function _khStoreRemove(view){if(!S.navHidden)S.navHidden={};S.navHidden[view]=true;try{save();}catch(_){}try{if(typeof setNavTabVisible==='function')setNavTabVisible(view,false);}catch(_){}}
+/* One-time migration: move the default set into the store (hide from nav) + show
+   the "what's new" notice. Guarded by S.appStoreMigrated so it runs once. */
+function _khStoreMigrate(){
+  try{
+    if(S.appStoreMigrated)return;
+    if(!S.navHidden)S.navHidden={};
+    for(var i=0;i<STORE_DEFAULT_MOVED.length;i++){var v=STORE_DEFAULT_MOVED[i];if(S.navHidden[v]==null)S.navHidden[v]=true;}
+    S.appStoreMigrated=1;
+    try{save();}catch(_){}
+  }catch(_){}
+}
+function _khMaybeShowStoreNotice(){
+  try{
+    if(localStorage.getItem('kh_appstore_seen'))return;
+    if(typeof el!=='function')return;
+    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100050',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+    var box=el('div',{style:{background:'var(--card)',borderRadius:'14px',padding:'18px',maxWidth:'400px',width:'100%',boxShadow:'var(--shadow-md)'}});
+    box.appendChild(txt('h3','The App Store is here',{style:{fontFamily:'var(--title-font)',fontSize:'18px',margin:'0 0 6px'}}));
+    box.appendChild(txt('div','KindleHub now has a real App Store. To keep the menu tidy, some apps (Slides, Sheets, Stars, Animals and more) moved there — tap Install in the store to add any back to your menu. You can also publish your OWN apps: build with AI or paste code, and an AI reviewer approves it.',{style:{fontSize:'13px',color:'var(--fg)',lineHeight:'1.6',marginBottom:'12px'}}));
+    var row=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+    var later=txt('button','Later',{className:'btn small'});later.onclick=function(){try{localStorage.setItem('kh_appstore_seen','1');}catch(_){}ov.remove();};
+    var open=txt('button','Open App Store',{className:'btn small primary'});open.onclick=function(){try{localStorage.setItem('kh_appstore_seen','1');}catch(_){}ov.remove();try{showView('appstore');}catch(_){}};
+    row.append(later,open);box.appendChild(row);
+    ov.appendChild(box);ov.onclick=function(e){if(e.target===ov){try{localStorage.setItem('kh_appstore_seen','1');}catch(_){}ov.remove();}};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }catch(_){}
+}
+/* Parse an approve/decline verdict from a model reply (JSON preferred). */
+function _khParseVerdict(out){
+  try{
+    var s=String(out||'');
+    var m=s.match(/\{[\s\S]*\}/);
+    if(m){try{var o=JSON.parse(m[0]);if(o&&o.verdict){var v=String(o.verdict).toLowerCase();if(v.indexOf('approve')>=0)return {verdict:'approve',reason:String(o.reason||'Looks good.').slice(0,160)};if(v.indexOf('decline')>=0||v.indexOf('reject')>=0)return {verdict:'decline',reason:String(o.reason||'Did not pass review.').slice(0,160)};}}catch(_){}}
+    var low=s.toLowerCase();
+    if(/\bapprove/.test(low)&&!/\bdecline|\breject/.test(low))return {verdict:'approve',reason:'Approved.'};
+    if(/\bdecline|\breject/.test(low))return {verdict:'decline',reason:s.replace(/[\s\S]*?(decline|reject)/i,'').slice(0,160)||'Did not pass review.'};
+  }catch(_){}
+  return null;
+}
+/* Run the automated review: strongest model first, retry on transient failure,
+   fall to the next model, and if ALL are unavailable return {waitlisted:true}
+   so the app is queued and retried later. */
+async function _khReviewApp(name,html){
+  var prompt='You are the automated reviewer for the KindleHub App Store. Decide whether to APPROVE or DECLINE the submitted web app. You may ONLY approve or decline — you cannot edit it. DECLINE if it is malicious, tries to steal data or credentials, is empty/broken, is offensive or adult, or impersonates the operating system; otherwise APPROVE. Reply with STRICT JSON only, no prose: {"verdict":"approve","reason":"..."} or {"verdict":"decline","reason":"..."}.\n\nAPP NAME: '+String(name).slice(0,80)+'\n\nAPP CODE (truncated):\n'+String(html).slice(0,6000);
+  var anyModelTried=false;
+  for(var i=0;i<APP_REVIEW_MODELS.length;i++){
+    var model=APP_REVIEW_MODELS[i];
+    for(var attempt=1;attempt<=3;attempt++){
+      anyModelTried=true;
+      var out=null;
+      try{out=await khiCall(prompt,{provider:(S.geminiKey?'gemini':'shared'),model:model,temperature:0,maxTokens:220});}catch(e){out=null;}
+      if(out){var v=_khParseVerdict(out);if(v)return {model:model,verdict:v.verdict,reason:v.reason};/* replied but unparseable — try again */}
+      /* transient (rate-limit / busy / null) → short backoff, then retry */
+      await new Promise(function(r){setTimeout(r,1200*attempt);});
+    }
+    /* this model kept failing → move to the next, weaker model */
+  }
+  return {waitlisted:true,triedAny:anyModelTried};
+}
+/* Publish an app: validate → review → on approve store it in S.publishedApps
+   (device/account only, never in index.html) → toast the outcome. onDone(result). */
+async function _khPublishApp(opts,onProgress,onDone){
+  opts=opts||{};
+  var name=String(opts.name||'').trim().slice(0,40)||'Untitled App';
+  var html=String(opts.html||'');
+  var cat=String(opts.cat||'Fun').slice(0,24);
+  var isGame=!!opts.isGame||cat==='Games';
+  if(html.length<20){if(typeof toast==='function')toast('Add some app code (or build one with AI) first.');if(onDone)onDone({error:'empty'});return;}
+  if(html.length>512*1024){if(typeof toast==='function')toast('That app is too big (max 512 KB).');if(onDone)onDone({error:'too-big'});return;}
+  if(typeof _hasProfanity==='function'&&(_hasProfanity(name))){if(typeof toast==='function')toast('Please choose a cleaner app name.');if(onDone)onDone({error:'name'});return;}
+  if(onProgress)onProgress('Reviewing with AI…');
+  var res=await _khReviewApp(name,html);
+  if(res&&res.waitlisted){
+    if(!Array.isArray(S.appReviewQueue))S.appReviewQueue=[];
+    var _qby=(typeof displayNameGlobal==='function')?displayNameGlobal():(S.profileName||(S.email?String(S.email).split('@')[0]:'You'));
+    S.appReviewQueue.push({id:'q_'+Date.now().toString(36),name:name,html:html,cat:cat,isGame:isGame,by:String(_qby).slice(0,40),at:Date.now()});
+    try{save();}catch(_){}
+    if(typeof toast==='function')toast('All review models are busy or rate-limited right now — your app is in the review queue and will be checked automatically.',6500);
+    if(onDone)onDone({status:'waitlisted'});return;
+  }
+  if(res&&res.verdict==='decline'){
+    if(typeof toast==='function')toast('Declined by review: '+(res.reason||'did not pass.'),6500);
+    if(onDone)onDone({status:'declined',reason:res.reason});return;
+  }
+  if(res&&res.verdict==='approve'){
+    if(!Array.isArray(S.publishedApps))S.publishedApps=[];
+    var by=(typeof displayNameGlobal==='function')?displayNameGlobal():(S.profileName||(S.email?String(S.email).split('@')[0]:'You'));
+    var app={id:'pub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:name,html:html,cat:cat,isGame:isGame,by:String(by).slice(0,40),at:Date.now(),model:res.model,mine:true};
+    S.publishedApps.unshift(app);
+    if(S.publishedApps.length>60)S.publishedApps.length=60;
+    try{save();}catch(_){}
+    if(typeof toast==='function')toast('Approved by '+(res.model||'AI')+' — published to your App Store!',5500);
+    if(onDone)onDone({status:'approved',app:app,model:res.model});return;
+  }
+  if(typeof toast==='function')toast('Review could not complete — try again in a moment.');
+  if(onDone)onDone({status:'error'});
+}
+/* Open a published app in a sandboxed iframe overlay (no same-origin, so it
+   can't reach our storage/auth). Same safety posture as the KindleOS builder. */
+function _khOpenPublishedApp(app){
+  try{
+    if(!app||!app.html)return;
+    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'var(--bg)',zIndex:'100060',display:'flex',flexDirection:'column'}});
+    var bar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderBottom:'var(--thin)',background:'var(--card)',flexShrink:'0'}});
+    bar.appendChild(txt('div',(typeof _censorText==='function'?_censorText(app.name):app.name)||'App',{style:{fontWeight:'800',fontSize:'14px',flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+    var back=txt('button','Close',{className:'btn small'});back.onclick=function(){ov.remove();};
+    bar.appendChild(back);
+    ov.appendChild(bar);
+    var fr=el('iframe',{style:{flex:'1',width:'100%',border:'none',background:'#fff'}});
+    fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+    ov.appendChild(fr);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    try{fr.srcdoc=String(app.html);}catch(_){try{var d=fr.contentWindow.document;d.open();d.write(String(app.html));d.close();}catch(__){}}
+  }catch(_){}
+}
+/* Retry waitlisted apps — this is the "waiting list for the next day" path.
+   Re-reviews each queued app: approve → publish, decline → drop with a toast,
+   still-no-model → leave it queued. Throttled to at most once per ~20 min per
+   device so a queued app is checked automatically whenever the app is open and
+   a review model has freed up (incl. the daily quota resetting). */
+var _khQueueBusy=false;
+async function _khProcessReviewQueue(force){
+  try{
+    if(_khQueueBusy)return;
+    if(!Array.isArray(S.appReviewQueue)||!S.appReviewQueue.length)return;
+    /* Offline → leave everything queued and try again later. (Review always
+       has a path: the user's Gemini key OR the always-on shared proxy.) */
+    if(navigator.onLine===false)return;
+    if(!force){
+      var last=0;try{last=+localStorage.getItem('kh_review_queue_last')||0;}catch(_){}
+      if(Date.now()-last<20*60*1000)return;
+    }
+    try{localStorage.setItem('kh_review_queue_last',String(Date.now()));}catch(_){}
+    _khQueueBusy=true;
+    var queue=S.appReviewQueue.slice();
+    for(var i=0;i<queue.length;i++){
+      var item=queue[i];
+      var res=await _khReviewApp(item.name,item.html);
+      if(res&&res.waitlisted)continue;/* still no model free — keep it queued */
+      S.appReviewQueue=(Array.isArray(S.appReviewQueue)?S.appReviewQueue:[]).filter(function(x){return x.id!==item.id;});
+      if(res&&res.verdict==='approve'){
+        if(!Array.isArray(S.publishedApps))S.publishedApps=[];
+        S.publishedApps.unshift({id:'pub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:item.name,html:item.html,cat:item.cat,isGame:item.isGame,by:String(item.by||S.profileName||'You').slice(0,40),at:Date.now(),model:res.model,mine:true});
+        if(S.publishedApps.length>60)S.publishedApps.length=60;
+        if(typeof toast==='function')toast('"'+item.name+'" was approved by '+(res.model||'AI')+' and is now published.',6000);
+      }else if(res&&res.verdict==='decline'){
+        if(typeof toast==='function')toast('"'+item.name+'" was declined in review: '+(res.reason||'did not pass.'),6000);
+      }
+      try{save();}catch(_){}
+    }
+  }catch(_){}
+  _khQueueBusy=false;
+}
+window._khProcessReviewQueue=_khProcessReviewQueue;
+window._khStoreInstall=_khStoreInstall;window._khStoreRemove=_khStoreRemove;window._khStoreInstalled=_khStoreInstalled;
+window._khReviewApp=_khReviewApp;window._khPublishApp=_khPublishApp;window._khOpenPublishedApp=_khOpenPublishedApp;window._khStoreMigrate=_khStoreMigrate;window._khMaybeShowStoreNotice=_khMaybeShowStoreNotice;
+/* Boot: run the one-time migration (move default apps into the store / hide
+   their nav tabs), apply it to the DOM, and show the "what's new" notice once. */
+(function(){
+  function _run(){
+    try{_khStoreMigrate();}catch(_){}
+    try{for(var i=0;i<STORE_DEFAULT_MOVED.length;i++){var vv=STORE_DEFAULT_MOVED[i];if(S&&S.navHidden&&S.navHidden[vv]===true&&typeof setNavTabVisible==='function')setNavTabVisible(vv,false);}}catch(_){}
+    setTimeout(function(){try{_khMaybeShowStoreNotice();}catch(_){}},1600);
+    /* Retry any waitlisted apps a bit after load (a review model may be free now). */
+    setTimeout(function(){try{if(typeof _khProcessReviewQueue==='function')_khProcessReviewQueue();}catch(_){}},6000);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_run);else setTimeout(_run,300);
+})();
 /* Display a name with the ban-list applied: a banned username renders as
    "[removed]" everywhere it's shown. Uses the synchronous cache (preloaded
    at boot + after any ban) so rendering stays fast. */
@@ -31774,6 +31992,29 @@ games:()=>{
   }));
   v.appendChild(rowSim);
 
+  /* ── Community Games — user-published game apps (from the App Store) live in
+     S.publishedApps flagged isGame / cat 'Games'. Surfacing them here is what
+     lets the store "add extra games to the games page". They open sandboxed. */
+  (function(){
+    const pg=(Array.isArray(S.publishedApps)?S.publishedApps:[]).filter(function(a){return a&&(a.isGame||a.cat==='Games');});
+    const head=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'16px 0 6px'}});
+    head.appendChild(txt('h3','Community Games',{style:{fontFamily:'var(--title-font)',fontSize:'14px',margin:'0'}}));
+    const addB=txt('button','Publish a game',{className:'btn small'});addB.onclick=function(){showView('appstore');};
+    head.appendChild(addB);
+    v.appendChild(head);
+    if(!pg.length){
+      v.appendChild(txt('p','No community games yet — build one in the App Store (Publish). Once an AI reviewer approves it, it shows up right here.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'4px'}}));
+      return;
+    }
+    const rowCom=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(165px,1fr))',gap:'10px',marginBottom:'4px'}});
+    pg.forEach(function(a){
+      rowCom.appendChild(gc((typeof _censorText==='function'?_censorText(a.name):a.name),null,function(c){
+        c.appendChild(txt('p','By '+(a.by||'a user')+'. Community-published, AI-reviewed.',{style:{fontSize:'11px',color:'var(--muted)'}}));
+        const ob=txt('button','Play',{className:'btn primary',style:{marginTop:'4px'}});ob.onclick=function(){_khOpenPublishedApp(a);};c.appendChild(ob);
+      }));
+    });
+    v.appendChild(rowCom);
+  })();
 
   /* Wire up data-game buttons */
   v.querySelectorAll('[data-game]').forEach(b=>{
@@ -39621,83 +39862,11 @@ settings:()=>{
   });
   c5.appendChild(st);
   g.appendChild(c5);/* was never appended — the Keyboard Shortcuts card never showed */
-  /* ── Top Menu Pages — re-orderable + hide/show ── */
-  const cNav=el('div',{className:'card',style:{gridColumn:'1/-1'}});
-  cNav.appendChild(txt('h2','Top Menu Pages'));
-  cNav.appendChild(txt('p','Pick which pages appear in the top menu and the order they show in. Drag with the arrows to reorder, tap the checkbox to hide. Home stays first and Settings stays last.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'10px'}}));
-  if(!S.navHidden)S.navHidden={};
-  const navList=el('div',{style:{display:'flex',flexDirection:'column',gap:'4px',background:'var(--highlight)',padding:'8px',borderRadius:'8px',maxHeight:'380px',overflowY:'auto'}});
-
-  function _renderNavList(){
-    navList.innerHTML='';
-    const order=getNavOrder();
-    const labelMap=Object.fromEntries(NAV_TABS);
-    order.forEach((view,idx)=>{
-      const label=labelMap[view]||view;
-      /* Home + Settings can never be hidden — they anchor the nav. Force
-         their state correct so a stale navHidden entry can't strand the
-         user, and lock their toggle. */
-      const locked=(view==='home'||view==='settings');
-      if(locked&&S.navHidden[view]){S.navHidden[view]=false;}
-      const isHidden=!locked&&S.navHidden[view]===true;
-      const row=el('div',{style:'display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card);border-radius:6px;'});
-      /* Visibility checkbox */
-      const tog=el('button',{style:'width:22px;height:22px;border:2px solid var(--fg);border-radius:4px;padding:0;background:'+(isHidden?'transparent':'var(--fg)')+';color:var(--bg);cursor:'+(locked?'default':'pointer')+';flex-shrink:0;font-weight:900;font-size:14px;line-height:1;'+(locked?'opacity:0.5;':'')});
-      tog.textContent=isHidden?'':'✓';
-      tog.title=locked?label+' is always in the menu':(isHidden?'Show in top menu':'Hide from top menu');
-      tog.disabled=locked;
-      if(!locked)tog.onclick=()=>{
-        S.navHidden[view]=!isHidden;save();
-        setNavTabVisible(view,!S.navHidden[view]);
-        _renderNavList();
-      };
-      const lbl=txt('span',label,{style:{fontSize:'13px',fontWeight:'600',flex:'1'}});
-      /* Up/Down reorder */
-      const up=txt('button','▲',{className:'btn small',style:{minWidth:'34px',padding:'4px 6px',opacity:idx===0?'0.3':'1'}});
-      const dn=txt('button','▼',{className:'btn small',style:{minWidth:'34px',padding:'4px 6px',opacity:idx===order.length-1?'0.3':'1'}});
-      up.onclick=()=>{
-        if(idx===0)return;
-        const arr=getNavOrder();
-        [arr[idx-1],arr[idx]]=[arr[idx],arr[idx-1]];
-        S.navOrder=arr;save();
-        applyNavOrder();_renderNavList();
-      };
-      dn.onclick=()=>{
-        const arr=getNavOrder();
-        if(idx>=arr.length-1)return;
-        [arr[idx+1],arr[idx]]=[arr[idx],arr[idx+1]];
-        S.navOrder=arr;save();
-        applyNavOrder();_renderNavList();
-      };
-      row.append(tog,lbl,up,dn);
-      navList.appendChild(row);
-    });
-  }
-  _renderNavList();
-  cNav.appendChild(navList);
-
-  /* Quick actions */
-  const navActions=el('div',{className:'card-row',style:{marginTop:'10px'}});
-  const showAllBtn=txt('button','Show All',{className:'btn small'});
-  showAllBtn.onclick=()=>{
-    NAV_TABS.forEach(([view])=>{S.navHidden[view]=false;setNavTabVisible(view,true);});
-    save();_renderNavList();toast('All top-menu pages shown');
-  };
-  const hideAllBtn=txt('button','Hide All',{className:'btn small'});
-  hideAllBtn.onclick=()=>{
-    /* Never hide Home/Settings — hiding them used to strand the user with
-       no way back until a reload. */
-    NAV_TABS.forEach(([view])=>{if(view==='home'||view==='settings')return;S.navHidden[view]=true;setNavTabVisible(view,false);});
-    save();_renderNavList();toast('All optional top-menu pages hidden');
-  };
-  const resetBtn=txt('button','Reset Order',{className:'btn small'});
-  resetBtn.onclick=()=>{
-    S.navOrder=[];save();applyNavOrder();_renderNavList();toast('Top-menu order reset');
-  };
-  navActions.append(showAllBtn,hideAllBtn,resetBtn);
-  cNav.appendChild(navActions);
-  cNav.appendChild(txt('p','Home is always first; Settings always last. Changes apply immediately.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px'}}));
-  g.appendChild(cNav);
+  /* ── Top Menu Pages picker REMOVED — the App Store now owns which pages
+     appear in the top menu (Get / Remove installs/uninstalls a tab, still
+     via S.navHidden + setNavTabVisible). A second picker here duplicated
+     that and confused users, so it's gone. Reordering + Show-all still work
+     programmatically via getNavOrder/applyNavOrder if ever needed. ── */
   });
   _defer(()=>{
 
@@ -48973,6 +49142,142 @@ explore:()=>{
     grid.appendChild(card);
   });
   v.appendChild(grid);
+  return v;
+},
+appstore:()=>{
+  /* The App Store — Discover (install first-party + community apps) and Publish
+     (build/paste an app → AI review → it lives in your device/account state). */
+  const v=el('section',{id:'view-appstore',className:'view'});
+  v.appendChild(txt('h2','App Store',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  let _tab='discover';
+  const tabRow=el('div',{style:{display:'flex',gap:'6px',margin:'6px 0 10px'}});
+  const body=el('div',{});
+  function tabBtn(id,label){const b=txt('button',label,{className:'btn small'+(_tab===id?' primary':'')});b.onclick=function(){_tab=id;draw();};return b;}
+  function draw(){
+    tabRow.innerHTML='';tabRow.append(tabBtn('discover','Discover'),tabBtn('publish','Publish'),tabBtn('mine','My Apps'));
+    body.innerHTML='';
+    if(_tab==='discover')renderDiscover();else if(_tab==='publish')renderPublish();else renderMine();
+  }
+  v.append(tabRow,body);
+
+  function appCard(opts){
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'12px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'4px'}});
+    const top=el('div',{style:{display:'flex',alignItems:'center',gap:'8px'}});
+    const ic=el('div',{style:{width:'40px',height:'40px',borderRadius:'9px',background:'var(--highlight)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'900',fontSize:'16px',flexShrink:'0'}});
+    ic.textContent=(opts.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'AP';
+    top.appendChild(ic);
+    const mid=el('div',{style:{flex:'1',minWidth:'0'}});
+    mid.appendChild(txt('div',opts.name,{style:{fontWeight:'800',fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+    mid.appendChild(txt('div',opts.cat+(opts.by?(' · '+opts.by):''),{style:{fontSize:'10px',color:'var(--muted)'}}));
+    top.appendChild(mid);
+    top.appendChild(opts.action);
+    card.appendChild(top);
+    if(opts.desc)card.appendChild(txt('div',opts.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
+    return card;
+  }
+
+  function renderDiscover(){
+    const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'10px'}});
+    body.appendChild(sb);
+    const host=el('div',{});body.appendChild(host);
+    function paint(){
+      host.innerHTML='';
+      const q=(sb.value||'').trim().toLowerCase();
+      /* First-party apps grouped by category */
+      const cats={};
+      STORE_APPS.concat(_khOtherStorePages()).forEach(function(a){if(q&&(a.name.toLowerCase().indexOf(q)<0&&a.cat.toLowerCase().indexOf(q)<0))return;(cats[a.cat]=cats[a.cat]||[]).push(a);});
+      Object.keys(cats).forEach(function(cat){
+        host.appendChild(txt('div',cat,{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'8px 0 6px'}}));
+        const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
+        cats[cat].forEach(function(a){
+          const inst=_khStoreInstalled(a.view);
+          const act=el('div',{style:{display:'flex',gap:'4px'}});
+          const openB=txt('button','Open',{className:'btn small'+(inst?' primary':'')});openB.onclick=function(){if(!inst)_khStoreInstall(a.view);try{showView(a.view);}catch(_){}};
+          act.appendChild(inst?openB:txt('button','Get',{className:'btn small primary'}));
+          if(!inst){act.lastChild.onclick=function(){_khStoreInstall(a.view);toast('"'+a.name+'" added to your menu.');paint();};}
+          else{const rm=txt('button','Remove',{className:'btn small'});rm.onclick=function(){_khStoreRemove(a.view);toast('"'+a.name+'" removed from your menu.');paint();};act.appendChild(rm);}
+          grid.appendChild(appCard({name:a.name,cat:a.cat,desc:a.desc,action:act}));
+        });
+        host.appendChild(grid);
+      });
+      /* Community (published) apps */
+      const pub=(Array.isArray(S.publishedApps)?S.publishedApps:[]).filter(function(a){return !q||a.name.toLowerCase().indexOf(q)>=0;});
+      if(pub.length){
+        host.appendChild(txt('div','Community',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'12px 0 6px'}}));
+        const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
+        pub.forEach(function(a){
+          const act=el('div',{});const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};act.appendChild(openB);
+          grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'by '+(a.by||'user'),desc:'Community app'+(a.model?(' · reviewed by '+a.model):''),action:act}));
+        });
+        host.appendChild(grid);
+      }
+      if(!host.children.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
+    }
+    sb.oninput=khDebounce(paint,180);paint();
+  }
+
+  function renderPublish(){
+    body.appendChild(txt('div','Publish your own app — build it with AI or paste your HTML/JS. When you press Publish, an AI reviewer checks it (it can only approve or decline, never edit). Approved apps appear in your App Store and menu; they live on your device/account, not in the site code.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6',marginBottom:'10px'}}));
+    const nameInp=el('input',{type:'text',placeholder:'App name',maxLength:40,style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'6px'}});
+    body.appendChild(nameInp);
+    const catRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'6px'}});
+    let _cat='Fun';const CATS=['Fun','Games','Tools','Productivity','Creativity','Other'];
+    CATS.forEach(function(c){const b=txt('button',c,{className:'btn small'+(c===_cat?' primary':'')});b.onclick=function(){_cat=c;catRow.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});b.classList.add('primary');};catRow.appendChild(b);});
+    body.appendChild(txt('div','Category',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0'}}));
+    body.appendChild(catRow);
+    const ta=el('textarea',{placeholder:'Paste your app HTML/JS here, or use “Build with AI” below…',style:{width:'100%',minHeight:'180px',fontFamily:'monospace',fontSize:'12px',padding:'9px',boxSizing:'border-box'}});
+    body.appendChild(ta);
+    const aiRow=el('div',{style:{display:'flex',gap:'6px',margin:'8px 0'}});
+    const aiInp=el('input',{type:'text',placeholder:'Describe an app for AI to build…',style:{flex:'1',fontSize:'13px',padding:'8px 10px'}});
+    const aiBtn=txt('button','Build with AI',{className:'btn small'});
+    aiBtn.onclick=async function(){
+      const p=(aiInp.value||'').trim();if(!p){toast('Describe the app first.');return;}
+      aiBtn.disabled=true;aiBtn.textContent='Building…';
+      try{
+        const prompt='Build a COMPLETE, single-file HTML web app (inline CSS + JS, no external resources). It must work in an old Kindle browser: NO optional chaining, nullish coalescing, or other ES2020+ syntax. Return ONLY the raw HTML document, no markdown. App: '+p;
+        const out=await khiCall(prompt,{temperature:0.5,maxTokens:2048});
+        if(out){var code=String(out).replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'');ta.value=code;if(!nameInp.value)nameInp.value=p.slice(0,40);toast('Draft built — review it, then Publish.');}
+        else toast('AI could not build that — try rephrasing.');
+      }catch(e){toast('Build failed.');}
+      aiBtn.disabled=false;aiBtn.textContent='Build with AI';
+    };
+    aiRow.append(aiInp,aiBtn);body.appendChild(aiRow);
+    const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',margin:'4px 0'}});body.appendChild(status);
+    const pubBtn=txt('button','Publish',{className:'btn primary',style:{width:'100%',marginTop:'4px'}});
+    pubBtn.onclick=async function(){
+      pubBtn.disabled=true;
+      await _khPublishApp({name:nameInp.value,html:ta.value,cat:_cat,isGame:(_cat==='Games')},
+        function(msg){status.textContent=msg;},
+        function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){_tab='mine';draw();}});
+    };
+    body.appendChild(pubBtn);
+  }
+
+  function renderMine(){
+    const mine=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
+    const q=(Array.isArray(S.appReviewQueue)?S.appReviewQueue:[]);
+    if(q.length){
+      body.appendChild(txt('div','IN REVIEW QUEUE',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0 6px'}}));
+      q.forEach(function(a){body.appendChild(txt('div','• '+a.name+' — waiting for a review model to free up (auto-retried).',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'3px'}}));});
+      const retry=txt('button','Check review queue now',{className:'btn small',style:{margin:'4px 0 8px'}});
+      retry.onclick=async function(){retry.disabled=true;retry.textContent='Checking…';if(typeof _khProcessReviewQueue==='function')await _khProcessReviewQueue(true);draw();};
+      body.appendChild(retry);
+      /* Opportunistic (throttled) retry when the user opens My Apps. */
+      if(typeof _khProcessReviewQueue==='function')setTimeout(function(){_khProcessReviewQueue(false);},400);
+    }
+    if(!mine.length){body.appendChild(txt('div','You haven\'t published any apps yet. Head to Publish to make one.',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));return;}
+    body.appendChild(txt('div','YOUR PUBLISHED APPS',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'10px 0 6px'}}));
+    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
+    mine.forEach(function(a){
+      const act=el('div',{style:{display:'flex',gap:'4px'}});
+      const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
+      const delB=txt('button','Delete',{className:'btn small'});delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"?',function(ok){if(ok){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();draw();}});else{S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();draw();}};
+      act.append(openB,delB);
+      grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'reviewed by '+(a.model||'AI'),action:act}));
+    });
+    body.appendChild(grid);
+  }
+  draw();
   return v;
 },
 qrgen:()=>{
@@ -60208,29 +60513,9 @@ window._showWelcome=function(){
         if(d&&d._clearIv)d._clearIv();
       }
     },
-    {
-      id:'nav',
-      heading:'Your tabs',
-      sub:'Choose the sections you want quick access to. Adjust anytime in Settings.',
-      build(wrap){
-        if(!S.navHidden)S.navHidden={};
-        const g2=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}});
-        NAV_TABS.forEach(([view,label])=>{
-          const isOn=!S.navHidden[view];
-          const b=txt('button',label,{className:'btn small'+(isOn?' primary':''),style:{textAlign:'left',fontSize:'11px'}});
-          b.dataset.obView=view;
-          b.onclick=()=>{
-            S.navHidden[view]=!S.navHidden[view];
-            b.classList.toggle('primary',!S.navHidden[view]);
-          };
-          g2.appendChild(b);
-        });
-        wrap.appendChild(g2);
-      },
-      save(){
-        if(typeof syncNavVisibility==='function')syncNavVisibility();
-      }
-    },
+    /* The "Your tabs" onboarding step was REMOVED — which pages appear in
+       the top menu is now managed by the App Store (Get / Remove), so a
+       tab-picker here duplicated it and confused new users. */
     {
       id:'signup',
       heading:'Save your data to the cloud',
