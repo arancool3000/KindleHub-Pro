@@ -134,3 +134,16 @@ CREATE TABLE IF NOT EXISTS kh_rate (
   win_start TEXT,
   n         INTEGER DEFAULT 0
 );
+
+-- Shared App Store: apps published by any user, downloadable by everyone.
+CREATE TABLE IF NOT EXISTS kh_store_apps (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  html       TEXT NOT NULL,
+  cat        TEXT DEFAULT 'Fun',
+  author     TEXT DEFAULT '',
+  model      TEXT DEFAULT '',
+  created_at TEXT,
+  downloads  INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS kh_store_apps_rank ON kh_store_apps(downloads DESC, created_at DESC);
