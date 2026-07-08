@@ -940,6 +940,20 @@ Tests: `/tmp/appstore2_test.cjs` (28 assertions, all green) + `/tmp/appstore_tes
 target slides' exact card since Featured now renders Get first) + `/tmp/appstore_boot.cjs` + games_test (38,0) + fixbatch
 (auth path intact; only the known `noAccentPicker` false-positive fails, re-verified gone via acc_check) + minify Silk gate.
 
+## ⚡ Fix: App Store review pins the shared proxy to its 3 approved models
+`_khReviewApp` passes a specific `model` to `khiCall(provider:'shared')`, but the shared path IGNORED it —
+`khiCall` called `callSharedGeminiStream(msgs,cb)` with no model, so for keyless users the review ran on
+whatever the shared fallback chain picked (which also includes `gemini-2.5-flash-lite`/`gemini-3.1-flash`, NOT
+in the trusted 3). Fixed: `callSharedGeminiStream(messages,onChunk,opts)` takes an optional `opts.model` and,
+when it's in `SHARED_KEY_FALLBACK_CHAIN`, FORCES `_chain=[opts.model]` (no auto-switch to a weaker model);
+`khiCall`'s shared branch passes `{model:opts.model}` through (undefined for every other caller → unchanged).
+So the App Store review now uses ONLY gemini-3.5-flash / gemini-3.1-flash-lite / gemini-2.5-flash even on the
+public key, and if the pinned model is rate-limited the review's own retry/next-model/waitlist logic still
+applies. **No backend change** — all 3 review models are already in the shared proxy's allow-list. Test
+`/tmp/review_model_test.cjs` (forcing sends exactly that model; no model → normal chain; bad model → ignored).
+For the record: the App Store, account merge, security hardening and this fix are ALL client-side — none of
+the last several rounds needed a Worker redeploy, a D1 schema re-run, or an env-var change.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
