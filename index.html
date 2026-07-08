@@ -49445,17 +49445,25 @@ appstore:()=>{
     return s;
   }
   function appCard(opts){
-    const card=el('div',{style:{border:'var(--thin)',borderRadius:'14px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'6px',boxShadow:'0 1px 4px rgba(0,0,0,.14)'}});
-    const top=el('div',{style:{display:'flex',alignItems:'center',gap:'10px'}});
-    top.appendChild(_iconEl({view:opts.view,name:opts.name},40));
-    const mid=el('div',{style:{flex:'1',minWidth:'0'}});
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'14px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'8px',boxShadow:'0 1px 4px rgba(0,0,0,.14)'}});
+    /* Info region (icon + name + category) is the ONLY thing that opens the
+       detail sheet — the action buttons live on their own row below, so a tap
+       is never ambiguous and text can't end up behind a button (the old
+       one-row layout overflowed behind the buttons on Kindle Silk's flexbox). */
+    const top=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',overflow:'hidden'}});
+    top.appendChild(_iconEl({view:opts.view,name:opts.name},44));
+    const mid=el('div',{style:{flex:'1 1 auto',minWidth:'0',overflow:'hidden'}});
     mid.appendChild(txt('div',opts.name,{style:{fontWeight:'800',fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
-    mid.appendChild(txt('div',opts.cat+(opts.by?(' · '+opts.by):''),{style:{fontSize:'10px',color:'var(--muted)'}}));
+    mid.appendChild(txt('div',opts.cat+(opts.by?(' · '+opts.by):''),{style:{fontSize:'10px',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
     top.appendChild(mid);
-    top.appendChild(opts.action);
+    if(opts.onOpenSheet){top.style.cursor='pointer';top.onclick=function(){opts.onOpenSheet();};}
     card.appendChild(top);
     if(opts.desc)card.appendChild(txt('div',opts.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4',wordBreak:'break-word'}}));
-    if(opts.onOpenSheet){card.style.cursor='pointer';card.onclick=function(){opts.onOpenSheet();};}
+    if(opts.action){
+      const arow=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end',flexWrap:'wrap',marginTop:'2px'}});
+      arow.appendChild(opts.action);
+      card.appendChild(arow);
+    }
     return card;
   }
   /* Product page: bottom sheet — big icon, App-Store info strip (price / live
@@ -49592,9 +49600,9 @@ appstore:()=>{
           const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 12px',borderBottom:(i<top.length-1?'var(--thin)':'none'),cursor:'pointer'}});
           row.appendChild(txt('div',String(i+1),{style:{width:'18px',fontWeight:'900',fontSize:'15px',color:'var(--muted)',textAlign:'center',flexShrink:'0'}}));
           row.appendChild(_iconEl(a,36));
-          const m=el('div',{style:{flex:'1',minWidth:'0'}});
-          m.appendChild(txt('div',a.name,{style:{fontWeight:'800',fontSize:'13px'}}));
-          m.appendChild(txt('div',a.cat,{style:{fontSize:'10px',color:'var(--muted)'}}));
+          const m=el('div',{style:{flex:'1 1 auto',minWidth:'0',overflow:'hidden'}});
+          m.appendChild(txt('div',a.name,{style:{fontWeight:'800',fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+          m.appendChild(txt('div',a.cat,{style:{fontSize:'10px',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
           row.appendChild(m);
           row.appendChild(actionFor(a,paint));
           row.onclick=function(){openSheet(a,paint);};
