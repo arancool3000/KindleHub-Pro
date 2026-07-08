@@ -7606,15 +7606,15 @@ function _sbHeaders(extra){
   return h;
 }
 /* ── Cloudflare free-tier client throttle ─────────────────────────────────
-   The Worker sheds non-admin load with a 503 {code:CF_DAILY|CF_WRITE} when it
-   nears the free-plan ceilings (100k requests/day, 100k D1 writes/day). The
-   client cooperates so we recover fast and never hammer a limited backend:
-   on a 503 it parks all (CF_DAILY) or just write (CF_WRITE) traffic for ~15
-   min, and every background poller/beacon checks _khCfBlocked() before firing.
-   Windows auto-expire; the server itself fully resets at 00:00 UTC. */
-window._khCfReqUntil=window._khCfReqUntil||0;     // ALL traffic parked until ts (CF_DAILY)
-window._khCfWriteUntil=window._khCfWriteUntil||0; // writes parked until ts (CF_WRITE)
-let _khCfNoticeAt=0;
+   The Worker errors non-admin cloud requests with a 503 {code:CF_DAILY|CF_WRITE}
+   once it hits the free-plan ceiling (99k requests/day). There is NO user-facing
+   notification — a cloud request past the limit simply errors. To avoid pointlessly
+   hammering a capped worker, on a 503 the client silently parks its BACKGROUND
+   pollers/beacons for ~15 min (each checks _khCfBlocked() before firing); user
+   actions still attempt and just surface the error. Windows auto-expire; the
+   server fully resets at 00:00 UTC. */
+window._khCfReqUntil=window._khCfReqUntil||0;     // background traffic parked until ts (CF_DAILY)
+window._khCfWriteUntil=window._khCfWriteUntil||0; // background writes parked until ts (CF_WRITE)
 function _khCfBlocked(isWrite){
   const now=Date.now();
   if(window._khCfReqUntil>now)return true;
@@ -7639,18 +7639,13 @@ function _khLoadSkip(){
   let p=(L-0.55)*1.9; if(p>0.85)p=0.85;
   return Math.random()<p;
 }
-function _khCfNote(kind){
-  const now=Date.now();
-  if(now-_khCfNoticeAt<60000)return; _khCfNoticeAt=now;
-  try{if(typeof toast==='function')toast(kind==='write'
-    ?'KindleHub is busy right now (daily free-tier write limit) — new posts pause briefly and resume automatically.'
-    :'KindleHub reached its daily free limit — some live features pause until midnight UTC.',4500);}catch(_){}
-}
 function _khCfOn503(body){
   let code='';try{code=(JSON.parse(body||'{}')||{}).code||'';}catch(_){}
   const now=Date.now();
-  if(code==='CF_WRITE'){ window._khCfWriteUntil=now+15*60000; _khCfNote('write'); }
-  else { window._khCfReqUntil=now+15*60000; _khCfNote('req'); }
+  /* Silently park BACKGROUND pollers so we don't hammer a capped worker — no
+     toast/notification. User-initiated requests still error normally. */
+  if(code==='CF_WRITE'){ window._khCfWriteUntil=now+15*60000; }
+  else { window._khCfReqUntil=now+15*60000; }
 }
 async function _sbFetch(path,opts){
   opts=opts||{};
@@ -58228,7 +58223,7 @@ messages:()=>{
         _saveDraft(g.code,_sentRaw);
         const msg2=String(e&&e.message||e);
         if(msg2.indexOf('503')>=0||msg2.indexOf('daily-limit')>=0||msg2.indexOf('write-limit')>=0){
-          toast('KindleHub is briefly read-only (daily free-tier limit) — your message is kept as a draft, try again shortly.',5000);
+          toast('Cloud is at its daily limit — message kept as a draft.',4000);
         } else if(msg2.indexOf('Rate limit')>=0||msg2.indexOf('429')>=0){
           toast('Slow down — group is rate-limited (30/min). Try again in a moment.',4000);
         } else {

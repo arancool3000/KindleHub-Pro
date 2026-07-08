@@ -831,9 +831,8 @@ let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
    response as X-KH-Load so clients can self-throttle their background polling
    before anyone hits the hard cap (closed-loop capacity control). */
 let _loadFrac = 0;
-const REQ_HARD_CAP   = 96000;   // Workers free: 100k req/day — past this WRITES shed (site goes read-only)
-const REQ_READ_CAP   = 99000;   // …and only past THIS do READS stop too (true emergency stop at 99%)
-const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short (estW counts 2/write)
+const REQ_HARD_CAP   = 99000;   // Workers free: 100k requests/day — error at 99k, resets 00:00 UTC
+const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — separate safety (estW counts 2/write)
 async function dailyUsed(DB, isWrite){
   const today = nowIso().slice(0,10);
   const now = Date.now();
@@ -992,18 +991,15 @@ export default {
     const _usage = await dailyUsed(DB, _isWrite);
     /* Publish the higher of the request/write utilisation so clients back off. */
     _loadFrac = Math.max(_usage.n/REQ_HARD_CAP, _usage.w/WRITE_HARD_CAP);
+    /* Over a daily free-tier ceiling → just error the cloud request (503),
+       non-admin only (admin token bypasses; resets 00:00 UTC). No read-only
+       degrade band — a request past the limit simply fails. */
     if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){
-        /* DEGRADE, don't go dark: between REQ_HARD_CAP and REQ_READ_CAP the
-           site turns READ-ONLY (writes 503 as CF_WRITE — the client already
-           parks only writes on that code, so browsing/reading keeps working).
-           Only past REQ_READ_CAP (99%) do reads stop too. */
-        if(_usage.n>REQ_READ_CAP)
+        if(_usage.n>REQ_HARD_CAP)
           return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
-        if(_isWrite)
-          return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub is temporarily read-only (daily free-tier limit). New posts resume automatically at midnight UTC.'},503,env);
-        /* read within the 96–99% band → serve it */
+        return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub reached its daily free-tier write limit. Service resumes automatically at midnight UTC.'},503,env);
       }
     }
 
