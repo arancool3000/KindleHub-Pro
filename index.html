@@ -8318,8 +8318,12 @@ async function _khPublishApp(opts,onProgress,onDone){
     S.publishedApps.unshift(app);
     if(S.publishedApps.length>60)S.publishedApps.length=60;
     try{save();}catch(_){}
-    if(typeof toast==='function')toast('Approved by '+(res.model||'AI')+' — published to your App Store!',5500);
-    if(onDone)onDone({status:'approved',app:app,model:res.model});return;
+    /* Publish to the SHARED store so everyone can download it (best-effort —
+       needs a backend; falls back to a device-only publish if offline). */
+    var shared=false;
+    try{ shared=await _khShareToStore(app); }catch(_){}
+    if(typeof toast==='function')toast(shared?('Approved by '+(res.model||'AI')+' — published to the App Store for everyone!'):('Approved by '+(res.model||'AI')+' — published to your App Store.'),5500);
+    if(onDone)onDone({status:'approved',app:app,model:res.model,shared:shared});return;
   }
   if(typeof toast==='function')toast('Review could not complete — try again in a moment.');
   if(onDone)onDone({status:'error'});
@@ -8387,6 +8391,56 @@ async function _khProcessReviewQueue(force){
 window._khProcessReviewQueue=_khProcessReviewQueue;
 window._khStoreInstall=_khStoreInstall;window._khStoreRemove=_khStoreRemove;window._khStoreInstalled=_khStoreInstalled;
 window._khReviewApp=_khReviewApp;window._khPublishApp=_khPublishApp;window._khOpenPublishedApp=_khOpenPublishedApp;window._khStoreMigrate=_khStoreMigrate;window._khMaybeShowStoreNotice=_khMaybeShowStoreNotice;
+/* ── Shared App Store marketplace ─────────────────────────────────────────────
+   Apps anyone publishes go to a shared backend table (kh_store_apps) so EVERY
+   user can browse + download them — a real store, not a device-only list. All
+   client-AI-reviewed before publish and run sandboxed + CSP-locked on open. */
+async function _khShareToStore(app){
+  if(!app||typeof _sbActive!=='function'||!_sbActive())return false;
+  try{
+    await _sbInsert('kh_store_apps',{
+      id:app.id, name:String(app.name||'App').slice(0,60), html:String(app.html||''),
+      cat:String(app.cat||'Fun').slice(0,24), author:String(app.by||'user').slice(0,40),
+      model:String(app.model||''), created_at:new Date(NOW()).toISOString(), downloads:0
+    });
+    return true;
+  }catch(_){ return false; }
+}
+/* Fetch the shared catalogue, ranked most-downloaded first. Cached ~2 min in
+   memory (session only) so re-opening the store is instant and cheap. */
+window._khStoreCache=window._khStoreCache||{at:0,apps:[]};
+async function _khFetchStoreApps(force){
+  if(typeof _sbActive!=='function'||!_sbActive())return [];
+  var c=window._khStoreCache;
+  if(!force && c.apps.length && (NOW()-c.at)<120000)return c.apps;
+  try{
+    var rows=await _sbSelect('kh_store_apps','select=id,name,cat,author,model,created_at,downloads&order=downloads.desc,created_at.desc&limit=60');
+    if(Array.isArray(rows)){ window._khStoreCache={at:NOW(),apps:rows}; return rows; }
+  }catch(_){}
+  return c.apps||[];
+}
+/* Is this shared app already downloaded to THIS device? */
+function _khStoreDownloaded(id){ return (Array.isArray(S.publishedApps)?S.publishedApps:[]).some(function(a){return a.id===id;}); }
+/* Download a shared app: fetch its full HTML, save to the device (S.published
+   Apps so it persists + shows on the Games page), bump the public counter. */
+async function _khDownloadStoreApp(meta,onDone){
+  try{
+    if(_khStoreDownloaded(meta.id)){ if(onDone)onDone(true); return true; }
+    var full=null;
+    try{ var rows=await _sbSelect('kh_store_apps','select=*&id=eq.'+encodeURIComponent(meta.id)); if(Array.isArray(rows)&&rows[0])full=rows[0]; }catch(_){}
+    if(!full||!full.html){ if(typeof toast==='function')toast('Could not download that app — try again.'); if(onDone)onDone(false); return false; }
+    if(!Array.isArray(S.publishedApps))S.publishedApps=[];
+    var isGame=(String(full.cat||'').toLowerCase()==='games');
+    S.publishedApps.unshift({id:full.id,name:String(full.name||'App').slice(0,60),html:String(full.html||''),cat:full.cat||'Fun',isGame:isGame,by:String(full.author||'user').slice(0,40),at:NOW(),model:full.model||'',downloaded:true});
+    if(S.publishedApps.length>60)S.publishedApps.length=60;
+    try{save();}catch(_){}
+    /* best-effort public download count (fire and forget) */
+    try{ fetch(_sbBase()+'/rest/v1/rpc/kh_store_download',{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify({p_id:full.id})}); }catch(_){}
+    if(typeof toast==='function')toast('"'+String(full.name||'App')+'" downloaded — open it any time.',4000);
+    if(onDone)onDone(true); return true;
+  }catch(_){ if(onDone)onDone(false); return false; }
+}
+window._khShareToStore=_khShareToStore;window._khFetchStoreApps=_khFetchStoreApps;window._khStoreDownloaded=_khStoreDownloaded;window._khDownloadStoreApp=_khDownloadStoreApp;
 window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
 /* Boot: run the one-time migration (move default apps into the store / hide
    their nav tabs), apply it to the DOM, and show the "what's new" notice once. */
@@ -49483,7 +49537,8 @@ appstore:()=>{
     sh.appendChild(head);
     /* info strip — PRICE / CHART (live rank from real usage) / MADE BY */
     let cells;
-    if(a.pub){cells=[['PRICE','Free'],['BY',(a.by||'user')],['SAFETY','Sandboxed']];}
+    if(a.shared){cells=[['PRICE','Free'],['DOWNLOADS',String(a.shared.downloads||0)],['BY',(a.shared.author||'user')]];}
+    else if(a.pub){cells=[['PRICE','Free'],['BY',(a.by||'user')],['SAFETY','Sandboxed']];}
     else{
       let rank=0;const tops=_khStoreTop(STORE_APPS,STORE_APPS.length);
       for(let i=0;i<tops.length;i++)if(tops[i].view===a.view){rank=i+1;break;}
@@ -49499,7 +49554,13 @@ appstore:()=>{
     sh.appendChild(strip);
     sh.appendChild(txt('div',a.desc||'A KindleHub app.',{style:{fontSize:'13px',lineHeight:'1.6',marginBottom:'14px'}}));
     const row=el('div',{style:{display:'flex',gap:'8px'}});
-    if(a.pub){
+    if(a.shared){
+      if(_khStoreDownloaded(a.shared.id)){
+        const o=txt('button','Open',{className:'btn primary',style:{flex:'1'}});o.onclick=function(){ov.remove();const lo=(S.publishedApps||[]).filter(function(x){return x.id===a.shared.id;})[0];if(lo)_khOpenPublishedApp(lo);};row.appendChild(o);
+      }else{
+        const d=txt('button','Download',{className:'btn primary',style:{flex:'1'}});d.onclick=function(){d.disabled=true;d.textContent='Downloading…';_khDownloadStoreApp(a.shared,function(){ov.remove();if(paint)paint();});};row.appendChild(d);
+      }
+    }else if(a.pub){
       const o=txt('button','Open',{className:'btn primary',style:{flex:'1'}});o.onclick=function(){ov.remove();_khOpenPublishedApp(a.pub);};row.appendChild(o);
     }else if(_khStoreInstalled(a.view)){
       const o=txt('button','Open',{className:'btn primary',style:{flex:'1'}});o.onclick=function(){ov.remove();try{showView(a.view);}catch(_){}};
@@ -49510,7 +49571,7 @@ appstore:()=>{
       row.appendChild(g);
     }
     sh.appendChild(row);
-    sh.appendChild(txt('div',(a.pub?'Community app — runs in a locked sandbox.':'Built into KindleHub — free, works offline.'),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'10px'}}));
+    sh.appendChild(txt('div',(a.shared?'Community app — downloads to your device and runs in a locked sandbox.':(a.pub?'Community app — runs in a locked sandbox.':'Built into KindleHub — free, works offline.')),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'10px'}}));
     ov.appendChild(sh);
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
@@ -49645,22 +49706,42 @@ appstore:()=>{
         });
         host.appendChild(grid);
       });
-      /* Community (published) apps */
-      const pubShown=pub.filter(function(a){return (_cat==='All'||_cat==='Community')&&(!q||a.name.toLowerCase().indexOf(q)>=0);});
-      if(pubShown.length){
-        host.appendChild(secHdr('Community'));
-        const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
-        pubShown.forEach(function(a){
-          const act=el('div',{style:{flexShrink:'0'}});act.onclick=function(ev){ev.stopPropagation();};
-          const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};act.appendChild(openB);
-          const meta={name:a.name,cat:a.cat||'Fun',by:a.by||'user',desc:'Community app'+(a.model?(' · reviewed by '+a.model):''),pub:a};
-          grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'by '+(a.by||'user'),desc:meta.desc,action:act,onOpenSheet:function(){openSheet(meta,paint);}}));
-        });
-        host.appendChild(grid);
-      }
+      /* Community Apps — the SHARED marketplace: apps published by anyone,
+         downloadable by everyone. Fetched async, ranked by downloads. */
+      const showComm=(_cat==='All'||_cat==='Community'||true);
+      const commHdr=secHdr('Community Apps');
+      const commGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
+      const commLoad=txt('div','Loading community apps…',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 2px'}});
+      host.appendChild(commHdr);host.appendChild(commLoad);host.appendChild(commGrid);
       const shownCats=Object.keys(cats).length;
-      if(q&&!shownCats&&!pubShown.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
-      if(front)host.appendChild(txt('div',(allFirst.length+pub.length)+' apps in the catalogue · all free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
+      const _paintTok=(window.__khStorePaintTok=(window.__khStorePaintTok||0)+1);
+      _khFetchStoreApps().then(function(apps){
+        if(window.__khStorePaintTok!==_paintTok)return; /* a newer paint ran — bail */
+        try{if(commLoad.parentNode)commLoad.remove();}catch(_){}
+        const list=(apps||[]).filter(function(a){
+          if(q&&String(a.name||'').toLowerCase().indexOf(q)<0)return false;
+          if(_cat!=='All'&&_cat!=='Community'&&String(a.cat||'')!==_cat)return false;
+          return true;
+        });
+        if(!list.length){
+          if(_cat!=='All'&&_cat!=='Community'){try{commHdr.remove();}catch(_){}return;}
+          commGrid.appendChild(txt('div',(typeof _sbActive==='function'&&_sbActive())?'No community apps yet — publish one from the Publish tab and it appears here for everyone.':'Community apps need a backend connection.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px'}}));
+          return;
+        }
+        list.forEach(function(a){
+          const dled=_khStoreDownloaded(a.id);
+          const dl=(a.downloads||0);
+          const act=el('div',{style:{display:'flex',gap:'4px',flexShrink:'0'}});act.onclick=function(ev){ev.stopPropagation();};
+          const bt=txt('button',dled?'Open':'Download',{className:'btn small primary'});
+          bt.onclick=dled?function(){const lo=(S.publishedApps||[]).filter(function(x){return x.id===a.id;})[0];if(lo)_khOpenPublishedApp(lo);}
+                         :function(){bt.disabled=true;bt.textContent='…';_khDownloadStoreApp(a,function(){paint();});};
+          act.appendChild(bt);
+          const desc='Community app'+(a.model?(' · reviewed by '+a.model):'')+' · '+dl+(dl===1?' download':' downloads');
+          commGrid.appendChild(appCard({name:a.name,cat:(a.cat||'Fun'),by:(dl+(dl===1?' dl':' dls')),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},paint);}}));
+        });
+      });
+      if(q&&!shownCats)host.appendChild(txt('div','',{style:{display:'none'}}));
+      if(front)host.appendChild(txt('div',(allFirst.length)+' built-in apps · community apps download free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
   }

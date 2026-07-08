@@ -107,19 +107,20 @@ const COLUMNS = {
   kh_banned_usernames:['name','reason','created_at'],
   kh_visits:['device_id','day','last_seen','ua_hint','country','city'],
   kh_rate:['bucket','win_start','n'],
+  kh_store_apps:['id','name','html','cat','author','model','created_at','downloads'],
 };
 const PK = {
   kh_users:['hash'], kh_groups:['code'], kh_messages:['id'], kh_mail:['id'],
   kh_feedback:['id'], kh_errors:['id'], kh_scores:['id'], kh_announcements:['id'],
   kh_presence:['user_id'], kh_shared_api_usage:['date'], kh_banned_usernames:['name'],
-  kh_visits:['device_id','day'], kh_rate:['bucket'],
+  kh_visits:['device_id','day'], kh_rate:['bucket'], kh_store_apps:['id'],
 };
 const JSON_COLS = { kh_messages:['reactions'], kh_announcements:['targets','comments'], kh_feedback:['comments'] };
 const BOOL_COLS = { kh_messages:['edited','important','pinned'], kh_announcements:['active'] };
-const INT_COLS  = new Set(['score','votes','count','n']);
+const INT_COLS  = new Set(['score','votes','count','n','downloads']);
 const TS_COLS   = new Set(['updated_at','ts','created_at','date','last_seen']);
 /* RLS equivalents: which tables accept a direct (anon) INSERT / open UPDATE. */
-const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits']);
+const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits','kh_store_apps']);
 /* Open (anon) UPDATE. kh_groups was REMOVED: the client never PATCHes a group
    (it only INSERTs on create), and an open update let anyone enumerate room
    codes then rename / re-own every room. */
@@ -377,6 +378,13 @@ async function selectByPk(DB, table, pkVals){
 /* ── RPCs (ported from the SECURITY DEFINER functions) ───────────────────── */
 async function handleRpc(fn, body, DB, env){
   body = body||{};
+  if(fn==='kh_store_download'){
+    /* Atomic download counter for a shared-store app (drives the ranking).
+       Open to anyone — it only ever increments a public counter by 1. */
+    if(!body.p_id) return err('missing id',400,env);
+    try{ await DB.prepare('UPDATE kh_store_apps SET downloads=COALESCE(downloads,0)+1 WHERE id=?').bind(String(body.p_id)).run(); }catch(_){}
+    return json(true, 200, env);
+  }
   if(fn==='kh_mod_stats'){
     /* Limited moderator dashboard: aggregate COUNTS only. Returns numbers, never
        rows — no usernames, emails, message/mail bodies or state blobs — so a
@@ -593,6 +601,13 @@ async function handlePost(table, url, request, env, DB){
   if(!adminReq) for(const row of rows){
     if(table==='kh_messages'){ if(!await checkRate(DB,'msg:'+(row.group_code||''),30,60)) return err('Rate limit exceeded — max 30 messages per group per minute',429,env); }
     if(table==='kh_feedback'){ if(!await checkRate(DB,'fb:'+(row.type||''),10,60)) return err('Rate limit exceeded — max 10 feedback submissions per minute',429,env); }
+    if(table==='kh_store_apps'){
+      /* Shared App Store publish: cap size (protect D1 + the free-tier budget)
+         and rate-limit publishes so it can't be flooded. Apps are client-AI-
+         reviewed before this call and always run sandboxed + CSP-locked. */
+      if(String(row.html||'').length > 550000) return err('App is too large (max ~512 KB).',413,env);
+      if(!await checkRate(DB,'store:pub',20,3600)) return err('Too many app publishes right now — try again shortly.',429,env);
+    }
   }
 
   const out=[];
@@ -765,6 +780,9 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_visits (device_id TEXT NOT NULL, day TEXT NOT NULL, last_seen TEXT, ua_hint TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '', PRIMARY KEY (device_id, day))",
   "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS kh_daily (date TEXT PRIMARY KEY, n INTEGER DEFAULT 0, w INTEGER DEFAULT 0)",
+  /* Shared App Store: apps published by any user, downloadable by everyone. */
+  "CREATE TABLE IF NOT EXISTS kh_store_apps (id TEXT PRIMARY KEY, name TEXT NOT NULL, html TEXT NOT NULL, cat TEXT DEFAULT 'Fun', author TEXT DEFAULT '', model TEXT DEFAULT '', created_at TEXT, downloads INTEGER DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS kh_store_apps_rank ON kh_store_apps(downloads DESC, created_at DESC)",
 ];
 let _schemaReady = false;
 async function ensureSchema(DB){
