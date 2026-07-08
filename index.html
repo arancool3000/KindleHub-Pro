@@ -6727,7 +6727,10 @@ async function khiCall(prompt, opts){
   if(prov==='shared'){
     let _last='';
     try{
-      const r=await callSharedGeminiStream([{role:'user',text:prompt}],t=>{_last=t;});
+      /* Pass opts.model through so a caller (e.g. the App Store reviewer) can
+         pin the shared proxy to a specific approved model; undefined = the
+         normal auto-switch chain, so every other shared caller is unaffected. */
+      const r=await callSharedGeminiStream([{role:'user',text:prompt}],t=>{_last=t;},{model:opts.model});
       const out=String(r||_last||'').trim();
       return out||null;
     }catch(e){console.warn('KHI shared error',e);toast('KHI: shared key error');return null;}
@@ -27062,7 +27065,7 @@ function sharedPerModelRemaining(totalUsed){
     return {id:m.id,name:m.name,cap:m.cap,used:used,remaining:m.cap-used};
   });
 }
-async function callSharedGeminiStream(messages, onChunk){
+async function callSharedGeminiStream(messages, onChunk, opts){
   const url=sharedKeyProxyUrl();
   if(!url)return '(Shared key proxy not configured. Open admin panel → Diagnostics for setup steps.)';
   /* Pre-flight cap check — fail fast without burning a request. The
@@ -27097,6 +27100,9 @@ async function callSharedGeminiStream(messages, onChunk){
   let _chain;
   if(_autoSwitchShared){_chain=SHARED_KEY_FALLBACK_CHAIN.slice();if(_pref)_chain=[_pref].concat(_chain.filter(function(m){return m!==_pref;}));}
   else{_chain=[_pref||SHARED_KEY_FALLBACK_CHAIN[0]];}
+  /* A caller can FORCE a single shared model (e.g. the App Store reviewer, which
+     must use ONLY its approved models — never auto-switch to a weaker one). */
+  if(opts&&opts.model&&SHARED_KEY_FALLBACK_CHAIN.indexOf(opts.model)>=0)_chain=[opts.model];
   const tried=[];
   let _gotResponse=false;/* did we ever reach the proxy and get HTTP headers back? */
   let _sawOverload=false;/* any model returned 503/500 (overloaded) */
