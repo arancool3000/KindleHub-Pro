@@ -954,6 +954,73 @@ applies. **No backend change** — all 3 review models are already in the shared
 For the record: the App Store, account merge, security hardening and this fix are ALL client-side — none of
 the last several rounds needed a Worker redeploy, a D1 schema re-run, or an env-var change.
 
+## ⚙ Git / release workflow (IMPORTANT — squash-merge divergence gotcha)
+The dev branch is `claude/keen-tesla-n73rpc`; work merges to `main` via **squash** PRs (the user's chosen
+merge method). Squash-merging REWRITES the branch's commits into ONE new commit on `main`, so **after every
+merge the branch's old commits are no longer ancestors of `main`** → the next push/PR on the same branch
+looks "diverged" and a naive PR shows the whole prior diff again / 409-conflicts.
+- **Force-push is BLOCKED** by the environment's auto-mode classifier unless the user explicitly names the
+  force-push + target. So do NOT rely on `git push --force-with-lease` to "restart the branch from main".
+- **The non-force recipe that works** (used twice this session): after a squash merge, to add a follow-up on
+  the same branch: `git fetch origin main` → `git merge origin/main -m "…"` INTO the branch (resolve the big
+  files with **ours** = the branch's tested content, since the branch is a superset of main), then commit your
+  new change on top; the merge commit makes `main` an ancestor again so the next PR squashes to only your new
+  diff and pushes as a fast-forward. (Alternatively branch fresh from main and cherry-pick the follow-up, then
+  merge main back in — same idea.) Verify with `git diff --stat origin/main HEAD` = ONLY your intended files.
+- **Repo redirect**: the git remote 307-redirects `arancool3000/Claude-code` → `KindleHub-Pro`, but the
+  GitHub MCP tools are scoped to the ORIGINAL name — use `owner:arancool3000, repo:claude-code` for all
+  `mcp__github__*` calls (PRs/merges). PR URLs come back as `…/KindleHub-Pro/pull/N`.
+- Commit-trailer + PR-body conventions are enforced by the harness (session URL line; no model-id in
+  artifacts). Push only to the dev branch; merge via PR only when the user asks (they have, each round).
+
+## ☁ Backend status (as of this session)
+The App Store, account merge (aran↔arancool3000), security hardening, the review-model pin, Animals/Explore,
+the Unit Converter + Tip Calculator apps, and all recent bug fixes are **100% client-side** (`index.html`
+only). NONE needed a Worker redeploy, a D1 schema re-run, or an env-var change. Standing deploy = merge → grab
+`index.min.html` from `main` → upload → Cloudflare **Purge Everything**. The only backend-touching items are
+the OLDER standing DEPLOY GATES (still open, unchanged): migrate all users to D1 before severing Supabase,
+set `KH_PEPPER` (+ `MOD_HASHES` if granting mods), redeploy `api-worker.js`. Announcement-comment POSTs only
+persist on the D1 backend (Supabase RLS 403s — the client now toasts gracefully instead of crashing).
+
+## 🏬 App Store + apps quick-reference (grep anchors, S fields, tests)
+- Globals after `window._reservedUsername=…` (~line 8036): `STORE_APPS` (26 first-party apps in 6 cats
+  Productivity/Reference/Utilities/Creativity/Lifestyle/News & Media), `STORE_FEATURED` (front-page strip),
+  `STORE_DEFAULT_HIDDEN` (apps hidden from nav until installed — the boot applier hides only ones the user
+  NEVER decided on, `navHidden[v]==null`, so new store apps auto-hide without a migration bump),
+  `APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash']`. Helpers:
+  `_khStoreInstalled/Install/Remove`, `_khOtherStorePages` (More Pages = every other NAV_TABS view),
+  `_khStoreMigrate`, `_khMaybeShowStoreNotice`, `_khParseVerdict`, `_khReviewApp`, `_khProcessReviewQueue`
+  (throttled queue retry — the "waiting-list next day" path), `_khPublishApp`, `_khOpenPublishedApp`,
+  `_khWrapAppSecure`/`_khAppCsp`/`_khAppRiskFlags` (security). View = `BUILDERS.appstore` (Discover/Publish/
+  My Apps). Published games surface in a **Community Games** section at the bottom of `BUILDERS.games`.
+- **Two new mini-apps** (real views, offline, e-ink-safe): `BUILDERS.unitconv` (7 categories, factor-based +
+  special-cased temperature, from/to selects + Swap) and `BUILDERS.tipcalc` (bill + tip% chips + custom% +
+  split stepper → Tip/Total/Each). Each has a hidden nav tab, a `NAV_TABS` entry, a STORE_APPS entry, and is
+  in STORE_DEFAULT_HIDDEN.
+- **S fields added**: `publishedApps:[]`, `appReviewQueue:[]`, `appStoreMigrated` (set once). `S.navHidden`
+  is the install map (view→true=hidden/uninstalled). `S.profileName` (editable display name, preferred by
+  `displayName()`). Store app HTML lives in `S.publishedApps` (synced state), NEVER in index.html.
+- **Tests** (all in /tmp, headless vs index.min.html): `appstore_test.cjs` (migration/tabs/Get/verdict/
+  publish approve|decline|waitlist/queue-drain/community-games), `appstore2_test.cjs` (alias+merge-key+admin
+  gate, CSP+no-popups sandbox+risk flags, unitconv/tipcalc math, featured+count+install), `appstore_boot.cjs`
+  (fresh-load notice+mount, no pageerrors), `review_model_test.cjs` (shared-proxy model pinning).
+
+## 🔐 Account/admin internals + security backlog
+- **Admin gate** (`_ADMIN_HASHES`, `_checkAdmin`): matches SHA-256 of 5–40-char tokens split out of
+  `S.email` + `S.user`; a match sets `window._isAdminCached=true` AND `window._adminToken` (sent as
+  `X-KH-Admin` for server admin ops). The creator's login-username is the admin token. `_isAdminUsername`
+  mirrors the test on a login attempt (capacity-lock bypass).
+- **Account alias** (`_khCanonicalUsername`, near `authRegister`): maps `aran`→`arancool3000`; applied at the
+  top of `authLogin` AND inside `_userKey`, so either username + the same password hashes to the SAME account
+  key (merge) and inherits admin via the canonical name flowing into `_checkAdmin`. Deliberately did NOT add
+  a short `aran` token to `_ADMIN_HASHES` (see caveat below).
+- **⚠ SECURITY CAVEAT / hardening backlog** — `_checkAdmin` tokenises `S.user`, the user-settable ONBOARDING
+  display name, in addition to the authenticated `S.email`. That makes the display name an unnecessary
+  admin-match surface (a user whose display-name token equals the creator's handle would satisfy the gate).
+  This is PRE-EXISTING (not introduced by the alias work) and is exactly why short/guessable admin tokens
+  must never be added. Recommended fix (confirm with the user first — touches admin auth): match ONLY the
+  authenticated login identity (`S.email`, which requires the real password), not `S.user`. Not yet applied.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
@@ -978,6 +1045,15 @@ Free Library (in-app Project Gutenberg reader — search + read full text, pagin
 size; wired to the books tracker. Closes the one gap vs **ReKindle** — rekindle.ink, the competitor users
 compare us to: it can read free Gutenberg/Libby books; we now read full text too AND keep everything else).
 
+**Real App Store** (`BUILDERS.appstore`) — a marketplace app (separate from the KindleOS AI app builder):
+install/remove first-party views into the top menu, publish your own apps (AI-reviewed by only the 3 approved
+Gemini models, sandboxed + CSP-hardened, stored in `S.publishedApps` not the site code), Featured strip,
+Community Games on the Games page. It's the SINGLE tab manager now — the old Settings "Top Menu Pages" card
+and the onboarding "Your tabs" step were removed. **Animals** encyclopedia (7 classes, per-animal stat pages,
+Wikimedia images, size-vs-human SVG), **Explore** info hub, **Unit Converter**, **Tip Calculator**.
+Messages media (images/screenshots/stickers/polls/app-share/friends), profile display name (`S.profileName`).
+Account merge: `aran` and `arancool3000` are one admin account (same password → same data).
+
 Split screen / "2 pages in 1" multitasking — two stacked, independently-scrolling panes, each a real view;
 entry via the repurposed header "Recent" button (now the `_khOpenMultitask` panel). Delivered the community
 "multitasking" request; the heavier "true N-tab background multitasking incl. KindleOS" is still pending.
@@ -992,17 +1068,26 @@ Feasible-but-missing batch to add (all e-ink-friendly): Anagrams, Connections, S
 Mini Crossword, Nonograms, Maze, Yahtzee, Perfect Circle, Dino (reskin of the GeometryDash engine). SKIP on
 e-ink: DOOM (fast raycaster), Pictionary-LIVE (realtime drawing — revisit if Durable Objects realtime lands).
 
-PENDING / bigger jobs (each its own session):
+DONE since this list was written: **Dedicated Mario-style platformer** (`const Platformer` = "Pixel Hop",
+game id `platformer`, + one-tap Jump◄/Jump► buttons), **flashcard review polish** (SM-2 + Cram mode +
+keyboard shortcuts), **Non-UTC streak date-keys** (`_localDayKey`), **online 2-player** for 8-Ball pool
+(local2 + Ultra-gated online via shooter-authoritative KH_MP sync) + Artillery, **Maze** + **Perfect Circle**
++ **Farm** games, **App Store**, **Animals** encyclopedia + **Explore** hub, **Unit Converter** + **Tip
+Calculator**, account merge, App-Store security hardening. Game count now 38 (`tools/games_test.cjs`).
+
+STILL PENDING / bigger jobs (each its own session):
 - **True N-tab background multitasking** (keep 3+ activities alive at once, incl. KindleOS). Split screen
   covers 2 side-by-side; this is the heavier multi-tab version.
-- **Online real-time 2-player games** to beat ReKindle: our chess/checkers/connect4/battleship are local
-  pass-and-play (same as ReKindle). Live cross-device play (Supabase realtime/polling + matchmaking) would
-  pull ahead. Big, its own session — requested alongside the reader but deferred to avoid bundling risk.
-- **Tools/productivity parity+** vs ReKindle's Tools tab: Pomodoro/focus timer, flashcard review polish.
-- **Dedicated platformer game** — note: **DigQuest already IS a platformer** (`const DigQuest`), described
-  as a 2.5D dig-and-smash story platformer. A new cleaner Mario-style platformer was requested.
-- **Online real-time team games** (live shared board for 3–4 players). Team Sudoku is share-a-code only.
-- Non-UTC streak date-keys (habits/notes use UTC `toISOString().slice(0,10)` — wrong rollover off-UTC).
+- **Online real-time 2-player across the board**: pool + artillery are online now, but chess/checkers/
+  connect4/battleship are still local pass-and-play. A shared matchmaking + per-game online wiring pass would
+  finish it. `KH_MP.openParty` (2–4p lobby) exists but no party game is wired to `onStart` yet.
+- **Online real-time TEAM games** (live shared board for 3–4 players). Team Sudoku is share-a-code only.
+- **Remaining e-ink games batch**: Nerdle, Yahtzee, Dino (GeometryDash reskin), Connections, Spelling Bee,
+  Strands, Mini Crossword (Anagrams/Nonograms/Maze/Perfect Circle already shipped).
+- **Cross-device profile backgrounds**: `S.profileBg` is local-only; showing it on OTHERS' clients needs a
+  profile-sync channel.
+- **Live animated GIF search** in chat (needs a Tenor/Giphy key; stickers shipped as the keyless answer).
+- **Admin-gate hardening** (see "Account/admin internals" above — drop `S.user` from `_checkAdmin`).
 
 ## Known gotchas
 - **⚠ Old-WebKit (Kindle Silk) syntax — modern Chromium/headless WON'T catch it.** Silk throws a
