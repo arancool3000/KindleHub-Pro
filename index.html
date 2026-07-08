@@ -8039,6 +8039,100 @@ window._reservedUsername=_reservedUsername;
    can ONLY approve or decline (never edit), trying the strongest available
    Gemini review model first and falling back; if all are rate-limited the app
    waits in a review queue and is retried. */
+/* ── Shared app icon library (moved OUT of the retro-home builder so the App
+   Store + retro home draw from ONE set). Tiny outline SVGs, keys = view ids. */
+window.KH_ICONS={
+      home:'<rect x="3" y="11" width="18" height="10"/><polyline points="2,12 12,3 22,12"/>',
+      games:'<rect x="3" y="8" width="18" height="11" rx="3"/><line x1="8" y1="12" x2="8" y2="16"/><line x1="6" y1="14" x2="10" y2="14"/><circle cx="16" cy="13" r="1" fill="currentColor"/><circle cx="18" cy="15" r="1" fill="currentColor"/>',
+      chat:'<path d="M21 12a8 8 0 1 1-3-6.2L21 4l-1 4.5A8 8 0 0 1 21 12z"/>',
+      tools:'<path d="M14 6l4-4 4 4-4 4"/><path d="M3 21l8-8"/><path d="M14 6l-8 8-3 3 3 3 3-3 8-8"/>',
+      calc:'<rect x="5" y="3" width="14" height="18" rx="2"/><rect x="8" y="6" width="8" height="3"/><circle cx="9" cy="13" r="0.7" fill="currentColor"/><circle cx="12" cy="13" r="0.7" fill="currentColor"/><circle cx="15" cy="13" r="0.7" fill="currentColor"/><circle cx="9" cy="17" r="0.7" fill="currentColor"/><circle cx="12" cy="17" r="0.7" fill="currentColor"/><circle cx="15" cy="17" r="0.7" fill="currentColor"/>',
+      reading:'<path d="M4 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z"/>',
+      draw:'<path d="M3 21l3-1 11-11-2-2-11 11z"/><path d="M14 6l4 4"/>',
+      breathe:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+      messages:'<rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3,7 12,13 21,7"/>',
+      feedback:'<path d="M21 12a8 8 0 1 1-3-6.2L21 4l-1 4.5"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="8" y1="14" x2="12" y2="14"/>',
+      dictionary:'<rect x="5" y="3" width="14" height="18" rx="1"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>',
+      maps:'<polygon points="3,5 9,3 15,5 21,3 21,19 15,21 9,19 3,21"/><line x1="9" y1="3" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="21"/>',
+      rss:'<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor"/>',
+      discover:'<circle cx="12" cy="12" r="9"/><polygon points="14,14 8,16 10,10 16,8" fill="currentColor"/>',
+      translate:'<path d="M4 5h7M7.5 5v12M4 9h7"/><path d="M13 19l3-7 3 7M14.5 16h3"/>',
+      cipher:'<rect x="6" y="11" width="12" height="9" rx="1"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/>',
+      mdjournal:'<rect x="4" y="3" width="16" height="18" rx="1"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/>',
+      notes:'<rect x="5" y="4" width="14" height="17" rx="1"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
+      slides:'<rect x="3" y="5" width="18" height="13" rx="1"/><line x1="3" y1="18" x2="21" y2="18"/><line x1="12" y1="18" x2="12" y2="21"/>',
+      starmap:'<polygon points="12,3 14,9 21,9 15.5,13 17.5,20 12,16 6.5,20 8.5,13 3,9 10,9"/>',
+      weather:'<circle cx="8" cy="11" r="3"/><path d="M8 4v2M12.5 6.5l-1.4 1.4M15 11h2M11.5 15.5l-1.4-1.4M4.5 15.5l1.4-1.4M3 11H1M4.5 6.5l1.4 1.4"/><path d="M12 17h7a2 2 0 0 0 0-4 3 3 0 0 0-6 0"/>',
+      kanban:'<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="7" rx="1"/>',
+      calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>',
+      periodic:'<rect x="3" y="3" width="6" height="6"/><rect x="10" y="3" width="6" height="6"/><rect x="17" y="3" width="4" height="6"/><rect x="3" y="10" width="6" height="6"/><rect x="10" y="10" width="6" height="6"/><rect x="3" y="17" width="6" height="4"/>',
+      formulas:'<text x="3" y="17" font-size="14" font-family="serif" font-style="italic" fill="currentColor" stroke="none">f(x)</text>',
+      science:'<path d="M9 3v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-10V3"/><line x1="7" y1="3" x2="17" y2="3"/>',
+      sleeplog:'<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
+      qrgen:'<rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><line x1="14" y1="14" x2="14" y2="17"/><line x1="17" y1="14" x2="20" y2="14"/><line x1="17" y1="17" x2="17" y2="20"/><line x1="20" y1="17" x2="20" y2="20"/>',
+      stocks:'<polyline points="3,18 9,12 13,15 21,5"/><polyline points="15,5 21,5 21,11"/>',
+      wikipedia:'<text x="3" y="18" font-size="16" font-family="serif" font-weight="700" fill="currentColor" stroke="none">W</text>',
+      cookbook:'<path d="M6 4h12v14a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z"/><path d="M9 4v17"/>',
+      settings:'<circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2"/>',
+      sheets:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>',
+      mail:'<rect x="3" y="5" width="18" height="14" rx="1"/><polyline points="3,6 12,13 21,6"/>',
+      browser:'<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13 13 0 0 1 0 18"/><path d="M12 3a13 13 0 0 0 0 18"/>',
+      files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+      screenshot:'<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6l1.3-2h4.4l1.3 2"/>',
+      imagesearch:'<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="M4 16l4.5-4 3 2.5L16 9l4 5"/>',
+      sports:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/><path d="M6 6l12 12M18 6L6 18" opacity=".45"/>'
+    };
+/* Icons for the newer store apps (they used to fall back to a plain square). */
+window.KH_ICONS.animals='<circle cx="12" cy="15" r="3.6"/><circle cx="6.5" cy="9" r="1.8"/><circle cx="10.2" cy="6" r="1.8"/><circle cx="13.8" cy="6" r="1.8"/><circle cx="17.5" cy="9" r="1.8"/>';
+window.KH_ICONS.unitconv='<path d="M4 7h13"/><path d="M14 4l3 3-3 3"/><path d="M20 17H7"/><path d="M10 14l-3 3 3 3"/>';
+window.KH_ICONS.tipcalc='<circle cx="12" cy="12" r="9"/><line x1="8.5" y1="15.5" x2="15.5" y2="8.5"/><circle cx="9.2" cy="9.2" r="1.3"/><circle cx="14.8" cy="14.8" r="1.3"/>';
+window.KH_ICONS.appstore='<path d="M8 21L12 6l4 15"/><line x1="9.2" y1="16" x2="14.8" y2="16"/>';
+window.KH_ICONS.explore=window.KH_ICONS.discover;
+window.KH_ICON_FALLBACK='<rect x="4" y="4" width="16" height="16" rx="2"/>';
+/* Brand colour per view (mirrors the KindleOS BUILTIN_APPS palette + fills the
+   store-only apps). White icon strokes need DARK fills — keep them deep. */
+window.KH_APP_COLORS={chat:'#2563eb',games:'#7c3aed',appstore:'#0b7ff2',notes:'#b45309',maps:'#0f766e',weather:'#0ea5e9',starmap:'#1e1b4b',messages:'#0f766e',tools:'#475569',calc:'#1f2937',reading:'#92400e',browser:'#1f2937',draw:'#db2777',rss:'#dc2626',translate:'#0891b2',breathe:'#064e3b',kanban:'#b45309',calendar:'#0f4c81',stocks:'#166534',settings:'#374151',dictionary:'#0369a1',discover:'#7e22ce',explore:'#7e22ce',cipher:'#1e3a5f',mdjournal:'#78350f',feedback:'#065f46',science:'#0f4c5c',sleeplog:'#1e1b4b',periodic:'#4338ca',qrgen:'#111827',wikipedia:'#1a1a1a',worldclock:'#0c4a6e',wheel:'#6d28d9',formulas:'#1d4ed8',slides:'#be185d',sheets:'#15803d',cookbook:'#b91c1c',files:'#475569',sports:'#166534',imagesearch:'#0891b2',animals:'#92400e',unitconv:'#0f766e',tipcalc:'#166534',screenshot:'#334155',mail:'#b45309'};
+/* App-Store icon tile: white outline icon on the app's brand colour, rounded
+   like a real app icon. Returns an HTML string. Solid fills + box-shadow only
+   (both fine on old Silk); NO gradients/aspect-ratio. */
+function _khStoreTile(view,px){
+  px=px||44;
+  var c=window.KH_APP_COLORS[view]||'#374151';
+  var ic=window.KH_ICONS[view]||window.KH_ICON_FALLBACK;
+  var pad=Math.round(px*0.2);
+  return '<span style="display:flex;flex:0 0 auto;width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.24)+'px;background:'+c+';align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28), inset 0 -'+Math.max(2,Math.round(px*0.06))+'px 0 rgba(0,0,0,.16);padding:'+pad+'px;box-sizing:border-box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%">'+ic+'</svg></span>';
+}
+/* Monogram tile for community apps (no view id): colour hashed from the name. */
+function _khMonoTile(name,px){
+  px=px||44;var s=String(name||'?');var h=0;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;
+  var PAL=['#2563eb','#7c3aed','#0f766e','#b91c1c','#b45309','#166534','#0369a1','#db2777','#4338ca','#78350f'];
+  var mono=s.replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'AP';
+  return '<span style="display:flex;flex:0 0 auto;width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.24)+'px;background:'+PAL[h%PAL.length]+';color:#fff;align-items:center;justify-content:center;font-weight:900;font-size:'+Math.round(px*0.38)+'px;box-shadow:0 1px 3px rgba(0,0,0,.28), inset 0 -'+Math.max(2,Math.round(px*0.06))+'px 0 rgba(0,0,0,.16)">'+mono+'</span>';
+}
+/* Per-device page-usage counts (fed by showView) — the HONEST ranking signal
+   for the store's Top Charts. Device-local, never in S. */
+function _khUseCounts(){try{return JSON.parse(localStorage.getItem('kh_use_counts')||'{}')||{};}catch(_){return {};}}
+function _khUseBump(view){
+  try{
+    if(view==='home'||view==='appstore'||view==='settings')return;
+    var m=_khUseCounts();m[view]=Math.min(9999,(m[view]||0)+1);
+    var ks=Object.keys(m);if(ks.length>80)delete m[ks[0]];
+    localStorage.setItem('kh_use_counts',JSON.stringify(m));
+  }catch(_){}
+}
+/* Curated prior so a FRESH device still shows a sensible chart; real usage
+   quickly dominates (usage is worth 10 points per open, the prior max ~14). */
+var _KH_STORE_PRIOR=['animals','starmap','sports','wikipedia','rss','unitconv','cookbook','slides','imagesearch','dictionary','translate','maps','science','draw'];
+function _khStoreTop(list,n){
+  var use=_khUseCounts();
+  var scored=list.map(function(a){
+    var pi=_KH_STORE_PRIOR.indexOf(a.view);
+    return {a:a,s:(use[a.view]||0)*10+(pi>=0?(_KH_STORE_PRIOR.length-pi):0)};
+  });
+  scored.sort(function(x,y){return y.s-x.s;});
+  return scored.slice(0,n).map(function(x){return x.a;});
+}
+window._khStoreTile=_khStoreTile;window._khMonoTile=_khMonoTile;window._khUseBump=_khUseBump;window._khUseCounts=_khUseCounts;window._khStoreTop=_khStoreTop;
 var STORE_APPS=[
   /* Productivity */
   {view:'slides',    name:'Slides',        cat:'Productivity', desc:'Build and present slide decks.'},
@@ -14015,6 +14109,8 @@ function showView(id){
     const rv=window._khRecentViews;
     const at=rv.indexOf(id);if(at>=0)rv.splice(at,1);
     rv.unshift(id);if(rv.length>8)rv.length=8;
+    /* Per-device usage count — feeds the App Store's Top Charts ranking. */
+    if(typeof _khUseBump==='function')_khUseBump(id);
   }catch(_){}
   const _host=_viewHost();
   while(_host.firstChild)_host.removeChild(_host.firstChild);
@@ -31107,48 +31203,10 @@ home:()=>{
        The Edit button rides on the first category header. */
     /* Tiny outline SVG library — kept inline so we don't pull a font.
        Keys map to NAV_TABS view ids; missing ids fall back to a generic. */
-    const ICON_LIB={
-      home:'<rect x="3" y="11" width="18" height="10"/><polyline points="2,12 12,3 22,12"/>',
-      games:'<rect x="3" y="8" width="18" height="11" rx="3"/><line x1="8" y1="12" x2="8" y2="16"/><line x1="6" y1="14" x2="10" y2="14"/><circle cx="16" cy="13" r="1" fill="currentColor"/><circle cx="18" cy="15" r="1" fill="currentColor"/>',
-      chat:'<path d="M21 12a8 8 0 1 1-3-6.2L21 4l-1 4.5A8 8 0 0 1 21 12z"/>',
-      tools:'<path d="M14 6l4-4 4 4-4 4"/><path d="M3 21l8-8"/><path d="M14 6l-8 8-3 3 3 3 3-3 8-8"/>',
-      calc:'<rect x="5" y="3" width="14" height="18" rx="2"/><rect x="8" y="6" width="8" height="3"/><circle cx="9" cy="13" r="0.7" fill="currentColor"/><circle cx="12" cy="13" r="0.7" fill="currentColor"/><circle cx="15" cy="13" r="0.7" fill="currentColor"/><circle cx="9" cy="17" r="0.7" fill="currentColor"/><circle cx="12" cy="17" r="0.7" fill="currentColor"/><circle cx="15" cy="17" r="0.7" fill="currentColor"/>',
-      reading:'<path d="M4 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z"/>',
-      draw:'<path d="M3 21l3-1 11-11-2-2-11 11z"/><path d="M14 6l4 4"/>',
-      breathe:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
-      messages:'<rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3,7 12,13 21,7"/>',
-      feedback:'<path d="M21 12a8 8 0 1 1-3-6.2L21 4l-1 4.5"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="8" y1="14" x2="12" y2="14"/>',
-      dictionary:'<rect x="5" y="3" width="14" height="18" rx="1"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>',
-      maps:'<polygon points="3,5 9,3 15,5 21,3 21,19 15,21 9,19 3,21"/><line x1="9" y1="3" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="21"/>',
-      rss:'<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor"/>',
-      discover:'<circle cx="12" cy="12" r="9"/><polygon points="14,14 8,16 10,10 16,8" fill="currentColor"/>',
-      translate:'<path d="M4 5h7M7.5 5v12M4 9h7"/><path d="M13 19l3-7 3 7M14.5 16h3"/>',
-      cipher:'<rect x="6" y="11" width="12" height="9" rx="1"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/>',
-      mdjournal:'<rect x="4" y="3" width="16" height="18" rx="1"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/>',
-      notes:'<rect x="5" y="4" width="14" height="17" rx="1"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
-      slides:'<rect x="3" y="5" width="18" height="13" rx="1"/><line x1="3" y1="18" x2="21" y2="18"/><line x1="12" y1="18" x2="12" y2="21"/>',
-      starmap:'<polygon points="12,3 14,9 21,9 15.5,13 17.5,20 12,16 6.5,20 8.5,13 3,9 10,9"/>',
-      weather:'<circle cx="8" cy="11" r="3"/><path d="M8 4v2M12.5 6.5l-1.4 1.4M15 11h2M11.5 15.5l-1.4-1.4M4.5 15.5l1.4-1.4M3 11H1M4.5 6.5l1.4 1.4"/><path d="M12 17h7a2 2 0 0 0 0-4 3 3 0 0 0-6 0"/>',
-      kanban:'<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="7" rx="1"/>',
-      calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>',
-      periodic:'<rect x="3" y="3" width="6" height="6"/><rect x="10" y="3" width="6" height="6"/><rect x="17" y="3" width="4" height="6"/><rect x="3" y="10" width="6" height="6"/><rect x="10" y="10" width="6" height="6"/><rect x="3" y="17" width="6" height="4"/>',
-      formulas:'<text x="3" y="17" font-size="14" font-family="serif" font-style="italic" fill="currentColor" stroke="none">f(x)</text>',
-      science:'<path d="M9 3v6L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-10V3"/><line x1="7" y1="3" x2="17" y2="3"/>',
-      sleeplog:'<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
-      qrgen:'<rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><line x1="14" y1="14" x2="14" y2="17"/><line x1="17" y1="14" x2="20" y2="14"/><line x1="17" y1="17" x2="17" y2="20"/><line x1="20" y1="17" x2="20" y2="20"/>',
-      stocks:'<polyline points="3,18 9,12 13,15 21,5"/><polyline points="15,5 21,5 21,11"/>',
-      wikipedia:'<text x="3" y="18" font-size="16" font-family="serif" font-weight="700" fill="currentColor" stroke="none">W</text>',
-      cookbook:'<path d="M6 4h12v14a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z"/><path d="M9 4v17"/>',
-      settings:'<circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M3 12h3M18 12h3M5.5 5.5l2 2M16.5 16.5l2 2M5.5 18.5l2-2M16.5 7.5l2-2"/>',
-      sheets:'<rect x="3" y="4" width="18" height="16" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/>',
-      mail:'<rect x="3" y="5" width="18" height="14" rx="1"/><polyline points="3,6 12,13 21,6"/>',
-      browser:'<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13 13 0 0 1 0 18"/><path d="M12 3a13 13 0 0 0 0 18"/>',
-      files:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-      screenshot:'<rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8.5 6l1.3-2h4.4l1.3 2"/>',
-      imagesearch:'<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9" r="1.6"/><path d="M4 16l4.5-4 3 2.5L16 9l4 5"/>',
-      sports:'<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17"/><path d="M6 6l12 12M18 6L6 18" opacity=".45"/>'
-    };
-    const FALLBACK_ICON='<rect x="4" y="4" width="16" height="16" rx="2"/>';
+    /* Icon library + fallback are GLOBAL now (window.KH_ICONS, defined near
+       STORE_APPS) so the App Store shares the same icons — one source. */
+    const ICON_LIB=window.KH_ICONS;
+    const FALLBACK_ICON=window.KH_ICON_FALLBACK;
     /* Build from NAV_TABS so it stays in sync with the rest of the app.
        Add Home and Settings explicitly — they aren't in NAV_TABS.
        Filter through S.retroHidden so the Edit picker can hide apps from
@@ -49360,12 +49418,12 @@ appstore:()=>{
   }
   v.append(tabRow,body);
 
+  /* ── App-Store-style cards: real icon tiles, shading, tap-through sheet ── */
+  function _iconEl(a,px){const s=el('span',{style:{display:'inline-flex',flexShrink:'0'}});s.innerHTML=(a.view?_khStoreTile(a.view,px):_khMonoTile(a.name,px));return s;}
   function appCard(opts){
-    const card=el('div',{style:{border:'var(--thin)',borderRadius:'12px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'4px'}});
-    const top=el('div',{style:{display:'flex',alignItems:'center',gap:'8px'}});
-    const ic=el('div',{style:{width:'40px',height:'40px',borderRadius:'9px',background:'var(--highlight)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'900',fontSize:'16px',flexShrink:'0'}});
-    ic.textContent=(opts.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'AP';
-    top.appendChild(ic);
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'14px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'6px',boxShadow:'0 1px 4px rgba(0,0,0,.14)'}});
+    const top=el('div',{style:{display:'flex',alignItems:'center',gap:'10px'}});
+    top.appendChild(_iconEl({view:opts.view,name:opts.name},40));
     const mid=el('div',{style:{flex:'1',minWidth:'0'}});
     mid.appendChild(txt('div',opts.name,{style:{fontWeight:'800',fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
     mid.appendChild(txt('div',opts.cat+(opts.by?(' · '+opts.by):''),{style:{fontSize:'10px',color:'var(--muted)'}}));
@@ -49373,70 +49431,147 @@ appstore:()=>{
     top.appendChild(opts.action);
     card.appendChild(top);
     if(opts.desc)card.appendChild(txt('div',opts.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
+    if(opts.onOpenSheet){card.style.cursor='pointer';card.onclick=function(){opts.onOpenSheet();};}
     return card;
+  }
+  /* Product page: bottom sheet with big icon, description + install actions
+     (mounted on rotateRoot so landscape works; safe .remove() close). */
+  function openSheet(a,paint){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.45)',zIndex:'100050',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
+    const sh=el('div',{style:{background:'var(--bg)',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'520px',maxHeight:'80%',overflowY:'auto',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -2px 14px rgba(0,0,0,.3)'}});
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    const head=el('div',{style:{display:'flex',gap:'12px',alignItems:'center',marginBottom:'10px'}});
+    head.appendChild(_iconEl(a,64));
+    const hm=el('div',{style:{flex:'1',minWidth:'0'}});
+    hm.appendChild(txt('div',a.name,{style:{fontWeight:'900',fontSize:'18px'}}));
+    hm.appendChild(txt('div',(a.cat||'App')+(a.by?(' · by '+a.by):''),{style:{fontSize:'11px',color:'var(--muted)'}}));
+    head.appendChild(hm);
+    const x=txt('button','Close',{className:'btn small'});x.onclick=function(){ov.remove();};
+    head.appendChild(x);
+    sh.appendChild(head);
+    sh.appendChild(txt('div',a.desc||'A KindleHub app.',{style:{fontSize:'13px',lineHeight:'1.6',marginBottom:'14px'}}));
+    const row=el('div',{style:{display:'flex',gap:'8px'}});
+    if(a.pub){
+      const o=txt('button','Open',{className:'btn primary',style:{flex:'1'}});o.onclick=function(){ov.remove();_khOpenPublishedApp(a.pub);};row.appendChild(o);
+    }else if(_khStoreInstalled(a.view)){
+      const o=txt('button','Open',{className:'btn primary',style:{flex:'1'}});o.onclick=function(){ov.remove();try{showView(a.view);}catch(_){}};
+      const r=txt('button','Remove',{className:'btn'});r.onclick=function(){_khStoreRemove(a.view);toast('"'+a.name+'" removed from your menu.');ov.remove();if(paint)paint();};
+      row.append(o,r);
+    }else{
+      const g=txt('button','Get',{className:'btn primary',style:{flex:'1'}});g.onclick=function(){_khStoreInstall(a.view);toast('"'+a.name+'" added to your menu.');ov.remove();if(paint)paint();};
+      row.appendChild(g);
+    }
+    sh.appendChild(row);
+    sh.appendChild(txt('div',(a.pub?'Community app — runs in a locked sandbox.':'Built into KindleHub — free, works offline.'),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'10px'}}));
+    ov.appendChild(sh);
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
 
   function renderDiscover(){
-    const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'10px'}});
+    const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
     body.appendChild(sb);
+    let _cat='All';
+    const chips=el('div',{style:{display:'flex',gap:'6px',overflowX:'auto',padding:'2px 0 8px'}});
+    body.appendChild(chips);
     const host=el('div',{});body.appendChild(host);
+    /* Get/Open action; stopPropagation so buttons don't also open the sheet. */
+    function actionFor(a,paint){
+      const inst=_khStoreInstalled(a.view);
+      const act=el('div',{style:{display:'flex',gap:'4px',flexShrink:'0'}});
+      act.onclick=function(ev){ev.stopPropagation();};
+      const b=txt('button',inst?'Open':'Get',{className:'btn small primary'});
+      b.onclick=inst?function(){try{showView(a.view);}catch(_){}}:function(){_khStoreInstall(a.view);toast('"'+a.name+'" added to your menu.');paint();};
+      act.appendChild(b);
+      return act;
+    }
     function paint(){
       host.innerHTML='';
       const q=(sb.value||'').trim().toLowerCase();
       const allFirst=STORE_APPS.concat(_khOtherStorePages());
-      const pubCount=(Array.isArray(S.publishedApps)?S.publishedApps.length:0);
-      host.appendChild(txt('div',(allFirst.length+pubCount)+' apps available',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 8px'}}));
-      /* Featured strip (front of store; hidden while searching) */
-      if(!q&&typeof STORE_FEATURED!=='undefined'){
-        const feat=[];
-        STORE_FEATURED.forEach(function(vw){for(var i=0;i<STORE_APPS.length;i++){if(STORE_APPS[i].view===vw){feat.push(STORE_APPS[i]);break;}}});
-        if(feat.length){
-          host.appendChild(txt('div','Featured',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'2px 0 6px'}}));
-          const frow=el('div',{style:{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'6px',marginBottom:'8px'}});
-          feat.forEach(function(a){
-            const inst=_khStoreInstalled(a.view);
-            const fc=el('div',{style:{flex:'0 0 auto',width:'140px',border:'var(--thin)',borderRadius:'12px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'6px'}});
-            const ic=el('div',{style:{width:'44px',height:'44px',borderRadius:'11px',background:'var(--highlight)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'900',fontSize:'17px'}});
-            ic.textContent=(a.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'AP';
-            fc.appendChild(ic);
-            fc.appendChild(txt('div',a.name,{style:{fontWeight:'800',fontSize:'13px',lineHeight:'1.2'}}));
-            const b=txt('button',inst?'Open':'Get',{className:'btn small primary',style:{marginTop:'auto'}});
-            b.onclick=function(){if(!inst){_khStoreInstall(a.view);toast('"'+a.name+'" added to your menu.');paint();}else{try{showView(a.view);}catch(_){}}};
-            fc.appendChild(b);
-            frow.appendChild(fc);
-          });
-          host.appendChild(frow);
+      const pub=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
+      /* Category chip bar */
+      const catNames=['All'];
+      allFirst.forEach(function(a){if(catNames.indexOf(a.cat)<0)catNames.push(a.cat);});
+      if(pub.length)catNames.push('Community');
+      chips.innerHTML='';
+      catNames.forEach(function(c){
+        const b=txt('button',c,{className:'btn small'+(_cat===c?' primary':''),style:{flex:'0 0 auto',borderRadius:'16px'}});
+        b.onclick=function(){_cat=c;paint();};
+        chips.appendChild(b);
+      });
+      const inCat=function(a){return _cat==='All'||a.cat===_cat;};
+      const match=function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0;};
+      host.appendChild(txt('div',(allFirst.length+pub.length)+' apps available',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 8px'}}));
+      /* HERO — App of the Day (rotates daily via NOW(); front page only) */
+      if(!q&&_cat==='All'&&typeof STORE_FEATURED!=='undefined'&&STORE_FEATURED.length){
+        const day=Math.floor((typeof NOW==='function'?NOW():Date.now())/86400000);
+        const hero=_khStoreMeta(STORE_FEATURED[day%STORE_FEATURED.length]);
+        if(hero){
+          const hc=el('div',{id:'kh-store-hero',style:{borderRadius:'16px',padding:'16px',marginBottom:'12px',background:(window.KH_APP_COLORS[hero.view]||'#374151'),color:'#fff',boxShadow:'0 2px 8px rgba(0,0,0,.25)',cursor:'pointer'}});
+          hc.appendChild(txt('div','APP OF THE DAY',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'1px',opacity:'.8',marginBottom:'8px'}}));
+          const hr=el('div',{style:{display:'flex',gap:'12px',alignItems:'center'}});
+          hr.appendChild(_iconEl(hero,56));
+          const hm=el('div',{style:{flex:'1',minWidth:'0'}});
+          hm.appendChild(txt('div',hero.name,{style:{fontWeight:'900',fontSize:'18px'}}));
+          hm.appendChild(txt('div',hero.desc,{style:{fontSize:'11px',opacity:'.85',lineHeight:'1.4'}}));
+          hr.appendChild(hm);
+          const hb=txt('button',_khStoreInstalled(hero.view)?'Open':'Get',{style:{flex:'0 0 auto',background:'#fff',color:'#111',border:'none',borderRadius:'15px',fontWeight:'800',fontSize:'13px',padding:'7px 16px',cursor:'pointer'}});
+          hb.onclick=function(ev){ev.stopPropagation();if(_khStoreInstalled(hero.view)){try{showView(hero.view);}catch(_){}}else{_khStoreInstall(hero.view);toast('"'+hero.name+'" added to your menu.');paint();}};
+          hr.appendChild(hb);
+          hc.appendChild(hr);
+          hc.onclick=function(){openSheet(hero,paint);};
+          host.appendChild(hc);
         }
       }
-      /* First-party apps grouped by category */
+      /* TOP CHARTS — ranked by real per-device usage (kh_use_counts) + prior */
+      if(!q&&_cat==='All'){
+        host.appendChild(txt('div','Top Charts',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'4px 0 6px'}}));
+        const tc=el('div',{id:'kh-store-charts',style:{border:'var(--thin)',borderRadius:'14px',background:'var(--card)',boxShadow:'0 1px 4px rgba(0,0,0,.14)',marginBottom:'4px',overflow:'hidden'}});
+        const top=_khStoreTop(STORE_APPS,6);
+        top.forEach(function(a,i){
+          const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 12px',borderBottom:(i<top.length-1?'var(--thin)':'none'),cursor:'pointer'}});
+          row.appendChild(txt('div',String(i+1),{style:{width:'18px',fontWeight:'900',fontSize:'15px',color:'var(--muted)',textAlign:'center',flexShrink:'0'}}));
+          row.appendChild(_iconEl(a,36));
+          const m=el('div',{style:{flex:'1',minWidth:'0'}});
+          m.appendChild(txt('div',a.name,{style:{fontWeight:'800',fontSize:'13px'}}));
+          m.appendChild(txt('div',a.cat,{style:{fontSize:'10px',color:'var(--muted)'}}));
+          row.appendChild(m);
+          row.appendChild(actionFor(a,paint));
+          row.onclick=function(){openSheet(a,paint);};
+          tc.appendChild(row);
+        });
+        host.appendChild(tc);
+        host.appendChild(txt('div','Ranked by what you use most on this device.',{style:{fontSize:'9px',color:'var(--muted)',margin:'0 0 10px 2px'}}));
+      }
+      /* Category sections */
       const cats={};
-      allFirst.forEach(function(a){if(q&&(a.name.toLowerCase().indexOf(q)<0&&a.cat.toLowerCase().indexOf(q)<0))return;(cats[a.cat]=cats[a.cat]||[]).push(a);});
+      allFirst.forEach(function(a){if(!inCat(a)||!match(a))return;(cats[a.cat]=cats[a.cat]||[]).push(a);});
       Object.keys(cats).forEach(function(cat){
         host.appendChild(txt('div',cat,{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'8px 0 6px'}}));
         const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
         cats[cat].forEach(function(a){
-          const inst=_khStoreInstalled(a.view);
-          const act=el('div',{style:{display:'flex',gap:'4px'}});
-          const openB=txt('button','Open',{className:'btn small'+(inst?' primary':'')});openB.onclick=function(){if(!inst)_khStoreInstall(a.view);try{showView(a.view);}catch(_){}};
-          act.appendChild(inst?openB:txt('button','Get',{className:'btn small primary'}));
-          if(!inst){act.lastChild.onclick=function(){_khStoreInstall(a.view);toast('"'+a.name+'" added to your menu.');paint();};}
-          else{const rm=txt('button','Remove',{className:'btn small'});rm.onclick=function(){_khStoreRemove(a.view);toast('"'+a.name+'" removed from your menu.');paint();};act.appendChild(rm);}
-          grid.appendChild(appCard({name:a.name,cat:a.cat,desc:a.desc,action:act}));
+          const act=actionFor(a,paint);
+          if(_khStoreInstalled(a.view)){
+            const rm=txt('button','Remove',{className:'btn small'});rm.onclick=function(){_khStoreRemove(a.view);toast('"'+a.name+'" removed from your menu.');paint();};act.appendChild(rm);
+          }
+          grid.appendChild(appCard({view:a.view,name:a.name,cat:a.cat,desc:a.desc,action:act,onOpenSheet:function(){openSheet(a,paint);}}));
         });
         host.appendChild(grid);
       });
       /* Community (published) apps */
-      const pub=(Array.isArray(S.publishedApps)?S.publishedApps:[]).filter(function(a){return !q||a.name.toLowerCase().indexOf(q)>=0;});
-      if(pub.length){
+      const pubShown=pub.filter(function(a){return (_cat==='All'||_cat==='Community')&&(!q||a.name.toLowerCase().indexOf(q)>=0);});
+      if(pubShown.length){
         host.appendChild(txt('div','Community',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'12px 0 6px'}}));
         const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
-        pub.forEach(function(a){
-          const act=el('div',{});const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};act.appendChild(openB);
-          grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'by '+(a.by||'user'),desc:'Community app'+(a.model?(' · reviewed by '+a.model):''),action:act}));
+        pubShown.forEach(function(a){
+          const act=el('div',{style:{flexShrink:'0'}});act.onclick=function(ev){ev.stopPropagation();};
+          const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};act.appendChild(openB);
+          const meta={name:a.name,cat:a.cat||'Fun',by:a.by||'user',desc:'Community app'+(a.model?(' · reviewed by '+a.model):''),pub:a};
+          grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'by '+(a.by||'user'),desc:meta.desc,action:act,onOpenSheet:function(){openSheet(meta,paint);}}));
         });
         host.appendChild(grid);
       }
-      if(q&&!Object.keys(cats).length&&!pub.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
+      if(q&&!Object.keys(cats).length&&!pubShown.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
   }
