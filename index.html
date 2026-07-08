@@ -8092,12 +8092,21 @@ window.KH_ICON_FALLBACK='<rect x="4" y="4" width="16" height="16" rx="2"/>';
 /* Brand colour per view (mirrors the KindleOS BUILTIN_APPS palette + fills the
    store-only apps). White icon strokes need DARK fills — keep them deep. */
 window.KH_APP_COLORS={chat:'#2563eb',games:'#7c3aed',appstore:'#0b7ff2',notes:'#b45309',maps:'#0f766e',weather:'#0ea5e9',starmap:'#1e1b4b',messages:'#0f766e',tools:'#475569',calc:'#1f2937',reading:'#92400e',browser:'#1f2937',draw:'#db2777',rss:'#dc2626',translate:'#0891b2',breathe:'#064e3b',kanban:'#b45309',calendar:'#0f4c81',stocks:'#166534',settings:'#374151',dictionary:'#0369a1',discover:'#7e22ce',explore:'#7e22ce',cipher:'#1e3a5f',mdjournal:'#78350f',feedback:'#065f46',science:'#0f4c5c',sleeplog:'#1e1b4b',periodic:'#4338ca',qrgen:'#111827',wikipedia:'#1a1a1a',worldclock:'#0c4a6e',wheel:'#6d28d9',formulas:'#1d4ed8',slides:'#be185d',sheets:'#15803d',cookbook:'#b91c1c',files:'#475569',sports:'#166534',imagesearch:'#0891b2',animals:'#92400e',unitconv:'#0f766e',tipcalc:'#166534',screenshot:'#334155',mail:'#b45309'};
+/* On e-ink (Kindle) or the simple UI, brand-coloured tiles render as LOW-
+   CONTRAST GRAYS — force crisp near-black tiles there; colours only on real
+   colour screens. */
+function _khEinkTiles(){
+  try{if(typeof isKindleBrowser==='function'&&isKindleBrowser())return true;}catch(_){}
+  try{if(typeof S!=='undefined'&&S&&S.uiMode==='simple')return true;}catch(_){}
+  return false;
+}
+function _khTileColor(view){return _khEinkTiles()?'#111':(window.KH_APP_COLORS[view]||'#374151');}
 /* App-Store icon tile: white outline icon on the app's brand colour, rounded
    like a real app icon. Returns an HTML string. Solid fills + box-shadow only
    (both fine on old Silk); NO gradients/aspect-ratio. */
 function _khStoreTile(view,px){
   px=px||44;
-  var c=window.KH_APP_COLORS[view]||'#374151';
+  var c=_khTileColor(view);
   var ic=window.KH_ICONS[view]||window.KH_ICON_FALLBACK;
   var pad=Math.round(px*0.2);
   return '<span style="display:flex;flex:0 0 auto;width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.24)+'px;background:'+c+';align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,.28), inset 0 -'+Math.max(2,Math.round(px*0.06))+'px 0 rgba(0,0,0,.16);padding:'+pad+'px;box-sizing:border-box"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%">'+ic+'</svg></span>';
@@ -8107,7 +8116,8 @@ function _khMonoTile(name,px){
   px=px||44;var s=String(name||'?');var h=0;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;
   var PAL=['#2563eb','#7c3aed','#0f766e','#b91c1c','#b45309','#166534','#0369a1','#db2777','#4338ca','#78350f'];
   var mono=s.replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'AP';
-  return '<span style="display:flex;flex:0 0 auto;width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.24)+'px;background:'+PAL[h%PAL.length]+';color:#fff;align-items:center;justify-content:center;font-weight:900;font-size:'+Math.round(px*0.38)+'px;box-shadow:0 1px 3px rgba(0,0,0,.28), inset 0 -'+Math.max(2,Math.round(px*0.06))+'px 0 rgba(0,0,0,.16)">'+mono+'</span>';
+  var bg=_khEinkTiles()?'#111':PAL[h%PAL.length];
+  return '<span style="display:flex;flex:0 0 auto;width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.24)+'px;background:'+bg+';color:#fff;align-items:center;justify-content:center;font-weight:900;font-size:'+Math.round(px*0.38)+'px;box-shadow:0 1px 3px rgba(0,0,0,.28), inset 0 -'+Math.max(2,Math.round(px*0.06))+'px 0 rgba(0,0,0,.16)">'+mono+'</span>';
 }
 /* Per-device page-usage counts (fed by showView) — the HONEST ranking signal
    for the store's Top Charts. Device-local, never in S. */
@@ -8132,7 +8142,7 @@ function _khStoreTop(list,n){
   scored.sort(function(x,y){return y.s-x.s;});
   return scored.slice(0,n).map(function(x){return x.a;});
 }
-window._khStoreTile=_khStoreTile;window._khMonoTile=_khMonoTile;window._khUseBump=_khUseBump;window._khUseCounts=_khUseCounts;window._khStoreTop=_khStoreTop;
+window._khStoreTile=_khStoreTile;window._khMonoTile=_khMonoTile;window._khTileColor=_khTileColor;window._khEinkTiles=_khEinkTiles;window._khUseBump=_khUseBump;window._khUseCounts=_khUseCounts;window._khStoreTop=_khStoreTop;
 var STORE_APPS=[
   /* Productivity */
   {view:'slides',    name:'Slides',        cat:'Productivity', desc:'Build and present slide decks.'},
@@ -49406,7 +49416,13 @@ appstore:()=>{
   /* The App Store — Discover (install first-party + community apps) and Publish
      (build/paste an app → AI review → it lives in your device/account state). */
   const v=el('section',{id:'view-appstore',className:'view'});
-  v.appendChild(txt('h2','App Store',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('h2','App Store',{style:{fontFamily:'var(--title-font)',fontSize:'24px',fontWeight:'900',margin:'0'}}));
+  (function(){
+    var d=new Date(typeof NOW==='function'?NOW():Date.now());
+    var DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var MONS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    v.appendChild(txt('div',DAYS[d.getDay()]+' '+d.getDate()+' '+MONS[d.getMonth()],{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'1px 0 2px'}}));
+  })();
   let _tab='discover';
   const tabRow=el('div',{style:{display:'flex',gap:'6px',margin:'6px 0 10px'}});
   const body=el('div',{});
@@ -49419,7 +49435,20 @@ appstore:()=>{
   v.append(tabRow,body);
 
   /* ── App-Store-style cards: real icon tiles, shading, tap-through sheet ── */
+  const _KH_EDITORS=[
+    ['animals','A living field guide — photos, stats and facts for 36 animals.'],
+    ['starmap','Point at tonight\'s sky — stars, planets and satellites, live.'],
+    ['cookbook','Your recipes, saved offline — built for the kitchen counter.']
+  ];
+  const _KH_CAT_META={'Productivity':['kanban','#b45309'],'Reference':['dictionary','#0369a1'],'Utilities':['tools','#475569'],'Creativity':['draw','#db2777'],'Lifestyle':['breathe','#064e3b'],'News & Media':['rss','#dc2626'],'More Pages':['home','#374151'],'Community':['chat','#7c3aed']};
   function _iconEl(a,px){const s=el('span',{style:{display:'inline-flex',flexShrink:'0'}});s.innerHTML=(a.view?_khStoreTile(a.view,px):_khMonoTile(a.name,px));return s;}
+  function _catTile(cat,px){
+    const meta=_KH_CAT_META[cat]||['home','#374151'];
+    const bg=_khEinkTiles()?'#111':meta[1];
+    const s=el('span',{style:{display:'inline-flex',flexShrink:'0'}});
+    s.innerHTML='<span style="display:flex;width:'+px+'px;height:'+px+'px;border-radius:'+Math.round(px*0.28)+'px;background:'+bg+';align-items:center;justify-content:center;padding:'+Math.round(px*0.18)+'px;box-sizing:border-box;box-shadow:0 1px 2px rgba(0,0,0,.25)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%">'+(window.KH_ICONS[meta[0]]||window.KH_ICON_FALLBACK)+'</svg></span>';
+    return s;
+  }
   function appCard(opts){
     const card=el('div',{style:{border:'var(--thin)',borderRadius:'14px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'6px',boxShadow:'0 1px 4px rgba(0,0,0,.14)'}});
     const top=el('div',{style:{display:'flex',alignItems:'center',gap:'10px'}});
@@ -49430,12 +49459,12 @@ appstore:()=>{
     top.appendChild(mid);
     top.appendChild(opts.action);
     card.appendChild(top);
-    if(opts.desc)card.appendChild(txt('div',opts.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
+    if(opts.desc)card.appendChild(txt('div',opts.desc,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4',wordBreak:'break-word'}}));
     if(opts.onOpenSheet){card.style.cursor='pointer';card.onclick=function(){opts.onOpenSheet();};}
     return card;
   }
-  /* Product page: bottom sheet with big icon, description + install actions
-     (mounted on rotateRoot so landscape works; safe .remove() close). */
+  /* Product page: bottom sheet — big icon, App-Store info strip (price / live
+     chart position / maker), description, actions. rotateRoot for landscape. */
   function openSheet(a,paint){
     const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.45)',zIndex:'100050',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
     const sh=el('div',{style:{background:'var(--bg)',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'520px',maxHeight:'80%',overflowY:'auto',padding:'18px 16px 22px',boxSizing:'border-box',boxShadow:'0 -2px 14px rgba(0,0,0,.3)'}});
@@ -49449,6 +49478,22 @@ appstore:()=>{
     const x=txt('button','Close',{className:'btn small'});x.onclick=function(){ov.remove();};
     head.appendChild(x);
     sh.appendChild(head);
+    /* info strip — PRICE / CHART (live rank from real usage) / MADE BY */
+    let cells;
+    if(a.pub){cells=[['PRICE','Free'],['BY',(a.by||'user')],['SAFETY','Sandboxed']];}
+    else{
+      let rank=0;const tops=_khStoreTop(STORE_APPS,STORE_APPS.length);
+      for(let i=0;i<tops.length;i++)if(tops[i].view===a.view){rank=i+1;break;}
+      cells=[['PRICE','Free'],['CHART',rank?('#'+rank):'—'],['MADE BY','KindleHub']];
+    }
+    const strip=el('div',{style:{display:'flex',border:'var(--thin)',borderRadius:'10px',overflow:'hidden',margin:'0 0 12px',textAlign:'center'}});
+    cells.forEach(function(c,i){
+      const cell=el('div',{style:{flex:'1',padding:'8px 4px',borderLeft:(i?'var(--thin)':'none'),minWidth:'0'}});
+      cell.appendChild(txt('div',c[0],{style:{fontSize:'8px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)'}}));
+      cell.appendChild(txt('div',c[1],{style:{fontSize:'12px',fontWeight:'800',marginTop:'2px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+      strip.appendChild(cell);
+    });
+    sh.appendChild(strip);
     sh.appendChild(txt('div',a.desc||'A KindleHub app.',{style:{fontSize:'13px',lineHeight:'1.6',marginBottom:'14px'}}));
     const row=el('div',{style:{display:'flex',gap:'8px'}});
     if(a.pub){
@@ -49474,7 +49519,6 @@ appstore:()=>{
     const chips=el('div',{style:{display:'flex',gap:'6px',overflowX:'auto',padding:'2px 0 8px'}});
     body.appendChild(chips);
     const host=el('div',{});body.appendChild(host);
-    /* Get/Open action; stopPropagation so buttons don't also open the sheet. */
     function actionFor(a,paint){
       const inst=_khStoreInstalled(a.view);
       const act=el('div',{style:{display:'flex',gap:'4px',flexShrink:'0'}});
@@ -49484,12 +49528,12 @@ appstore:()=>{
       act.appendChild(b);
       return act;
     }
+    function secHdr(label){return txt('div',label,{style:{fontFamily:'var(--title-font)',fontSize:'16px',fontWeight:'900',margin:'10px 0 7px'}});}
     function paint(){
       host.innerHTML='';
       const q=(sb.value||'').trim().toLowerCase();
       const allFirst=STORE_APPS.concat(_khOtherStorePages());
       const pub=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
-      /* Category chip bar */
       const catNames=['All'];
       allFirst.forEach(function(a){if(catNames.indexOf(a.cat)<0)catNames.push(a.cat);});
       if(pub.length)catNames.push('Community');
@@ -49501,31 +49545,52 @@ appstore:()=>{
       });
       const inCat=function(a){return _cat==='All'||a.cat===_cat;};
       const match=function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0;};
-      host.appendChild(txt('div',(allFirst.length+pub.length)+' apps available',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 8px'}}));
-      /* HERO — App of the Day (rotates daily via NOW(); front page only) */
-      if(!q&&_cat==='All'&&typeof STORE_FEATURED!=='undefined'&&STORE_FEATURED.length){
+      const front=(!q&&_cat==='All');
+      /* HERO — App of the Day: brand-colour editorial card with big watermark
+         icon art (rotates daily via NOW()). e-ink gets a crisp black card. */
+      if(front&&typeof STORE_FEATURED!=='undefined'&&STORE_FEATURED.length){
         const day=Math.floor((typeof NOW==='function'?NOW():Date.now())/86400000);
         const hero=_khStoreMeta(STORE_FEATURED[day%STORE_FEATURED.length]);
         if(hero){
-          const hc=el('div',{id:'kh-store-hero',style:{borderRadius:'16px',padding:'16px',marginBottom:'12px',background:(window.KH_APP_COLORS[hero.view]||'#374151'),color:'#fff',boxShadow:'0 2px 8px rgba(0,0,0,.25)',cursor:'pointer'}});
-          hc.appendChild(txt('div','APP OF THE DAY',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'1px',opacity:'.8',marginBottom:'8px'}}));
-          const hr=el('div',{style:{display:'flex',gap:'12px',alignItems:'center'}});
-          hr.appendChild(_iconEl(hero,56));
-          const hm=el('div',{style:{flex:'1',minWidth:'0'}});
-          hm.appendChild(txt('div',hero.name,{style:{fontWeight:'900',fontSize:'18px'}}));
-          hm.appendChild(txt('div',hero.desc,{style:{fontSize:'11px',opacity:'.85',lineHeight:'1.4'}}));
-          hr.appendChild(hm);
-          const hb=txt('button',_khStoreInstalled(hero.view)?'Open':'Get',{style:{flex:'0 0 auto',background:'#fff',color:'#111',border:'none',borderRadius:'15px',fontWeight:'800',fontSize:'13px',padding:'7px 16px',cursor:'pointer'}});
+          const hc=el('div',{id:'kh-store-hero',style:{position:'relative',overflow:'hidden',borderRadius:'16px',padding:'16px',margin:'4px 0 14px',background:_khTileColor(hero.view),color:'#fff',boxShadow:'0 2px 8px rgba(0,0,0,.25)',cursor:'pointer'}});
+          const wm=el('div',{style:{position:'absolute',right:'-18px',bottom:'-28px',width:'150px',height:'150px',opacity:'.16',pointerEvents:'none'}});
+          wm.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%;-webkit-transform:rotate(-12deg);transform:rotate(-12deg)">'+(window.KH_ICONS[hero.view]||window.KH_ICON_FALLBACK)+'</svg>';
+          hc.appendChild(wm);
+          hc.appendChild(txt('div','APP OF THE DAY',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'1.2px',opacity:'.75',marginBottom:'10px'}}));
+          hc.appendChild(txt('div',hero.name,{style:{fontFamily:'var(--title-font)',fontWeight:'900',fontSize:'22px',lineHeight:'1.15'}}));
+          hc.appendChild(txt('div',hero.desc,{style:{fontSize:'12px',opacity:'.85',lineHeight:'1.45',margin:'4px 0 12px',maxWidth:'85%'}}));
+          const hb=txt('button',_khStoreInstalled(hero.view)?'Open':'Get',{style:{background:'#fff',color:'#111',border:'none',borderRadius:'15px',fontWeight:'800',fontSize:'13px',padding:'7px 18px',cursor:'pointer'}});
           hb.onclick=function(ev){ev.stopPropagation();if(_khStoreInstalled(hero.view)){try{showView(hero.view);}catch(_){}}else{_khStoreInstall(hero.view);toast('"'+hero.name+'" added to your menu.');paint();}};
-          hr.appendChild(hb);
-          hc.appendChild(hr);
+          hc.appendChild(hb);
           hc.onclick=function(){openSheet(hero,paint);};
           host.appendChild(hc);
         }
       }
+      /* EDITORS' CHOICE — curated horizontal cards */
+      if(front){
+        host.appendChild(secHdr('Editors\' Choice'));
+        const er=el('div',{id:'kh-store-editors',style:{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'8px',marginBottom:'4px'}});
+        _KH_EDITORS.forEach(function(pair){
+          const m=_khStoreMeta(pair[0]);if(!m)return;
+          const c=el('div',{style:{flex:'0 0 auto',width:'230px',border:'var(--thin)',borderRadius:'14px',padding:'12px',background:'var(--card)',boxShadow:'0 1px 4px rgba(0,0,0,.14)',cursor:'pointer'}});
+          const r=el('div',{style:{display:'flex',gap:'10px',alignItems:'center',marginBottom:'8px'}});
+          r.appendChild(_iconEl(m,48));
+          const mm=el('div',{style:{flex:'1',minWidth:'0'}});
+          mm.appendChild(txt('div',m.name,{style:{fontWeight:'900',fontSize:'14px'}}));
+          mm.appendChild(txt('div',m.cat,{style:{fontSize:'10px',color:'var(--muted)'}}));
+          r.appendChild(mm);
+          c.appendChild(r);
+          c.appendChild(txt('div',pair[1],{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.45',marginBottom:'9px',minHeight:'32px'}}));
+          const act=actionFor(m,paint);act.firstChild.style.width='100%';
+          c.appendChild(act);
+          c.onclick=function(){openSheet(m,paint);};
+          er.appendChild(c);
+        });
+        host.appendChild(er);
+      }
       /* TOP CHARTS — ranked by real per-device usage (kh_use_counts) + prior */
-      if(!q&&_cat==='All'){
-        host.appendChild(txt('div','Top Charts',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'4px 0 6px'}}));
+      if(front){
+        host.appendChild(secHdr('Top Charts'));
         const tc=el('div',{id:'kh-store-charts',style:{border:'var(--thin)',borderRadius:'14px',background:'var(--card)',boxShadow:'0 1px 4px rgba(0,0,0,.14)',marginBottom:'4px',overflow:'hidden'}});
         const top=_khStoreTop(STORE_APPS,6);
         top.forEach(function(a,i){
@@ -49541,13 +49606,32 @@ appstore:()=>{
           tc.appendChild(row);
         });
         host.appendChild(tc);
-        host.appendChild(txt('div','Ranked by what you use most on this device.',{style:{fontSize:'9px',color:'var(--muted)',margin:'0 0 10px 2px'}}));
+        host.appendChild(txt('div','Ranked by what you use most on this device.',{style:{fontSize:'9px',color:'var(--muted)',margin:'2px 0 10px 2px'}}));
+      }
+      /* BROWSE CATEGORIES — colour-tile grid (Apple Categories page look) */
+      if(front){
+        host.appendChild(secHdr('Browse Categories'));
+        const cg=el('div',{id:'kh-store-cats',style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'6px'}});
+        catNames.forEach(function(c){
+          if(c==='All')return;
+          let n=0;
+          if(c==='Community')n=pub.length;else allFirst.forEach(function(a){if(a.cat===c)n++;});
+          const cell=el('div',{style:{display:'flex',alignItems:'center',gap:'9px',border:'var(--thin)',borderRadius:'12px',padding:'9px 10px',background:'var(--card)',boxShadow:'0 1px 3px rgba(0,0,0,.12)',cursor:'pointer'}});
+          cell.appendChild(_catTile(c,30));
+          const t=el('div',{style:{flex:'1',minWidth:'0'}});
+          t.appendChild(txt('div',c,{style:{fontWeight:'800',fontSize:'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+          t.appendChild(txt('div',n+(n===1?' app':' apps'),{style:{fontSize:'9px',color:'var(--muted)'}}));
+          cell.appendChild(t);
+          cell.onclick=function(){_cat=c;paint();};
+          cg.appendChild(cell);
+        });
+        host.appendChild(cg);
       }
       /* Category sections */
       const cats={};
       allFirst.forEach(function(a){if(!inCat(a)||!match(a))return;(cats[a.cat]=cats[a.cat]||[]).push(a);});
       Object.keys(cats).forEach(function(cat){
-        host.appendChild(txt('div',cat,{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'8px 0 6px'}}));
+        host.appendChild(secHdr(cat));
         const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
         cats[cat].forEach(function(a){
           const act=actionFor(a,paint);
@@ -49561,7 +49645,7 @@ appstore:()=>{
       /* Community (published) apps */
       const pubShown=pub.filter(function(a){return (_cat==='All'||_cat==='Community')&&(!q||a.name.toLowerCase().indexOf(q)>=0);});
       if(pubShown.length){
-        host.appendChild(txt('div','Community',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'12px 0 6px'}}));
+        host.appendChild(secHdr('Community'));
         const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
         pubShown.forEach(function(a){
           const act=el('div',{style:{flexShrink:'0'}});act.onclick=function(ev){ev.stopPropagation();};
@@ -49571,7 +49655,9 @@ appstore:()=>{
         });
         host.appendChild(grid);
       }
-      if(q&&!Object.keys(cats).length&&!pubShown.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
+      const shownCats=Object.keys(cats).length;
+      if(q&&!shownCats&&!pubShown.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
+      if(front)host.appendChild(txt('div',(allFirst.length+pub.length)+' apps in the catalogue · all free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
   }

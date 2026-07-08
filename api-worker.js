@@ -831,8 +831,9 @@ let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
    response as X-KH-Load so clients can self-throttle their background polling
    before anyone hits the hard cap (closed-loop capacity control). */
 let _loadFrac = 0;
-const REQ_HARD_CAP   = 90000;   // Workers free: 100k requests/day — stop 10% short
-const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short
+const REQ_HARD_CAP   = 96000;   // Workers free: 100k req/day — past this WRITES shed (site goes read-only)
+const REQ_READ_CAP   = 99000;   // …and only past THIS do READS stop too (true emergency stop at 99%)
+const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — stop 10% short (estW counts 2/write)
 async function dailyUsed(DB, isWrite){
   const today = nowIso().slice(0,10);
   const now = Date.now();
@@ -973,10 +974,13 @@ export default {
 
     /* Per-IP rate limit — one abuser can't burn the shared daily budget for
        everyone. Tunable via env RL_BURST (per 10s) / RL_DAY (per day); admin
-       bypasses (checked only when a limit is hit, so no hashing on every req). */
+       bypasses (checked only when a limit is hit, so no hashing on every req).
+       RL_DAY default 4000: a real heavy user does ~2–3k req/day, while the old
+       20000 default let FIVE IPs (or one stuck retry-loop client) burn the
+       whole 100k daily budget and trip read-only for everyone. */
     const _ip=request.headers.get('cf-connecting-ip')||'0';
-    const _overBurst=await rlHit(_ip, (parseInt((env&&env.RL_BURST)||'',10)||100), 10, 'b');
-    const _overDay  =await rlHit(_ip, (parseInt((env&&env.RL_DAY)||'',10)||20000), 86400, 'd');
+    const _overBurst=await rlHit(_ip, (parseInt((env&&env.RL_BURST)||'',10)||60), 10, 'b');
+    const _overDay  =await rlHit(_ip, (parseInt((env&&env.RL_DAY)||'',10)||4000), 86400, 'd');
     if(_overBurst || _overDay){
       const adminOk=await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk) return json({error:'rate-limit',code:'CF_IP',message:'Too many requests from your connection — please slow down for a moment.'},429,env);
@@ -991,9 +995,15 @@ export default {
     if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){
-        if(_usage.n>REQ_HARD_CAP)
+        /* DEGRADE, don't go dark: between REQ_HARD_CAP and REQ_READ_CAP the
+           site turns READ-ONLY (writes 503 as CF_WRITE — the client already
+           parks only writes on that code, so browsing/reading keeps working).
+           Only past REQ_READ_CAP (99%) do reads stop too. */
+        if(_usage.n>REQ_READ_CAP)
           return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
-        return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub is temporarily read-only (daily free-tier write limit). New posts resume automatically at midnight UTC.'},503,env);
+        if(_isWrite)
+          return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub is temporarily read-only (daily free-tier limit). New posts resume automatically at midnight UTC.'},503,env);
+        /* read within the 96–99% band → serve it */
       }
     }
 
