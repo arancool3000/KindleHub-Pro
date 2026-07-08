@@ -843,6 +843,61 @@ Tests: `/tmp/fixbatch_test.cjs` + `/tmp/acc_check.cjs` (accent picker gone) + mi
 Tests: `/tmp/animals_test.cjs`, `/tmp/bugbatch2_test.cjs`, `/tmp/msg_test.cjs`, `tools/games_test.cjs` (38, 0),
 minify Silk gate.
 
+## ⚡ Round: REAL App Store (marketplace + publish-with-AI-review + migration; removed tab pickers)
+The big "make the app store real" request. A genuine Apple-App-Store-style marketplace (a NEW app — does NOT
+replace the KindleOS AI app builder), all on `claude/keen-tesla-n73rpc`. Store apps are NOT in index.html as
+extra views-per-app; the first-party ones are existing BUILDERS the store just installs/uninstalls into the
+nav, and user-published apps live in `S.publishedApps` (device/account state, sandboxed iframe) — never in the
+site code, exactly as the user asked ("downloadable to the html of the user's localStorage/account session").
+- **Global helpers** (inserted after `window._reservedUsername=…`, ~line 8036, all `window.`-exported):
+  `STORE_APPS` (16 first-party: Slides/Sheets/To-Do Board/Animals/Stars/Elements/Formulas/Wikipedia/Science/
+  Cipher/QR/Teleprompter/Draw/Cookbook/Sleep/Stocks, grouped by category), `STORE_DEFAULT_MOVED` (the 12 hidden
+  from nav by default on first run), `_khOtherStorePages()` (synthesises store cards for EVERY other NAV_TABS
+  view not already a store app + not permanent home/settings/appstore → a **"More Pages"** category, so now that
+  the Settings tab-picker is gone NOTHING a user hid can get stranded — the store is the single tab manager).
+  Install model reuses `S.navHidden`: `_khStoreInstalled(v)` = `navHidden[v]!==true`; `_khStoreInstall/Remove(v)`
+  toggle navHidden + `setNavTabVisible`. `_khStoreMigrate()` one-time (guarded by `S.appStoreMigrated`; only sets
+  `navHidden[v]=true` when it was `==null`, so explicit user choices are respected) + a boot IIFE that runs it,
+  applies `setNavTabVisible(false)` to moved apps, shows `_khMaybeShowStoreNotice()` once
+  (`localStorage['kh_appstore_seen']`, the in-app "the App Store is here" announcement), and kicks the review
+  queue.
+- **Publish + AI review** (`APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash']` —
+  ONLY these 3 are trusted to review, strongest-first, per the user). `_khReviewApp(name,html)`: tries each
+  model, 3 attempts each with `1200*attempt` backoff (handles the "busy / ~5-min limit → auto-retry" cases);
+  parses a STRICT-JSON approve/decline verdict via `_khParseVerdict` (JSON first, keyword fallback); the model
+  can ONLY approve or decline, never edit. If EVERY model is unavailable → `{waitlisted:true}`. `_khPublishApp`:
+  validates (≥20 chars, ≤512 KB, clean name), reviews, then approve→`S.publishedApps.unshift` (cap 60) /
+  decline→toast reason / waitlist→`S.appReviewQueue` ("waiting list for the next day"). `isGame` auto-derives
+  from `cat==='Games'`. `_khProcessReviewQueue(force)`: throttled (~20 min via `kh_review_queue_last`, or forced
+  by a "Check review queue now" button) re-review of queued apps — approve→publish+toast, decline→drop+toast,
+  still-no-model→stay queued; offline (`navigator.onLine===false`) leaves everything queued. Runs ~6 s after
+  boot and (throttled) when My Apps opens — so a daily-quota app clears itself once a model frees up. `khiCall`
+  uses the user's Gemini key if set else the always-on `shared` proxy (so the guard is offline-only, NOT
+  khiEnabled — that was a bug that blocked shared-proxy users; fixed).
+- **`BUILDERS.appstore`** (before `qrgen:`): Discover / Publish / My Apps tabs. Discover = search + first-party
+  apps + "More Pages" grouped by category with Get/Open/Remove + a Community section (published apps, sandboxed
+  Open). Publish = name + category chips (Fun/Games/Tools/Productivity/Creativity/Other) + an HTML textarea +
+  "Build with AI" (khiCall) + Publish → `_khPublishApp` with live status. My Apps = review-queue list + "Check
+  review queue now" + your published apps (Open/Delete). `_khOpenPublishedApp` = sandboxed iframe overlay
+  (`sandbox="allow-scripts allow-forms allow-popups allow-modals"`, no same-origin — can't reach our storage).
+- **Games page gets published games** ("add extra games to the games page"): a **Community Games** section at the
+  bottom of `BUILDERS.games` lists `S.publishedApps` where `isGame||cat==='Games'` (Play → sandboxed iframe) + a
+  "Publish a game" button → the store. Empty-state explains the flow.
+- **OS + normal mode**: nav HTML `<div class="tab" data-view="appstore">` + `NAV_TABS ['appstore','App Store']`
+  (never hidden — not in STORE_APPS/moved) + `BUILTIN_APPS {id:'appstore',nav:'appstore',color:#0b7ff2, store-A
+  SVG icon}` so it's on the KindleOS home grid too. `S` defaults gain `publishedApps:[]`/`appReviewQueue:[]`.
+- **Removed the two tab pickers** (user: "remove the tabs in the header selection in settings and setup
+  wizard"): the Settings **"Top Menu Pages"** card (the whole `cNav` block in `_defer`) and the onboarding
+  **"Your tabs"** step (`id:'nav'` in `_showWelcome`'s STEPS) are deleted — the App Store is the single place to
+  manage the menu now. ("adding seconds to the clock" was read as an illustrative example of the store's scope,
+  not a literal toggle — the header is date-only.)
+Tests: `/tmp/appstore_test.cjs` (migration hides moved apps; view+3 tabs; Get installs; verdict parse; publish
+approve/decline/waitlist; queue processor drains→publishes; Community Games shows a published game — all green) +
+`/tmp/appstore_boot.cjs` (fresh-load: notice shows+dismisses, appstore mounts, no pageerrors) + games_test (38,
+0) + fixbatch/acc_check (settings still builds, accent picker still gone) + minify Silk gate. NB: users are
+notified of the change via the one-time in-app notice (`_khMaybeShowStoreNotice`); a live backend announcement
+would have to be posted by the admin (I can't write to their cloud).
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
