@@ -1221,6 +1221,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="mail">Mail</div>
     <div class="tab" data-view="imagesearch">Images</div>
     <div class="tab" data-view="sports">Sports</div>
+    <div class="tab" data-view="unitconv" style="display:none">Unit Converter</div>
+    <div class="tab" data-view="tipcalc" style="display:none">Tip Calculator</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -2918,7 +2920,8 @@ const NAV_TABS=[
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
-  ['imagesearch','Images'],['sports','Sports']
+  ['imagesearch','Images'],['sports','Sports'],
+  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -8034,26 +8037,47 @@ window._reservedUsername=_reservedUsername;
    Gemini review model first and falling back; if all are rate-limited the app
    waits in a review queue and is retried. */
 var STORE_APPS=[
-  {view:'slides',    name:'Slides',      cat:'Productivity', desc:'Build and present slide decks.'},
-  {view:'sheets',    name:'Sheets',      cat:'Productivity', desc:'A lightweight spreadsheet.'},
-  {view:'kanban',    name:'To-Do Board', cat:'Productivity', desc:'Organise tasks on a kanban board.'},
-  {view:'animals',   name:'Animals',     cat:'Reference',    desc:'A zoo field guide — photos, stats & facts.'},
-  {view:'starmap',   name:'Stars',       cat:'Reference',    desc:'A live sky map — stars, planets & satellites.'},
-  {view:'periodic',  name:'Elements',    cat:'Reference',    desc:'The periodic table.'},
-  {view:'formulas',  name:'Formulas',    cat:'Reference',    desc:'Handy maths & science formulas.'},
-  {view:'wikipedia', name:'Wikipedia',   cat:'Reference',    desc:'Search the free encyclopedia.'},
-  {view:'science',   name:'Science',     cat:'Reference',    desc:'Facts, a glossary and experiments.'},
-  {view:'cipher',    name:'Cipher',      cat:'Utilities',    desc:'Encode & decode secret messages.'},
-  {view:'qrgen',     name:'QR Code',     cat:'Utilities',    desc:'Generate QR codes.'},
-  {view:'teleprompter',name:'Teleprompter',cat:'Utilities', desc:'Scroll your script hands-free.'},
-  {view:'draw',      name:'Draw',        cat:'Creativity',   desc:'A sketch pad.'},
-  {view:'cookbook',  name:'Cookbook',    cat:'Lifestyle',    desc:'Save and browse recipes.'},
-  {view:'sleeplog',  name:'Sleep',       cat:'Lifestyle',    desc:'Track your sleep.'},
-  {view:'stocks',    name:'Stocks',      cat:'Lifestyle',    desc:'Watch the markets.'}
+  /* Productivity */
+  {view:'slides',    name:'Slides',        cat:'Productivity', desc:'Build and present slide decks.'},
+  {view:'sheets',    name:'Sheets',        cat:'Productivity', desc:'A lightweight spreadsheet.'},
+  {view:'kanban',    name:'To-Do Board',   cat:'Productivity', desc:'Organise tasks on a kanban board.'},
+  {view:'mdjournal', name:'Journal',       cat:'Productivity', desc:'A distraction-free markdown journal.'},
+  {view:'files',     name:'Files',         cat:'Productivity', desc:'Browse what this app has stored.'},
+  /* Reference */
+  {view:'animals',   name:'Animals',       cat:'Reference',    desc:'A zoo field guide — photos, stats & facts.'},
+  {view:'starmap',   name:'Stars',         cat:'Reference',    desc:'A live sky map — stars, planets & satellites.'},
+  {view:'periodic',  name:'Elements',      cat:'Reference',    desc:'The periodic table.'},
+  {view:'formulas',  name:'Formulas',      cat:'Reference',    desc:'Handy maths & science formulas.'},
+  {view:'wikipedia', name:'Wikipedia',     cat:'Reference',    desc:'Search the free encyclopedia.'},
+  {view:'science',   name:'Science',       cat:'Reference',    desc:'Facts, a glossary and experiments.'},
+  {view:'dictionary',name:'Dictionary',    cat:'Reference',    desc:'Look up word meanings.'},
+  /* Utilities */
+  {view:'cipher',    name:'Cipher',        cat:'Utilities',    desc:'Encode & decode secret messages.'},
+  {view:'qrgen',     name:'QR Code',       cat:'Utilities',    desc:'Generate QR codes.'},
+  {view:'translate', name:'Translate',     cat:'Utilities',    desc:'Translate between languages.'},
+  {view:'unitconv',  name:'Unit Converter',cat:'Utilities',    desc:'Convert length, weight, temperature & more.'},
+  {view:'tipcalc',   name:'Tip Calculator',cat:'Utilities',    desc:'Split the bill and work out the tip.'},
+  /* Creativity */
+  {view:'draw',      name:'Draw',          cat:'Creativity',   desc:'A sketch pad.'},
+  /* Lifestyle */
+  {view:'cookbook',  name:'Cookbook',      cat:'Lifestyle',    desc:'Save and browse recipes.'},
+  {view:'sleeplog',  name:'Sleep',         cat:'Lifestyle',    desc:'Track your sleep.'},
+  {view:'stocks',    name:'Stocks',        cat:'Lifestyle',    desc:'Watch the markets.'},
+  {view:'breathe',   name:'Mindfulness',   cat:'Lifestyle',    desc:'Breathing & calm exercises.'},
+  /* News & Media */
+  {view:'rss',       name:'News',          cat:'News & Media', desc:'RSS headlines and the Gazette.'},
+  {view:'imagesearch',name:'Images',       cat:'News & Media', desc:'Search free images.'},
+  {view:'sports',    name:'Sports',        cat:'News & Media', desc:'Live scores & schedules.'},
+  {view:'maps',      name:'Maps',          cat:'News & Media', desc:'Search places and routes.'}
 ];
-/* Apps hidden from the top nav by DEFAULT once the store exists (moved to the
-   store; the user re-adds any they want). */
-var STORE_DEFAULT_MOVED=['slides','sheets','kanban','starmap','animals','cipher','teleprompter','draw','cookbook','sleeplog','stocks','science'];
+/* Featured on the store's front page (front-of-store rotation, search-hidden). */
+var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports'];
+/* Apps that start HIDDEN from the top nav until the user installs them (they
+   live in the store). Newly-added store apps just get appended here; the boot
+   applier only hides ones the user has never decided on, so nothing a user
+   installed is ever force-hidden. teleprompter is intentionally NOT here — it's
+   launched inside Tools via khTeleprompter(), not a standalone view. */
+var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc'];
 /* Only these Gemini models are trusted to REVIEW apps, strongest first. */
 var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
 function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
@@ -8073,11 +8097,14 @@ function _khStoreRemove(view){if(!S.navHidden)S.navHidden={};S.navHidden[view]=t
    the "what's new" notice. Guarded by S.appStoreMigrated so it runs once. */
 function _khStoreMigrate(){
   try{
-    if(S.appStoreMigrated)return;
-    if(!S.navHidden)S.navHidden={};
-    for(var i=0;i<STORE_DEFAULT_MOVED.length;i++){var v=STORE_DEFAULT_MOVED[i];if(S.navHidden[v]==null)S.navHidden[v]=true;}
-    S.appStoreMigrated=1;
-    try{save();}catch(_){}
+    if(!S.navHidden||typeof S.navHidden!=='object')S.navHidden={};
+    /* Only hide apps the user has NEVER decided on (navHidden undefined) — so
+       this safely covers store apps added in later updates without a version
+       bump, and never re-hides one the user installed. */
+    var changed=false;
+    for(var i=0;i<STORE_DEFAULT_HIDDEN.length;i++){var v=STORE_DEFAULT_HIDDEN[i];if(S.navHidden[v]==null){S.navHidden[v]=true;changed=true;}}
+    if(!S.appStoreMigrated){S.appStoreMigrated=1;changed=true;}
+    if(changed){try{save();}catch(_){}}
   }catch(_){}
 }
 function _khMaybeShowStoreNotice(){
@@ -8108,11 +8135,40 @@ function _khParseVerdict(out){
   }catch(_){}
   return null;
 }
+/* ── Sandbox-hardening for published apps (the "make it more secure" ask) ──
+   Published apps are arbitrary user code, so they run doubly contained:
+   (a) a locked iframe sandbox (NO same-origin → can't touch our storage/auth;
+       NO popups → can't tab-nab), and
+   (b) a strict CSP injected here that lets a SELF-CONTAINED app run but blocks
+       network exfiltration (connect-src none) and external form posts
+       (form-action none) — the two real risks of running untrusted code.
+   Plus a static risk scan over the FULL code so a payload hidden past the AI
+   review's truncation is still surfaced to the reviewer. */
+function _khAppRiskFlags(html){
+  var s=String(html||''),f=[];
+  if(/\bfetch\s*\(|XMLHttpRequest|WebSocket|navigator\.sendBeacon|EventSource|\bimport\s*\(/i.test(s))f.push('makes network requests');
+  if(/\beval\s*\(|new\s+Function\s*\(|document\.write/i.test(s))f.push('runs dynamically-built code');
+  if(/document\.cookie|localStorage|sessionStorage|indexedDB/i.test(s))f.push('reads cookies/storage');
+  if(/\bparent\s*\.|\btop\s*\.|window\.opener|postMessage/i.test(s))f.push('tries to reach outside its frame');
+  if(/type\s*=\s*["']?password|autocomplete\s*=\s*["']?(current-password|new-password)|name\s*=\s*["']?pass/i.test(s))f.push('has a password/login field (possible phishing)');
+  if(/window\.open|location\s*\.\s*(href|replace|assign)\s*=/i.test(s))f.push('navigates or opens new windows');
+  return f;
+}
+function _khAppCsp(){
+  return "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'\">";
+}
+function _khWrapAppSecure(html){
+  var s=String(html||''),csp=_khAppCsp();
+  if(/<head[^>]*>/i.test(s))return s.replace(/<head[^>]*>/i,function(m){return m+csp;});
+  if(/<html[^>]*>/i.test(s))return s.replace(/<html[^>]*>/i,function(m){return m+'<head>'+csp+'</head>';});
+  return '<!doctype html><html><head>'+csp+'<meta charset="utf-8"></head><body>'+s+'</body></html>';
+}
 /* Run the automated review: strongest model first, retry on transient failure,
    fall to the next model, and if ALL are unavailable return {waitlisted:true}
    so the app is queued and retried later. */
 async function _khReviewApp(name,html){
-  var prompt='You are the automated reviewer for the KindleHub App Store. Decide whether to APPROVE or DECLINE the submitted web app. You may ONLY approve or decline — you cannot edit it. DECLINE if it is malicious, tries to steal data or credentials, is empty/broken, is offensive or adult, or impersonates the operating system; otherwise APPROVE. Reply with STRICT JSON only, no prose: {"verdict":"approve","reason":"..."} or {"verdict":"decline","reason":"..."}.\n\nAPP NAME: '+String(name).slice(0,80)+'\n\nAPP CODE (truncated):\n'+String(html).slice(0,6000);
+  var flags=_khAppRiskFlags(html);
+  var prompt='You are the automated reviewer for the KindleHub App Store. Decide whether to APPROVE or DECLINE the submitted web app. You may ONLY approve or decline — you cannot edit it. It runs in a locked sandbox (no access to the user\'s data; a strict CSP blocks all network calls and external form posts), so judge INTENT: DECLINE if it is malicious, phishes for passwords or credentials, tries to exfiltrate data or break out of its frame, is empty/broken, or is offensive or adult; otherwise APPROVE. Reply with STRICT JSON only, no prose: {"verdict":"approve","reason":"..."} or {"verdict":"decline","reason":"..."}.\n\nAPP NAME: '+String(name).slice(0,80)+'\nAUTOMATED STATIC SCAN (over the FULL code): '+(flags.length?flags.join('; '):'no risky patterns detected')+'\n\nAPP CODE (first 12000 chars):\n'+String(html).slice(0,12000);
   var anyModelTried=false;
   for(var i=0;i<APP_REVIEW_MODELS.length;i++){
     var model=APP_REVIEW_MODELS[i];
@@ -8178,10 +8234,14 @@ function _khOpenPublishedApp(app){
     bar.appendChild(back);
     ov.appendChild(bar);
     var fr=el('iframe',{style:{flex:'1',width:'100%',border:'none',background:'#fff'}});
-    fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+    /* Locked sandbox: NO allow-same-origin (can't reach our storage/auth) and NO
+       allow-popups (can't open windows or tab-nab). allow-forms/modals stay for
+       normal interactivity — the injected CSP still blocks external form posts. */
+    fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals');
     ov.appendChild(fr);
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
-    try{fr.srcdoc=String(app.html);}catch(_){try{var d=fr.contentWindow.document;d.open();d.write(String(app.html));d.close();}catch(__){}}
+    var _safe=(typeof _khWrapAppSecure==='function')?_khWrapAppSecure(app.html):String(app.html);
+    try{fr.srcdoc=_safe;}catch(_){try{var d=fr.contentWindow.document;d.open();d.write(_safe);d.close();}catch(__){}}
   }catch(_){}
 }
 /* Retry waitlisted apps — this is the "waiting list for the next day" path.
@@ -8225,12 +8285,13 @@ async function _khProcessReviewQueue(force){
 window._khProcessReviewQueue=_khProcessReviewQueue;
 window._khStoreInstall=_khStoreInstall;window._khStoreRemove=_khStoreRemove;window._khStoreInstalled=_khStoreInstalled;
 window._khReviewApp=_khReviewApp;window._khPublishApp=_khPublishApp;window._khOpenPublishedApp=_khOpenPublishedApp;window._khStoreMigrate=_khStoreMigrate;window._khMaybeShowStoreNotice=_khMaybeShowStoreNotice;
+window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
 /* Boot: run the one-time migration (move default apps into the store / hide
    their nav tabs), apply it to the DOM, and show the "what's new" notice once. */
 (function(){
   function _run(){
     try{_khStoreMigrate();}catch(_){}
-    try{for(var i=0;i<STORE_DEFAULT_MOVED.length;i++){var vv=STORE_DEFAULT_MOVED[i];if(S&&S.navHidden&&S.navHidden[vv]===true&&typeof setNavTabVisible==='function')setNavTabVisible(vv,false);}}catch(_){}
+    try{for(var i=0;i<STORE_DEFAULT_HIDDEN.length;i++){var vv=STORE_DEFAULT_HIDDEN[i];if(S&&S.navHidden&&typeof setNavTabVisible==='function')setNavTabVisible(vv,S.navHidden[vv]!==true);}}catch(_){}
     setTimeout(function(){try{_khMaybeShowStoreNotice();}catch(_){}},1600);
     /* Retry any waitlisted apps a bit after load (a review model may be free now). */
     setTimeout(function(){try{if(typeof _khProcessReviewQueue==='function')_khProcessReviewQueue();}catch(_){}},6000);
@@ -9430,8 +9491,11 @@ async function _sha256(str){
 }
 
 async function _userKey(email,password){
-  /* Full 64-char hex = 32 bytes — works as both registry lookup key and AES-256 key */
-  return await _sha256('kh::'+email.toLowerCase().trim()+'::'+password);
+  /* Full 64-char hex = 32 bytes — works as both registry lookup key and AES-256 key.
+     Resolve account aliases HERE too (single source of truth) so an alias maps to
+     the same key everywhere — login, offline-cred lookup, register dup-check. */
+  var name=(typeof _khCanonicalUsername==='function')?_khCanonicalUsername(email):email;
+  return await _sha256('kh::'+String(name).toLowerCase().trim()+'::'+password);
 }
 
 /* ── AES-GCM per-user encryption ────────────────────────────────────────────
@@ -11030,6 +11094,22 @@ function _offlineCred(key){
   try{const store=JSON.parse(localStorage.getItem('kh_offline_cred')||'{}');const h=String(key||'').slice(0,16);return store[h]||store[key]||null;}catch(_){return null;}
 }
 
+/* ── Account aliases → ONE canonical account ──────────────────────────────
+   Some usernames are the SAME account: signing in with any alias (using that
+   account's password) computes the canonical key, so it loads EXACTLY the same
+   encrypted data — and, because the canonical name flows into the admin gate,
+   the alias inherits the canonical account's admin status. This is done via the
+   account KEY, deliberately NOT by adding a short/guessable token to the admin
+   hash list (the admin gate also reads the user-settable display name S.user, so
+   a 4-letter admin token could be spoofed). Case-insensitive.
+   'aran' is the creator's short handle for the main 'arancool3000' account. */
+function _khCanonicalUsername(name){
+  var raw=String(name==null?'':name).trim();
+  var lc=raw.toLowerCase();
+  if(lc==='aran')return 'arancool3000';
+  return raw;
+}
+try{window._khCanonicalUsername=_khCanonicalUsername;}catch(_){}
 async function authRegister(email,password){
   try{
     /* Block inappropriate usernames by default. Enforced here (not just in
@@ -11091,6 +11171,10 @@ async function authLogin(email,password){
      legitimate user. */
   const _raceTO=(pr,ms)=>Promise.race([Promise.resolve(pr).catch(function(){return '__err__';}),new Promise(function(r){setTimeout(function(){r('__timeout__');},ms);})]);
   try{
+    /* Resolve account aliases FIRST so every step below — the key, S.email, the
+       admin gate, the offline cache — uses the one canonical account. This is
+       what merges 'aran' and 'arancool3000' into a single account. */
+    if(typeof _khCanonicalUsername==='function')email=_khCanonicalUsername(email);
     /* Run BOTH pre-checks CONCURRENTLY (they're independent network reads) and
        tighten the time-box to 2.5s — sequential 2×3.5s could stack ~7s of pure
        gate-checking before the real lookup even started. Both fail OPEN and are
@@ -49144,6 +49228,116 @@ explore:()=>{
   v.appendChild(grid);
   return v;
 },
+unitconv:()=>{
+  /* Unit Converter — offline, pure-math, e-ink-safe. Factor units convert via a
+     base unit; temperature is handled specially (offset scales). */
+  const v=el('section',{id:'view-unitconv',className:'view'});
+  v.appendChild(txt('h2','Unit Converter',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'10px'}}));
+  const CATS={
+    Length:{units:[['Metres',1],['Kilometres',1000],['Centimetres',0.01],['Millimetres',0.001],['Miles',1609.344],['Yards',0.9144],['Feet',0.3048],['Inches',0.0254]]},
+    Weight:{units:[['Kilograms',1],['Grams',0.001],['Milligrams',1e-6],['Pounds',0.45359237],['Ounces',0.0283495231],['Stone',6.35029318],['Tonnes',1000]]},
+    Temperature:{temp:true,units:[['Celsius','C'],['Fahrenheit','F'],['Kelvin','K']]},
+    Volume:{units:[['Litres',1],['Millilitres',0.001],['Cubic metres',1000],['US gallons',3.785411784],['US quarts',0.946352946],['US pints',0.473176473],['US cups',0.2365882365],['Fluid oz (US)',0.0295735296]]},
+    Speed:{units:[['km/h',1],['m/s',3.6],['mph',1.609344],['Knots',1.852],['ft/s',1.09728]]},
+    Area:{units:[['Sq metres',1],['Sq km',1e6],['Hectares',1e4],['Sq feet',0.09290304],['Acres',4046.8564224],['Sq miles',2589988.110336]]},
+    Data:{units:[['Megabytes',1],['Bytes',1e-6],['Kilobytes',1e-3],['Gigabytes',1000],['Terabytes',1e6]]}
+  };
+  const CKEYS=['Length','Weight','Temperature','Volume','Speed','Area','Data'];
+  let cat='Length',fromI=0,toI=1;
+  const catRow=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'12px'}});
+  const card=el('div',{className:'card'});
+  const inp=el('input',{type:'number',value:'1',style:{fontSize:'18px',fontWeight:'700',width:'100%',marginBottom:'8px'}});
+  const fromSel=el('select',{style:{fontSize:'14px',width:'100%',marginBottom:'6px'}});
+  const swapBtn=txt('button','Swap',{className:'btn small',style:{marginBottom:'6px'}});
+  const toSel=el('select',{style:{fontSize:'14px',width:'100%',marginBottom:'10px'}});
+  const out=el('div',{style:{fontFamily:'var(--title-font)',fontSize:'22px',fontWeight:'900',textAlign:'center',padding:'12px',background:'var(--highlight)',borderRadius:'10px',color:'var(--fg)',wordBreak:'break-all'}});
+  function toC(val,code){if(code==='C')return val;if(code==='F')return (val-32)*5/9;return val-273.15;}
+  function fromC(c,code){if(code==='C')return c;if(code==='F')return c*9/5+32;return c+273.15;}
+  function fmt(n){if(!isFinite(n))return '—';var a=Math.abs(n);var s=(a!==0&&(a<1e-4||a>=1e9))?n.toExponential(4):(Math.round(n*1e6)/1e6).toString();return s;}
+  function fillUnits(){
+    const units=CATS[cat].units;
+    fromSel.innerHTML='';toSel.innerHTML='';
+    units.forEach(function(u,i){
+      const o1=document.createElement('option');o1.value=String(i);o1.textContent=u[0];if(i===fromI)o1.selected=true;fromSel.appendChild(o1);
+      const o2=document.createElement('option');o2.value=String(i);o2.textContent=u[0];if(i===toI)o2.selected=true;toSel.appendChild(o2);
+    });
+  }
+  function recompute(){
+    const units=CATS[cat].units;
+    const val=parseFloat(inp.value);
+    if(isNaN(val)){if(out.textContent!=='—')out.textContent='—';return;}
+    fromI=parseInt(fromSel.value,10)||0;toI=parseInt(toSel.value,10)||0;
+    let res;
+    if(CATS[cat].temp){res=fromC(toC(val,units[fromI][1]),units[toI][1]);}
+    else{res=val*units[fromI][1]/units[toI][1];}
+    const label=fmt(res)+' '+units[toI][0];
+    if(out.textContent!==label)out.textContent=label;
+  }
+  CKEYS.forEach(function(k){
+    const b=txt('button',k,{className:'btn small'+(k===cat?' primary':'')});
+    b.onclick=function(){cat=k;fromI=0;toI=1;catRow.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});b.classList.add('primary');fillUnits();recompute();};
+    catRow.appendChild(b);
+  });
+  swapBtn.onclick=function(){const a=fromSel.value;fromSel.value=toSel.value;toSel.value=a;recompute();};
+  inp.oninput=recompute;fromSel.onchange=recompute;toSel.onchange=recompute;
+  v.appendChild(catRow);
+  card.appendChild(txt('div','Value',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'3px'}}));
+  card.appendChild(inp);
+  card.appendChild(txt('div','From',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'3px'}}));
+  card.appendChild(fromSel);
+  card.appendChild(swapBtn);
+  card.appendChild(txt('div','To',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'3px'}}));
+  card.appendChild(toSel);
+  card.appendChild(out);
+  v.appendChild(card);
+  fillUnits();recompute();
+  return v;
+},
+tipcalc:()=>{
+  /* Tip Calculator — offline, pure-math. Bill + tip% + split → tip/total/each. */
+  const v=el('section',{id:'view-tipcalc',className:'view'});
+  v.appendChild(txt('h2','Tip Calculator',{style:{fontFamily:'var(--title-font)',fontSize:'16px',marginBottom:'10px'}}));
+  let bill=0,tipPct=15,split=1;
+  const card=el('div',{className:'card'});
+  card.appendChild(txt('div','Bill amount',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'3px'}}));
+  const billInp=el('input',{type:'number',placeholder:'0.00',style:{fontSize:'20px',fontWeight:'700',width:'100%',marginBottom:'10px'}});
+  card.appendChild(billInp);
+  card.appendChild(txt('div','Tip',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'3px'}}));
+  const tipRow=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
+  const TIPS=[10,12,15,18,20,25];
+  const customInp=el('input',{type:'number',placeholder:'Custom %',style:{fontSize:'14px',width:'100%',marginBottom:'10px'}});
+  function markTip(){tipRow.querySelectorAll('button').forEach(function(x){x.classList.toggle('primary',parseInt(x.dataset.tp,10)===tipPct);});}
+  TIPS.forEach(function(t){const b=txt('button',t+'%',{className:'btn small'+(t===tipPct?' primary':'')});b.dataset.tp=String(t);b.onclick=function(){tipPct=t;customInp.value='';markTip();recompute();};tipRow.appendChild(b);});
+  card.appendChild(tipRow);
+  customInp.oninput=function(){const c=parseFloat(customInp.value);if(!isNaN(c)){tipPct=c;markTip();recompute();}};
+  card.appendChild(customInp);
+  card.appendChild(txt('div','Split between',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',marginBottom:'3px'}}));
+  const splitRow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}});
+  const minus=txt('button','−',{className:'btn small',style:{minWidth:'40px',fontSize:'18px'}});
+  const splitLbl=txt('div','1',{style:{fontSize:'18px',fontWeight:'800',minWidth:'40px',textAlign:'center'}});
+  const plus=txt('button','+',{className:'btn small',style:{minWidth:'40px',fontSize:'18px'}});
+  minus.onclick=function(){if(split>1){split--;splitLbl.textContent=String(split);recompute();}};
+  plus.onclick=function(){if(split<50){split++;splitLbl.textContent=String(split);recompute();}};
+  splitRow.append(minus,splitLbl,plus,txt('span','people',{style:{fontSize:'12px',color:'var(--muted)'}}));
+  card.appendChild(splitRow);
+  const results=el('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}});
+  function resTile(label){const t=el('div',{style:{background:'var(--highlight)',borderRadius:'10px',padding:'10px 6px',textAlign:'center'}});t.appendChild(txt('div',label,{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'3px'}}));const val=txt('div','0.00',{style:{fontFamily:'var(--title-font)',fontSize:'17px',fontWeight:'900',color:'var(--fg)'}});t.appendChild(val);return {t:t,val:val};}
+  const rTip=resTile('Tip'),rTotal=resTile('Total'),rEach=resTile('Each');
+  results.append(rTip.t,rTotal.t,rEach.t);
+  card.appendChild(results);
+  function money(n){if(!isFinite(n))n=0;return (Math.round(n*100)/100).toFixed(2);}
+  function recompute(){
+    bill=parseFloat(billInp.value);if(isNaN(bill))bill=0;
+    const tip=bill*tipPct/100;const total=bill+tip;const each=total/(split||1);
+    if(rTip.val.textContent!==money(tip))rTip.val.textContent=money(tip);
+    if(rTotal.val.textContent!==money(total))rTotal.val.textContent=money(total);
+    if(rEach.val.textContent!==money(each))rEach.val.textContent=money(each);
+  }
+  billInp.oninput=recompute;
+  v.appendChild(card);
+  recompute();
+  return v;
+},
 appstore:()=>{
   /* The App Store — Discover (install first-party + community apps) and Publish
      (build/paste an app → AI review → it lives in your device/account state). */
@@ -49183,9 +49377,34 @@ appstore:()=>{
     function paint(){
       host.innerHTML='';
       const q=(sb.value||'').trim().toLowerCase();
+      const allFirst=STORE_APPS.concat(_khOtherStorePages());
+      const pubCount=(Array.isArray(S.publishedApps)?S.publishedApps.length:0);
+      host.appendChild(txt('div',(allFirst.length+pubCount)+' apps available',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 8px'}}));
+      /* Featured strip (front of store; hidden while searching) */
+      if(!q&&typeof STORE_FEATURED!=='undefined'){
+        const feat=[];
+        STORE_FEATURED.forEach(function(vw){for(var i=0;i<STORE_APPS.length;i++){if(STORE_APPS[i].view===vw){feat.push(STORE_APPS[i]);break;}}});
+        if(feat.length){
+          host.appendChild(txt('div','Featured',{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'2px 0 6px'}}));
+          const frow=el('div',{style:{display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'6px',marginBottom:'8px'}});
+          feat.forEach(function(a){
+            const inst=_khStoreInstalled(a.view);
+            const fc=el('div',{style:{flex:'0 0 auto',width:'140px',border:'var(--thin)',borderRadius:'12px',padding:'12px',background:'var(--card)',display:'flex',flexDirection:'column',gap:'6px'}});
+            const ic=el('div',{style:{width:'44px',height:'44px',borderRadius:'11px',background:'var(--highlight)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'900',fontSize:'17px'}});
+            ic.textContent=(a.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()||'AP';
+            fc.appendChild(ic);
+            fc.appendChild(txt('div',a.name,{style:{fontWeight:'800',fontSize:'13px',lineHeight:'1.2'}}));
+            const b=txt('button',inst?'Open':'Get',{className:'btn small primary',style:{marginTop:'auto'}});
+            b.onclick=function(){if(!inst){_khStoreInstall(a.view);toast('"'+a.name+'" added to your menu.');paint();}else{try{showView(a.view);}catch(_){}}};
+            fc.appendChild(b);
+            frow.appendChild(fc);
+          });
+          host.appendChild(frow);
+        }
+      }
       /* First-party apps grouped by category */
       const cats={};
-      STORE_APPS.concat(_khOtherStorePages()).forEach(function(a){if(q&&(a.name.toLowerCase().indexOf(q)<0&&a.cat.toLowerCase().indexOf(q)<0))return;(cats[a.cat]=cats[a.cat]||[]).push(a);});
+      allFirst.forEach(function(a){if(q&&(a.name.toLowerCase().indexOf(q)<0&&a.cat.toLowerCase().indexOf(q)<0))return;(cats[a.cat]=cats[a.cat]||[]).push(a);});
       Object.keys(cats).forEach(function(cat){
         host.appendChild(txt('div',cat,{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'8px 0 6px'}}));
         const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
@@ -49211,7 +49430,7 @@ appstore:()=>{
         });
         host.appendChild(grid);
       }
-      if(!host.children.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
+      if(q&&!Object.keys(cats).length&&!pub.length)host.appendChild(txt('div','No apps match "'+q+'".',{style:{color:'var(--muted)',fontSize:'13px',padding:'10px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
   }

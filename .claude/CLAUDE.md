@@ -898,6 +898,48 @@ approve/decline/waitlist; queue processor drains→publishes; Community Games sh
 notified of the change via the one-time in-app notice (`_khMaybeShowStoreNotice`); a live backend announcement
 would have to be posted by the admin (I can't write to their cloud).
 
+## ⚡ Round: account merge (aran↔arancool3000) + App Store hardening + App Store upgrade
+Three asks on `claude/keen-tesla-n73rpc`:
+- **"aran" = the admin account (merged with arancool3000)** — `_khCanonicalUsername(name)` (near `authRegister`)
+  maps `aran`→`arancool3000` (case-insensitive). Applied at the TOP of `authLogin` (so `S.email`, the admin gate,
+  the offline cache all use the canonical account) AND inside `_userKey` (single source of truth — the alias hashes
+  to the SAME account key everywhere: login, offline-cred lookup, register dup-check). Result: signing in with
+  EITHER username + the same password loads EXACTLY the same encrypted blob (merge) AND is admin — because the
+  canonical name flows into `_checkAdmin`, which already lists `arancool3000` (hash `ee99b2d3…`). **Deliberately did
+  NOT add SHA-256("aran") to `_ADMIN_HASHES`**: the admin gate also tokenises the user-settable display name
+  `S.user`, and "aran" is a short guessable 4-letter token → anyone could set their name to "aran" and self-promote.
+  The alias gives aran admin with NO guessable token. (Caveat surfaced to user: needs the SAME password on both;
+  after signing in as "aran" the UI shows the canonical "arancool3000" — they ARE one account now.) `_reservedUsername('aran')`
+  stays (blocks anyone else registering it). Test `/tmp/appstore2_test.cjs`: `_userKey('aran')===_userKey('arancool3000')`,
+  canonical→admin TRUE, bare 'aran' display name→admin FALSE (no hole).
+- **App Store apps hardened** ("how the apps can edit code could be a security issue — don't remove it, make it more
+  secure"): published apps are arbitrary user code, now doubly contained. (1) `_khWrapAppSecure(html)` injects a strict
+  **CSP** meta (`default-src 'none'; script-src/style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none';
+  form-action 'none'; base-uri 'none'`) into the app's `<head>` before it's shown — a self-contained app still runs,
+  but network exfiltration (connect-src none) and external phishing form-posts (form-action none) are BLOCKED. (2)
+  `_khOpenPublishedApp` sandbox dropped `allow-popups` (was allow-scripts/forms/popups/modals → now scripts/forms/modals;
+  still NO allow-same-origin). (3) `_khAppRiskFlags(html)` static-scans the FULL code (fetch/XHR/WS/eval/cookies/frame-
+  escape/password-field/window.open) and the review prompt now shows those flags + reviews 12000 chars (was 6000) — so a
+  payload hidden past the truncation is still surfaced. The 3-model approve/decline chain is unchanged. Helpers window-
+  exported. Test asserts CSP injected + no-popups sandbox + flags fire on fetch/eval/password.
+- **App Store upgraded** ("add more apps + more organised"): `STORE_APPS` grew 16→26 (added Journal, Files, Dictionary,
+  Translate, Mindfulness, News, Images, Sports, Maps + the two NEW apps below), grouped into 6 categories incl. the new
+  "News & Media". **Two brand-new mini-apps** (real views + nav tab + `NAV_TABS` + default-hidden + STORE_APPS):
+  **Unit Converter** (`BUILDERS.unitconv`, 7 categories Length/Weight/Temperature/Volume/Speed/Area/Data; factor-based
+  convert + special-cased temperature; from/to selects + Swap; pure-math offline) and **Tip Calculator**
+  (`BUILDERS.tipcalc`; bill + tip% chips + custom% + split stepper → Tip/Total/Each). Store front page gained a **Featured**
+  strip (`STORE_FEATURED`, horizontal cards, search-hidden) + an **"N apps available"** count. Removed the BROKEN
+  `teleprompter` store entry (it's `khTeleprompter()` launched inside Tools, NOT a `showView` target).
+  **Migration refactor** (important): `STORE_DEFAULT_MOVED`→`STORE_DEFAULT_HIDDEN`; `_khStoreMigrate` no longer early-returns
+  on `appStoreMigrated` — it idempotently hides only apps the user has NEVER decided on (`navHidden[v]==null`), so newly
+  added store apps auto-hide on later updates WITHOUT a migration-version bump, and nothing a user installed is re-hidden.
+  The boot applier sets each hidden-app tab to its ACTUAL `navHidden` state (so installs show too). The newly-CATALOGUED
+  existing views (dictionary/rss/etc.) are NOT in STORE_DEFAULT_HIDDEN → they stay in nav (visible) and just appear in the
+  catalogue, so this update doesn't yank pages out of anyone's menu.
+Tests: `/tmp/appstore2_test.cjs` (28 assertions, all green) + `/tmp/appstore_test.cjs` (round-1 flows, Get logic updated to
+target slides' exact card since Featured now renders Get first) + `/tmp/appstore_boot.cjs` + games_test (38,0) + fixbatch
+(auth path intact; only the known `noAccentPicker` false-positive fails, re-verified gone via acc_check) + minify Silk gate.
+
 ## ⚠ Minified deploy build (`index.min.html`)
 - **`index.html` = readable source you EDIT. `index.min.html` = generated deploy artifact you UPLOAD.**
 - After ANY edit to `index.html`, regenerate: `cd tools && npm install && node minify.mjs` (writes
