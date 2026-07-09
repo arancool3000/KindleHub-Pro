@@ -1888,9 +1888,36 @@ function _khRemoveFriend(hash){
 }
 /* DM a friend directly (mutual consent already given) — create a private group
    and drop a DM_INVITE so it auto-appears on their side too. */
+/* Find an EXISTING private chat with this friend so "Message" reuses it instead
+   of minting a new identically-named group every press. Prefers the code we
+   stored on the friend; falls back to matching a "DM: …" group whose name
+   contains the friend's name (covers a chat the friend opened first). */
+function _khFindFriendDm(friend){
+  try{
+    var groups=Array.isArray(S.msgGroups)?S.msgGroups:[];
+    var left=Array.isArray(S.leftGroups)?S.leftGroups:[];
+    var isLeft=function(c){return left.indexOf(c)>=0;};
+    if(friend&&friend.dm){for(var i=0;i<groups.length;i++){if(groups[i]&&groups[i].code===friend.dm&&!isLeft(friend.dm))return friend.dm;}}
+    var fname=String((friend&&friend.name)||'').slice(0,20).toLowerCase().trim();
+    if(fname){for(var j=0;j<groups.length;j++){var g=groups[j];if(!g||!g.name||isLeft(g.code))continue;var nm=String(g.name).toLowerCase();if(nm.indexOf('dm:')===0&&nm.indexOf(fname)>=0)return g.code;}}
+    return null;
+  }catch(_){return null;}
+}
 async function _khMessageFriend(friend,onDone){
   try{
     if(!(window.KH_MP&&KH_MP.sendDmInvite)){if(typeof toast==='function')toast('Messaging needs the cloud backend.');return;}
+    /* Open a chat (reuse-or-create) then JUMP to it — messages is ALWAYS_REBUILD,
+       so setting the pending-open code + showing the view lands you in the chat. */
+    function _openChat(code){
+      try{window._khPendingOpenGroup=code;}catch(_){}
+      try{var t=document.querySelector('nav .tab[data-view="messages"]');if(t){t.style.display='';t.click();}else if(typeof showView==='function')showView('messages');}catch(_){}
+    }
+    var existing=_khFindFriendDm(friend);
+    if(existing){
+      if(friend&&friend.dm!==existing){friend.dm=existing;if(typeof save==='function')save();}
+      _openChat(existing);
+      return;
+    }
     const dn=(typeof _dispName==='function')?_dispName:(x=>x);
     const myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
     const name='DM: '+dn(myShort)+' & '+dn(String(friend.name||'friend').slice(0,20));
@@ -1898,10 +1925,11 @@ async function _khMessageFriend(friend,onDone){
     if(!Array.isArray(S.msgGroups))S.msgGroups=[];
     if(!S.msgGroups.find(x=>x&&x.code===created.code))S.msgGroups.push({code:created.code,name:created.name||name});
     if(Array.isArray(S.leftGroups))S.leftGroups=S.leftGroups.filter(c=>c!==created.code);
+    if(friend)friend.dm=created.code;/* remember it so the next press reuses this chat */
     if(typeof save==='function')save();
     await KH_MP.sendDmInvite(friend.hash,created.code,name);
-    if(typeof toast==='function')toast('Chat opened with '+(typeof _censorText==='function'?_censorText(friend.name):friend.name)+'.',4000);
-    if(typeof onDone==='function')onDone();
+    if(typeof toast==='function')toast('Chat opened with '+(typeof _censorText==='function'?_censorText(friend.name):friend.name)+'.',3000);
+    _openChat(created.code);
   }catch(e){if(typeof toast==='function')toast('Could not open chat: '+String((e&&e.message)||e).slice(0,80));}
 }
 /* Search users and send a friend request (code-free). */
@@ -2008,7 +2036,7 @@ function _khMessageUserPicker(onDone){
   });
 }
 window._khOnChatRequest=_khOnChatRequest;window._khAcceptChatRequest=_khAcceptChatRequest;window._khDeclineChatRequest=_khDeclineChatRequest;window._khMessageUserPicker=_khMessageUserPicker;
-window._khOnFriendRequest=_khOnFriendRequest;window._khOnFriendAccept=_khOnFriendAccept;window._khAcceptFriendRequest=_khAcceptFriendRequest;window._khDeclineFriendRequest=_khDeclineFriendRequest;window._khRemoveFriend=_khRemoveFriend;window._khMessageFriend=_khMessageFriend;window._khAddFriendPicker=_khAddFriendPicker;
+window._khOnFriendRequest=_khOnFriendRequest;window._khOnFriendAccept=_khOnFriendAccept;window._khAcceptFriendRequest=_khAcceptFriendRequest;window._khDeclineFriendRequest=_khDeclineFriendRequest;window._khRemoveFriend=_khRemoveFriend;window._khMessageFriend=_khMessageFriend;window._khAddFriendPicker=_khAddFriendPicker;window._khFindFriendDm=_khFindFriendDm;
 
 /* ── Share custom apps in chat ────────────────────────────────────────────
    Apps travel as a "KHAPP1:" code (base64 of {label,color,icon,html}) — pure
@@ -14352,6 +14380,7 @@ const GAME_HELP={
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
+  set:{name:'Set',how:'Find a "Set": 3 cards where EACH of the four features — count (1/2/3), colour (R/G/P), shape (diamond/oval/triangle) and shading (solid/light/outline) — is either ALL THE SAME or ALL DIFFERENT across the three cards. Tap 3 cards to claim: right = +1, wrong = -1. There is always at least one set on the table. First to 6 (or most when the deck runs out) wins. Colours also carry a letter (R/G/P) so it works on a black-and-white Kindle. Modes: vs AI, 2 Players (tap P1/P2 to buzz in), or Play Online.'},
   farm:{name:'Farm',how:'A cosy turn-based farming sim. Pick a seed from the shop (Wheat is cheapest), tap an empty plot to plant it (costs coins), then tap "Next day" to grow every crop one day. When a crop is READY, tap it to harvest and sell it for coins — then buy pricier seeds (carrots, berries, pumpkins) that sell for more. Grow your coin pile as high as you can. Your farm saves automatically, so you can come back any time; "New farm" starts over.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table with three modes — 1 Player (practice: clear the table in as few shots as you can), 2 Players (pass-and-play on one device, taking turns) and Play Online (Ultra — match a friend on another device). Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot; the further you drag, the harder the hit. In 2-player/online, sink a ball to shoot again; miss or scratch and it passes to your opponent. Pot your balls, then the black 8-ball LAST to win — sinking the 8 early (or with a scratch) loses.'},
@@ -14446,7 +14475,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,PerfectCircle,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,PerfectCircle,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,SetGame,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -15429,6 +15458,7 @@ function _doLaunch(g){
     case 'eightball': EightBall.start();break;
     case 'trivia': Trivia.start();break;
     case 'farm': Farm.start();break;
+    case 'set': SetGame.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -20859,6 +20889,154 @@ const Farm=(()=>{
    mass elastic ball collisions, wall bounces, friction, six pockets. Sink every
    object ball to clear the table. Canvas + flat fills; the loop only redraws
    while something is moving (or you're aiming) so it stays gentle on e-ink. */
+const SetGame=(()=>{
+  /* Colour is the hard attribute on grayscale e-ink, so each colour carries a
+     REDUNDANT letter badge (R/G/P) — real hue on colour screens, a readable
+     letter on Kindle. Shading = fill density (solid / light / outline), which
+     also survives grayscale. Shapes = diamond / oval / triangle (maximally
+     distinct at small size). A "Set" = 3 cards where every attribute is all-
+     same or all-different (the (sum % 3 === 0) trick per attribute). */
+  const COLORS=[{hex:'#cc2222',ltr:'R'},{hex:'#178a17',ltr:'G'},{hex:'#7a2fb0',ltr:'P'}];
+  const OPS=[1,0.4,0];
+  const TARGET=6;
+  let game=null,aiTimer=null,_sub=null;
+  function _best(){return (S.games&&S.games.set&&S.games.set.best)||0;}
+  function decode(id){return {id:id,n:Math.floor(id/27)%3,c:Math.floor(id/9)%3,s:Math.floor(id/3)%3,f:id%3};}
+  function isSet(a,b,c){return ((a.n+b.n+c.n)%3===0)&&((a.c+b.c+c.c)%3===0)&&((a.s+b.s+c.s)%3===0)&&((a.f+b.f+c.f)%3===0);}
+  function findSet(board){for(var i=0;i<board.length;i++)for(var j=i+1;j<board.length;j++)for(var k=j+1;k<board.length;k++)if(isSet(board[i],board[j],board[k]))return [i,j,k];return null;}
+  function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t;}return a;}
+  function newDeck(){var d=[],i;for(i=0;i<81;i++)d.push(i);return shuffle(d);}
+  function replenish(){
+    while(game.board.length<12&&game.deck.length)game.board.push(decode(game.deck.pop()));
+    var guard=0;
+    while(!findSet(game.board)&&game.deck.length&&game.board.length<21&&guard<12){for(var k=0;k<3&&game.deck.length;k++)game.board.push(decode(game.deck.pop()));guard++;}
+  }
+  function _noMore(){return !findSet(game.board)&&game.deck.length===0;}
+  function stopNet(){try{if(_sub&&_sub.close)_sub.close();}catch(_){}_sub=null;}
+  function stopAi(){if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}}
+  function stop(){stopAi();stopNet();game=null;}
+
+  function start(){stopAi();stopNet();enterImmersive('Set','');var ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;showMenu();}
+  function showMenu(){
+    immersiveContent.innerHTML='';
+    var box=el('div',{style:{maxWidth:'340px',margin:'14px auto'}});
+    box.appendChild(txt('h2','Set',{style:{textAlign:'center',margin:'0 0 4px'}}));
+    box.appendChild(txt('p','Find a Set of 3 cards where each feature — count, colour, shape and shading — is either ALL SAME or ALL DIFFERENT across the three. Tap 3 cards to claim it.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 12px',lineHeight:'1.5',textAlign:'center'}}));
+    function mk(label,sub,fn){var b=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',background:'var(--card)'}});b.appendChild(txt('div',label,{style:{fontWeight:'800',fontSize:'15px'}}));if(sub)b.appendChild(txt('div',sub,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px',lineHeight:'1.4'}}));b.onclick=fn;return b;}
+    box.appendChild(mk('vs AI','Race a computer opponent to spot sets first.',function(){begin('ai');}));
+    box.appendChild(mk('2 Players','On this device — tap P1 or P2 to buzz in, then claim.',function(){begin('local2');}));
+    box.appendChild(mk('Play Online (Ultra)','Race a friend on another device — shared board.',function(){
+      if(typeof KH_MP==='undefined'||!KH_MP.openLobby){if(typeof toast==='function')toast('Online multiplayer is unavailable right now.');return;}
+      KH_MP.openLobby({gameName:'set',onConnected:function(s,opp){begin('online',s,opp);}});
+    }));
+    box.appendChild(txt('div','Best (sets in a game): '+_best(),{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',marginTop:'6px'}}));
+    immersiveContent.appendChild(box);
+  }
+  function begin(mode,session,opp){
+    stopAi();stopNet();
+    game={mode:mode,board:[],deck:newDeck(),sel:[],scores:[0,0],claimer:null,over:false,winner:-1,msg:'',_dl:0,
+          net:session||null,myIndex:0,isHost:true,oppName:(opp&&typeof _dispName==='function'?_dispName(opp):(opp||'Opponent'))};
+    if(mode==='online'&&session){
+      game.myIndex=(session.myColor==='black')?1:0;game.isHost=(game.myIndex===0);
+      var myId=(KH_MP.identity&&KH_MP.identity().userId)||'';
+      _sub=KH_MP.subscribe(session.code,function(env){onNet(env,myId);});
+      if(game.isHost){replenish();setTimeout(function(){if(game&&game.mode==='online')netSend(_state());},450);}
+    }else{replenish();if(mode==='ai')scheduleAi();}
+    render();
+  }
+  function scheduleAi(){stopAi();aiTimer=setTimeout(aiTick,6000+Math.floor(Math.random()*5000));}
+  function aiTick(){
+    if(!game||game.over||game.mode!=='ai')return;
+    var f=findSet(game.board);
+    if(f){var si=f.slice().sort(function(a,c){return c-a;});si.forEach(function(i){game.board.splice(i,1);});replenish();game.scores[1]++;game.sel=[];game.msg='The AI found a set!';if(endCheck()){render();return;}render();}
+    scheduleAi();
+  }
+  function onCardTap(idx){
+    if(!game||game.over)return;
+    if(game.mode==='local2'&&game.claimer==null){game.msg='Tap P1 or P2 to buzz in first';render();return;}
+    var at=game.sel.indexOf(idx);
+    if(at>=0){game.sel.splice(at,1);render();return;}
+    if(game.sel.length>=3)return;
+    game.sel.push(idx);
+    if(game.sel.length===3)resolve();else render();
+  }
+  function resolve(){
+    var b=game.board,s=game.sel;
+    if(game.mode==='online'){var ids=[b[s[0]].id,b[s[1]].id,b[s[2]].id];if(game.isHost)hostClaim(ids,0);else netSend({t:'CL',ids:ids,by:game.myIndex});game.sel=[];render();return;}
+    var who=(game.mode==='local2')?game.claimer:0;
+    if(isSet(b[s[0]],b[s[1]],b[s[2]])){var si=s.slice().sort(function(a,c){return c-a;});si.forEach(function(i){b.splice(i,1);});replenish();game.scores[who]++;game.msg=(game.mode==='ai')?'Set! +1':((who===0?'Player 1':'Player 2')+' got it! +1');}
+    else{game.scores[who]=Math.max(0,game.scores[who]-1);game.msg='Not a set — -1';}
+    game.sel=[];game.claimer=null;endCheck();render();
+  }
+  function endCheck(){
+    var ended=false;
+    if(_noMore())ended=true;
+    if(Math.max(game.scores[0],game.scores[1])>=TARGET)ended=true;
+    if(ended){game.over=true;stopAi();game.winner=(game.scores[0]===game.scores[1])?-1:(game.scores[0]>game.scores[1]?0:1);
+      var mine=game.scores[0]||0;if(mine>_best()){if(!S.games)S.games={};if(!S.games.set)S.games.set={};S.games.set.best=mine;try{save();}catch(_){}}
+      if(typeof _khSubmitScore==='function'){try{_khSubmitScore('set',mine);}catch(_){}}}
+    return ended;
+  }
+  function _state(){return {t:'ST',ids:game.board.map(function(c){return c.id;}),sc:game.scores,dl:game.deck.length,ov:game.over,wn:game.winner};}
+  function _adopt(m){game.board=(m.ids||[]).map(decode);game.scores=m.sc||[0,0];game.over=!!m.ov;game.winner=(m.wn==null?-1:m.wn);game.sel=[];game._dl=m.dl||0;render();}
+  function netSend(p){try{if(game&&game.net)KH_MP.send(game.net.code,p);}catch(_){}}
+  function hostClaim(ids,by){
+    var idxs=ids.map(function(id){for(var i=0;i<game.board.length;i++)if(game.board[i].id===id)return i;return -1;});
+    if(idxs.indexOf(-1)>=0)return;
+    var cs=idxs.map(function(i){return game.board[i];});
+    if(isSet(cs[0],cs[1],cs[2])){var si=idxs.slice().sort(function(a,c){return c-a;});si.forEach(function(i){game.board.splice(i,1);});replenish();game.scores[by]++;game.msg=(by===game.myIndex?'You got it! +1':(game.oppName+' got it!'));endCheck();netSend(_state());render();}
+  }
+  function onNet(env,myId){
+    if(!game||game.mode!=='online')return;
+    if(env&&env.from&&env.from.userId&&myId&&env.from.userId===myId)return;
+    var p=env&&env.payload;if(!p)return;
+    if(p.t==='CL'&&game.isHost)hostClaim(p.ids||[],(p.by==null?1:p.by));
+    else if(p.t==='ST'&&!game.isHost)_adopt(p);
+    else if((p.t==='JOIN'||p.type==='JOIN')&&game.isHost)netSend(_state());
+  }
+  function cardSvg(card){
+    var C=COLORS[card.c],op=OPS[card.f],n=card.n+1,inner='',gap=20,startY=(70-n*gap)/2+gap/2,i;
+    for(i=0;i<n;i++){
+      var cy=startY+i*gap,fill=(op>0)?C.hex:'none',fo=(op>0)?op:1;
+      if(card.s===0)inner+='<polygon points="27,'+(cy-8)+' 43,'+cy+' 27,'+(cy+8)+' 11,'+cy+'" fill="'+fill+'" fill-opacity="'+fo+'" stroke="'+C.hex+'" stroke-width="1.8"/>';
+      else if(card.s===1)inner+='<ellipse cx="27" cy="'+cy+'" rx="16" ry="8" fill="'+fill+'" fill-opacity="'+fo+'" stroke="'+C.hex+'" stroke-width="1.8"/>';
+      else inner+='<polygon points="27,'+(cy-8.5)+' 43,'+(cy+8)+' 11,'+(cy+8)+'" fill="'+fill+'" fill-opacity="'+fo+'" stroke="'+C.hex+'" stroke-width="1.8"/>';
+    }
+    return '<svg viewBox="0 0 54 70" width="100%" height="64" style="display:block"><text x="3" y="13" font-size="11" font-weight="900" fill="'+C.hex+'" font-family="sans-serif" stroke="none">'+C.ltr+'</text>'+inner+'</svg>';
+  }
+  function render(){
+    if(!game)return;
+    immersiveContent.innerHTML='';
+    var wrap=el('div',{style:{maxWidth:'440px',margin:'0 auto',padding:'4px 6px 12px'}});
+    var hud=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',flexWrap:'wrap'}});
+    if(game.mode==='ai')hud.appendChild(txt('div','You '+game.scores[0]+' — '+game.scores[1]+' AI',{style:{fontWeight:'800',fontSize:'14px'}}));
+    else if(game.mode==='local2')hud.appendChild(txt('div','P1 '+game.scores[0]+' — '+game.scores[1]+' P2',{style:{fontWeight:'800',fontSize:'14px'}}));
+    else hud.appendChild(txt('div','You '+game.scores[game.myIndex]+' — '+game.scores[1-game.myIndex]+' '+game.oppName,{style:{fontWeight:'800',fontSize:'13px'}}));
+    hud.appendChild(txt('div','Deck '+((game.mode==='online'&&!game.isHost)?(game._dl||0):game.deck.length),{style:{fontSize:'11px',color:'var(--muted)',marginLeft:'auto'}}));
+    wrap.appendChild(hud);
+    if(game.mode==='local2'&&!game.over){
+      var buzz=el('div',{style:{display:'flex',gap:'8px',marginBottom:'6px'}});
+      [['P1',0],['P2',1]].forEach(function(pr){var bb=txt('button','Buzz '+pr[0],{className:'btn small'+(game.claimer===pr[1]?' primary':''),style:{flex:'1'}});bb.onclick=function(){game.claimer=pr[1];game.sel=[];game.msg=pr[0]+' — pick 3 cards';render();};buzz.appendChild(bb);});
+      wrap.appendChild(buzz);
+    }
+    if(game.msg)wrap.appendChild(txt('div',game.msg,{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px'}}));
+    var grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'6px'}});
+    game.board.forEach(function(card,idx){
+      var cell=el('div',{style:{border:(game.sel.indexOf(idx)>=0?'2px solid var(--accent)':'var(--thin)'),borderRadius:'8px',background:'var(--card)',padding:'2px',cursor:game.over?'default':'pointer',minHeight:'64px'}});
+      cell.innerHTML=cardSvg(card);
+      if(!game.over)cell.onclick=function(){onCardTap(idx);};
+      grid.appendChild(cell);
+    });
+    wrap.appendChild(grid);
+    if(game.over){var res=(game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!')));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
+    var ctr=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',justifyContent:'center'}});
+    var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){showMenu();};ctr.appendChild(ng);
+    wrap.appendChild(ctr);
+    immersiveContent.appendChild(wrap);
+  }
+  return {start:start,stop:stop,isSet:isSet,findSet:findSet,decode:decode};
+})();
+
 const EightBall=(()=>{
   const W=280,H=452,R=9,POCK=15,FR=40;
   const FRICT=0.94,WALL=0.7,MINV=0.1,MAXPOW=26;
@@ -27729,7 +27907,7 @@ const BOOK_RECS={
   history:['Sapiens — Harari','The Guns of August — Tuchman']
 };
 const GAME_MAP=[
-  {keys:['hangman','hang man'],g:'hangman'},{keys:['wordle','word guess'],g:'wordle'},
+  {keys:['hangman','hang man'],g:'hangman'},{keys:['set','set game','set cards','find sets'],g:'set'},{keys:['wordle','word guess'],g:'wordle'},
   {keys:['tic tac','tictactoe','noughts','crosses','ttt','tic-tac'],g:'ttt'},
   {keys:['chess','chess game'],g:'chess'},
   {keys:['connect 4','connect four','connect4','four in a row'],g:'connect4'},
@@ -32070,6 +32248,12 @@ games:()=>{
     const row=el('div',{className:'card-row',style:{marginTop:'6px',gap:'6px'}});
     row.appendChild(txt('button','Play Chess',{className:'btn primary','data-game':'chess',style:{flex:'1'}}));
     row.appendChild(txt('button','Play Online',{className:'btn small','data-online-game':'chess'}));
+    c.appendChild(row);
+  }));
+  rowBoard.appendChild(gc('Set',null,c=>{
+    c.appendChild(txt('p','Spot the trio where every feature is all-same or all-different. Best: '+(S.games&&S.games.set&&S.games.set.best||0)+' sets. vs AI, 2 players, or online.',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    const row=el('div',{className:'card-row',style:{marginTop:'6px',gap:'6px'}});
+    row.appendChild(txt('button','Play Set',{className:'btn primary','data-game':'set',style:{flex:'1'}}));
     c.appendChild(row);
   }));
   rowBoard.appendChild(gc('Tic-Tac-Toe',null,c=>{
@@ -56449,7 +56633,7 @@ messages:()=>{
           const msg=txt('button','Message',{className:'btn small primary'});
           msg.onclick=()=>{msg.disabled=true;msg.textContent='…';if(typeof _khMessageFriend==='function')_khMessageFriend(fr,render);};
           row.appendChild(msg);
-          const rem=txt('button','×',{className:'btn small'});rem.title='Remove friend';
+          const rem=txt('button','Remove',{className:'btn small'});rem.title='Remove friend';
           rem.onclick=async()=>{if(await kindleConfirm('Remove '+_dispName(fr.name||'this friend')+' from your friends?')){if(typeof _khRemoveFriend==='function')_khRemoveFriend(fr.hash);render();}};
           row.appendChild(rem);
           body.appendChild(row);
