@@ -6320,6 +6320,34 @@ function _accentForBg(hex){
     return '#'+[r,g,b].map(function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
   }catch(_){return hex;}
 }
+/* Readable text/icon colour to sit ON the accent (white or near-black by
+   luminance) so accent-backed buttons + chat bubbles stay legible. */
+function _khAccentInv(hex){
+  try{var h=String(hex).replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];var r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);return (((0.299*r+0.587*g+0.114*b)/255)>0.62)?'#111':'#fff';}catch(_){return '#fff';}
+}
+/* Accent-colour picker, shared by Settings and the setup wizard. Off by default
+   (clean monochrome for grayscale e-ink); a colour-screen user (Kindle Colorsoft,
+   phone, PC) can pick one and it repaints buttons/bubbles/links/tiles instantly. */
+function _khAccentPickerEl(onChange){
+  var wrap=el('div',{});
+  wrap.appendChild(txt('div','Accent colour',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'2px'}}));
+  wrap.appendChild(txt('div','Adds colour to buttons, chat bubbles, links and tiles. Best on a colour screen — Kindle Colorsoft, a phone or a PC; on black-and-white Kindles it stays subtle. "None" keeps the clean monochrome look.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  var grid=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}});
+  function refreshSel(){try{var bs=grid.querySelectorAll('button');for(var i=0;i<bs.length;i++){var hx=bs[i].getAttribute('data-hex')||'';var on=hx?(S.accent===hx):(!S.accent);bs[i].style.border=on?'3px solid var(--fg)':'1px solid var(--muted)';}}catch(_){}}
+  function swatch(label,hex){
+    var b=el('button',{title:label,style:{width:'36px',height:'36px',borderRadius:'8px',background:hex||'transparent',cursor:'pointer',padding:'0',boxSizing:'border-box',flexShrink:'0'}});
+    b.setAttribute('data-hex',hex||'');
+    if(!hex){b.textContent='—';b.style.color='var(--fg)';b.style.fontWeight='900';b.style.fontSize='16px';}
+    b.onclick=function(){S.accent=hex||'';try{save();}catch(_){}if(typeof applyCustomisation==='function')applyCustomisation();refreshSel();if(typeof toast==='function')toast(hex?('Accent: '+label):'Accent off — monochrome');if(onChange)onChange();};
+    return b;
+  }
+  grid.appendChild(swatch('None',''));
+  KH_ACCENTS.forEach(function(a){if(a[0]==='Ink')return;grid.appendChild(swatch(a[0],a[1]));});
+  wrap.appendChild(grid);
+  refreshSel();
+  return wrap;
+}
+
 function applyCustomisation(){
   try{
     /* Set the vars on BOTH <html> and <body>. The dark/sepia theme classes
@@ -6329,11 +6357,15 @@ function applyCustomisation(){
        "did nothing" outside light mode. Inline-on-body outranks the class. */
     var targets=[document.documentElement,document.body].filter(Boolean);
     targets.forEach(function(t){
-      /* Colour theming REMOVED (user request): always use each theme's built-in
-         --accent (which equals --fg), never override it from S.accent. This
-         reverts every account to the clean monochrome look — no coloured chat
-         bubbles / links / tiles. S.accent is left as an inert field. */
-      t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');
+      /* Accent colour is OPT-IN again (Colorsoft / colour-screen users); the
+         choice is applied just below. */
+      /* Accent colour: OPT-IN. Off = each theme's monochrome (best on grayscale
+         e-ink). When set (colour-screen users), apply it + a readable inverse;
+         inline on <body> outranks the theme + simple-mode class rules so the
+         choice shows in every mode. */
+      var _acc=(typeof S.accent==='string'&&/^#[0-9a-fA-F]{3,8}$/.test(S.accent))?S.accent:'';
+      if(_acc){t.style.setProperty('--accent',_acc);t.style.setProperty('--accent-inv',_khAccentInv(_acc));}
+      else{t.style.removeProperty('--accent');t.style.removeProperty('--accent-inv');}
       var f=S.uiFont&&KH_FONTS[S.uiFont];
       if(f){
         t.style.setProperty('--ui-font',f[1]);
@@ -40016,6 +40048,9 @@ settings:()=>{
   };
   dyslexRow.append(dyslexInfo,dyslexBtn);
   c2.appendChild(dyslexRow);
+  /* ── Accent colour (colour-screen / Kindle Colorsoft users) ── */
+  c2.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'10px 0 8px'}}));
+  try{if(typeof _khAccentPickerEl==='function')c2.appendChild(_khAccentPickerEl());}catch(_){}
 
   /* ── Language ── */
   c2.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'10px 0 8px'}}));
@@ -61230,6 +61265,13 @@ window._showWelcome=function(){
       save(){
         if(S.fontSize)applyFontSize(S.fontSize);
       }
+    },
+    {
+      id:'colour',
+      heading:'Add some colour',
+      sub:'On a colour screen — Kindle Colorsoft, a phone or a PC — pick an accent to brighten buttons, chat bubbles and links. On a black-and-white Kindle, leave it on "None" for the cleanest look. You can change this anytime in Settings.',
+      build(wrap){ try{ if(typeof _khAccentPickerEl==='function') wrap.appendChild(_khAccentPickerEl()); }catch(_){ } },
+      save(){ try{ if(typeof applyCustomisation==='function') applyCustomisation(); }catch(_){ } }
     },
     {
       id:'location',
