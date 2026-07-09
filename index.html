@@ -1441,7 +1441,7 @@ function defaultState(){
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,tutorialSeen:false,feedbackUrl:'',
-    publishedApps:[],appReviewQueue:[],
+    publishedApps:[],appReviewQueue:[],cpMenuDisabled:false,
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -3940,7 +3940,7 @@ function launchKindleDesktop(){
       else localStorage.setItem(ls,v==null?def:v);
     });
   }
-  function allApps(){return [...BUILTIN_APPS,...osState.customApps];}
+  function allApps(){return [...BUILTIN_APPS,...osState.customApps,...(typeof _khPublishedOsApps==='function'?_khPublishedOsApps():[])];}
   function widgetOn(id){return osState.enabledWidgets.includes(id);}
 
   /* ── SHELL ── */
@@ -4262,7 +4262,10 @@ function launchKindleDesktop(){
          localStorage (the encrypted state, auth hash, device id), cookies, or call
          our APIs as the user. Stops a malicious shared app from stealing accounts. */
       fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
-      fr.srcdoc=app.customHTML;
+      /* Inject the same strict CSP the store uses (connect-src 'none' blocks any
+         data exfiltration, form-action 'none' blocks phishing posts) so an AI-
+         built / downloaded app can't call out even though it runs JS. */
+      fr.srcdoc=(typeof _khWrapAppSecure==='function')?_khWrapAppSecure(app.customHTML):app.customHTML;
       frWrap.appendChild(fr);
       /* Back control in the FOOTER (not a top-left floating pill). The custom-app
          iframe overlay covers the whole viewport — including the real footer back
@@ -8083,6 +8086,11 @@ window.KH_ICONS.unitconv='<path d="M4 7h13"/><path d="M14 4l3 3-3 3"/><path d="M
 window.KH_ICONS.tipcalc='<circle cx="12" cy="12" r="9"/><line x1="8.5" y1="15.5" x2="15.5" y2="8.5"/><circle cx="9.2" cy="9.2" r="1.3"/><circle cx="14.8" cy="14.8" r="1.3"/>';
 window.KH_ICONS.appstore='<path d="M8 21L12 6l4 15"/><line x1="9.2" y1="16" x2="14.8" y2="16"/>';
 window.KH_ICONS.explore=window.KH_ICONS.discover;
+/* Wikipedia + Formulas used <text> with fill:currentColor — invisible on the
+   white-stroke store tiles (currentColor there isn't white). Replace with pure
+   STROKE icons that render in both the retro home and the coloured store tile. */
+window.KH_ICONS.wikipedia='<polyline points="3,6 7.5,19 12,9 16.5,19 21,6"/><line x1="9" y1="6" x2="15" y2="6" opacity=".55"/>';
+window.KH_ICONS.formulas='<path d="M4 13h3l2.5 6 3-13H21"/><line x1="14" y1="15" x2="20" y2="15"/>';
 window.KH_ICON_FALLBACK='<rect x="4" y="4" width="16" height="16" rx="2"/>';
 /* Brand colour per view (mirrors the KindleOS BUILTIN_APPS palette + fills the
    store-only apps). White icon strokes need DARK fills — keep them deep. */
@@ -8318,6 +8326,7 @@ async function _khPublishApp(opts,onProgress,onDone){
     S.publishedApps.unshift(app);
     if(S.publishedApps.length>60)S.publishedApps.length=60;
     try{save();}catch(_){}
+    try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}/* your own app also lands in the top menu + OS grid */
     /* Publish to the SHARED store so everyone can download it (best-effort —
        needs a backend; falls back to a device-only publish if offline). */
     var shared=false;
@@ -8333,18 +8342,23 @@ async function _khPublishApp(opts,onProgress,onDone){
 function _khOpenPublishedApp(app){
   try{
     if(!app||!app.html)return;
-    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'var(--bg)',zIndex:'100060',display:'flex',flexDirection:'column'}});
-    var bar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderBottom:'var(--thin)',background:'var(--card)',flexShrink:'0'}});
-    bar.appendChild(txt('div',(typeof _censorText==='function'?_censorText(app.name):app.name)||'App',{style:{fontWeight:'800',fontSize:'14px',flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
-    var back=txt('button','Close',{className:'btn small'});back.onclick=function(){ov.remove();};
-    bar.appendChild(back);
-    ov.appendChild(bar);
-    var fr=el('iframe',{style:{flex:'1',width:'100%',border:'none',background:'#fff'}});
+    /* Full-BLEED standalone app: the iframe fills the whole screen (its own
+       "window", not an embedded box) with a slim FOOTER back bar — mirrors the
+       KindleOS custom-app overlay so a store app opens like a real app. Explicit
+       top/left/width/height (NOT the inset shorthand — old Silk ignores it). */
+    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',width:'100%',height:'100%',background:'#fff',zIndex:'500060',display:'flex',flexDirection:'column',overflow:'hidden'}});
+    var fr=el('iframe',{style:{flex:'1',width:'100%',border:'none',background:'#fff',display:'block',minHeight:'0'}});
     /* Locked sandbox: NO allow-same-origin (can't reach our storage/auth) and NO
        allow-popups (can't open windows or tab-nab). allow-forms/modals stay for
        normal interactivity — the injected CSP still blocks external form posts. */
     fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals');
     ov.appendChild(fr);
+    var bar=el('div',{style:{flexShrink:'0',display:'flex',alignItems:'center',gap:'8px',padding:'7px 12px',background:'var(--card,#fff)',borderTop:'1px solid rgba(0,0,0,0.14)'}});
+    var back=txt('button','‹ Back',{style:{display:'inline-flex',alignItems:'center',padding:'8px 16px',background:'var(--fg,#111)',color:'var(--bg,#fff)',border:'none',borderRadius:'16px',fontSize:'12px',fontWeight:'800',cursor:'pointer',minHeight:'40px'}});
+    back.onclick=function(){ov.remove();};
+    bar.appendChild(back);
+    bar.appendChild(txt('div',(typeof _censorText==='function'?_censorText(app.name):app.name)||'App',{style:{fontSize:'12px',fontWeight:'700',color:'var(--muted)',flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+    ov.appendChild(bar);
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
     var _safe=(typeof _khWrapAppSecure==='function')?_khWrapAppSecure(app.html):String(app.html);
     try{fr.srcdoc=_safe;}catch(_){try{var d=fr.contentWindow.document;d.open();d.write(_safe);d.close();}catch(__){}}
@@ -8434,6 +8448,7 @@ async function _khDownloadStoreApp(meta,onDone){
     S.publishedApps.unshift({id:full.id,name:String(full.name||'App').slice(0,60),html:String(full.html||''),cat:full.cat||'Fun',isGame:isGame,by:String(full.author||'user').slice(0,40),at:NOW(),model:full.model||'',downloaded:true});
     if(S.publishedApps.length>60)S.publishedApps.length=60;
     try{save();}catch(_){}
+    try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}/* show in top menu + OS grid */
     /* best-effort public download count (fire and forget) */
     try{ fetch(_sbBase()+'/rest/v1/rpc/kh_store_download',{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json','Prefer':'return=minimal'}),body:JSON.stringify({p_id:full.id})}); }catch(_){}
     if(typeof toast==='function')toast('"'+String(full.name||'App')+'" downloaded — open it any time.',4000);
@@ -8441,6 +8456,49 @@ async function _khDownloadStoreApp(meta,onDone){
   }catch(_){ if(onDone)onDone(false); return false; }
 }
 window._khShareToStore=_khShareToStore;window._khFetchStoreApps=_khFetchStoreApps;window._khStoreDownloaded=_khStoreDownloaded;window._khDownloadStoreApp=_khDownloadStoreApp;
+/* ── Installed apps become first-class: OS-grid icons + top-menu tabs ─────────
+   A downloaded/published app (S.publishedApps) is surfaced everywhere a real app
+   is: the KindleOS home grid (via allApps()) and the top nav (a launcher tab
+   that opens it full-screen). One source of truth = S.publishedApps. */
+function _khStrHash(s){var h=0,i;s=String(s||'');for(i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))>>>0;}return h;}
+/* Map published apps to the KindleOS app shape so allApps()/openApp show + run
+   them (openApp uses app.customHTML and CSP-wraps it). */
+function _khPublishedOsApps(){
+  var out=[],arr=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
+  var ACCS=['#2563eb','#7c3aed','#db2777','#dc2626','#f59e0b','#10b981','#0891b2','#166534'];
+  for(var i=0;i<arr.length;i++){var a=arr[i];if(!a||!a.html)continue;
+    var label=String(a.name||'App').slice(0,40);
+    var color=ACCS[_khStrHash(a.id||label)%ACCS.length];
+    var initials=(label.replace(/[^A-Za-z0-9]/g,'').substring(0,2).toUpperCase())||'AP';
+    var icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="11" fill="'+color+'"/><text x="24" y="30" text-anchor="middle" font-size="16" font-weight="900" fill="#fff" font-family="sans-serif">'+initials+'</text></svg>';
+    out.push({id:'kapp_'+(a.id||i),label:label,color:color,icon:icon,customHTML:a.html,builtWith:'Downloaded',_pubId:a.id});
+  }
+  return out;
+}
+/* (Re)build the top-nav launcher tabs for every installed app. Each tab opens
+   the app FULL-SCREEN (its own overlay) — not embedded in a view host. */
+function _khSyncAppNavTabs(){
+  try{
+    var nav=document.getElementById('mainNav');if(!nav)return;
+    var old=nav.querySelectorAll('.kh-app-tab');for(var k=0;k<old.length;k++)old[k].remove();
+    var arr=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
+    for(var i=0;i<arr.length;i++){(function(a){
+      if(!a||!a.html)return;
+      var tab=document.createElement('div');
+      tab.className='tab kh-app-tab';
+      tab.setAttribute('data-view','kapp:'+a.id);
+      tab.textContent=String(a.name||'App').slice(0,16);
+      tab.onclick=function(){ if(typeof _khOpenPublishedApp==='function')_khOpenPublishedApp(a); };
+      nav.appendChild(tab);
+    })(arr[i]);}
+    try{if(typeof buildPages==='function')buildPages();}catch(_){}/* refresh OS grid too */
+  }catch(_){}
+}
+window._khPublishedOsApps=_khPublishedOsApps;window._khSyncAppNavTabs=_khSyncAppNavTabs;
+/* True while an immersive game is on screen — used to auto-suppress the double-
+   tap Copy/Paste menu during games (Tetris/Crossy Road button-spam). */
+function _khInGame(){try{var r=document.getElementById('immersiveRoot');return !!(r&&getComputedStyle(r).display!=='none'&&r.offsetHeight>0);}catch(_){return false;}}
+window._khInGame=_khInGame;
 window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
 /* Boot: run the one-time migration (move default apps into the store / hide
    their nav tabs), apply it to the DOM, and show the "what's new" notice once. */
@@ -8448,6 +8506,7 @@ window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
   function _run(){
     try{_khStoreMigrate();}catch(_){}
     try{for(var i=0;i<STORE_DEFAULT_HIDDEN.length;i++){var vv=STORE_DEFAULT_HIDDEN[i];if(S&&S.navHidden&&typeof setNavTabVisible==='function')setNavTabVisible(vv,S.navHidden[vv]!==true);}}catch(_){}
+    try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}/* installed apps → top-menu launcher tabs */
     setTimeout(function(){try{_khMaybeShowStoreNotice();}catch(_){}},1600);
     /* Retry any waitlisted apps a bit after load (a review model may be free now). */
     setTimeout(function(){try{if(typeof _khProcessReviewQueue==='function')_khProcessReviewQueue();}catch(_){}},6000);
@@ -14153,6 +14212,13 @@ function _khOpenMultitask(){
 window.enterSplit=enterSplit;window.exitSplit=exitSplit;window._khOpenMultitask=_khOpenMultitask;
 
 function showView(id){
+  /* Installed-app launcher tab: "kapp:<id>" opens the downloaded app FULL-SCREEN
+     in its own overlay instead of mounting a view — so it never renders embedded
+     inside the app shell. Returns without touching currentView. */
+  if(typeof id==='string'&&id.indexOf('kapp:')===0){
+    try{var _ka=(S.publishedApps||[]).filter(function(x){return x.id===id.slice(5);})[0];if(_ka&&typeof _khOpenPublishedApp==='function')_khOpenPublishedApp(_ka);}catch(_){}
+    return;
+  }
   /* Split view: navigating the primary pane onto the activity already in the
      SECOND pane swaps the two panes (a DOM node can only live in one place). */
   const _prevView=currentView;
@@ -32199,28 +32265,34 @@ games:()=>{
   }));
   v.appendChild(rowSim);
 
-  /* ── Community Games — user-published game apps (from the App Store) live in
-     S.publishedApps flagged isGame / cat 'Games'. Surfacing them here is what
-     lets the store "add extra games to the games page". They open sandboxed. */
+  /* ── Community Games — OPTIONAL, separate section. Only games you've DOWNLOADED
+     (or published) from the App Store appear here; the section is hidden entirely
+     until then, so it never clutters the built-in Arcade. Grouped by their store
+     category so it reads as its own labelled shelves, not mixed in with the
+     built-in games above. */
   (function(){
     const pg=(Array.isArray(S.publishedApps)?S.publishedApps:[]).filter(function(a){return a&&(a.isGame||a.cat==='Games');});
-    const head=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'16px 0 6px'}});
-    head.appendChild(txt('h3','Community Games',{style:{fontFamily:'var(--title-font)',fontSize:'14px',margin:'0'}}));
-    const addB=txt('button','Publish a game',{className:'btn small'});addB.onclick=function(){showView('appstore');};
+    if(!pg.length)return;/* nothing downloaded → section doesn't exist */
+    v.appendChild(el('hr',{style:{border:'none',borderTop:'2px solid var(--card)',margin:'20px 0 8px'}}));
+    const head=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'0 0 2px'}});
+    head.appendChild(txt('h3','Community Games',{style:{fontFamily:'var(--title-font)',fontSize:'15px',fontWeight:'900',margin:'0'}}));
+    const addB=txt('button','App Store',{className:'btn small'});addB.onclick=function(){showView('appstore');};
     head.appendChild(addB);
     v.appendChild(head);
-    if(!pg.length){
-      v.appendChild(txt('p','No community games yet — build one in the App Store (Publish). Once an AI reviewer approves it, it shows up right here.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'4px'}}));
-      return;
-    }
-    const rowCom=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(165px,1fr))',gap:'10px',marginBottom:'4px'}});
-    pg.forEach(function(a){
-      rowCom.appendChild(gc((typeof _censorText==='function'?_censorText(a.name):a.name),null,function(c){
-        c.appendChild(txt('p','By '+(a.by||'a user')+'. Community-published, AI-reviewed.',{style:{fontSize:'11px',color:'var(--muted)'}}));
-        const ob=txt('button','Play',{className:'btn primary',style:{marginTop:'4px'}});ob.onclick=function(){_khOpenPublishedApp(a);};c.appendChild(ob);
-      }));
+    v.appendChild(txt('p','Games you downloaded from the App Store. Get more (or publish your own) in the store.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',margin:'0 0 8px'}}));
+    /* group by the store sub-category so each gets its own shelf */
+    const groups={};pg.forEach(function(a){var k=(a.subcat||a.cat||'Games');(groups[k]=groups[k]||[]).push(a);});
+    Object.keys(groups).forEach(function(k){
+      if(Object.keys(groups).length>1)v.appendChild(txt('div',k,{style:{fontSize:'11px',fontWeight:'800',letterSpacing:'.4px',color:'var(--muted)',textTransform:'uppercase',margin:'6px 0 4px'}}));
+      const rowCom=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(165px,1fr))',gap:'10px',marginBottom:'4px'}});
+      groups[k].forEach(function(a){
+        rowCom.appendChild(gc((typeof _censorText==='function'?_censorText(a.name):a.name),null,function(c){
+          c.appendChild(txt('p','By '+(a.by||'a user')+'. Downloaded · runs sandboxed.',{style:{fontSize:'11px',color:'var(--muted)'}}));
+          const ob=txt('button','Play',{className:'btn primary',style:{marginTop:'4px'}});ob.onclick=function(){_khOpenPublishedApp(a);};c.appendChild(ob);
+        }));
+      });
+      v.appendChild(rowCom);
     });
-    v.appendChild(rowCom);
   })();
 
   /* Wire up data-game buttons */
@@ -40057,6 +40129,24 @@ settings:()=>{
   });
   cKbd.appendChild(modeRow);
   g.appendChild(cKbd);
+
+  /* ── Copy & Paste menu card ── */
+  const cCp=el('div',{className:'card'});
+  cCp.appendChild(txt('h2','Copy & Paste menu'));
+  cCp.appendChild(txt('p','Double-tap any text to pop a Copy/Paste toolbar. It\'s auto-disabled while you\'re in a game (so button-spam in Tetris or Crossy Road never triggers it). Turn it off entirely here if it gets in the way.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px',lineHeight:'1.5'}}));
+  const cpRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px'}});
+  cpRow.appendChild(txt('div','Double-tap Copy/Paste menu',{style:{fontSize:'13px',fontWeight:'700'}}));
+  const cpBtn=txt('button',S.cpMenuDisabled?'Off':'On',{className:'btn small'+(S.cpMenuDisabled?'':' primary'),style:{minWidth:'60px'}});
+  cpBtn.onclick=function(){
+    S.cpMenuDisabled=!S.cpMenuDisabled;save();
+    cpBtn.textContent=S.cpMenuDisabled?'Off':'On';
+    cpBtn.className='btn small'+(S.cpMenuDisabled?'':' primary');
+    if(S.cpMenuDisabled){try{var tb=document.getElementById('kh-cp-toolbar');if(tb)tb.style.display='none';}catch(_){}}
+    toast(S.cpMenuDisabled?'Copy/Paste menu turned off':'Copy/Paste menu turned on');
+  };
+  cpRow.appendChild(cpBtn);
+  cCp.appendChild(cpRow);
+  g.appendChild(cCp);
 
   /* NOTE: this used to close the _defer here and reopen a new one, which
      left `c5` (declared above) out of scope below — so the Keyboard
@@ -49801,7 +49891,7 @@ appstore:()=>{
     mine.forEach(function(a){
       const act=el('div',{style:{display:'flex',gap:'4px'}});
       const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
-      const delB=txt('button','Delete',{className:'btn small'});delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"?',function(ok){if(ok){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();draw();}});else{S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();draw();}};
+      const delB=txt('button','Delete',{className:'btn small'});delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"?',function(ok){if(ok){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}});else{S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}};
       act.append(openB,delB);
       grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'reviewed by '+(a.model||'AI'),action:act}));
     });
@@ -61466,6 +61556,12 @@ window._showWelcome=function(){
     const now=Date.now();
     const t=e.changedTouches[0];
     const target=e.target;
+
+    /* User turned the double-tap Copy/Paste menu OFF (Settings), OR a game is
+       running — spamming buttons in Tetris/Crossy Road kept popping the menu, so
+       it's auto-disabled while the immersive game overlay is up. */
+    try{ if(typeof S!=='undefined'&&S&&S.cpMenuDisabled)return; }catch(_){}
+    try{ if(typeof _khInGame==='function'&&_khInGame())return; }catch(_){}
 
     /* Ignore taps on the toolbar itself */
     if(toolbar.contains(target))return;
