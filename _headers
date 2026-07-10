@@ -17,3 +17,22 @@
   Permissions-Policy: accelerometer=(), camera=(), geolocation=(self), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
   X-Permitted-Cross-Domain-Policies: none
+
+# ── Caching (perf) ──────────────────────────────────────────────────────────
+# The app HTML is big; make repeat visits cheap WITHOUT ever serving a stale
+# build. must-revalidate + max-age=0 means the Kindle asks "changed?" (a tiny
+# request) and, when it hasn't, gets a 304 and reuses its cached copy instead of
+# re-downloading the whole file. On deploy you still Purge Everything as usual.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+# Static assets rarely change — cache them hard so they never re-download.
+/icon.svg
+  Cache-Control: public, max-age=604800
+/*.png
+  Cache-Control: public, max-age=604800
+/*.svg
+  Cache-Control: public, max-age=604800
+/*.js
+  Cache-Control: public, max-age=86400

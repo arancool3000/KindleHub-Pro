@@ -1897,9 +1897,18 @@ function _khFindFriendDm(friend){
     var groups=Array.isArray(S.msgGroups)?S.msgGroups:[];
     var left=Array.isArray(S.leftGroups)?S.leftGroups:[];
     var isLeft=function(c){return left.indexOf(c)>=0;};
+    /* 1) The code we stored on the friend — the ONLY fully reliable key. */
     if(friend&&friend.dm){for(var i=0;i<groups.length;i++){if(groups[i]&&groups[i].code===friend.dm&&!isLeft(friend.dm))return friend.dm;}}
-    var fname=String((friend&&friend.name)||'').slice(0,20).toLowerCase().trim();
-    if(fname){for(var j=0;j<groups.length;j++){var g=groups[j];if(!g||!g.name||isLeft(g.code))continue;var nm=String(g.name).toLowerCase();if(nm.indexOf('dm:')===0&&nm.indexOf(fname)>=0)return g.code;}}
+    /* 2) EXACT canonical DM name, either ordering. Was a substring match, which
+       teleported you into an unrelated chat (messaging "bob" matched "DM: alice
+       & bobby"). Exact match only — a near-name never collides. */
+    var dn=(typeof _dispName==='function')?_dispName:function(x){return x;};
+    var myShort=(S.email?S.email.split('@')[0]:(S.user||'Reader')).slice(0,20);
+    var fn=String((friend&&friend.name)||'').slice(0,20);
+    if(!fn)return null;
+    var n1=('dm: '+dn(myShort)+' & '+dn(fn)).toLowerCase();
+    var n2=('dm: '+dn(fn)+' & '+dn(myShort)).toLowerCase();
+    for(var j=0;j<groups.length;j++){var g=groups[j];if(!g||!g.name||isLeft(g.code))continue;var nm=String(g.name||'').toLowerCase();if(nm===n1||nm===n2)return g.code;}
     return null;
   }catch(_){return null;}
 }
@@ -16577,6 +16586,13 @@ window.KH_MP=(function(){
       if(S.msgGroups.find(function(x){return x&&x.code===code;}))return;/* already have it */
       const nm=String(p.name||('DM with '+(p.fromName||'someone'))).slice(0,80);
       S.msgGroups.push({code:code,name:nm});
+      /* If the sender is a friend, remember this DM's code on them so pressing
+         "Message" reuses THIS chat instead of spawning a new one (reliable even
+         though the friend opened it first). Match on the sender's name. */
+      try{
+        var _fn=String(p.fromName||'').toLowerCase().trim();
+        if(_fn&&Array.isArray(S.friends)){for(var _i=0;_i<S.friends.length;_i++){var _fr=S.friends[_i];if(_fr&&String(_fr.name||'').toLowerCase().trim()===_fn){_fr.dm=code;break;}}}
+      }catch(_){}
       if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
       if(typeof toast==='function')toast((p.fromName||'Someone')+' started a chat with you — added to Messages.',6000);
     }catch(_){}
