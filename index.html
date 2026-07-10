@@ -42304,16 +42304,23 @@ Deno.serve(async (req)=>{
         });
         const clrBtn=txt('button','Clear Cloud Error Log',{className:'btn small danger',style:{marginTop:'8px'}});
         clrBtn.onclick=async function(){
+          if(!await kindleConfirm('Delete ALL cloud error logs? This cannot be undone.'))return;
+          clrBtn.disabled=true;clrBtn.textContent='Clearing…';
           try{
             if(_sbActive()){
-              /* Anon cannot DELETE from kh_errors under the safe schema —
-                 use the backend dashboard (Table Editor → kh_errors → delete) */
-              toast('Cloud errors are insert-only for safety (no anon delete) and auto-prune on the server — nothing to clear here. To wipe them now, delete the kh_errors rows from your backend dashboard (Cloudflare D1 / the backend).',6000);
+              /* Admin delete — _sbHeaders sends the X-KH-Admin token and the worker
+                 now permits an admin to wipe kh_errors. Empty filter = clear all. */
+              await _sbDelete('kh_errors','');
+              try{await _masterWrite(function(doc){doc.autoErrors=[];});}catch(_){}
+              toast('Cloud error log cleared.');renderErrPanel();
               return;
             }
             await _masterWrite(function(doc){doc.autoErrors=[];});
             toast('Error log cleared');renderErrPanel();
-          }catch(e){toast('Failed to clear');}
+          }catch(e){
+            clrBtn.disabled=false;clrBtn.textContent='Clear Cloud Error Log';
+            toast('Could not clear: '+String((e&&e.message)||e).slice(0,120)+' — redeploy the api-worker if this persists.',7000);
+          }
         };
         errPanel.appendChild(clrBtn);
       }
@@ -42441,6 +42448,18 @@ Deno.serve(async (req)=>{
       }
       return false;
     }
+  }
+  /* Admin: DELETE a report/suggestion from the cloud outright (not just mark it
+     done). _sbHeaders already sends the X-KH-Admin token, and the worker now lets
+     an admin delete ANY kh_feedback row — so it's gone in one round-trip and can't
+     come back. Optimistically drop it from the list too. */
+  async function _deleteItem(id){
+    if(!_sbActive()){toast('Deleting requires the cloud backend');return false;}
+    try{
+      await _sbDelete('kh_feedback','id=eq.'+encodeURIComponent(id));
+      const ix=items.findIndex(function(x){return x.id===id;});if(ix>=0)items.splice(ix,1);
+      return true;
+    }catch(e){toast('Delete failed: '+String((e&&e.message)||e).slice(0,120),6000);return false;}
   }
   /* Open to all users: add a comment to a feedback item's thread. */
   async function _addComment(id,text){
@@ -42607,6 +42626,16 @@ Deno.serve(async (req)=>{
         /* Surface WHY the buttons are missing so the admin knows
            what to do, instead of silently dropping them. */
         actRow.appendChild(txt('span','(status column missing — run schema SQL)',{style:{fontSize:'10px',color:'var(--muted)',fontStyle:'italic',alignSelf:'center'}}));
+      }
+      /* Admin: permanent Delete (works for ANY item, any status — no 7-day wait). */
+      if(isAdmin){
+        const delBtn=txt('button','Delete',{className:'btn small danger'});
+        delBtn.onclick=async()=>{
+          if(!await kindleConfirm('Delete this permanently from the cloud? It will not come back.'))return;
+          delBtn.disabled=true;
+          if(await _deleteItem(item.id)){renderItems();toast('Deleted');}else delBtn.disabled=false;
+        };
+        actRow.appendChild(delBtn);
       }
       card.appendChild(actRow);
 

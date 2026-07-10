@@ -730,9 +730,16 @@ async function handlePatch(table, url, request, env, DB){
   return json(outRows, 200, env);
 }
 
+/* Tables an authenticated ADMIN may delete rows from directly — moderation +
+   diagnostics. (Chat/mail stay owner_secret-gated; kh_users is never here.) */
+const ADMIN_DELETE_OK = new Set(['kh_feedback','kh_errors','kh_announcements','kh_scores','kh_banned_usernames','kh_visits','kh_presence']);
 async function handleDelete(table, url, request, env, DB){
   const secretGated = SECRET_DELETE.has(table);
-  if(!secretGated && table!=='kh_feedback') return err('delete not allowed on '+table, 403, env);
+  const adminReq = await isAdmin(request.headers.get('x-kh-admin')||'');
+  const adminOk = adminReq && ADMIN_DELETE_OK.has(table);
+  /* Allowed if: owner-secret gated (chat/mail), the open kh_feedback prune path,
+     OR an authenticated admin deleting from a moderation table. Otherwise 403. */
+  if(!secretGated && table!=='kh_feedback' && !adminOk) return err('delete not allowed on '+table, 403, env);
   const q = parseQuery(table, url.searchParams);
   let { sql:where, binds } = whereSql(table, q.filters);
   if(secretGated){
@@ -740,14 +747,19 @@ async function handleDelete(table, url, request, env, DB){
     if(secret.length < 16) return err('a valid owner secret is required', 403, env);
     where += (where?' AND ':' WHERE ')+'owner_secret IS NOT NULL AND owner_secret = ?';
     binds = binds.concat([secret]);
-  } else if(table==='kh_feedback'){
-    /* auto-prune policy: done/ignored items resolved (or, for legacy rows with no
-       status_at, created) more than 7 days ago. COALESCE lets old pre-status_at
-       rows age out by their creation date instead of sticking around forever. */
+  } else if(table==='kh_feedback' && !adminReq){
+    /* NON-admin auto-prune ONLY: done/ignored items resolved (or, for legacy rows
+       with no status_at, created) more than 7 days ago. An ADMIN skips this filter
+       so they can delete ANY report/suggestion immediately (the bug where a fresh
+       item's delete matched zero rows and silently "came back"). */
     const cut = new Date(Date.now()-7*86400000).toISOString();
     where += (where?' AND ':' WHERE ')+"status IN ('done','ignored') AND COALESCE(status_at, date) < ?";
     binds = binds.concat([cut]);
   }
+  /* SAFETY: an admin "clear all" (no filter) is intentional for kh_errors; for
+     other admin tables require a filter so a bug can't wipe a whole table. */
+  if(adminOk && !secretGated && !where && table!=='kh_errors' && table!=='kh_presence')
+    return err('a filter is required to delete from '+table, 400, env);
   await DB.prepare('DELETE FROM '+QUOTE(table)+where).bind(...binds).run();
   return new Response(null,{status:204,headers:cors(env)});
 }
