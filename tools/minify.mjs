@@ -6,9 +6,13 @@
 // of each real <script>/<style> block with terser / clean-css (correct parsers),
 // leaving all surrounding bytes identical.
 //
-// Old-WebKit (Kindle Silk) safe: terser runs with compress:false, mangle:false
-// (strip JS comments+whitespace only — no code transforms, no renaming, so
-// cross-<script> globals + inline onclick handlers can't break). clean-css L1.
+// Old-WebKit (Kindle Silk) safe: terser runs with compress + mangle but
+// toplevel:false on BOTH — so cross-<script> globals and inline-onclick handlers
+// (all top-level names) are NEVER renamed or dropped; only in-function locals are
+// mangled and only nested/unreachable code is compressed. This roughly halves the
+// JS the Kindle has to parse (the real load-time cost) with no behaviour change.
+// ecma:5 keeps output ES5 (Silk-safe); the syntax gate below double-checks.
+// clean-css L1.
 //
 // Run:  cd tools && npm install && node minify.mjs
 import { minify as terserMinify } from 'terser';
@@ -67,7 +71,13 @@ async function run() {
       if (type && !/javascript|module|ecmascript/i.test(type)) { out += openTag + body + closeTag; }
       else {
         try {
-          const res = await terserMinify(body, { compress: false, mangle: false, format: { comments: false }, sourceMap: false });
+          const res = await terserMinify(body, {
+            compress: { toplevel: false, passes: 2, ecma: 5, keep_infinity: true },
+            mangle: { toplevel: false },
+            format: { comments: false, ecma: 5 },
+            ecma: 5,
+            sourceMap: false,
+          });
           if (res.code === undefined) throw new Error('no output');
           out += openTag + res.code + closeTag; jsBlocks++;
         } catch (e) { errors.push('JS @' + tag.pos + ': ' + e.message); out += openTag + body + closeTag; }
