@@ -39373,48 +39373,6 @@ settings:()=>{
   _statusInp.oninput=()=>{S.profileStatus=_statusInp.value.slice(0,80);save();};
   c1.appendChild(_statusInp);
 
-  /* ── Profile background — cosmetic banner behind your avatar. A few are free;
-     the fancier ones are an Ultra/Creator perk (a light "buy" gate). Stored in
-     S.profileBg; the banner + avatar preview reflect the pick live. (On e-ink
-     these read as tasteful greys; on colour screens they pop.) */
-  const PROFILE_BGS=[
-    {id:'none',name:'None',css:'',prem:false},
-    {id:'sky',name:'Sky',css:'linear-gradient(135deg,#60a5fa,#a78bfa)',prem:false},
-    {id:'sunset',name:'Sunset',css:'linear-gradient(135deg,#fb7185,#fbbf24)',prem:false},
-    {id:'mint',name:'Mint',css:'linear-gradient(135deg,#34d399,#0ea5e9)',prem:false},
-    {id:'slate',name:'Slate',css:'linear-gradient(135deg,#334155,#0f172a)',prem:false},
-    {id:'aurora',name:'Aurora',css:'linear-gradient(135deg,#22d3ee,#818cf8,#c084fc)',prem:true},
-    {id:'gold',name:'Gold',css:'linear-gradient(135deg,#fde68a,#f59e0b,#b45309)',prem:true},
-    {id:'rose',name:'Rose',css:'linear-gradient(135deg,#fda4af,#a78bfa,#f9a8d4)',prem:true},
-    {id:'neon',name:'Neon',css:'linear-gradient(120deg,#f472b6,#22d3ee)',prem:true}
-  ];
-  function _bgCss(id){for(var i=0;i<PROFILE_BGS.length;i++)if(PROFILE_BGS[i].id===id)return PROFILE_BGS[i].css;return '';}
-  function _isPremTier(){return (typeof _khTier==='function')&&(_khTier()==='ultra'||_khTier()==='creator');}
-  c1.appendChild(txt('div','PROFILE BACKGROUND',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',margin:'12px 0 4px'}}));
-  const _bgBanner=el('div',{id:'profileBgBanner',style:{height:'46px',borderRadius:'10px',border:'var(--thin)',marginBottom:'8px'}});
-  function _paintBanner(){var css=_bgCss(S.profileBg||'none');_bgBanner.style.background=css||'var(--highlight)';}
-  _paintBanner();
-  c1.appendChild(_bgBanner);
-  const _bgGrid=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'6px'}});
-  PROFILE_BGS.forEach(function(bg){
-    const active=(S.profileBg||'none')===bg.id;
-    const sw=el('button',{className:'btn small'+(active?' primary':''),style:{padding:'0',width:'46px',height:'34px',borderRadius:'8px',overflow:'hidden',position:'relative',flexShrink:'0'}});
-    if(bg.css)sw.style.background=bg.css; else sw.textContent='—';
-    if(bg.prem)sw.appendChild(txt('span','★',{style:{position:'absolute',top:'1px',right:'3px',fontSize:'10px',color:'#fff',textShadow:'0 0 3px #000'}}));
-    sw.title=bg.name+(bg.prem?' (Ultra)':'');
-    sw.onclick=function(){
-      if(bg.prem&&!_isPremTier()){
-        if(typeof _khRequireUltra==='function'){if(!_khRequireUltra('Premium profile backgrounds'))return;}
-        else{toast('“'+bg.name+'” is an Ultra perk — reach Ultra to unlock it.',3500);return;}
-      }
-      S.profileBg=bg.id;save();_paintBanner();
-      _bgGrid.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});sw.classList.add('primary');
-      toast('Profile background: '+bg.name);
-    };
-    _bgGrid.appendChild(sw);
-  });
-  c1.appendChild(_bgGrid);
-  c1.appendChild(txt('div','★ = Ultra perk. Free backgrounds work for everyone.',{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'2px'}}));
 
   /* Location picker */
   c1.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'10px 0'}}));
