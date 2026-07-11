@@ -248,6 +248,20 @@ html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:6px}
 html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:6px}
 html.kh-no-flexgap .header-controls > * + *{margin-left:5px;margin-top:0}
 html.kh-no-flexgap nav .tab + .tab{margin-left:2px}
+/* ── CSS Grid fallback (old Kindle Silk) ── Only the game boards rely on
+   Grid for their columns; when the boot probe flags html.kh-no-grid, lay the
+   fixed-size cells out as inline-blocks that wrap into rows (the board width
+   is pinned so exactly N fit per row). font-size:0 on the board removes the
+   inline-block whitespace; each cell re-sets its own font-size. Gated, so
+   modern engines keep real Grid untouched. */
+html.kh-no-grid .g2048-board{display:block;width:312px;font-size:0}
+html.kh-no-grid .g2048-cell{display:inline-block;vertical-align:top;width:70px;height:70px;margin:3px}
+html.kh-no-grid .ttt-board{display:block;width:270px;font-size:0}
+html.kh-no-grid .ttt-cell{display:inline-block;vertical-align:top;width:84px;height:84px;margin:2px}
+/* aspect-ratio fallback: Silk ignores it, so the narrow-screen 2048 cells
+   (width/height:auto;aspect-ratio:1) would collapse to text height — pin them
+   back to squares. */
+html.kh-no-aspectratio .g2048-cell{width:70px;height:70px}
 
 /* ── Buttons — all meet 44px touch target ── */
 .btn{
@@ -532,7 +546,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 }
 
 /* ── KindleHub Intelligence ── */
-.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:26px!important;letter-spacing:0.2px;}
+.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:34px!important;letter-spacing:0.2px;}
 .khi-spark{font-size:11px;opacity:0.8;margin-right:1px;}
 .khi-output{background:var(--highlight);border:var(--thin);border-radius:var(--radius);
   padding:10px 12px;font-size:12px;line-height:1.6;margin-top:8px;white-space:pre-wrap;}
@@ -1083,6 +1097,18 @@ body.launcher-ui .view{padding-bottom:80px;}
       var _gapOk=_f&&_l&&((_l.offsetLeft-_f.offsetLeft)>=8);
       if(_gt.parentNode)_gt.parentNode.removeChild(_gt);
       if(!_gapOk)html.classList.add('kh-no-flexgap');
+    }catch(_){}
+    /* ── CSS Grid + aspect-ratio fallback flags ── The game boards (2048,
+       tic-tac-toe) lay their cells out with CSS Grid + aspect-ratio; the
+       oldest Kindle Silk WebKit supports neither, so those boards collapse
+       into a vertical strip. Feature-detect via CSS.supports (never the UA);
+       when CSS.supports itself is missing (the very oldest engines) assume
+       unsupported — they predate both features. Scoped CSS fallbacks
+       (search kh-no-grid) then lay the boards out with inline-blocks. */
+    try{
+      var _cssOk=(window.CSS&&CSS.supports)?function(p,v){try{return CSS.supports(p,v);}catch(_){return false;}}:null;
+      if(!_cssOk||!_cssOk('display','grid'))html.classList.add('kh-no-grid');
+      if(!_cssOk||!_cssOk('aspect-ratio','1/1'))html.classList.add('kh-no-aspectratio');
     }catch(_){}
   }catch(e){}
 })();
@@ -1660,28 +1686,43 @@ const _PERIODIC_SYNC_MS=60000;  /* background pull every 60s (was 30s) — chat 
    when something actually writes state (save/saveNow/scheduleCloudSync or
    any wrapped localStorage.setItem). On a Kindle this alone removes a
    large recurring CPU + GC cost that contributed to the OOM crashes. */
-let _fpCache=null;
-function _invalidateFp(){_fpCache=null;}
-function _stateFingerprint(){
-  if(_fpCache!==null)return _fpCache;
+/* SPLIT cache: the S hash is small and recomputed on every save; the
+   localStorage side-car hash (sheets/slides/books blobs) is the EXPENSIVE
+   part and only needs recomputing when a backed-up localStorage key actually
+   changes. Keeping them separate means a burst of ordinary saves (typing a
+   note) no longer re-hashes megabytes of side-car data on every sync tick —
+   the main "gets slower the more data you have" cost. */
+let _fpS=null,_fpLs=null;
+function _invalidateFp(){_fpS=null;_fpLs=null;}      /* S or LS changed — full */
+function _invalidateFpState(){_fpS=null;}            /* a plain save: only S changed, keep the cached LS hash */
+function _fpStatePart(){
+  if(_fpS!==null)return _fpS;
   try{
-    const slim=_trimStateForCloud(S);
-    const s=JSON.stringify(slim);
+    const s=JSON.stringify(_trimStateForCloud(S));
     let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}
-    let lh=0,ll=0;
-    try{
-      const ls=(typeof _gatherLocalStorage==='function')?_gatherLocalStorage():null;
-      if(ls){
-        const ks=Object.keys(ls).sort();
-        for(let i=0;i<ks.length;i++){
-          const v=String(ls[ks[i]]||'');ll+=v.length;
-          for(let j=0;j<v.length;j++)lh=(lh*31+v.charCodeAt(j))|0;
-        }
+    _fpS=s.length+':'+(h>>>0).toString(36);
+  }catch(e){_fpS='t'+Date.now();}
+  return _fpS;
+}
+function _fpLsPart(){
+  if(_fpLs!==null)return _fpLs;
+  let lh=0,ll=0;
+  try{
+    const ls=(typeof _gatherLocalStorage==='function')?_gatherLocalStorage():null;
+    if(ls){
+      const ks=Object.keys(ls).sort();
+      for(let i=0;i<ks.length;i++){
+        const v=String(ls[ks[i]]||'');ll+=v.length;
+        for(let j=0;j<v.length;j++)lh=(lh*31+v.charCodeAt(j))|0;
       }
-    }catch(_){}
-    _fpCache=s.length+':'+(h>>>0).toString(36)+':'+ll+':'+(lh>>>0).toString(36);
-    return _fpCache;
-  }catch(e){return''+Date.now();}
+    }
+  }catch(_){}
+  _fpLs=ll+':'+(lh>>>0).toString(36);
+  return _fpLs;
+}
+function _stateFingerprint(){
+  try{return _fpStatePart()+'|'+_fpLsPart();}
+  catch(e){return''+Date.now();}
 }
 
 function scheduleCloudSync(force=false){
@@ -1726,6 +1767,11 @@ function scheduleCloudSync(force=false){
     if(window.__khAutoSyncSilent)return;
     if(!k)return;
     if(k==='kindlehub_v5'||k==='kh_master_override'||k==='kh_admin_unlocked')return;
+    /* Device-local mirrors/caches: kh_boot is a pre-paint mirror of synced S
+       fields (rewritten on EVERY save) and kh_mc_<code> are regenerable chat
+       self-heal caches (rewritten on EVERY message) — neither is synced state,
+       so a write must NOT schedule a cloud push or invalidate the fingerprint. */
+    if(k==='kh_boot'||/^kh_mc_/.test(k))return;
     if(!(/^kh_/i.test(k)||/^kindlehub_/i.test(k)))return;
     /* A per-feature blob changed → the synced fingerprint is now stale. */
     if(typeof _invalidateFp==='function')_invalidateFp();
@@ -2848,14 +2894,14 @@ function _onSaveError(e){
   else{try{console.warn('save failed (non-quota — not a storage-full condition):',e);}catch(_){}}
 }
 function save(d=1200){
-  _stateDirty=true;_invalidateFp();
+  _stateDirty=true;_invalidateFpState();/* only S changed; a real localStorage side-car write still fully invalidates via the setItem wrapper */
   if(_st)clearTimeout(_st);
   _st=setTimeout(()=>{
     try{_persistState();}catch(e){_onSaveError(e);}
   },d);
 }
 function saveNow(){
-  _stateDirty=true;_invalidateFp();
+  _stateDirty=true;_invalidateFpState();/* only S changed; LS side-car writes invalidate via the setItem wrapper */
   if(_st){clearTimeout(_st);_st=null;}
   try{_persistState();}catch(e){_onSaveError(e);}
 }
@@ -3552,19 +3598,24 @@ function khEnhanceSelects(root){
     try{khEnhanceSelect(sels[i]);}catch(e){console.warn('select enhance failed',e);}
   }
 }
-/* Watch the whole document for newly added selects */
+/* Watch the whole document for newly added selects.
+   PERF: this fires on EVERY DOM mutation across the whole app (every view
+   build, every chat row appended, etc.). The old version ran
+   querySelectorAll('select') on each added subtree per mutation record — a
+   constant tax that got heavy during many-small-append renders (chat/lists).
+   Now it just notes that something was added and runs ONE
+   khEnhanceSelects(document.body) pass ~150ms after the burst settles.
+   Selects don't need instant enhancement, and the `:not([data-kh-selected])`
+   filter means the single scan only touches genuinely new selects. */
 (function watchSelects(){
   if(typeof MutationObserver==='undefined')return;
+  let _pend=null;
+  const scan=function(){_pend=null;try{khEnhanceSelects(document.body);}catch(e){}};
   const mo=new MutationObserver(muts=>{
-    for(let i=0;i<muts.length;i++){
-      const added=muts[i].addedNodes;
-      for(let j=0;j<added.length;j++){
-        const n=added[j];
-        if(n.nodeType!==1)continue;
-        if(n.tagName==='SELECT')khEnhanceSelect(n);
-        else if(n.querySelectorAll)khEnhanceSelects(n);
-      }
-    }
+    if(_pend)return;/* a scan is already scheduled — coalesce */
+    let hasAdd=false;
+    for(let i=0;i<muts.length;i++){if(muts[i].addedNodes&&muts[i].addedNodes.length){hasAdd=true;break;}}
+    if(hasAdd)_pend=setTimeout(scan,150);
   });
   if(document.body)mo.observe(document.body,{childList:true,subtree:true});
   else document.addEventListener('DOMContentLoaded',()=>mo.observe(document.body,{childList:true,subtree:true}));
@@ -8073,8 +8124,10 @@ function _tokenProfane(norm){
   }
   return false;
 }
+var _censorMemo=new Map();/* pure fn of its input (static word lists) — cache so chat/leaderboard re-renders don't re-run two regex passes on the same names every 15s */
 function _censorText(s){
   if(typeof s!=='string'||!s)return s;
+  if(_censorMemo.has(s))return _censorMemo.get(s);
   /* Pass 1: exact words (word-boundary) — original behaviour. */
   var out=s.replace(_PROFANITY_RE,function(m){return '█'.repeat(Math.max(3,m.length));});
   /* Pass 2: bad word embedded in a larger token. Already-censored runs are
@@ -8083,6 +8136,8 @@ function _censorText(s){
     if(_tokenProfane(_normLeet(tok)))return '█'.repeat(Math.max(3,tok.replace(/[^A-Za-z0-9]/g,'').length));
     return tok;
   });
+  if(_censorMemo.size>=800)_censorMemo.clear();/* bound the cache */
+  _censorMemo.set(s,out);
   return out;
 }
 function _hasProfanity(s){
@@ -8674,7 +8729,15 @@ function _identiconSVG(seed,size){
   }
   return '<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'"><rect width="'+size+'" height="'+size+'" fill="'+bg+'"/><g fill="'+col+'">'+rects+'</g></svg>';
 }
-function _identiconURI(seed,size){return 'data:image/svg+xml;utf8,'+encodeURIComponent(_identiconSVG(seed,size));}
+var _identiconMemo=new Map();/* pure fn of (seed,size) — cache the 25-cell SVG build + encodeURIComponent so avatar re-renders are free */
+function _identiconURI(seed,size){
+  var k=seed+'@'+(size||30);
+  if(_identiconMemo.has(k))return _identiconMemo.get(k);
+  var uri='data:image/svg+xml;utf8,'+encodeURIComponent(_identiconSVG(seed,size));
+  if(_identiconMemo.size>=400)_identiconMemo.clear();
+  _identiconMemo.set(k,uri);
+  return uri;
+}
 /* Paint an identicon into an existing circular avatar div (e.g. .msg-avatar). */
 function _applyIdenticon(elDiv,seed){
   try{elDiv.style.backgroundImage='url("'+_identiconURI(seed,32)+'")';elDiv.style.backgroundSize='cover';elDiv.style.backgroundPosition='center';elDiv.textContent='';}catch(_){}
@@ -11281,6 +11344,13 @@ function _isLsBackupSkipped(k){
      design; syncing them would carry one Kindle's memory pressure onto
      a fresh phone install. */
   if(k==='kh_boot_log'||k==='kh_lowmem_until')return true;
+  /* kh_boot = pre-paint mirror of synced S fields (regenerated locally); it
+     needn't be backed up NOR hashed into the sync fingerprint. */
+  if(k==='kh_boot')return true;
+  /* kh_mc_<code> = device-local chat message self-heal caches — large, grow
+     with usage, regenerable, and NOT synced state. Excluding them keeps the
+     backup lean and the fingerprint cheap as the message caches accumulate. */
+  if(/^kh_mc_/.test(k))return true;
   return false;
 }
 function _gatherLocalStorage(){
@@ -26476,8 +26546,8 @@ const Pomodoro=(()=>{
             if(timer)clearInterval(timer);
             timer=setInterval(()=>{
               timeLeft--;
-              if(timeLeft<=0){clearInterval(timer);timer=null;finishWorkSession();timeLeft=MODES.work*60;}
-              render();
+              if(timeLeft<=0){clearInterval(timer);timer=null;finishWorkSession();timeLeft=MODES.work*60;render();/* full render only on completion */}
+              else tick();/* cheap per-second update — was render() every second = a full log+chart rebuild/e-ink flash */
             },1000);
             toast('Timer started: '+pending.minutes+' min'+(pending.label?(' — '+pending.label):''));
           }
@@ -26544,7 +26614,7 @@ function renderNotes(filterText='',filterTag=''){
   let notes=S.notes||[];
   if(filterText)notes=notes.filter(n=>n.text.toLowerCase().includes(filterText.toLowerCase()));
   if(filterTag)notes=notes.filter(n=>n.tags&&n.tags.includes(filterTag));
-  if(!notes.length){listEl.innerHTML='<div class="empty-state">No notes yet.</div>';return;}
+  if(!notes.length){listEl.innerHTML='<div class="empty-state">No notes yet. Type above and tap Add to write your first one.</div>';return;}
   notes.forEach(n=>{
     const realIdx=S.notes.indexOf(n);
     const d=el('div',{className:'note-item'});
@@ -26570,8 +26640,8 @@ function renderNotes(filterText='',filterTag=''){
       const r=el('div');r.appendChild(saveBtn);r.appendChild(cancelBtn);d.appendChild(r);
       ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
     };
-    const del=txt('button','x',{className:'btn small',style:{padding:'2px 6px',color:'var(--danger)',borderColor:'var(--danger)'}});
-    del.onclick=()=>{S.notes.splice(realIdx,1);saveNow();renderNotes(filterText,filterTag);};
+    const del=txt('button','Delete',{className:'btn small',style:{padding:'2px 6px',fontSize:'10px',color:'var(--danger)',borderColor:'var(--danger)'}});
+    del.onclick=()=>{kindleConfirm("Delete this note? This can't be undone.",ok=>{if(!ok)return;const i=S.notes.indexOf(n);if(i>=0)S.notes.splice(i,1);saveNow();renderNotes(filterText,filterTag);});};
     const cardsBtn=txt('button','→ Cards',{className:'btn small',style:{padding:'2px 6px',fontSize:'10px'}});
     cardsBtn.title='Make AI flashcards from this note';
     cardsBtn.onclick=async()=>{const o=cardsBtn.textContent;cardsBtn.disabled=true;cardsBtn.textContent='…';let deck=null;try{deck=await _noteToFlashcards(n.text);}catch(e){toast('Flashcard generation failed — try again');}cardsBtn.textContent=o;cardsBtn.disabled=false;if(deck)toast('Made '+deck.cards.length+' flashcards in "'+deck.name+'" — study them in Flashcards.',5500);};
@@ -26586,7 +26656,7 @@ function renderNotes(filterText='',filterTag=''){
 function renderBooks(){
   const listEl=$('booksList');if(!listEl)return;
   listEl.innerHTML='';
-  if(!S.books||!S.books.length){listEl.innerHTML='<div class="empty-state">No books tracked yet.</div>';return;}
+  if(!S.books||!S.books.length){listEl.innerHTML='<div class="empty-state">No books tracked yet. Add one above, or search the Free Library to start reading.</div>';return;}
   const search=($('bookSearch')||{}).value||'';
   const statusF=($('bookStatusFilter')||{}).value||'all';
   const sortV=($('bookSort')||{}).value||'added';
@@ -26616,8 +26686,8 @@ function renderBooks(){
       readBtn.onclick=()=>{window.khOpenBookReader({id:b.gutenbergId,title:b.title,author:b.author});};
       right.appendChild(readBtn);
     }
-    const del=txt('button','x',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
-    del.onclick=()=>{S.books.splice(actualIdx,1);save();renderBooks();};
+    const del=txt('button','Delete',{className:'btn small',style:{fontSize:'10px',color:'var(--danger)',borderColor:'var(--danger)'}});
+    del.onclick=()=>{kindleConfirm('Remove "'+(b.title||'this book')+'" from your list?',ok=>{if(!ok)return;const i=S.books.indexOf(b);if(i>=0)S.books.splice(i,1);save();renderBooks();});};
     right.appendChild(del);
     /* KHI: Smart Summary */
     if(khiEnabled()){
@@ -26785,7 +26855,7 @@ function studySR(di,cram){
 function renderDeckList(){
   const listEl=$('deckList');if(!listEl)return;
   listEl.innerHTML='';
-  if(!S.flashDecks||!S.flashDecks.length){listEl.innerHTML='<div class="empty-state">No decks yet.</div>';return;}
+  if(!S.flashDecks||!S.flashDecks.length){listEl.innerHTML='<div class="empty-state">No decks yet. Tap New Deck to create one, or make cards from a note.</div>';return;}
   S.flashDecks.forEach((deck,di)=>{
     const d=el('div',{className:'card',style:{marginBottom:'8px'}});
     const h=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'5px'}});
@@ -27902,7 +27972,13 @@ function buildAIModelPicker(opts){
     if(modelDropOpen){buildModelDrop();modelDrop.style.display='block';}
     else modelDrop.style.display='none';
   };
-  document.addEventListener('click',()=>{modelDrop.style.display='none';modelDropOpen=false;});
+  /* Self-removing dismiss handler: this picker is built fresh on every open
+     of the Test-AI / self-fix / Gazette / adventure dialogs (and the cached
+     Assistant view), so a plain document listener would accumulate one per
+     open forever and retain the detached modelDrop. Once modelDrop leaves the
+     DOM, the next document click unregisters it. */
+  const _mpDismiss=function(){if(!document.contains(modelDrop)){document.removeEventListener('click',_mpDismiss);return;}modelDrop.style.display='none';modelDropOpen=false;};
+  document.addEventListener('click',_mpDismiss);
   modelDrop.addEventListener('click',e=>e.stopPropagation());
 
   return {btn:modelPickerBtn, drop:modelDrop, label:chatModelLabel, rebuild:buildModelDrop};
@@ -34873,7 +34949,8 @@ chat:()=>{
     });
   });
   hbSnipBtn.onclick=e=>{e.stopPropagation();hbSnipMenu.classList.toggle('open');};
-  document.addEventListener('click',()=>hbSnipMenu.classList.remove('open'));
+  const _snipDismiss=function(){if(!document.contains(hbSnipMenu)){document.removeEventListener('click',_snipDismiss);return;}hbSnipMenu.classList.remove('open');};
+  document.addEventListener('click',_snipDismiss);/* self-remove once the (cached) Assistant view is evicted — was leaking one listener per rebuild */
   hbSnipWrap.appendChild(hbSnipBtn);hbSnipWrap.appendChild(hbSnipMenu);
   hbBarR.append(hbFmtBtn,hbSnipWrap,hbNewBtn,hbSaveBtn,hbLoadBtn,hbCopyBtn,hbWrapBtn,hbZoom,hbModelBtn,hbSBLines,hbSBChars,hbSBCursor);
   hbBar.appendChild(hbBarR);
@@ -34906,7 +34983,8 @@ chat:()=>{
     hbModelDrop.classList.toggle('hidden');
     hbUpdateModelBtn();
   });
-  document.addEventListener('click',()=>hbModelDrop.classList.add('hidden'));
+  const _mdropDismiss=function(){if(!document.contains(hbModelDrop)){document.removeEventListener('click',_mdropDismiss);return;}hbModelDrop.classList.add('hidden');};
+  document.addEventListener('click',_mdropDismiss);/* self-remove once the (cached) Assistant view is evicted */
   hbModelDrop.querySelectorAll('.hb-mdrop-item').forEach(it=>{
     it.addEventListener('click',e=>{
       e.stopPropagation();
@@ -36347,7 +36425,7 @@ chat:()=>{
               }
               bmActiveArticleIdx=0;
               bmSaveBooks();toast('Book generated: '+bk.title);bmBuild();
-            }catch(e){toast('AI error: '+e.message);}
+            }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
             genBookBtn.disabled=false;genBookBtn.textContent='AI: Write Book';
           });
         });
@@ -37346,7 +37424,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
           radarWrap.appendChild(leg);
 
           /* Stop animation when view changes */
-          const _mo=new MutationObserver(()=>{if(!document.contains(cvs))stopAnim();});
+          const _mo=new MutationObserver(()=>{if(!document.contains(cvs)){stopAnim();_mo.disconnect();/* PERF: stop observing once the radar canvas is gone — else this body-subtree observer leaks forever */}});
           _mo.observe(document.body,{childList:true,subtree:true});
         })
         .catch(e=>{
@@ -37838,7 +37916,7 @@ tools:()=>{
         const inst=style==='short'?'Summarise in exactly one sentence':style==='medium'?'Summarise in 3-4 clear sentences':style==='long'?'Write a full paragraph summary (5-7 sentences)':'Summarise as concise bullet points (use - for each bullet)';
         const res=await callAI([{role:'user',text:inst+'. Do not add preamble, just the summary:\n\n'+text}]);
         sumOut.textContent=res.trim();sumOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       sumBtn.disabled=false;sumBtn.textContent='Summarise';
     };
     sumCard.appendChild(sumBtn);sumCard.appendChild(sumOut);
@@ -37865,7 +37943,7 @@ tools:()=>{
         const instMap={fix:'Correct all grammar, spelling and punctuation errors. Return only the corrected text.',formal:'Rewrite in a more formal, professional tone. Return only the rewritten text.',casual:'Rewrite in a friendly, casual, conversational tone. Return only the rewritten text.',concise:'Remove all unnecessary words. Make it shorter and more concise. Return only the result.',expand:'Expand with more detail and explanation while keeping the same meaning. Return only the expanded text.'};
         const res=await callAI([{role:'user',text:instMap[mode]+' Text:\n\n'+text}]);
         gramOut.textContent=res.trim();gramOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       gramBtn.disabled=false;gramBtn.textContent='Fix Text';
     };
     gramCard.appendChild(gramBtn);gramCard.appendChild(gramOut);
@@ -37895,7 +37973,7 @@ tools:()=>{
         const typeDesc={startup:'startup business',feature:'product feature',content:'content piece or article',names:'creative name',research:'research question or angle',gift:'gift'};
         const res=await callAI([{role:'user',text:'Generate '+count+' unique, creative '+typeDesc[type]+' ideas for: "'+topic+'". Number each idea. Be specific and actionable. Keep each idea to 1-2 sentences.'}]);
         ideaOut.textContent=res.trim();ideaOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       ideaBtn.disabled=false;ideaBtn.textContent='Generate Ideas';
     };
     ideaCard.appendChild(ideaBtn);ideaCard.appendChild(ideaOut);
@@ -37926,7 +38004,7 @@ tools:()=>{
         const to=transTo.value;
         const res=await callAI([{role:'user',text:'Translate the following text from '+from+' to '+to+'. Return ONLY the translation, no explanation:\n\n'+text}]);
         transOut.textContent=res.trim();transOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       transBtn.disabled=false;transBtn.textContent='Translate';
     };
     transCard.appendChild(transBtn);transCard.appendChild(transOut);
@@ -37957,7 +38035,7 @@ tools:()=>{
         const lenDesc=len==='short'?'2-3 sentences':len==='medium'?'one paragraph':'2-3 short paragraphs';
         const res=await callAI([{role:'user',text:'Write a '+tone+' professional email for this situation: "'+sit+'". Length: '+lenDesc+'. Include Subject line. Be genuine and clear.'}]);
         emailOut.textContent=res.trim();emailOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       emailBtn.disabled=false;emailBtn.textContent='Write Email';
     };
     emailCard.appendChild(emailBtn);emailCard.appendChild(emailOut);
@@ -37984,7 +38062,7 @@ tools:()=>{
         const instMap={eli5:"Explain \""+topic+"\" to a 5-year-old using very simple words, fun analogies and no jargon.",teen:"Explain \""+topic+"\" to a curious teenager using simple language, relatable examples and a bit of humour.",layman:"Explain \""+topic+"\" clearly to an intelligent adult with no specialist knowledge. Use everyday language.",expert:"Give a concise, technical explanation of \""+topic+"\" including key terminology and mechanisms."};
         const res=await callAI([{role:'user',text:instMap[level]+' Keep it engaging and under 200 words.'}]);
         eli5Out.textContent=res.trim();eli5Out.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       eli5Btn.disabled=false;eli5Btn.textContent='Explain';
     };
     eli5Card.appendChild(eli5Btn);eli5Card.appendChild(eli5Out);
@@ -38038,7 +38116,7 @@ tools:()=>{
           });
         }
         let score=0;renderQ();
-      }catch(e){toast('AI error: '+e.message);console.error(e);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));console.error(e);}
       quizBtn.disabled=false;quizBtn.textContent='Generate Quiz';
     };
     quizCard.appendChild(quizBtn);quizCard.appendChild(quizOut);
@@ -38068,7 +38146,7 @@ tools:()=>{
         const instMap={explain:'Explain in plain English what this '+lang+' code does, step by step.',bugs:'Find any bugs, errors or issues in this '+lang+' code. List each problem clearly.',improve:'Suggest specific improvements for this '+lang+' code: performance, readability, best practices.',convert:'Convert this code to Python. Return the full converted code.'};
         const res=await callAI([{role:'user',text:instMap[mode]+' Code:\n\n'+code}]);
         codeExpOut.textContent=res.trim();codeExpOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       codeExpBtn.disabled=false;codeExpBtn.textContent='Analyse Code';
     };
     codeExpCard.appendChild(codeExpBtn);codeExpCard.appendChild(codeExpOut);
@@ -41415,200 +41493,6 @@ feedback:()=>{
       _saveResolved(_resolvedSet);
     }
 
-    /* Probe the backend for known-broken-after-rerun symptoms.
-       Specifically diagnoses the PGRST202 / kh_set_reaction case the
-       user kept hitting after "running the schema 10000000 times" —
-       which was almost always a stale PostgREST schema cache. */
-    function buildDiagnosticsCard(){
-      const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
-      c.appendChild(txt('div','CLOUD BACKEND DIAGNOSTICS',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-      c.appendChild(txt('p','Sweeps every kh_* table, column and RPC the app expects, plus orphan-row counts and storage health. The most common "I ran the schema and it still doesn\'t work" cause is PostgREST\'s schema cache being stale — run "notify pgrst, \'reload schema\';" in the SQL Editor after any schema change.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
-      const summary=el('div',{style:'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-family:monospace;font-size:11px;'});
-      c.appendChild(summary);
-      const out=el('div',{style:'background:var(--highlight);border:var(--thin);border-radius:6px;padding:8px;max-height:380px;overflow-y:auto;margin:0 0 8px;min-height:40px;font-size:11px;'});
-      out.textContent='Click Run Diagnostics to start.';
-      c.appendChild(out);
-      const btnBar=el('div',{style:'display:flex;gap:6px;flex-wrap:wrap;'});
-      const runBtn=txt('button','Run Diagnostics',{className:'btn small primary'});
-      const copyBtn=txt('button','Copy report',{className:'btn small'});
-      copyBtn.disabled=true;
-      const clearLocalBtn=txt('button','Clear local-only reactions',{className:'btn small'});
-      clearLocalBtn.onclick=async()=>{
-        if(!await kindleConfirm('Wipe all local-only reactions from this device? (Server-side reactions are untouched.)'))return;
-        S.localReactions={};save();toast('Local reactions cleared.');
-      };
-      btnBar.append(runBtn,copyBtn,clearLocalBtn);
-      c.appendChild(btnBar);
-
-      let checks=[];
-      function renderResults(){
-        const okN=checks.filter(c=>c.status==='OK').length;
-        const wN =checks.filter(c=>c.status==='WARN').length;
-        const fN =checks.filter(c=>c.status==='FAIL').length;
-        summary.innerHTML='';
-        const _chip=(label,n,col)=>{
-          const s=el('span',{style:'padding:3px 9px;border-radius:10px;background:'+col+';color:#fff;font-weight:800;'});
-          s.textContent=label+': '+n;return s;
-        };
-        summary.appendChild(_chip('OK',okN,'#1e8a48'));
-        summary.appendChild(_chip('WARN',wN,'#b78a1c'));
-        summary.appendChild(_chip('FAIL',fN,'#c0392b'));
-        summary.appendChild(_chip('TOTAL',checks.length,'#555'));
-        out.innerHTML='';
-        if(!checks.length){out.textContent='Running…';return;}
-        checks.forEach(ch=>{
-          const colBg=ch.status==='FAIL'?'rgba(192,57,43,.10)':ch.status==='WARN'?'rgba(180,140,30,.10)':'rgba(20,160,80,.06)';
-          const colFg=ch.status==='FAIL'?'#c0392b':ch.status==='WARN'?'#b78a1c':'#1e8a48';
-          const icon=ch.status==='FAIL'?'✗':ch.status==='WARN'?'!':'✓';
-          const row=el('div',{style:'margin-bottom:5px;padding:6px 8px;border-radius:5px;background:'+colBg+';'});
-          const head=el('div',{style:'font-family:monospace;font-size:11px;font-weight:800;color:'+colFg+';'});
-          head.textContent=icon+'  '+ch.label;
-          row.appendChild(head);
-          if(ch.detail)row.appendChild(txt('div',ch.detail,{style:'font-family:monospace;font-size:10px;color:var(--muted);margin-top:2px;white-space:pre-wrap;word-break:break-word;'}));
-          if(ch.fix)row.appendChild(txt('div','Fix: '+ch.fix,{style:'font-family:monospace;font-size:10px;color:var(--fg);margin-top:2px;white-space:pre-wrap;word-break:break-word;'}));
-          out.appendChild(row);
-        });
-      }
-      function add(label,status,detail,fix){checks.push({label,status,detail:detail||'',fix:fix||''});renderResults();}
-
-      async function _tryTable(name,col){
-        try{await _sbSelect(name,'select='+(col||'*')+'&limit=1');return null;}
-        catch(e){return String(e&&e.message||e).slice(0,220);}
-      }
-      async function _tryRpc(name,body){
-        try{
-          const url=_sbBase()+'/rest/v1/rpc/'+name;
-          const r=await fetch(url,{method:'POST',headers:Object.assign(_sbHeaders(),{'Prefer':'return=minimal'}),body:JSON.stringify(body||{})});
-          const tx=await r.text().catch(()=>'');
-          if(r.status===404&&tx.indexOf('PGRST202')>=0)return 'PGRST202';
-          if(r.status>=500)return 'HTTP '+r.status+' — '+tx.slice(0,160);
-          return null;/* 2xx or 4xx that's not PGRST202 → function exists */
-        }catch(e){return String(e&&e.message||e).slice(0,180);}
-      }
-      async function _count(table,filter){
-        try{
-          const url=_sbBase()+'/rest/v1/'+table+(filter?'?'+filter:'');
-          const r=await fetch(url,{method:'HEAD',headers:Object.assign(_sbHeaders(),{'Prefer':'count=exact','Range':'0-0'})});
-          const cr=r.headers.get('content-range')||'';
-          const m=cr.match(/\/(\d+)$/);return m?parseInt(m[1],10):null;
-        }catch(_){return null;}
-      }
-
-      runBtn.onclick=async()=>{
-        runBtn.disabled=true;copyBtn.disabled=true;
-        checks=[];renderResults();
-        if(!_sbActive()){
-          add('Supabase configured','FAIL','SUPABASE_URL / SUPABASE_ANON_KEY not set in source.','Set both constants in the HTML and reload.');
-          runBtn.disabled=false;copyBtn.disabled=false;return;
-        }
-        add('Supabase configured','OK',SUPABASE_URL);
-
-        /* ── 1. Tables ── */
-        const tables=[
-          ['kh_users','hash'],['kh_groups','code'],['kh_messages','id'],
-          ['kh_announcements','id'],['kh_presence','user_id'],
-          ['kh_feedback','id'],['kh_scores','id'],
-          ['kh_shared_api_usage','date'],['kh_errors','id'],
-          /* kh_voted is localStorage-only ('kh_voted' key) — there is NO
-             the backend table for it, so don't probe one. */
-        ];
-        for(const [t,col] of tables){
-          const err=await _tryTable(t,col);
-          if(!err)add('Table '+t,'OK','readable');
-          else if(/PGRST|relation .* does not exist|42P01/i.test(err))add('Table '+t,'FAIL',err,'Re-run the full schema SQL in the backend SQL Editor.');
-          else add('Table '+t,'WARN',err);
-        }
-
-        /* ── 2. Columns (silent-strip PGRST204 traps) ── */
-        const cols=[
-          ['kh_messages','reactions',     "alter table kh_messages add column if not exists reactions jsonb default '{}'::jsonb;"],
-          ['kh_messages','device_hint',   'alter table kh_messages add column if not exists device_hint text;'],
-          ['kh_messages','location_hint', 'alter table kh_messages add column if not exists location_hint text;'],
-          ['kh_feedback','status',        "alter table kh_feedback add column if not exists status text default 'open';"],
-          ['kh_feedback','author',        "alter table kh_feedback add column if not exists author text default '';"],
-          ['kh_feedback','comments',      "alter table kh_feedback add column if not exists comments jsonb default '[]'::jsonb;"],
-          ['kh_groups','name',            null],
-          ['kh_presence','last_seen',     'alter table kh_presence add column if not exists last_seen timestamptz default now();'],
-          ['kh_announcements','targets',  "alter table kh_announcements add column if not exists targets jsonb default '[]'::jsonb;"],
-        ];
-        for(const [t,c2,fix] of cols){
-          const err=await _tryTable(t,c2);
-          if(!err)add('Column '+t+'.'+c2,'OK','present');
-          else if(/42703|column .* does not exist/i.test(err))add('Column '+t+'.'+c2,'FAIL',err,(fix||'(re-run schema)')+(fix?"\n          notify pgrst, 'reload schema';":''));
-          else add('Column '+t+'.'+c2,'WARN',err);
-        }
-
-        /* ── 3. RPCs ── */
-        const rpcs=[
-          ['kh_set_reaction',         {p_msg_id:'__diag__',p_key:'?',p_user_id:'__diag__'}],
-          /* Signature is kh_increment_shared_api(p_date date) — sending
-             p_model would FAIL with PGRST202 even when the RPC exists. */
-          ['kh_increment_shared_api', {p_date:'2000-01-01'}],
-          ['kh_post_announcement',    {p_text:'__diag__',p_token:'__diag__',p_targets:[]}],
-          ['kh_clear_announcements',  {p_token:'__diag__'}],
-        ];
-        for(const [name,body] of rpcs){
-          const err=await _tryRpc(name,body);
-          if(!err)add('RPC '+name,'OK','reachable (probe args returned non-PGRST202 status)');
-          else if(err==='PGRST202')add('RPC '+name,'FAIL','PGRST202 — function not in schema cache',"Re-run the full schema SQL, then on its own:\n          notify pgrst, 'reload schema';");
-          else add('RPC '+name,'WARN',err);
-        }
-
-        /* ── 4. Orphan / bloat scan ── */
-        const orphInbox=await _count('kh_groups','name=like.inbox-*&code=not.like.800000*');
-        if(orphInbox==null)add('Orphan inbox-* groups','WARN','could not count');
-        else if(orphInbox>0)add('Orphan inbox-* groups','WARN',orphInbox+' rows with non-800000 codes','Cleanup card → "Delete orphan inbox-* groups".');
-        else add('Orphan inbox-* groups','OK','0 rows');
-        const orphMp=await _count('kh_groups','name=like.mp-*&code=not.like.900000*');
-        if(orphMp==null)add('Orphan mp-* game rooms','WARN','could not count');
-        else if(orphMp>0)add('Orphan mp-* game rooms','WARN',orphMp+' rows with non-900000 codes','Cleanup card → "Delete orphan mp-* game rooms".');
-        else add('Orphan mp-* game rooms','OK','0 rows');
-        const stalePres=await _count('kh_presence','last_seen=lt.'+new Date(Date.now()-7*86400000).toISOString());
-        if(stalePres==null)add('Stale presence (>7d)','WARN','could not count');
-        else if(stalePres>50)add('Stale presence (>7d)','WARN',stalePres+' rows','Cleanup card → "Delete stale kh_presence rows".');
-        else add('Stale presence (>7d)','OK',stalePres+' rows');
-        /* kh_errors uses `date` not `created_at` in the schema. */
-        const oldErr=await _count('kh_errors','date=lt.'+new Date(Date.now()-30*86400000).toISOString());
-        if(oldErr==null)add('Errors >30d','WARN','could not count');
-        else if(oldErr>100)add('Errors >30d','WARN',oldErr+' rows — consider cleanup');
-        else add('Errors >30d','OK',oldErr+' rows');
-
-        /* ── 5. Live row counts (informational) ── */
-        const liveCounts=[['kh_users','accounts'],['kh_groups','groups'],['kh_messages','messages'],['kh_presence','online recently'],['kh_feedback','feedback items']];
-        for(const [t,label] of liveCounts){
-          const n=await _count(t,'');
-          add('Row count: '+label,'OK',(n==null?'(unknown)':String(n))+' rows in '+t);
-        }
-
-        /* ── 6. Local state ── */
-        const localCount=Object.keys((S.localReactions||{})).length;
-        if(localCount===0)add('Local-only reactions','OK','none cached — reactions are pushing through');
-        else add('Local-only reactions','WARN',localCount+' message(s) cached on this device','Re-tap each to push them up. Or use "Clear local-only reactions".');
-        const dirty=(typeof _stateDirty!=='undefined'&&_stateDirty)?'dirty':'in sync';
-        add('State sync status','OK','State is '+dirty+(S.lastSync?', last upload '+(Math.round((Date.now()-S.lastSync)/1000))+'s ago':' — never uploaded'));
-
-        renderResults();
-        runBtn.disabled=false;copyBtn.disabled=false;
-      };
-
-      copyBtn.onclick=async()=>{
-        const txt2='KindleHub the backend Diagnostics — '+new Date().toISOString()+'\n'
-          +'URL: '+SUPABASE_URL+'\n\n'
-          +checks.map(ch=>ch.status.padEnd(4)+'  '+ch.label+(ch.detail?'\n        '+ch.detail.replace(/\n/g,'\n        '):'')+(ch.fix?'\n   FIX: '+ch.fix.replace(/\n/g,'\n        '):'')).join('\n');
-        try{await navigator.clipboard.writeText(txt2);toast('Report copied to clipboard.');}
-        catch(_){
-          /* Fallback: select-all in a modal textarea */
-          const ov=el('div',{style:'position:fixed;top:0;right:0;bottom:0;left:0;z-index:600000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:14px;'});
-          const box=el('div',{style:'background:var(--card);border:var(--border);border-radius:10px;padding:12px;max-width:720px;width:100%;'});
-          const ta=el('textarea',{style:'width:100%;height:60vh;font-family:monospace;font-size:11px;'});ta.value=txt2;
-          const close=txt('button','Close',{className:'btn small',style:'margin-top:8px;'});close.onclick=()=>{ov.remove();};
-          box.append(txt('p','Clipboard blocked — select all and copy manually.',{style:'margin:0 0 6px;font-size:12px;color:var(--muted);'}),ta,close);
-          ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
-          (document.getElementById('rotateRoot')||document.body).appendChild(ov);ta.focus();ta.select();
-        }
-      };
-      return c;
-    }
 
     /* ── Self-fix modal — generate + preview + apply local AI patch ──
        Per-user: never pushed globally. Stored in S.localFixes and
@@ -41784,274 +41668,6 @@ feedback:()=>{
       return c;
     }
 
-    /* ── Shared API key setup card ──
-       Walks the admin through deploying the kh-gemini-proxy Edge
-       Function. Critical: the actual API key NEVER touches the
-       client source — it stays in the Edge Function\'s env vars,
-       which are accessible to no one but the project owner. Users
-       calling the proxy can only fire requests; they can\'t read or
-       extract the key. */
-    function buildBackendCard(){
-      const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
-      c.appendChild(txt('div','BACKEND (CLOUD BACKEND PROJECT)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-      const ref=(SUPABASE_URL.match(/https:\/\/([a-z0-9-]+)\.supabase/i)||[])[1]||'?';
-      let isOverride=false; try{isOverride=!!localStorage.getItem('kh_sb_url_override');}catch(_){}
-      const status=el('div',{style:{fontSize:'11px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'8px',fontFamily:'monospace',wordBreak:'break-all'}});
-      status.innerHTML='<b>Active project:</b> '+ref+(isOverride?' <span style="color:var(--success)">(your override)</span>':' <span style="color:var(--muted)">(built-in default)</span>')+'<br>'+SUPABASE_URL;
-      c.appendChild(status);
-      c.appendChild(txt('p','Point the app at YOUR OWN the backend project so AI, reactions and data all live in one place you control. Paste your project URL + anon key (the backend → Settings → API). Switching changes which database the app reads — a different project means different data.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
-      let _ovU='',_ovK=''; try{_ovU=localStorage.getItem('kh_sb_url_override')||'';_ovK=localStorage.getItem('kh_sb_key_override')||'';}catch(_){}
-      const urlIn=el('input',{placeholder:'https://YOUR-REF.supabase.co',value:_ovU,style:{width:'100%',fontSize:'12px',marginBottom:'6px',fontFamily:'monospace',boxSizing:'border-box'}});
-      const keyIn=el('input',{placeholder:'anon / public key (eyJ…)',value:_ovK,style:{width:'100%',fontSize:'12px',marginBottom:'8px',fontFamily:'monospace',boxSizing:'border-box'}});
-      c.appendChild(urlIn);c.appendChild(keyIn);
-      const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
-      const saveB=txt('button','Save & Reload',{className:'btn small primary'});
-      saveB.onclick=()=>{
-        const u=(urlIn.value||'').trim().replace(/\/+$/,'');const k=(keyIn.value||'').trim();
-        if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(u))return toast('Enter a valid https://YOUR-REF.supabase.co URL');
-        if(k.length<40)return toast('Paste the full anon / public key');
-        try{localStorage.setItem('kh_sb_url_override',u);localStorage.setItem('kh_sb_key_override',k);}catch(e){return toast('Could not save');}
-        toast('Backend set — reloading…',1500);setTimeout(()=>location.reload(),700);
-      };
-      const resetB=txt('button','Reset to default',{className:'btn small'});
-      resetB.onclick=()=>{
-        try{localStorage.removeItem('kh_sb_url_override');localStorage.removeItem('kh_sb_key_override');}catch(e){}
-        toast('Reverted to the built-in backend — reloading…',1500);setTimeout(()=>location.reload(),700);
-      };
-      row.append(saveB,resetB);c.appendChild(row);
-      return c;
-    }
-
-    /* ── Weekly user-table backup card ──
-       Configure the SECOND (backup) the backend project the kh_users table is
-       replicated to once a week, see the last-run status, and trigger a manual
-       backup. The auto-backup itself runs in the background (Creator-only) —
-       this card is just its control surface. */
-    function buildUserBackupCard(){
-      const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
-      c.appendChild(txt('div','USER TABLE BACKUP (WEEKLY)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-      c.appendChild(txt('p','Automatically copies the accounts table (kh_users — usernames + encrypted state) to a SECOND the backend project once a week, so accounts survive if the main backend is lost. It runs in the background while you (the Creator) have KindleHub open, copying only what changed since last time. The backup project must have the same tables — run schema.sql in it first; no extra SQL needed.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
-
-      /* Status line — last run + next-due, computed from localStorage */
-      const statusEl=el('div',{style:{fontSize:'11px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',marginBottom:'8px',fontFamily:'monospace',lineHeight:'1.5'}});
-      function _fmtAgo(ms){
-        if(ms<60000)return 'just now';
-        const m=Math.floor(ms/60000);if(m<60)return m+'m ago';
-        const h=Math.floor(m/60);if(h<24)return h+'h ago';
-        const d=Math.floor(h/24);return d+' day'+(d===1?'':'s')+' ago';
-      }
-      function _fmtIn(ms){
-        if(ms<=0)return 'due now';
-        const h=Math.ceil(ms/3600000);if(h<24)return 'in ~'+h+'h';
-        const d=Math.ceil(h/24);return 'in ~'+d+' day'+(d===1?'':'s');
-      }
-      function refreshStatus(){
-        const s=_khBackupStatus();
-        const active=String(SUPABASE_URL||'').replace(/\/+$/,'').toLowerCase();
-        const cfg=_khBackupCfg();
-        let html='';
-        if(!cfg){html='<b>No backup target set.</b> Add the backup project below to enable weekly backups.';}
-        else if(cfg.url.toLowerCase()===active){html='<b style="color:var(--danger)">! Backup target is the SAME project as the live backend.</b> Choose a different project for real redundancy.';}
-        else{
-          const ref=(cfg.url.match(/https:\/\/([a-z0-9-]+)\.the backend/i)||[])[1]||cfg.url;
-          html='<b>Backup → '+ref+'</b><br>';
-          if(s.last){html+='Last run: '+_fmtAgo(Date.now()-s.last)+' · '+s.count+' account'+(s.count===1?'':'s')+'<br>Next auto-backup: '+(s.due?'<b style="color:var(--success)">due now</b>':_fmtIn(KH_BACKUP_INTERVAL_MS-(Date.now()-s.last)));}
-          else{html+='Never run yet — the first backup copies everyone, then weekly runs copy only changes.';}
-        }
-        statusEl.innerHTML=html;
-      }
-      refreshStatus();
-      c.appendChild(statusEl);
-
-      /* Backup-target inputs (separate from the active-backend override above) */
-      let _bu='',_bk='';try{_bu=localStorage.getItem('kh_backup_url')||'';_bk=localStorage.getItem('kh_backup_key')||'';}catch(_){}
-      const urlIn=el('input',{placeholder:'https://YOUR-BACKUP-REF.supabase.co',value:_bu,style:{width:'100%',fontSize:'12px',marginBottom:'6px',fontFamily:'monospace',boxSizing:'border-box'}});
-      const keyIn=el('input',{placeholder:'backup project anon / public key (eyJ…)',value:_bk,style:{width:'100%',fontSize:'12px',marginBottom:'8px',fontFamily:'monospace',boxSizing:'border-box'}});
-      c.appendChild(urlIn);c.appendChild(keyIn);
-
-      const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'8px'}});
-      const saveB=txt('button','Save backup target',{className:'btn small primary'});
-      saveB.onclick=()=>{
-        const u=(urlIn.value||'').trim().replace(/\/+$/,'');const k=(keyIn.value||'').trim();
-        if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(u))return toast('Enter a valid https://YOUR-BACKUP-REF.supabase.co URL');
-        if(k.length<40)return toast('Paste the full anon / public key of the backup project');
-        if(u.toLowerCase()===String(SUPABASE_URL||'').replace(/\/+$/,'').toLowerCase())return toast('That is the live backend — pick a different project to back up to.',5000);
-        try{localStorage.setItem('kh_backup_url',u);localStorage.setItem('kh_backup_key',k);}catch(e){return toast('Could not save');}
-        toast('Backup target saved. Weekly backups will run in the background.',4000);refreshStatus();
-      };
-      const clearB=txt('button','Remove target',{className:'btn small'});
-      clearB.onclick=async()=>{
-        if(!await kindleConfirm('Turn off weekly backups and forget the backup project?'))return;
-        try{localStorage.removeItem('kh_backup_url');localStorage.removeItem('kh_backup_key');}catch(_){}
-        urlIn.value='';keyIn.value='';toast('Backup target removed.');refreshStatus();
-      };
-      row.append(saveB,clearB);c.appendChild(row);
-
-      /* Manual run + status feedback */
-      const runRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center'}});
-      const runB=txt('button','Back up now',{className:'btn small'});
-      const fullB=txt('button','Full re-backup',{className:'btn small',style:{color:'var(--muted)'},title:'Ignore the high-water mark and re-copy every account'});
-      const prog=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
-      async function runBackup(full){
-        if(!_khBackupCfg())return toast('Set a backup target first.');
-        if(!navigator.onLine)return toast('Requires internet.');
-        runB.disabled=true;fullB.disabled=true;prog.textContent='Starting…';
-        const res=await _khBackupUsers({full:!!full,onProgress:m=>{prog.textContent=m;}});
-        runB.disabled=false;fullB.disabled=false;
-        if(res.ok){prog.textContent='Done — '+res.copied+' copied.';toast('Backup complete: '+res.copied+' account'+(res.copied===1?'':'s')+' saved.',4500);}
-        else{prog.textContent='';toast('Backup failed: '+res.error,7000);}
-        refreshStatus();
-      }
-      runB.onclick=()=>runBackup(false);
-      fullB.onclick=async()=>{if(await kindleConfirm('Re-copy EVERY account to the backup (ignores what was already synced)? Heavier on bandwidth.'))runBackup(true);};
-      runRow.append(runB,fullB,prog);c.appendChild(runRow);
-      /* Fix existing duplicate usernames (rename extras with a number). */
-      const dupRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center',marginTop:'10px',paddingTop:'10px',borderTop:'var(--thin)'}});
-      const dupBtn=txt('button','Fix duplicate usernames',{className:'btn small'});
-      const dupMsg=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
-      dupBtn.onclick=async()=>{
-        if(!navigator.onLine)return toast('Requires internet.');
-        if(!await kindleConfirm('Scan all accounts and rename duplicate usernames? One of each name is kept, the rest get a number appended. Login is unaffected (it is keyed by password hash).'))return;
-        dupBtn.disabled=true;dupMsg.textContent='Scanning…';
-        const res=await _dedupeUsernames(function(n){dupMsg.textContent='Renamed '+n+'…';});
-        dupBtn.disabled=false;
-        if(res.ok){dupMsg.textContent=res.renamed?('Renamed '+res.renamed+' across '+res.groups+' duplicate name'+(res.groups===1?'':'s')+'.'):'No duplicate usernames found.';toast(res.renamed?('Fixed '+res.renamed+' duplicate account'+(res.renamed===1?'':'s')+'.'):'No duplicates found.',4500);}
-        else{dupMsg.textContent='';toast('Dedupe failed: '+res.error,6000);}
-      };
-      dupRow.append(dupBtn,dupMsg);c.appendChild(dupRow);
-      return c;
-    }
-
-    function buildSharedApiCard(){
-      const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
-      c.appendChild(txt('div','SHARED API KEY (FREE TIER FOR USERS)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-      c.appendChild(txt('p','One-time setup. Lets users chat without registering their own Gemini key — requests are proxied through a backend Edge Function you control, with a daily cap (currently '+SHARED_KEY_DAILY_CAP+'/day total across all users) and the key sealed inside the function\'s env. Users can NEVER see the key, only call the proxy.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 8px'}}));
-
-      /* Probe whether the proxy is deployed */
-      const statusLine=txt('div','Checking proxy status…',{style:{fontSize:'11px',padding:'8px 10px',background:'var(--highlight)',borderRadius:'6px',margin:'0 0 8px',fontFamily:'monospace'}});
-      c.appendChild(statusLine);
-      (async function(){
-        try{
-          const u=sharedKeyProxyUrl();
-          if(!u){statusLine.textContent='! Supabase not configured — set SUPABASE_URL and SUPABASE_ANON_KEY first.';return;}
-          /* OPTIONS preflight — cheap, doesn\'t burn quota */
-          /* A no-cors POST succeeds (opaque) whenever the URL is network-
-             reachable at all, and only throws on a DNS/connection failure.
-             That lets us tell "unreachable" apart from "reachable but the
-             browser is blocked by CORS" — which a plain fetch hides behind a
-             generic "Failed to fetch". */
-          let reachable=false;
-          try{ await fetch(u,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:'{}'}); reachable=true; }catch(_){ reachable=false; }
-          if(!reachable){ statusLine.innerHTML='<b style="color:var(--danger)">✗ Can\'t reach the Supabase URL at all.</b><br>The project URL is wrong, or the project is unreachable/deleted. Confirm SUPABASE_URL matches your project.'; return; }
-          const r=await fetch(u,{method:'OPTIONS'});
-          if(r.ok||r.status===204){statusLine.innerHTML='<b style="color:var(--success)">✓ Reachable and CORS OK.</b> If chat still fails it is server-side — make sure <code>GEMINI_KEY</code> is set on the function and the <code>kh_increment_shared_api</code> SQL function exists (run <code>notify pgrst, \'reload schema\';</code>), then read the function Logs.';}
-          else{statusLine.innerHTML='<b style="color:var(--danger)">✗ Reachable, but preflight returned HTTP '+r.status+'.</b> 404 = not deployed as <code>kh-gemini-proxy</code>; 401 = <b>Verify JWT still on</b>; 503 = <b>project paused</b>. Fix that, then <b>re-deploy</b>.';}
-        }catch(e){statusLine.innerHTML='<b style="color:var(--danger)">✗ Reachable, but the browser is blocked by CORS.</b><br>The function IS deployed, but its CORS preflight is being rejected — almost always <b>"Verify JWT" is still on</b>. Turn it OFF and then <b>RE-DEPLOY</b> (the toggle only takes effect on the next deploy).';}
-        /* Also show usage stats if the table exists */
-        try{
-          const u=await readSharedKeyUsage();
-          if(u){
-            const usageLine=txt('div','Today: '+u.used+' / '+u.cap+' used  •  '+u.remaining+' remaining',{style:{fontSize:'11px',padding:'6px 10px',background:'var(--highlight)',borderRadius:'6px',marginTop:'6px',fontFamily:'monospace'}});
-            statusLine.parentNode.insertBefore(usageLine,statusLine.nextSibling);
-          }
-        }catch(_){}
-      })();
-
-      /* Setup walkthrough — show/hide */
-      const toggle=txt('button','Show setup steps',{className:'btn small'});
-      const steps=el('div',{style:{display:'none',marginTop:'8px',fontSize:'12px',lineHeight:'1.6'}});
-      toggle.onclick=()=>{
-        const showing=steps.style.display!=='none';
-        steps.style.display=showing?'none':'block';
-        toggle.textContent=showing?'Show setup steps':'Hide setup steps';
-      };
-      c.appendChild(toggle);
-
-      /* The Edge Function code itself. Designed to be COPIED verbatim
-         into the backend Dashboard → Edge Functions → New function. */
-      const fnCode=`/* the backend Edge Function: kh-gemini-proxy
-   Deno runtime. Proxies Gemini calls so GEMINI_KEY never reaches the
-   client. FIRST-COME, FIRST-SERVED: single daily counter, cap matches
-   Gemini\'s free-tier limit for gemini-3.1-flash-lite (default 500;
-   override via the DAILY_CAP env var). No login required — anonymous
-   users can call it. When the cap is hit, returns 429 and clients
-   fall back to alternate models or prompt the user to add their own
-   key. */
-const KEY=Deno.env.get('GEMINI_KEY');
-const SUPA=Deno.env.get('SUPABASE_URL');
-const SRV =Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const ALLOWED_MODELS=new Set([
-  'gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash',
-  'gemini-3.5-flash','gemini-3.1-flash',
-]);
-const DAILY_CAP=parseInt(Deno.env.get('DAILY_CAP'))||2000;/* sum of the free-model daily-quota estimates */
-const CORS={
-  'Access-Control-Allow-Origin':'*',
-  'Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods':'POST, OPTIONS',
-  'Access-Control-Expose-Headers':'x-kh-count, x-kh-cap',
-};
-function json(b,s){return new Response(JSON.stringify(b),{headers:{...CORS,'Content-Type':'application/json'},status:s});}
-Deno.serve(async (req)=>{
-  if(req.method==='OPTIONS')return new Response(null,{headers:CORS,status:204});
-  if(req.method!=='POST')return new Response('Method not allowed',{headers:CORS,status:405});
-  if(!KEY)return json({error:'GEMINI_KEY not set on this function.'},500);
-  let body; try{body=await req.json();}catch(_){return json({error:'Bad JSON'},400);}
-  const model=body&&body.model;
-  if(!model||!ALLOWED_MODELS.has(model))return json({error:'Model not allowed',code:'BAD_MODEL'},400);
-  /* Atomic increment + cap check. If the counter RPC isn't installed yet
-     (kh_increment_shared_api missing / PGRST202), DON'T block the user — just
-     forward to Gemini without the daily cap. The cap re-activates the moment
-     you run the schema SQL on this project. */
-  const today=new Date().toISOString().slice(0,10);
-  let newCount=0, capActive=false;
-  try{
-    const inc=await fetch(SUPA+'/rest/v1/rpc/kh_increment_shared_api',{
-      method:'POST',headers:{apikey:SRV,Authorization:'Bearer '+SRV,'Content-Type':'application/json'},
-      body:JSON.stringify({p_date:today}),
-    });
-    if(inc.ok){ newCount=await inc.json(); capActive=true; }
-    else { console.warn('kh_increment_shared_api unavailable, serving without cap:', (await inc.text()).slice(0,200)); }
-  }catch(e){ console.warn('counter error, serving without cap', String(e)); }
-  if(capActive && newCount>DAILY_CAP){
-    return json({error:'Shared key tapped out today ('+newCount+'/'+DAILY_CAP+'). Resets midnight UTC, or add your own Gemini key.',code:'CAP_REACHED',count:newCount,cap:DAILY_CAP},429);
-  }
-  /* Forward to Gemini and stream back */
-  const up=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':streamGenerateContent?alt=sse&key='+KEY,{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body.payload||{}),
-  });
-  return new Response(up.body,{headers:{...CORS,'Content-Type':'text/event-stream','x-kh-count':String(newCount),'x-kh-cap':String(DAILY_CAP)},status:up.status});
-});`;
-
-      const stepsHtml=
-        '<ol style="padding-left:20px;margin:0;line-height:1.7;">'+
-        '<li><b>Apply the schema SQL</b> (Feedback → Diagnostics card → "Run Diagnostics" if you haven\'t already). It adds the <code>kh_shared_api_usage</code> table and <code>kh_increment_shared_api</code> function used by the proxy.</li>'+
-        '<li><b>Create the Edge Function — in the SAME project your app points to</b> (the one in <code>SUPABASE_URL</code>). Dashboard → Edge Functions → New function → name it <code>kh-gemini-proxy</code> → paste the code below → Deploy. <b>Deploying it on a different Supabase project is the #1 reason this "can\'t reach the proxy" — the app only calls the project in SUPABASE_URL.</b></li>'+
-        '<li><b>Turn OFF "Verify JWT"</b> for this function (its Details/Settings → uncheck "Enforce JWT verification", or deploy with <code>--no-verify-jwt</code>). The browser\'s CORS preflight carries no token, so leaving JWT on makes every call fail with <b>"Failed to fetch"</b>. Safe off — the proxy caps usage server-side and never exposes the key.</li>'+
-        '<li><b>Set GEMINI_KEY</b>: Edge Functions → Settings → Secrets → Add → name <code>GEMINI_KEY</code>, value = your Gemini API key.</li>'+
-        '<li><b>Test</b>: reload KindleHub, open Chat, the "Shared (free)" provider should now work.</li>'+
-        '</ol>'+
-        '<p style="font-size:11px;color:var(--muted);line-height:1.6;margin:8px 0 4px;"><b>Security notes:</b> the key sits in the function\'s env vars, not in the client. Users can call the proxy but can\'t read the key. The proxy hard-codes which models are allowed (gemini-3.1-flash-lite + Flash family — no Pro) and the daily cap is enforced server-side via the SECURITY DEFINER counter — bypassing the client cap doesn\'t help.</p>';
-      const stepsEl=el('div');stepsEl.innerHTML=stepsHtml;
-      steps.appendChild(stepsEl);
-
-      const codeLabel=txt('div','Edge Function code (paste into the backend Dashboard → Edge Functions → kh-gemini-proxy):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.4px',marginTop:'10px',marginBottom:'4px'}});
-      steps.appendChild(codeLabel);
-      const code=el('pre',{style:{fontFamily:'monospace',fontSize:'10px',background:'var(--bg)',border:'var(--thin)',borderRadius:'6px',padding:'8px',whiteSpace:'pre-wrap',wordBreak:'break-word',maxHeight:'280px',overflowY:'auto',margin:'0'}});
-      code.textContent=fnCode;
-      steps.appendChild(code);
-      const copyCodeBtn=txt('button','Copy code',{className:'btn small primary',style:{marginTop:'6px'}});
-      copyCodeBtn.onclick=()=>{
-        if(navigator.clipboard&&navigator.clipboard.writeText){
-          navigator.clipboard.writeText(fnCode).then(()=>toast('Edge Function code copied — paste into the backend Edge Functions dashboard.'));
-        }
-      };
-      steps.appendChild(copyCodeBtn);
-
-      c.appendChild(steps);
-      return c;
-    }
 
     /* Local Insights — admin info computed ENTIRELY on-device (localStorage
        scan + cached backup status). Adds zero the backend reads, so it costs no
@@ -46322,7 +45938,7 @@ sheets:()=>{
       const tr=tbody.children[r];if(!tr)continue;
       for(let c=0;c<s.cols;c++){
         const td=tr.children[c+1];if(!td)continue;
-        const disp=td.querySelector('.sh-disp');if(!disp)continue;
+        const disp=td._disp||td.querySelector('.sh-disp');if(!disp)continue;
         const raw=s.data[r][c]||'';
         const live=raw?_evalCell(r,c,new Set()):'';
         disp.textContent=_fmtVal(live);
@@ -46361,6 +45977,7 @@ sheets:()=>{
         if(typeof live==='string'&&raw&&raw[0]!=='=')disp.classList.add('sh-text');
         disp.title=raw?(raw[0]==='='?raw:'')+' → '+_fmtVal(live):'';
         td.appendChild(disp);
+        td._disp=disp;/* perf: cache the display node so renderGridValuesOnly (per formula-bar keystroke) skips a querySelector on all ~120 cells */
         td.onclick=()=>{_selectCell(r,c);fInp.focus();fInp.select&&fInp.select();};
         td.ondblclick=()=>{
           _selectCell(r,c);
@@ -48055,7 +47672,7 @@ notes:()=>{
 
       const editBtn=txt('button','Edit',{className:'btn small',style:{fontSize:'11px',minHeight:'36px',padding:'6px 14px',marginRight:'4px'}});
       const delBtn=txt('button','Delete',{className:'btn small',style:{fontSize:'11px',minHeight:'36px',padding:'6px 14px',color:'var(--danger)',borderColor:'var(--danger)'}});
-      delBtn.onclick=()=>{if(realIdx>=0){S.notes.splice(realIdx,1);saveNow();renderList();}};
+      delBtn.onclick=()=>{kindleConfirm("Delete this note? This can't be undone.",ok=>{if(!ok)return;const i=S.notes.findIndex(x=>x.id===n.id||(x.date===n.date&&x.text===n.text));if(i>=0)S.notes.splice(i,1);saveNow();renderList();});};
 
       btnRow.append(pinBtn,editBtn,delBtn);
       hdr.append(leftMeta,btnRow);
@@ -48680,7 +48297,7 @@ formulas:()=>{
     const searchRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
     const search=el('input',{type:'text',placeholder:'Search '+ALL.length+' formulas (name, equation, variable)…',value:query,style:{flex:'1'}});
     search.setAttribute('data-formula-search','1');
-    search.oninput=()=>{query=search.value.toLowerCase();activeTab=-1;activeFormula=null;render();};
+    search.oninput=khDebounce(()=>{query=search.value.toLowerCase();activeTab=-1;activeFormula=null;render();},200);/* debounce: render() rebuilds the whole view — one e-ink flash per keystroke without this */
     searchRow.appendChild(search);
     if(query){
       const clearBtn=txt('button','Clear',{className:'btn small'});
@@ -52737,7 +52354,7 @@ worldclock:()=>{
     renderClocks();
     if(interval)clearInterval(interval);
     interval=setInterval(()=>{if(document.hidden)return;tickClocks();},1000);
-    const mo=new MutationObserver(()=>{if(!document.contains(v)){clearInterval(interval);}});
+    const mo=new MutationObserver(()=>{if(!document.contains(v)){clearInterval(interval);mo.disconnect();/* PERF: stop observing once the view is gone — else this body-subtree observer leaks and scans every future mutation forever */}});
     mo.observe(document.body,{childList:true,subtree:true});
   }
   render();return v;
@@ -52957,7 +52574,7 @@ recipes:()=>{
     topRow.appendChild(srchInp);topRow.appendChild(newBtn);v.appendChild(topRow);
     const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:'8px'}});
     let filtered=recipes;
-    srchInp.oninput=()=>{const q=srchInp.value.toLowerCase();filtered=recipes.filter(r=>r.name.toLowerCase().includes(q)||(r.tags||[]).some(t=>t.includes(q)));renderGrid();};
+    srchInp.oninput=khDebounce(()=>{const q=srchInp.value.toLowerCase();filtered=recipes.filter(r=>r.name.toLowerCase().includes(q)||(r.tags||[]).some(t=>t.includes(q)));renderGrid();},180);/* debounce: rebuilds the whole card grid per keystroke otherwise */
     function renderGrid(){
       grid.innerHTML='';
       filtered.forEach(r=>{
@@ -53759,7 +53376,8 @@ function buildUI(){
   shapeMenu.appendChild(shapeGrid);
   const shapeWrap=el('div',{style:{position:'relative'}});
   shapeMenuBtn.onclick=(e)=>{e.stopPropagation();shapeMenu.style.display=shapeMenu.style.display==='none'?'block':'none';};
-  document.addEventListener('click',()=>{if(shapeMenu)shapeMenu.style.display='none';});
+  const _shapeDismiss=function(){if(!document.contains(shapeMenu)){document.removeEventListener('click',_shapeDismiss);return;}shapeMenu.style.display='none';};
+  document.addEventListener('click',_shapeDismiss);/* self-remove once the Slides/Draw view is evicted — was leaking one listener per rebuild */
   shapeMenu.addEventListener('click',e=>e.stopPropagation());
   shapeWrap.appendChild(shapeMenuBtn);shapeWrap.appendChild(shapeMenu);
   topBar.appendChild(shapeWrap);
@@ -53876,7 +53494,7 @@ function buildUI(){
         ];
         d.slides.splice(activeSlideIdx+1,0,slide);activeSlideIdx++;selectedElemIdx=-1;
         saveDecks();repaint();renderProps();toast('Slide generated!');
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       aiSlideBtn.disabled=false;aiSlideBtn.textContent='AI Slide';
     };
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();goBtn.click();}});
@@ -53906,7 +53524,7 @@ function buildUI(){
         elem.text=result.trim();
         saveDecks();repaint();renderProps();toast('Text enhanced by AI');
       }
-    }catch(e){toast('AI error: '+e.message);}
+    }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
     aiEnhanceBtn.disabled=false;aiEnhanceBtn.textContent='AI Enhance';
   };
   topBar.appendChild(aiEnhanceBtn);
@@ -53928,7 +53546,7 @@ function buildUI(){
         if(notesArea){notesArea.value=slide.notes;}
         toast('Speaker notes generated');
       }
-    }catch(e){toast('AI error: '+e.message);}
+    }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
     aiNotesBtn.disabled=false;aiNotesBtn.textContent='AI Notes';
   };
   topBar.appendChild(aiNotesBtn);
@@ -53954,7 +53572,7 @@ function buildUI(){
       ];
       if(parsed.notes)slide.notes=parsed.notes;
       saveDecks();repaint();renderProps();toast('Slide redesigned by AI');
-    }catch(e){toast('AI error: '+e.message);}
+    }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
     aiRedesignBtn.disabled=false;aiRedesignBtn.textContent='AI Redesign';
   };
   topBar.appendChild(aiRedesignBtn);
@@ -54238,7 +53856,7 @@ function buildDeckList(){
         if(!d.slides.length)d.slides.push(newSlide(th.bg));
         decks.push(d);activeDeckIdx=decks.length-1;activeSlideIdx=0;selectedElemIdx=-1;
         saveDecks();buildUI();toast('Deck generated: '+d.title);
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       aiDeckBtn.disabled=false;aiDeckBtn.textContent='AI: Generate Deck';
     };
     topicInp.addEventListener('keydown',e=>{if(e.key==='Enter')goBtn.click();});
@@ -62853,18 +62471,20 @@ function refreshKbd(){
 /* Re-evaluate on orientation change (handles 'landscape' keyboard mode) */
 window.addEventListener('resize',refreshKbd);
 window.addEventListener('orientationchange',refreshKbd);
-/* Safety net: every 800 ms, if an input is focused but the keyboard isn't
+/* Safety net: periodically, if an input is focused but the keyboard isn't
    showing for it, attach. Catches inputs created and programmatically
    focused after page navigation, where neither focusin nor click fired
-   reliably (older Kindle WebKit drops both in some flows). */
+   reliably (older Kindle WebKit drops both in some flows). 1500 ms (was
+   800) — focusin/click cover the common case; this is only the fallback,
+   so a slower poll halves its idle wakeups with no felt latency. */
 setInterval(function(){
-  if(!_enabled)return;
+  if(!_enabled||document.hidden)return;
   var af=document.activeElement;
   if(!af||af===document.body)return;
   if(_shouldAttach(af)&&(_target!==af||!_visible)){
     _attachToTarget(af);
   }
-},800);
+},1500);
 
 window._khKeyboard={enable:enable,disable:disable,relocate:relocateKbd,isKindleBrowser:isKindleBrowser,refresh:function(){if(typeof refreshKbd==='function')refreshKbd();},hide:function(){if(typeof hideKbd==='function')hideKbd();}};
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}
