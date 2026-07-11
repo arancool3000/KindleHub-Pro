@@ -14259,6 +14259,23 @@ function mountSecondary(id){
   try{if(ON_SHOW[id])ON_SHOW[id]();}catch(_){}
   try{appendRelatedPages(id,VIEWS[id]);}catch(_){}
   _updateSplitLabels();
+  try{_khTrimViewCache(id);}catch(_){}
+}
+/* Bound the in-memory view cache. Cached views hold detached DOM forever, which
+   piles up memory on a low-RAM Kindle → Silk out-of-memory crashes. Keep the
+   current view, any split pane, and the most-recent few; evict the rest. Evicted
+   views simply rebuild from BUILDERS on revisit (same as the ALWAYS_REBUILD set),
+   and their timers self-terminate via their own document.contains() guards. */
+function _khTrimViewCache(current){
+  var keys=Object.keys(VIEWS);
+  var lite=false;try{lite=document.body.classList.contains('kh-lite');}catch(_){}
+  var CAP=lite?4:9;                       /* tighter on Kindle/lite, roomy on PC */
+  if(keys.length<=CAP)return;
+  var keep={};keep[current]=1;
+  try{if(_splitOn&&_splitSecondary)keep[_splitSecondary]=1;}catch(_){}
+  var recent=window._khRecentViews||[];
+  for(var i=0;i<recent.length&&Object.keys(keep).length<CAP;i++)keep[recent[i]]=1;
+  for(var j=0;j<keys.length;j++){var k=keys[j];if(keep[k])continue;try{delete VIEWS[k];}catch(_){}}
 }
 function enterSplit(secondaryId){
   if(typeof BUILDERS[secondaryId]!=='function'){toast('That activity can’t be opened in split.');return;}
