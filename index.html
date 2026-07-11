@@ -248,6 +248,20 @@ html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:6px}
 html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:6px}
 html.kh-no-flexgap .header-controls > * + *{margin-left:5px;margin-top:0}
 html.kh-no-flexgap nav .tab + .tab{margin-left:2px}
+/* ── CSS Grid fallback (old Kindle Silk) ── Only the game boards rely on
+   Grid for their columns; when the boot probe flags html.kh-no-grid, lay the
+   fixed-size cells out as inline-blocks that wrap into rows (the board width
+   is pinned so exactly N fit per row). font-size:0 on the board removes the
+   inline-block whitespace; each cell re-sets its own font-size. Gated, so
+   modern engines keep real Grid untouched. */
+html.kh-no-grid .g2048-board{display:block;width:312px;font-size:0}
+html.kh-no-grid .g2048-cell{display:inline-block;vertical-align:top;width:70px;height:70px;margin:3px}
+html.kh-no-grid .ttt-board{display:block;width:270px;font-size:0}
+html.kh-no-grid .ttt-cell{display:inline-block;vertical-align:top;width:84px;height:84px;margin:2px}
+/* aspect-ratio fallback: Silk ignores it, so the narrow-screen 2048 cells
+   (width/height:auto;aspect-ratio:1) would collapse to text height — pin them
+   back to squares. */
+html.kh-no-aspectratio .g2048-cell{width:70px;height:70px}
 
 /* ── Buttons — all meet 44px touch target ── */
 .btn{
@@ -532,7 +546,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 }
 
 /* ── KindleHub Intelligence ── */
-.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:26px!important;letter-spacing:0.2px;}
+.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:34px!important;letter-spacing:0.2px;}
 .khi-spark{font-size:11px;opacity:0.8;margin-right:1px;}
 .khi-output{background:var(--highlight);border:var(--thin);border-radius:var(--radius);
   padding:10px 12px;font-size:12px;line-height:1.6;margin-top:8px;white-space:pre-wrap;}
@@ -1083,6 +1097,18 @@ body.launcher-ui .view{padding-bottom:80px;}
       var _gapOk=_f&&_l&&((_l.offsetLeft-_f.offsetLeft)>=8);
       if(_gt.parentNode)_gt.parentNode.removeChild(_gt);
       if(!_gapOk)html.classList.add('kh-no-flexgap');
+    }catch(_){}
+    /* ── CSS Grid + aspect-ratio fallback flags ── The game boards (2048,
+       tic-tac-toe) lay their cells out with CSS Grid + aspect-ratio; the
+       oldest Kindle Silk WebKit supports neither, so those boards collapse
+       into a vertical strip. Feature-detect via CSS.supports (never the UA);
+       when CSS.supports itself is missing (the very oldest engines) assume
+       unsupported — they predate both features. Scoped CSS fallbacks
+       (search kh-no-grid) then lay the boards out with inline-blocks. */
+    try{
+      var _cssOk=(window.CSS&&CSS.supports)?function(p,v){try{return CSS.supports(p,v);}catch(_){return false;}}:null;
+      if(!_cssOk||!_cssOk('display','grid'))html.classList.add('kh-no-grid');
+      if(!_cssOk||!_cssOk('aspect-ratio','1/1'))html.classList.add('kh-no-aspectratio');
     }catch(_){}
   }catch(e){}
 })();
@@ -8073,8 +8099,10 @@ function _tokenProfane(norm){
   }
   return false;
 }
+var _censorMemo=new Map();/* pure fn of its input (static word lists) — cache so chat/leaderboard re-renders don't re-run two regex passes on the same names every 15s */
 function _censorText(s){
   if(typeof s!=='string'||!s)return s;
+  if(_censorMemo.has(s))return _censorMemo.get(s);
   /* Pass 1: exact words (word-boundary) — original behaviour. */
   var out=s.replace(_PROFANITY_RE,function(m){return '█'.repeat(Math.max(3,m.length));});
   /* Pass 2: bad word embedded in a larger token. Already-censored runs are
@@ -8083,6 +8111,8 @@ function _censorText(s){
     if(_tokenProfane(_normLeet(tok)))return '█'.repeat(Math.max(3,tok.replace(/[^A-Za-z0-9]/g,'').length));
     return tok;
   });
+  if(_censorMemo.size>=800)_censorMemo.clear();/* bound the cache */
+  _censorMemo.set(s,out);
   return out;
 }
 function _hasProfanity(s){
@@ -8674,7 +8704,15 @@ function _identiconSVG(seed,size){
   }
   return '<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'"><rect width="'+size+'" height="'+size+'" fill="'+bg+'"/><g fill="'+col+'">'+rects+'</g></svg>';
 }
-function _identiconURI(seed,size){return 'data:image/svg+xml;utf8,'+encodeURIComponent(_identiconSVG(seed,size));}
+var _identiconMemo=new Map();/* pure fn of (seed,size) — cache the 25-cell SVG build + encodeURIComponent so avatar re-renders are free */
+function _identiconURI(seed,size){
+  var k=seed+'@'+(size||30);
+  if(_identiconMemo.has(k))return _identiconMemo.get(k);
+  var uri='data:image/svg+xml;utf8,'+encodeURIComponent(_identiconSVG(seed,size));
+  if(_identiconMemo.size>=400)_identiconMemo.clear();
+  _identiconMemo.set(k,uri);
+  return uri;
+}
 /* Paint an identicon into an existing circular avatar div (e.g. .msg-avatar). */
 function _applyIdenticon(elDiv,seed){
   try{elDiv.style.backgroundImage='url("'+_identiconURI(seed,32)+'")';elDiv.style.backgroundSize='cover';elDiv.style.backgroundPosition='center';elDiv.textContent='';}catch(_){}
@@ -26476,8 +26514,8 @@ const Pomodoro=(()=>{
             if(timer)clearInterval(timer);
             timer=setInterval(()=>{
               timeLeft--;
-              if(timeLeft<=0){clearInterval(timer);timer=null;finishWorkSession();timeLeft=MODES.work*60;}
-              render();
+              if(timeLeft<=0){clearInterval(timer);timer=null;finishWorkSession();timeLeft=MODES.work*60;render();/* full render only on completion */}
+              else tick();/* cheap per-second update — was render() every second = a full log+chart rebuild/e-ink flash */
             },1000);
             toast('Timer started: '+pending.minutes+' min'+(pending.label?(' — '+pending.label):''));
           }
@@ -26544,7 +26582,7 @@ function renderNotes(filterText='',filterTag=''){
   let notes=S.notes||[];
   if(filterText)notes=notes.filter(n=>n.text.toLowerCase().includes(filterText.toLowerCase()));
   if(filterTag)notes=notes.filter(n=>n.tags&&n.tags.includes(filterTag));
-  if(!notes.length){listEl.innerHTML='<div class="empty-state">No notes yet.</div>';return;}
+  if(!notes.length){listEl.innerHTML='<div class="empty-state">No notes yet. Type above and tap Add to write your first one.</div>';return;}
   notes.forEach(n=>{
     const realIdx=S.notes.indexOf(n);
     const d=el('div',{className:'note-item'});
@@ -26570,8 +26608,8 @@ function renderNotes(filterText='',filterTag=''){
       const r=el('div');r.appendChild(saveBtn);r.appendChild(cancelBtn);d.appendChild(r);
       ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);
     };
-    const del=txt('button','x',{className:'btn small',style:{padding:'2px 6px',color:'var(--danger)',borderColor:'var(--danger)'}});
-    del.onclick=()=>{S.notes.splice(realIdx,1);saveNow();renderNotes(filterText,filterTag);};
+    const del=txt('button','Delete',{className:'btn small',style:{padding:'2px 6px',fontSize:'10px',color:'var(--danger)',borderColor:'var(--danger)'}});
+    del.onclick=()=>{kindleConfirm("Delete this note? This can't be undone.",ok=>{if(!ok)return;const i=S.notes.indexOf(n);if(i>=0)S.notes.splice(i,1);saveNow();renderNotes(filterText,filterTag);});};
     const cardsBtn=txt('button','→ Cards',{className:'btn small',style:{padding:'2px 6px',fontSize:'10px'}});
     cardsBtn.title='Make AI flashcards from this note';
     cardsBtn.onclick=async()=>{const o=cardsBtn.textContent;cardsBtn.disabled=true;cardsBtn.textContent='…';let deck=null;try{deck=await _noteToFlashcards(n.text);}catch(e){toast('Flashcard generation failed — try again');}cardsBtn.textContent=o;cardsBtn.disabled=false;if(deck)toast('Made '+deck.cards.length+' flashcards in "'+deck.name+'" — study them in Flashcards.',5500);};
@@ -26586,7 +26624,7 @@ function renderNotes(filterText='',filterTag=''){
 function renderBooks(){
   const listEl=$('booksList');if(!listEl)return;
   listEl.innerHTML='';
-  if(!S.books||!S.books.length){listEl.innerHTML='<div class="empty-state">No books tracked yet.</div>';return;}
+  if(!S.books||!S.books.length){listEl.innerHTML='<div class="empty-state">No books tracked yet. Add one above, or search the Free Library to start reading.</div>';return;}
   const search=($('bookSearch')||{}).value||'';
   const statusF=($('bookStatusFilter')||{}).value||'all';
   const sortV=($('bookSort')||{}).value||'added';
@@ -26616,8 +26654,8 @@ function renderBooks(){
       readBtn.onclick=()=>{window.khOpenBookReader({id:b.gutenbergId,title:b.title,author:b.author});};
       right.appendChild(readBtn);
     }
-    const del=txt('button','x',{className:'btn small',style:{color:'var(--danger)',borderColor:'var(--danger)'}});
-    del.onclick=()=>{S.books.splice(actualIdx,1);save();renderBooks();};
+    const del=txt('button','Delete',{className:'btn small',style:{fontSize:'10px',color:'var(--danger)',borderColor:'var(--danger)'}});
+    del.onclick=()=>{kindleConfirm('Remove "'+(b.title||'this book')+'" from your list?',ok=>{if(!ok)return;const i=S.books.indexOf(b);if(i>=0)S.books.splice(i,1);save();renderBooks();});};
     right.appendChild(del);
     /* KHI: Smart Summary */
     if(khiEnabled()){
@@ -26785,7 +26823,7 @@ function studySR(di,cram){
 function renderDeckList(){
   const listEl=$('deckList');if(!listEl)return;
   listEl.innerHTML='';
-  if(!S.flashDecks||!S.flashDecks.length){listEl.innerHTML='<div class="empty-state">No decks yet.</div>';return;}
+  if(!S.flashDecks||!S.flashDecks.length){listEl.innerHTML='<div class="empty-state">No decks yet. Tap New Deck to create one, or make cards from a note.</div>';return;}
   S.flashDecks.forEach((deck,di)=>{
     const d=el('div',{className:'card',style:{marginBottom:'8px'}});
     const h=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'5px'}});
@@ -36347,7 +36385,7 @@ chat:()=>{
               }
               bmActiveArticleIdx=0;
               bmSaveBooks();toast('Book generated: '+bk.title);bmBuild();
-            }catch(e){toast('AI error: '+e.message);}
+            }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
             genBookBtn.disabled=false;genBookBtn.textContent='AI: Write Book';
           });
         });
@@ -37838,7 +37876,7 @@ tools:()=>{
         const inst=style==='short'?'Summarise in exactly one sentence':style==='medium'?'Summarise in 3-4 clear sentences':style==='long'?'Write a full paragraph summary (5-7 sentences)':'Summarise as concise bullet points (use - for each bullet)';
         const res=await callAI([{role:'user',text:inst+'. Do not add preamble, just the summary:\n\n'+text}]);
         sumOut.textContent=res.trim();sumOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       sumBtn.disabled=false;sumBtn.textContent='Summarise';
     };
     sumCard.appendChild(sumBtn);sumCard.appendChild(sumOut);
@@ -37865,7 +37903,7 @@ tools:()=>{
         const instMap={fix:'Correct all grammar, spelling and punctuation errors. Return only the corrected text.',formal:'Rewrite in a more formal, professional tone. Return only the rewritten text.',casual:'Rewrite in a friendly, casual, conversational tone. Return only the rewritten text.',concise:'Remove all unnecessary words. Make it shorter and more concise. Return only the result.',expand:'Expand with more detail and explanation while keeping the same meaning. Return only the expanded text.'};
         const res=await callAI([{role:'user',text:instMap[mode]+' Text:\n\n'+text}]);
         gramOut.textContent=res.trim();gramOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       gramBtn.disabled=false;gramBtn.textContent='Fix Text';
     };
     gramCard.appendChild(gramBtn);gramCard.appendChild(gramOut);
@@ -37895,7 +37933,7 @@ tools:()=>{
         const typeDesc={startup:'startup business',feature:'product feature',content:'content piece or article',names:'creative name',research:'research question or angle',gift:'gift'};
         const res=await callAI([{role:'user',text:'Generate '+count+' unique, creative '+typeDesc[type]+' ideas for: "'+topic+'". Number each idea. Be specific and actionable. Keep each idea to 1-2 sentences.'}]);
         ideaOut.textContent=res.trim();ideaOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       ideaBtn.disabled=false;ideaBtn.textContent='Generate Ideas';
     };
     ideaCard.appendChild(ideaBtn);ideaCard.appendChild(ideaOut);
@@ -37926,7 +37964,7 @@ tools:()=>{
         const to=transTo.value;
         const res=await callAI([{role:'user',text:'Translate the following text from '+from+' to '+to+'. Return ONLY the translation, no explanation:\n\n'+text}]);
         transOut.textContent=res.trim();transOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       transBtn.disabled=false;transBtn.textContent='Translate';
     };
     transCard.appendChild(transBtn);transCard.appendChild(transOut);
@@ -37957,7 +37995,7 @@ tools:()=>{
         const lenDesc=len==='short'?'2-3 sentences':len==='medium'?'one paragraph':'2-3 short paragraphs';
         const res=await callAI([{role:'user',text:'Write a '+tone+' professional email for this situation: "'+sit+'". Length: '+lenDesc+'. Include Subject line. Be genuine and clear.'}]);
         emailOut.textContent=res.trim();emailOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       emailBtn.disabled=false;emailBtn.textContent='Write Email';
     };
     emailCard.appendChild(emailBtn);emailCard.appendChild(emailOut);
@@ -37984,7 +38022,7 @@ tools:()=>{
         const instMap={eli5:"Explain \""+topic+"\" to a 5-year-old using very simple words, fun analogies and no jargon.",teen:"Explain \""+topic+"\" to a curious teenager using simple language, relatable examples and a bit of humour.",layman:"Explain \""+topic+"\" clearly to an intelligent adult with no specialist knowledge. Use everyday language.",expert:"Give a concise, technical explanation of \""+topic+"\" including key terminology and mechanisms."};
         const res=await callAI([{role:'user',text:instMap[level]+' Keep it engaging and under 200 words.'}]);
         eli5Out.textContent=res.trim();eli5Out.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       eli5Btn.disabled=false;eli5Btn.textContent='Explain';
     };
     eli5Card.appendChild(eli5Btn);eli5Card.appendChild(eli5Out);
@@ -38038,7 +38076,7 @@ tools:()=>{
           });
         }
         let score=0;renderQ();
-      }catch(e){toast('AI error: '+e.message);console.error(e);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));console.error(e);}
       quizBtn.disabled=false;quizBtn.textContent='Generate Quiz';
     };
     quizCard.appendChild(quizBtn);quizCard.appendChild(quizOut);
@@ -38068,7 +38106,7 @@ tools:()=>{
         const instMap={explain:'Explain in plain English what this '+lang+' code does, step by step.',bugs:'Find any bugs, errors or issues in this '+lang+' code. List each problem clearly.',improve:'Suggest specific improvements for this '+lang+' code: performance, readability, best practices.',convert:'Convert this code to Python. Return the full converted code.'};
         const res=await callAI([{role:'user',text:instMap[mode]+' Code:\n\n'+code}]);
         codeExpOut.textContent=res.trim();codeExpOut.style.display='block';
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       codeExpBtn.disabled=false;codeExpBtn.textContent='Analyse Code';
     };
     codeExpCard.appendChild(codeExpBtn);codeExpCard.appendChild(codeExpOut);
@@ -46322,7 +46360,7 @@ sheets:()=>{
       const tr=tbody.children[r];if(!tr)continue;
       for(let c=0;c<s.cols;c++){
         const td=tr.children[c+1];if(!td)continue;
-        const disp=td.querySelector('.sh-disp');if(!disp)continue;
+        const disp=td._disp||td.querySelector('.sh-disp');if(!disp)continue;
         const raw=s.data[r][c]||'';
         const live=raw?_evalCell(r,c,new Set()):'';
         disp.textContent=_fmtVal(live);
@@ -46361,6 +46399,7 @@ sheets:()=>{
         if(typeof live==='string'&&raw&&raw[0]!=='=')disp.classList.add('sh-text');
         disp.title=raw?(raw[0]==='='?raw:'')+' → '+_fmtVal(live):'';
         td.appendChild(disp);
+        td._disp=disp;/* perf: cache the display node so renderGridValuesOnly (per formula-bar keystroke) skips a querySelector on all ~120 cells */
         td.onclick=()=>{_selectCell(r,c);fInp.focus();fInp.select&&fInp.select();};
         td.ondblclick=()=>{
           _selectCell(r,c);
@@ -48055,7 +48094,7 @@ notes:()=>{
 
       const editBtn=txt('button','Edit',{className:'btn small',style:{fontSize:'11px',minHeight:'36px',padding:'6px 14px',marginRight:'4px'}});
       const delBtn=txt('button','Delete',{className:'btn small',style:{fontSize:'11px',minHeight:'36px',padding:'6px 14px',color:'var(--danger)',borderColor:'var(--danger)'}});
-      delBtn.onclick=()=>{if(realIdx>=0){S.notes.splice(realIdx,1);saveNow();renderList();}};
+      delBtn.onclick=()=>{kindleConfirm("Delete this note? This can't be undone.",ok=>{if(!ok)return;const i=S.notes.findIndex(x=>x.id===n.id||(x.date===n.date&&x.text===n.text));if(i>=0)S.notes.splice(i,1);saveNow();renderList();});};
 
       btnRow.append(pinBtn,editBtn,delBtn);
       hdr.append(leftMeta,btnRow);
@@ -48680,7 +48719,7 @@ formulas:()=>{
     const searchRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
     const search=el('input',{type:'text',placeholder:'Search '+ALL.length+' formulas (name, equation, variable)…',value:query,style:{flex:'1'}});
     search.setAttribute('data-formula-search','1');
-    search.oninput=()=>{query=search.value.toLowerCase();activeTab=-1;activeFormula=null;render();};
+    search.oninput=khDebounce(()=>{query=search.value.toLowerCase();activeTab=-1;activeFormula=null;render();},200);/* debounce: render() rebuilds the whole view — one e-ink flash per keystroke without this */
     searchRow.appendChild(search);
     if(query){
       const clearBtn=txt('button','Clear',{className:'btn small'});
@@ -52957,7 +52996,7 @@ recipes:()=>{
     topRow.appendChild(srchInp);topRow.appendChild(newBtn);v.appendChild(topRow);
     const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:'8px'}});
     let filtered=recipes;
-    srchInp.oninput=()=>{const q=srchInp.value.toLowerCase();filtered=recipes.filter(r=>r.name.toLowerCase().includes(q)||(r.tags||[]).some(t=>t.includes(q)));renderGrid();};
+    srchInp.oninput=khDebounce(()=>{const q=srchInp.value.toLowerCase();filtered=recipes.filter(r=>r.name.toLowerCase().includes(q)||(r.tags||[]).some(t=>t.includes(q)));renderGrid();},180);/* debounce: rebuilds the whole card grid per keystroke otherwise */
     function renderGrid(){
       grid.innerHTML='';
       filtered.forEach(r=>{
@@ -53876,7 +53915,7 @@ function buildUI(){
         ];
         d.slides.splice(activeSlideIdx+1,0,slide);activeSlideIdx++;selectedElemIdx=-1;
         saveDecks();repaint();renderProps();toast('Slide generated!');
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       aiSlideBtn.disabled=false;aiSlideBtn.textContent='AI Slide';
     };
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();goBtn.click();}});
@@ -53906,7 +53945,7 @@ function buildUI(){
         elem.text=result.trim();
         saveDecks();repaint();renderProps();toast('Text enhanced by AI');
       }
-    }catch(e){toast('AI error: '+e.message);}
+    }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
     aiEnhanceBtn.disabled=false;aiEnhanceBtn.textContent='AI Enhance';
   };
   topBar.appendChild(aiEnhanceBtn);
@@ -53928,7 +53967,7 @@ function buildUI(){
         if(notesArea){notesArea.value=slide.notes;}
         toast('Speaker notes generated');
       }
-    }catch(e){toast('AI error: '+e.message);}
+    }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
     aiNotesBtn.disabled=false;aiNotesBtn.textContent='AI Notes';
   };
   topBar.appendChild(aiNotesBtn);
@@ -53954,7 +53993,7 @@ function buildUI(){
       ];
       if(parsed.notes)slide.notes=parsed.notes;
       saveDecks();repaint();renderProps();toast('Slide redesigned by AI');
-    }catch(e){toast('AI error: '+e.message);}
+    }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
     aiRedesignBtn.disabled=false;aiRedesignBtn.textContent='AI Redesign';
   };
   topBar.appendChild(aiRedesignBtn);
@@ -54238,7 +54277,7 @@ function buildDeckList(){
         if(!d.slides.length)d.slides.push(newSlide(th.bg));
         decks.push(d);activeDeckIdx=decks.length-1;activeSlideIdx=0;selectedElemIdx=-1;
         saveDecks();buildUI();toast('Deck generated: '+d.title);
-      }catch(e){toast('AI error: '+e.message);}
+      }catch(e){(window.console&&console.error&&console.error('AI error',e),toast("The AI couldn't respond — check your connection or API key, then try again."));}
       aiDeckBtn.disabled=false;aiDeckBtn.textContent='AI: Generate Deck';
     };
     topicInp.addEventListener('keydown',e=>{if(e.key==='Enter')goBtn.click();});
@@ -62853,18 +62892,20 @@ function refreshKbd(){
 /* Re-evaluate on orientation change (handles 'landscape' keyboard mode) */
 window.addEventListener('resize',refreshKbd);
 window.addEventListener('orientationchange',refreshKbd);
-/* Safety net: every 800 ms, if an input is focused but the keyboard isn't
+/* Safety net: periodically, if an input is focused but the keyboard isn't
    showing for it, attach. Catches inputs created and programmatically
    focused after page navigation, where neither focusin nor click fired
-   reliably (older Kindle WebKit drops both in some flows). */
+   reliably (older Kindle WebKit drops both in some flows). 1500 ms (was
+   800) — focusin/click cover the common case; this is only the fallback,
+   so a slower poll halves its idle wakeups with no felt latency. */
 setInterval(function(){
-  if(!_enabled)return;
+  if(!_enabled||document.hidden)return;
   var af=document.activeElement;
   if(!af||af===document.body)return;
   if(_shouldAttach(af)&&(_target!==af||!_visible)){
     _attachToTarget(af);
   }
-},800);
+},1500);
 
 window._khKeyboard={enable:enable,disable:disable,relocate:relocateKbd,isKindleBrowser:isKindleBrowser,refresh:function(){if(typeof refreshKbd==='function')refreshKbd();},hide:function(){if(typeof hideKbd==='function')hideKbd();}};
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}
