@@ -2367,6 +2367,7 @@ function _startMessageNotifier(){
        subscription handles those updates with its own notifyMsg call). */
     if(typeof currentView!=='undefined'&&currentView==='messages')return;
     if(!navigator.onLine)return;/* offline — don't burn a failing fetch */
+    if(typeof _khStoreInstalled==='function'&&!_khStoreInstalled('messages'))return;/* Messages app removed → don't poll or notify (also saves requests) */
     if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat notifier polling during a CF limit */
     if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
     if(!S.authToken)return;/* signed-out users shouldn't get Global Chat toasts */
@@ -3664,6 +3665,9 @@ function _khMarkNotified(key){
 }
 
 function notifyMsg(name,text,ms,msgId,groupCode){
+  /* Messages app removed from the App Store → no message toasts/notifications
+     at all (the reported "messages keep notifying after I deleted the app"). */
+  try{if(typeof _khStoreInstalled==='function'&&!_khStoreInstalled('messages'))return;}catch(_){}
   /* Always dedup. If the caller passed an id, use that. Otherwise build
      a synthetic key from name + text + the current minute so two
      identical messages within the same minute also collapse to one toast. */
@@ -3722,6 +3726,10 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   window._khPushNotif=function(n){
     try{
       n=n||{};
+      /* Respect App Store install state: if the app this notification belongs to
+         has been REMOVED (e.g. Messages uninstalled), don't push it. The install
+         map is S.navHidden, persisted to localStorage — so the choice sticks. */
+      if(n.view&&typeof _khStoreInstalled==='function'&&!_khStoreInstalled(n.view))return;
       window._khNotifs.unshift({icon:_nIcon(n.icon),title:String(n.title||'').slice(0,60),body:String(n.body||'').slice(0,140),at:Date.now(),view:n.view||'',group:n.group||''});
       window._khNotifs=window._khNotifs.slice(0,CAP);_save(window._khNotifs);
       if(!isOpen)_unread++;
@@ -8263,10 +8271,32 @@ function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i]
 /* Every OTHER top-menu page (not a first-party store app, not permanent) stays
    manageable from the store under "More Pages" — so now that the Settings
    tab-picker is gone, nothing a user hid can get stranded. */
+/* Real one-line descriptions for the non-catalogue nav pages (was a generic
+   "A top-menu page." for every one). Falls back to a name-based line. */
+var _KH_PAGE_DESC={
+  chat:'Chat with the built-in AI assistant.',
+  games:'The Arcade — dozens of built-in games.',
+  calc:'A handy calculator.',
+  reading:'Your books, tracker and the Free Library reader.',
+  notes:'Jot down quick notes.',
+  calendar:'Track events and reminders.',
+  weather:'Local weather and the forecast.',
+  messages:'Chats, friends, groups and DMs.',
+  feedback:'Report a bug or suggest a feature.',
+  browser:'Your saved website shortcuts.',
+  worldclock:'Clocks for cities around the world.',
+  wheel:'A spinner and random picker.',
+  discover:'Discover new things to read and do.',
+  explore:'Look things up — animals, stars, science and more.',
+  mail:'Your KindleHub inbox.',
+  rss:'News headlines and the Kindle Gazette.',
+  pet:'Adopt and raise a virtual pet.',
+  starmap:'A live sky map of stars and planets.'
+};
 function _khOtherStorePages(){
   var out=[],known={},perm={home:1,settings:1,appstore:1};
   for(var i=0;i<STORE_APPS.length;i++)known[STORE_APPS[i].view]=1;
-  if(typeof NAV_TABS!=='undefined')NAV_TABS.forEach(function(t){var v=t[0],l=t[1];if(known[v]||perm[v])return;out.push({view:v,name:l,cat:'More Pages',desc:'A top-menu page.'});});
+  if(typeof NAV_TABS!=='undefined')NAV_TABS.forEach(function(t){var v=t[0],l=t[1];if(known[v]||perm[v])return;out.push({view:v,name:l,cat:'More Pages',desc:_KH_PAGE_DESC[v]||('The '+l+' page.')});});
   return out;
 }
 function _khStoreInstalled(view){if(!S.navHidden||typeof S.navHidden!=='object')return true;return S.navHidden[view]!==true;}
@@ -10288,6 +10318,16 @@ function _parseItemIds(text){
 
   async function reportError(message,source,lineno,colno,errorObj,kind){
     kind=kind||'error';
+    /* ── Ignore EXPECTED / non-actionable "errors" ── these are NOT code bugs, so
+       auto-reporting them just floods the log AND (worst of all) reporting a
+       FAILED upload re-enters here — when the upload keeps 429-ing that spins a
+       cascade that burns the per-IP rate limit and helps crash the Kindle. Bail
+       before any work: backend capacity/rate-limit responses (CF_IP/CF_DAILY/
+       CF_WRITE, 429/503), the old-Silk clipboard rejection, ordinary network
+       hiccups, PostgREST "no valid columns" (a backend-version mismatch shown to
+       the user already), and our own "Failed to upload bug report" message. */
+    var _emsg=String(message||'')+' '+String((errorObj&&errorObj.message)||'');
+    if(/Failed to upload bug report|CF_IP|CF_DAILY|CF_WRITE|rate-limit|daily-limit|write-limit|Too many requests|reached its daily free-tier|Write permission denied|Permission denied|no valid columns to update|NetworkError|Failed to fetch|Load failed|networkerror|ERR_NETWORK|The operation is insecure|AbortError|signal is aborted|The user aborted|HTTP 429|HTTP 503/i.test(_emsg))return;
     /* Ignore errors from THIRD-PARTY scripts we don't ship — chiefly the
        Cloudflare Web Analytics beacon (served as .../beacon.min.js/v<hash>),
        whose modern JS (optional chaining) old Kindle Silk can't parse, throwing
@@ -10384,6 +10424,10 @@ function _parseItemIds(text){
       }catch(_){}
     }
     if(!navigator.onLine){_enqueueLocalReport();return;}
+    /* Don't POST error reports while the backend is at its free-tier limit —
+       that just adds to the flood we're being limited for (and the report would
+       503 anyway). Stash locally; the drainer retries when the window clears. */
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(true)){_enqueueLocalReport();return;}
     try{
       if(typeof _sbActive==='function'&&_sbActive()){
         await _sbInsert('kh_errors',{id:entry.id,text:entry.text,date:entry.date});
