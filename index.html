@@ -3578,19 +3578,24 @@ function khEnhanceSelects(root){
     try{khEnhanceSelect(sels[i]);}catch(e){console.warn('select enhance failed',e);}
   }
 }
-/* Watch the whole document for newly added selects */
+/* Watch the whole document for newly added selects.
+   PERF: this fires on EVERY DOM mutation across the whole app (every view
+   build, every chat row appended, etc.). The old version ran
+   querySelectorAll('select') on each added subtree per mutation record — a
+   constant tax that got heavy during many-small-append renders (chat/lists).
+   Now it just notes that something was added and runs ONE
+   khEnhanceSelects(document.body) pass ~150ms after the burst settles.
+   Selects don't need instant enhancement, and the `:not([data-kh-selected])`
+   filter means the single scan only touches genuinely new selects. */
 (function watchSelects(){
   if(typeof MutationObserver==='undefined')return;
+  let _pend=null;
+  const scan=function(){_pend=null;try{khEnhanceSelects(document.body);}catch(e){}};
   const mo=new MutationObserver(muts=>{
-    for(let i=0;i<muts.length;i++){
-      const added=muts[i].addedNodes;
-      for(let j=0;j<added.length;j++){
-        const n=added[j];
-        if(n.nodeType!==1)continue;
-        if(n.tagName==='SELECT')khEnhanceSelect(n);
-        else if(n.querySelectorAll)khEnhanceSelects(n);
-      }
-    }
+    if(_pend)return;/* a scan is already scheduled — coalesce */
+    let hasAdd=false;
+    for(let i=0;i<muts.length;i++){if(muts[i].addedNodes&&muts[i].addedNodes.length){hasAdd=true;break;}}
+    if(hasAdd)_pend=setTimeout(scan,150);
   });
   if(document.body)mo.observe(document.body,{childList:true,subtree:true});
   else document.addEventListener('DOMContentLoaded',()=>mo.observe(document.body,{childList:true,subtree:true}));
@@ -37384,7 +37389,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
           radarWrap.appendChild(leg);
 
           /* Stop animation when view changes */
-          const _mo=new MutationObserver(()=>{if(!document.contains(cvs))stopAnim();});
+          const _mo=new MutationObserver(()=>{if(!document.contains(cvs)){stopAnim();_mo.disconnect();/* PERF: stop observing once the radar canvas is gone — else this body-subtree observer leaks forever */}});
           _mo.observe(document.body,{childList:true,subtree:true});
         })
         .catch(e=>{
@@ -52776,7 +52781,7 @@ worldclock:()=>{
     renderClocks();
     if(interval)clearInterval(interval);
     interval=setInterval(()=>{if(document.hidden)return;tickClocks();},1000);
-    const mo=new MutationObserver(()=>{if(!document.contains(v)){clearInterval(interval);}});
+    const mo=new MutationObserver(()=>{if(!document.contains(v)){clearInterval(interval);mo.disconnect();/* PERF: stop observing once the view is gone — else this body-subtree observer leaks and scans every future mutation forever */}});
     mo.observe(document.body,{childList:true,subtree:true});
   }
   render();return v;
