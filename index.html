@@ -236,6 +236,18 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
 }
 .card h2{font-size:10px;font-family:var(--ui-font);font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);}
 .card-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+/* ── Flexbox gap fallback for old WebKit (Kindle Silk) ──────────────────────
+   Silk ignores flex `gap`, cramming rows edge to edge. When the boot script's
+   feature-detection flags html.kh-no-flexgap, approximate gap with margins on
+   the SECOND-onward children (`*+*` = between children only, no outer padding).
+   Both margin-left and margin-top are set so it works for rows AND columns; the
+   cross-axis margin is absorbed by alignment. Applies ONLY on no-gap engines, so
+   modern screens keep real gap and never double-space. Attribute selector covers
+   the ~283 inline `gap:` uses; the class rules tune the common containers. */
+html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:6px}
+html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:6px}
+html.kh-no-flexgap .header-controls > * + *{margin-left:5px;margin-top:0}
+html.kh-no-flexgap nav .tab + .tab{margin-left:2px}
 
 /* ── Buttons — all meet 44px touch target ── */
 .btn{
@@ -1056,6 +1068,21 @@ body.launcher-ui .view{padding-bottom:80px;}
       /* Simple Mode always includes the lite perf layer (one button = both). */
       if(hints.sm)lowMem=true;
       if(lowMem)body.classList.add('kh-lite');
+    }catch(_){}
+    /* ── Flexbox `gap` fallback flag ── Old Kindle Silk WebKit ignores flex
+       `gap`, so hundreds of `display:flex;gap:Npx` rows render crammed edge to
+       edge. FEATURE-DETECT it (don't trust the UA): lay out two boxes with a gap
+       and see if the second actually shifts. If not, flag <html> so the CSS gap
+       fallback (margins) kicks in — modern screens keep real gap, untouched. */
+    try{
+      var _gt=document.createElement('div');
+      _gt.style.cssText='display:flex;gap:8px;position:absolute;left:-9999px;top:-9999px;visibility:hidden';
+      _gt.innerHTML='<b style="width:4px;height:4px;display:block"></b><b style="width:4px;height:4px;display:block"></b>';
+      (document.body||html).appendChild(_gt);
+      var _f=_gt.firstChild,_l=_gt.lastChild;
+      var _gapOk=_f&&_l&&((_l.offsetLeft-_f.offsetLeft)>=8);
+      if(_gt.parentNode)_gt.parentNode.removeChild(_gt);
+      if(!_gapOk)html.classList.add('kh-no-flexgap');
     }catch(_){}
   }catch(e){}
 })();
