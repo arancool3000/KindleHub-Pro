@@ -1798,6 +1798,12 @@ function _stateFingerprint(){
 function scheduleCloudSync(force=false){
   if(!S.authToken||!S.syncEnabled)return;
   _stateDirty=true;
+  /* Honour the documented contract that scheduling a sync marks the fingerprint
+     stale. Callers that mutate S then call scheduleCloudSync() WITHOUT save()
+     would otherwise be silently skipped by the egress short-circuit (the cached
+     _fpS still holds the pre-mutation hash). Only the cheap state hash is nulled;
+     the expensive localStorage hash stays cached. */
+  try{if(typeof _invalidateFpState==='function')_invalidateFpState();}catch(_){}
   if(_syncTimer)clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>{
     _syncTimer=null;
@@ -1885,7 +1891,7 @@ async function _doCloudSync(force){
     _stateDirty=wasDirty||_stateDirty;
   }catch(_){}
   const fp=_stateFingerprint();
-  if(fp===_lastSyncedHash){_stateDirty=false;return;}
+  if(!force&&fp===_lastSyncedHash){_stateDirty=false;return;}/* a FORCED sync ("Sync Now") must actually upload even if the fingerprint looks unchanged */
   try{
     await syncToCloud();
     _lastSyncedHash=fp;
@@ -12596,6 +12602,11 @@ function mergeCloudState(cloudState,opts){
      merges — other tabs share our localStorage already). */
   if(!opts.noLsBackup&&cloudState&&cloudState._lsBackup){
     try{_restoreLocalStorage(cloudState._lsBackup);}catch(_){}
+    /* _restoreLocalStorage writes under __khAutoSyncSilent, so the setItem
+       wrapper skips fingerprint invalidation — but the side-car DID change, so
+       recompute both hashes (else the merged superset can lag reaching cloud
+       and the post-merge re-render check can miss side-car-only changes). */
+    try{if(typeof _invalidateFp==='function')_invalidateFp();}catch(_){}
   }
   if(cloudState&&cloudState._lsBackup)delete cloudState._lsBackup;
   /* SECURITY: localFixes is executable JS run via new Function() at boot and is
@@ -42162,16 +42173,27 @@ feedback:()=>{
         clrBtn.onclick=async function(){
           if(!await kindleConfirm('Delete ALL cloud error logs? This cannot be undone.'))return;
           clrBtn.disabled=true;clrBtn.textContent='Clearing…';
+          /* Also wipe the LOCAL sources — else the panel keeps showing this
+             device's session errors and the retry buffer re-uploads queued
+             failures on the next report/boot, which read as "clear didn't stick". */
+          function _clearLocalErrs(){
+            try{if(window._khAutoErrors)window._khAutoErrors.length=0;}catch(_){}
+            try{localStorage.removeItem('kh_err_queue');}catch(_){}
+          }
           try{
             if(_sbActive()){
-              /* Admin delete — _sbHeaders sends the X-KH-Admin token and the worker
-                 now permits an admin to wipe kh_errors. Empty filter = clear all. */
-              await _sbDelete('kh_errors','');
+              /* Admin delete — _sbHeaders sends the X-KH-Admin token. Use an
+                 always-true filter (id != a sentinel that never exists) so it
+                 deletes every row AND works even where the backend refuses an
+                 UNFILTERED delete. This is the instant cloud wipe. */
+              await _sbDelete('kh_errors','id=neq.__kh_none__');
               try{await _masterWrite(function(doc){doc.autoErrors=[];});}catch(_){}
+              _clearLocalErrs();
               toast('Cloud error log cleared.');renderErrPanel();
               return;
             }
             await _masterWrite(function(doc){doc.autoErrors=[];});
+            _clearLocalErrs();
             toast('Error log cleared');renderErrPanel();
           }catch(e){
             clrBtn.disabled=false;clrBtn.textContent='Clear Cloud Error Log';
