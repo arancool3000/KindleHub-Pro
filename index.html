@@ -3161,9 +3161,12 @@ function loadVendorScript(src){
   return _khScriptPromises[src];
 }
 const qsa=(s,p)=>{try{return Array.from((p||document).querySelectorAll(s));}catch(e){return Array.prototype.slice.call((p||document).querySelectorAll(s));}};
+/* Hoisted once — el() runs hundreds of times per view build, so allocating a
+   fresh identical Set inside it was pure GC churn on every element created. */
+const _EL_PROPS=new Set(['readOnly','checked','disabled','selected','value','innerHTML','textContent','htmlFor']);
 function el(tag,attrs={},children=[]){
   const e=document.createElement(tag);
-  const PROPS=new Set(['readOnly','checked','disabled','selected','value','innerHTML','textContent','htmlFor']);
+  const PROPS=_EL_PROPS;
   for(const[k,v] of Object.entries(attrs)){
     if(k==='style'&&typeof v==='object')Object.assign(e.style,v);
     else if(k==='className')e.className=v;
@@ -14257,7 +14260,7 @@ function appendRelatedPages(viewId,viewEl){
   if(viewEl.querySelector('.kh-related-strip'))return;/* already added */
   const related=RELATED_PAGES[viewId];
   if(!related||!related.length)return;
-  const labelMap=Object.fromEntries(NAV_TABS.concat([['home','Home'],['settings','Settings']]));
+  const labelMap=(appendRelatedPages._lm||(appendRelatedPages._lm=Object.fromEntries(NAV_TABS.concat([['home','Home'],['settings','Settings']]))));/* NAV_TABS is static — compute the label map once, not on every navigation */
   const strip=document.createElement('div');
   strip.className='kh-related-strip';
   strip.style.cssText='margin:18px 0 6px;padding:12px 14px 14px;background:var(--card);border:var(--thin);border-radius:12px;box-shadow:var(--shadow);';
@@ -14538,7 +14541,7 @@ ON_SHOW.games=()=>{
   const c4=$('c4Restore'); if(c4) c4.onclick=()=>Connect4.restore();
 };
 try{qsa('.tab').filter(t=>t.closest('nav')).forEach(t=>t.addEventListener('click',function(){
-  try{qsa('.tab').filter(x=>x.closest('nav')).forEach(x=>x.classList.remove('active'));}catch(e){}
+  try{document.querySelectorAll('nav .tab.active').forEach(x=>x.classList.remove('active'));}catch(e){}/* was an all-tabs scan + .closest('nav') per tab on every navigation; only the active one(s) need clearing */
   this.classList.add('active');showView(this.dataset.view);
 }));}catch(e){
   var _nav=document.getElementById('mainNav');
@@ -59924,7 +59927,10 @@ BUILDERS.games=()=>{
      uniform: stretch each row to equal height and pin the Play+Leaderboard
      cluster to the bottom so the grid isn't ragged. */
   try{
-    v.querySelectorAll('div').forEach(d=>{const st=(d.getAttribute&&d.getAttribute('style'))||'';if(/grid-template-columns/.test(st))d.style.alignItems='stretch';});
+    /* Was: walk EVERY descendant div (~200) + regex-test each style attr. The
+       grid rows are the only ones with grid-template-columns, so a native
+       attribute selector matches exactly them (~5) with no JS loop/regex. */
+    v.querySelectorAll('[style*="grid-template-columns"]').forEach(d=>{d.style.alignItems='stretch';});
     v.querySelectorAll('.card').forEach(card=>{
       const pb=card.querySelector('[data-game]')||card.querySelector('[data-scores]');
       if(pb&&pb.parentNode===card&&!card.querySelector('.kh-scores-btn')){
