@@ -89,7 +89,7 @@
   --shadow-md:0 2px 8px rgba(0,0,0,.12),0 10px 28px rgba(0,0,0,.08);
   --btn-shadow:0 1px 3px rgba(0,0,0,.14);
   /* mobile-specific sizing */
-  --touch-min:44px;--header-h:52px;--nav-h:46px;
+  --touch-min:40px;--header-h:52px;--nav-h:46px;/* was 44 — tightened so buttons aren't oversized; 40px still clears the e-ink tap target */
 }
 body.dark{
   --bg:#0d0d0d;--fg:#f0f0f0;--muted:#888;--card:#1a1a1a;
@@ -278,7 +278,7 @@ html.kh-no-aspectratio .g2048-cell{width:70px;height:70px}
 .btn:active{opacity:0.6;}
 .btn.small{
   padding:0 12px;font-size:11px;
-  min-height:36px;border-radius:6px;
+  min-height:34px;border-radius:6px;
   box-shadow:none;font-weight:600;
 }
 .btn.primary{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);box-shadow:var(--btn-shadow);}
@@ -423,7 +423,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
   :root{
     --font-size:14px;
     --gap:10px;
-    --touch-min:46px;
+    --touch-min:40px;/* was 46 — this mobile/Kindle bump made every button the BIGGEST here; match the base so the Kindle isn't oversized */
     --header-h:54px;
     --nav-h:44px;
     --radius:12px;
@@ -443,7 +443,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
     font-size:12px;border-radius:8px;
   }
   .btn.small{
-    min-height:36px;padding:0 10px;
+    min-height:34px;padding:0 10px;
     font-size:11px;border-radius:6px;
   }
   .header-controls .btn.small{min-height:34px;padding:0 7px;font-size:8px;}
@@ -546,7 +546,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 }
 
 /* ── KindleHub Intelligence ── */
-.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:34px!important;letter-spacing:0.2px;}
+.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:32px!important;letter-spacing:0.2px;}
 .khi-spark{font-size:11px;opacity:0.8;margin-right:1px;}
 .khi-output{background:var(--highlight);border:var(--thin);border-radius:var(--radius);
   padding:10px 12px;font-size:12px;line-height:1.6;margin-top:8px;white-space:pre-wrap;}
@@ -599,14 +599,24 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
    compact so the page reads like a vintage device interface, not a
    modern phone app. */
 body.simple-ui{
-  background-color:#fff !important;
-  background-image:radial-gradient(rgba(0,0,0,0.5) 1px,transparent 1px) !important;
-  background-size:10px 10px;
   color:#000;
   --fg:#000;--bg:#fff;--card:#fff;--muted:#5a5a5a;
   --highlight:#f1f1f1;--accent:#000;--danger:#000;--success:#000;
   --shadow:3px 3px 0 #000;--shadow-md:4px 4px 0 #000;
   --thin:2px solid #000;--border:2px solid #000;--radius:4px;
+  /* A LOT more retro: the whole skin goes monospace (typewriter/terminal),
+     not just the decorative titles. Courier is one of the few fonts old Kindle
+     Silk reliably ships. */
+  --ui-font:"Courier New",Courier,monospace;
+  --body-font:"Courier New",Courier,monospace;
+}
+/* The forced dot-grid background applies ONLY when no photo wallpaper is set,
+   so a chosen wallpaper shows through in retro mode (applyWallpaper toggles
+   body.kh-wp-on). Was a hardcoded !important that always hid the wallpaper. */
+body.simple-ui:not(.kh-wp-on){
+  background-color:#fff !important;
+  background-image:radial-gradient(rgba(0,0,0,0.5) 1px,transparent 1px) !important;
+  background-size:10px 10px;
 }
 body.simple-ui #app{background:transparent;}
 body.simple-ui header{background:#fff;border-bottom:2px solid #000;box-shadow:none;}
@@ -648,6 +658,16 @@ body.simple-ui input,body.simple-ui textarea,body.simple-ui select{
 }
 body.simple-ui .toast{background:#000;color:#fff;border:2px solid #000;border-radius:4px;box-shadow:3px 3px 0 #fff,3px 3px 0 1px #000;}
 body.simple-ui .header-sub{color:#444;}
+/* Window title-bar chrome: turn each card's leading H2 into an old-GUI title
+   bar spanning the card edges. Uses --fg/--bg so it auto-inverts in retro
+   dark/sepia. Only a FIRST-CHILD h2 becomes a bar (cards whose h2 isn't first,
+   or that have none, are untouched — avoids overlap). Card padding is 16px. */
+body.simple-ui .card{overflow:hidden;}
+body.simple-ui .card>h2:first-child{
+  background:var(--fg);color:var(--bg);
+  margin:-16px -16px 12px -16px;padding:6px 12px;
+  font-family:var(--ui-font);letter-spacing:1px;font-size:10px;font-weight:700;text-transform:uppercase;
+}
 
 /* ── Retro-mode home grid — a boxy, print-shop "desktop" aesthetic ──
    Serif titles + monospace labels, chunky drop-shadows, framed app tiles
@@ -3820,10 +3840,13 @@ function notifyMsg(name,text,ms,msgId,groupCode){
     }catch(_){}
   };
   function _badge(){if(!badge)return;if(_unread>0){badge.style.display='flex';badge.textContent=_unread>9?'9+':String(_unread);}else{badge.style.display='none';}}
-  /* The bottom swipe-hint arrow is a TEACHING aid: show it while there are
-     unread notifications, or until the user first opens the tray (learns the
-     gesture). Once learned it stays hidden unless something new arrives. */
-  function _showHandle(){if(handle)handle.style.display=((_unread>0)||(!_learned&&(window._khNotifs||[]).length>0))?'flex':'none';}
+  /* The thin bottom handle is the ONLY visible way to open notifications, so it
+     must stay reachable. It used to hide itself after the first open (teach-then-
+     hide) — which meant that once you closed the tray it never came back until a
+     brand-new notification arrived, i.e. no way to reopen it. Now it stays
+     visible; the badge conveys unread count. (Was the "it goes and does not come
+     back" bug.) */
+  function _showHandle(){if(handle)handle.style.display='flex';}
   function _list(){
     if(!listEl)return;listEl.innerHTML='';
     var a=window._khNotifs||[];
@@ -3896,8 +3919,8 @@ function notifyMsg(name,text,ms,msgId,groupCode){
   function _close(){isOpen=false;if(panel)panel.style.transform='translateY(110%)';if(backdrop){backdrop.style.pointerEvents='none';backdrop.style.opacity='0';}_showHandle();}
   window._khOpenNotifs=_open;
 
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',_build);else setTimeout(_build,400);
-  setTimeout(function(){try{if((window._khNotifs||[]).length){_build();_showHandle();}}catch(_){}},900);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){_build();_showHandle();});else setTimeout(function(){_build();_showHandle();},400);
+  setTimeout(function(){try{_build();_showHandle();}catch(_){}},900);/* keep the handle reachable even with zero notifications */
 })();
 
 /* ── KindleHub Mobile OS ──────────────────────────────────────────────── */
@@ -14174,6 +14197,10 @@ function applyWallpaper(key){
 
   const isDark=body.classList.contains('dark');
   const isPhoto=wp.css.includes('unsplash');
+  /* Let a photo wallpaper show through in retro/simple mode: the forced retro
+     dot-grid background is scoped body.simple-ui:not(.kh-wp-on), so flag the
+     body when a real photo is chosen. */
+  try{body.classList.toggle('kh-wp-on',isPhoto);}catch(_){}
   const hdr=document.querySelector('header');
   const nav=document.querySelector('nav');
 
@@ -14261,36 +14288,28 @@ function appendRelatedPages(viewId,viewEl){
   const related=RELATED_PAGES[viewId];
   if(!related||!related.length)return;
   const labelMap=(appendRelatedPages._lm||(appendRelatedPages._lm=Object.fromEntries(NAV_TABS.concat([['home','Home'],['settings','Settings']]))));/* NAV_TABS is static — compute the label map once, not on every navigation */
+  /* Compact: was a shadowed card with an uppercase header, 6 big buttons AND a
+     redundant "Jump anywhere: Home · Settings" row on the bottom of every page
+     — visually heavy. Now just a hairline-divided row of small link-chips. */
   const strip=document.createElement('div');
   strip.className='kh-related-strip';
-  strip.style.cssText='margin:18px 0 6px;padding:12px 14px 14px;background:var(--card);border:var(--thin);border-radius:12px;box-shadow:var(--shadow);';
-  const hdr=document.createElement('div');
-  hdr.style.cssText='font-size:10px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;font-family:var(--ui-font);';
-  hdr.textContent='Related Pages';
+  strip.style.cssText='margin:16px 0 2px;padding:8px 0 0;border-top:var(--thin);display:flex;flex-wrap:wrap;gap:6px;align-items:center;';
+  const hdr=document.createElement('span');
+  hdr.style.cssText='font-size:9px;font-weight:800;letter-spacing:0.6px;text-transform:uppercase;color:var(--muted);font-family:var(--ui-font);margin-right:2px;';
+  hdr.textContent='Related:';
   strip.appendChild(hdr);
-  const row=document.createElement('div');
-  row.style.cssText='display:flex;gap:6px;flex-wrap:wrap;';
   related.forEach(v=>{
     const lbl=labelMap[v]||v;
     const a=document.createElement('button');
     a.className='btn small';
-    a.style.cssText='font-size:11px;padding:0 12px;min-height:34px;font-weight:600;';
+    a.style.cssText='font-size:10.5px;padding:0 9px;min-height:28px;font-weight:600;';
     a.textContent=lbl;
     a.onclick=()=>{
       const t=document.querySelector('nav .tab[data-view="'+v+'"]');
       if(t){t.style.display='';t.click();}else if(typeof showView==='function'){showView(v);}
     };
-    row.appendChild(a);
+    strip.appendChild(a);
   });
-  strip.appendChild(row);
-  /* Quick All-Apps jump for full interconnectivity */
-  const allRow=document.createElement('div');
-  allRow.style.cssText='margin-top:10px;padding-top:10px;border-top:var(--thin);font-size:10px;color:var(--muted);';
-  allRow.innerHTML='Jump anywhere: <a href="#" data-kh-jump="home" style="color:var(--fg);text-decoration:underline;font-weight:700;">Home</a> · <a href="#" data-kh-jump="settings" style="color:var(--fg);text-decoration:underline;font-weight:700;">Settings</a>';
-  allRow.querySelectorAll('a[data-kh-jump]').forEach(a=>{
-    a.onclick=ev=>{ev.preventDefault();const view=a.getAttribute('data-kh-jump');const t=document.querySelector('nav .tab[data-view="'+view+'"]');if(t)t.click();else showView(view);};
-  });
-  strip.appendChild(allRow);
   viewEl.appendChild(strip);
 }
 /* Views in this set are torn down and rebuilt on every navigation back to
@@ -21063,7 +21082,16 @@ const SetGame=(()=>{
   const COLORS=[{hex:'#cc2222',ltr:'R'},{hex:'#178a17',ltr:'G'},{hex:'#7a2fb0',ltr:'P'}];
   const OPS=[1,0.4,0];
   const TARGET=6;
-  let game=null,aiTimer=null,_sub=null;
+  /* AI difficulty: reaction window (min + random range, ms), a human-like
+     "miss" chance (skips a spotted set that round), and a hint-to-the-player
+     flag on Easy. Hard reacts fast and never misses. */
+  const DIFF={
+    easy:{min:12000,rng:8000,miss:0.4,name:'Easy',desc:'Slow to react, often misses. Great for learning.'},
+    medium:{min:6500,rng:5000,miss:0.12,name:'Medium',desc:'A steady opponent — a fair race.'},
+    hard:{min:3200,rng:2800,miss:0,name:'Hard',desc:'Fast and relentless — never misses a set.'}
+  };
+  let game=null,aiTimer=null,_sub=null,_buzzTimer=null;
+  function mk(label,sub,fn){var b=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',background:'var(--card)'}});b.appendChild(txt('div',label,{style:{fontWeight:'800',fontSize:'15px'}}));if(sub)b.appendChild(txt('div',sub,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px',lineHeight:'1.4'}}));b.onclick=fn;return b;}
   function _best(){return (S.games&&S.games.set&&S.games.set.best)||0;}
   function decode(id){return {id:id,n:Math.floor(id/27)%3,c:Math.floor(id/9)%3,s:Math.floor(id/3)%3,f:id%3};}
   function isSet(a,b,c){return ((a.n+b.n+c.n)%3===0)&&((a.c+b.c+c.c)%3===0)&&((a.s+b.s+c.s)%3===0)&&((a.f+b.f+c.f)%3===0);}
@@ -21078,7 +21106,21 @@ const SetGame=(()=>{
   function _noMore(){return !findSet(game.board)&&game.deck.length===0;}
   function stopNet(){try{if(_sub&&_sub.close)_sub.close();}catch(_){}_sub=null;}
   function stopAi(){if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}}
-  function stop(){stopAi();stopNet();game=null;}
+  function stopBuzz(){if(_buzzTimer){clearTimeout(_buzzTimer);_buzzTimer=null;}}
+  /* Local-2P fair play: once you buzz you have 7s to claim a set, else you
+     forfeit the turn (-1) and the board frees up for the other player. Stops
+     one player buzzing and then stalling on the shared board. */
+  function startBuzz(who,label){
+    stopBuzz();
+    game.claimer=who;game.sel=[];game.buzzDeadline=Date.now()+7000;game.msg=label+' — pick 3 cards (7s)';
+    _buzzTimer=setTimeout(function(){
+      if(!game||game.over||game.claimer!==who){_buzzTimer=null;return;}
+      game.scores[who]=Math.max(0,game.scores[who]-1);game.claimer=null;game.sel=[];game.buzzDeadline=0;
+      game.msg=label+' ran out of time — -1';_buzzTimer=null;render();
+    },7000);
+    render();
+  }
+  function stop(){stopAi();stopBuzz();stopNet();game=null;}
 
   function start(){stopAi();stopNet();enterImmersive('Set','');var ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;showMenu();}
   function showMenu(){
@@ -21086,9 +21128,8 @@ const SetGame=(()=>{
     var box=el('div',{style:{maxWidth:'340px',margin:'14px auto'}});
     box.appendChild(txt('h2','Set',{style:{textAlign:'center',margin:'0 0 4px'}}));
     box.appendChild(txt('p','Find a Set of 3 cards where each feature — count, colour, shape and shading — is either ALL SAME or ALL DIFFERENT across the three. Tap 3 cards to claim it.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 12px',lineHeight:'1.5',textAlign:'center'}}));
-    function mk(label,sub,fn){var b=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',background:'var(--card)'}});b.appendChild(txt('div',label,{style:{fontWeight:'800',fontSize:'15px'}}));if(sub)b.appendChild(txt('div',sub,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px',lineHeight:'1.4'}}));b.onclick=fn;return b;}
-    box.appendChild(mk('vs AI','Race a computer opponent to spot sets first.',function(){begin('ai');}));
-    box.appendChild(mk('2 Players','On this device — tap P1 or P2 to buzz in, then claim.',function(){begin('local2');}));
+    box.appendChild(mk('vs AI','Race a computer — choose Easy, Medium or Hard.',function(){showAiMenu();}));
+    box.appendChild(mk('2 Players','On this device — buzz in, then you have 7s to claim.',function(){begin('local2');}));
     box.appendChild(mk('Play Online (Ultra)','Race a friend on another device — shared board.',function(){
       if(typeof KH_MP==='undefined'||!KH_MP.openLobby){if(typeof toast==='function')toast('Online multiplayer is unavailable right now.');return;}
       KH_MP.openLobby({gameName:'set',onConnected:function(s,opp){begin('online',s,opp);}});
@@ -21096,9 +21137,20 @@ const SetGame=(()=>{
     box.appendChild(txt('div','Best (sets in a game): '+_best(),{style:{textAlign:'center',fontSize:'11px',color:'var(--muted)',marginTop:'6px'}}));
     immersiveContent.appendChild(box);
   }
-  function begin(mode,session,opp){
-    stopAi();stopNet();
+  function showAiMenu(){
+    immersiveContent.innerHTML='';
+    var box=el('div',{style:{maxWidth:'340px',margin:'14px auto'}});
+    box.appendChild(txt('h2','vs AI — difficulty',{style:{textAlign:'center',margin:'0 0 4px'}}));
+    box.appendChild(txt('p','First to '+TARGET+' sets wins. The AI won’t snatch a set while you’re mid-pick.',{style:{fontSize:'11px',color:'var(--muted)',margin:'0 0 12px',textAlign:'center',lineHeight:'1.5'}}));
+    var last=(S.games&&S.games.set&&S.games.set.diff)||'medium';
+    ['easy','medium','hard'].forEach(function(k){var d=DIFF[k];box.appendChild(mk(d.name+(k===last?'  ·  last played':''),d.desc,function(){if(!S.games)S.games={};if(!S.games.set)S.games.set={};S.games.set.diff=k;try{save();}catch(_){}begin('ai',null,null,k);}));});
+    var back=txt('button','Back',{className:'btn small',style:{marginTop:'4px'}});back.onclick=showMenu;box.appendChild(back);
+    immersiveContent.appendChild(box);
+  }
+  function begin(mode,session,opp,diff){
+    stopAi();stopBuzz();stopNet();
     game={mode:mode,board:[],deck:newDeck(),sel:[],scores:[0,0],claimer:null,over:false,winner:-1,msg:'',_dl:0,
+          diff:diff||'medium',lockUntil:0,buzzDeadline:0,
           net:session||null,myIndex:0,isHost:true,oppName:(opp&&typeof _dispName==='function'?_dispName(opp):(opp||'Opponent'))};
     if(mode==='online'&&session){
       game.myIndex=(session.myColor==='black')?1:0;game.isHost=(game.myIndex===0);
@@ -21108,15 +21160,23 @@ const SetGame=(()=>{
     }else{replenish();if(mode==='ai')scheduleAi();}
     render();
   }
-  function scheduleAi(){stopAi();aiTimer=setTimeout(aiTick,6000+Math.floor(Math.random()*5000));}
+  function scheduleAi(){stopAi();var d=DIFF[game&&game.diff]||DIFF.medium;aiTimer=setTimeout(aiTick,d.min+Math.floor(Math.random()*d.rng));}
   function aiTick(){
     if(!game||game.over||game.mode!=='ai')return;
+    var d=DIFF[game.diff]||DIFF.medium;
+    /* FAIR PLAY: never grab a set while the human is actively selecting cards —
+       give a short grace and re-check, so the board can't reshuffle out from
+       under your pick. */
+    if(game.sel.length>0){aiTimer=setTimeout(aiTick,1400);return;}
+    /* Human-like: Easy/Medium sometimes miss the set they spotted this round. */
+    if(Math.random()<d.miss){scheduleAi();return;}
     var f=findSet(game.board);
     if(f){var si=f.slice().sort(function(a,c){return c-a;});si.forEach(function(i){game.board.splice(i,1);});replenish();game.scores[1]++;game.sel=[];game.msg='The AI found a set!';if(endCheck()){render();return;}render();}
     scheduleAi();
   }
   function onCardTap(idx){
     if(!game||game.over)return;
+    if(game.lockUntil&&Date.now()<game.lockUntil)return;/* fair play: brief lock after a wrong claim */
     if(game.mode==='local2'&&game.claimer==null){game.msg='Tap P1 or P2 to buzz in first';render();return;}
     var at=game.sel.indexOf(idx);
     if(at>=0){game.sel.splice(at,1);render();return;}
@@ -21128,8 +21188,15 @@ const SetGame=(()=>{
     var b=game.board,s=game.sel;
     if(game.mode==='online'){var ids=[b[s[0]].id,b[s[1]].id,b[s[2]].id];if(game.isHost)hostClaim(ids,0);else netSend({t:'CL',ids:ids,by:game.myIndex});game.sel=[];render();return;}
     var who=(game.mode==='local2')?game.claimer:0;
+    stopBuzz();game.buzzDeadline=0;
     if(isSet(b[s[0]],b[s[1]],b[s[2]])){var si=s.slice().sort(function(a,c){return c-a;});si.forEach(function(i){b.splice(i,1);});replenish();game.scores[who]++;game.msg=(game.mode==='ai')?'Set! +1':((who===0?'Player 1':'Player 2')+' got it! +1');}
-    else{game.scores[who]=Math.max(0,game.scores[who]-1);game.msg='Not a set — -1';}
+    else{
+      game.scores[who]=Math.max(0,game.scores[who]-1);game.msg='Not a set — -1';
+      /* fair play: a brief lock after a wrong claim so you can't brute-force by
+         tapping through combinations. */
+      game.lockUntil=Date.now()+1300;
+      setTimeout(function(){if(game&&!game.over&&game.msg==='Not a set — -1'){game.msg='';render();}},1400);
+    }
     game.sel=[];game.claimer=null;endCheck();render();
   }
   function endCheck(){
@@ -21159,35 +21226,44 @@ const SetGame=(()=>{
     else if((p.t==='JOIN'||p.type==='JOIN')&&game.isHost)netSend(_state());
   }
   function cardSvg(card){
-    var C=COLORS[card.c],op=OPS[card.f],n=card.n+1,inner='',gap=20,startY=(70-n*gap)/2+gap/2,i;
+    /* Better graphics: shading is now SOLID / real diagonal-HATCHING / OUTLINE
+       (the authentic Set look) instead of a washed-out opacity fill, shapes are
+       bigger with thicker rounded strokes, and the R/G/P letter stays for
+       greyscale e-ink colour redundancy. */
+    var C=COLORS[card.c],n=card.n+1,inner='',W=58,H=76,cx=W/2,gap=21,startY=(H-6-n*gap)/2+gap/2+6,i;
+    var pid='shx'+card.c;/* one hatch pattern per colour */
+    var fill=(card.f===0)?C.hex:(card.f===1?'url(#'+pid+')':'none');
+    var defs='<defs><pattern id="'+pid+'" patternUnits="userSpaceOnUse" width="4" height="4" patternTransform="rotate(45)"><line x1="1" y1="0" x2="1" y2="4" stroke="'+C.hex+'" stroke-width="1.7"/></pattern></defs>';
     for(i=0;i<n;i++){
-      var cy=startY+i*gap,fill=(op>0)?C.hex:'none',fo=(op>0)?op:1;
-      if(card.s===0)inner+='<polygon points="27,'+(cy-8)+' 43,'+cy+' 27,'+(cy+8)+' 11,'+cy+'" fill="'+fill+'" fill-opacity="'+fo+'" stroke="'+C.hex+'" stroke-width="1.8"/>';
-      else if(card.s===1)inner+='<ellipse cx="27" cy="'+cy+'" rx="16" ry="8" fill="'+fill+'" fill-opacity="'+fo+'" stroke="'+C.hex+'" stroke-width="1.8"/>';
-      else inner+='<polygon points="27,'+(cy-8.5)+' 43,'+(cy+8)+' 11,'+(cy+8)+'" fill="'+fill+'" fill-opacity="'+fo+'" stroke="'+C.hex+'" stroke-width="1.8"/>';
+      var cy=startY+i*gap;
+      if(card.s===0)inner+='<polygon points="'+cx+','+(cy-9)+' '+(cx+18)+','+cy+' '+cx+','+(cy+9)+' '+(cx-18)+','+cy+'" fill="'+fill+'" stroke="'+C.hex+'" stroke-width="2.3" stroke-linejoin="round"/>';
+      else if(card.s===1)inner+='<ellipse cx="'+cx+'" cy="'+cy+'" rx="18" ry="9" fill="'+fill+'" stroke="'+C.hex+'" stroke-width="2.3"/>';
+      else inner+='<polygon points="'+cx+','+(cy-10)+' '+(cx+17)+','+(cy+8.5)+' '+(cx-17)+','+(cy+8.5)+'" fill="'+fill+'" stroke="'+C.hex+'" stroke-width="2.3" stroke-linejoin="round"/>';
     }
-    return '<svg viewBox="0 0 54 70" width="100%" height="64" style="display:block"><text x="3" y="13" font-size="11" font-weight="900" fill="'+C.hex+'" font-family="sans-serif" stroke="none">'+C.ltr+'</text>'+inner+'</svg>';
+    return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="72" style="display:block">'+defs+'<text x="4" y="14" font-size="12" font-weight="900" fill="'+C.hex+'" font-family="sans-serif" stroke="none">'+C.ltr+'</text>'+inner+'</svg>';
   }
   function render(){
     if(!game)return;
     immersiveContent.innerHTML='';
     var wrap=el('div',{style:{maxWidth:'440px',margin:'0 auto',padding:'4px 6px 12px'}});
     var hud=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',flexWrap:'wrap'}});
-    if(game.mode==='ai')hud.appendChild(txt('div','You '+game.scores[0]+' — '+game.scores[1]+' AI',{style:{fontWeight:'800',fontSize:'14px'}}));
+    if(game.mode==='ai')hud.appendChild(txt('div','You '+game.scores[0]+' — '+game.scores[1]+' AI ('+((DIFF[game.diff]||DIFF.medium).name)+')',{style:{fontWeight:'800',fontSize:'14px'}}));
     else if(game.mode==='local2')hud.appendChild(txt('div','P1 '+game.scores[0]+' — '+game.scores[1]+' P2',{style:{fontWeight:'800',fontSize:'14px'}}));
     else hud.appendChild(txt('div','You '+game.scores[game.myIndex]+' — '+game.scores[1-game.myIndex]+' '+game.oppName,{style:{fontWeight:'800',fontSize:'13px'}}));
     hud.appendChild(txt('div','Deck '+((game.mode==='online'&&!game.isHost)?(game._dl||0):game.deck.length),{style:{fontSize:'11px',color:'var(--muted)',marginLeft:'auto'}}));
     wrap.appendChild(hud);
     if(game.mode==='local2'&&!game.over){
       var buzz=el('div',{style:{display:'flex',gap:'8px',marginBottom:'6px'}});
-      [['P1',0],['P2',1]].forEach(function(pr){var bb=txt('button','Buzz '+pr[0],{className:'btn small'+(game.claimer===pr[1]?' primary':''),style:{flex:'1'}});bb.onclick=function(){game.claimer=pr[1];game.sel=[];game.msg=pr[0]+' — pick 3 cards';render();};buzz.appendChild(bb);});
+      [['P1',0],['P2',1]].forEach(function(pr){var bb=txt('button','Buzz '+pr[0],{className:'btn small'+(game.claimer===pr[1]?' primary':''),style:{flex:'1'}});bb.onclick=function(){if(game.claimer==null)startBuzz(pr[1],pr[0]);};buzz.appendChild(bb);});
       wrap.appendChild(buzz);
     }
     if(game.msg)wrap.appendChild(txt('div',game.msg,{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px'}}));
-    var grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'6px'}});
+    var grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}});
     game.board.forEach(function(card,idx){
-      var cell=el('div',{style:{border:(game.sel.indexOf(idx)>=0?'2px solid var(--accent)':'var(--thin)'),borderRadius:'8px',background:'var(--card)',padding:'2px',cursor:game.over?'default':'pointer',minHeight:'64px'}});
+      var isSel=game.sel.indexOf(idx)>=0;
+      var cell=el('div',{style:{border:isSel?'3px solid var(--accent)':'var(--thin)',borderRadius:'10px',background:isSel?'var(--highlight)':'var(--card)',boxShadow:isSel?'0 0 0 1px var(--accent)':'var(--shadow)',padding:'4px',cursor:game.over?'default':'pointer',minHeight:'76px',position:'relative'}});
       cell.innerHTML=cardSvg(card);
+      if(isSel){var chk=el('div',{style:{position:'absolute',top:'2px',right:'5px',fontSize:'13px',fontWeight:'900',color:'var(--accent)',lineHeight:'1'}});chk.textContent='✓';cell.appendChild(chk);}
       if(!game.over)cell.onclick=function(){onCardTap(idx);};
       grid.appendChild(cell);
     });
@@ -26688,8 +26764,12 @@ function renderBooks(){
   else if(sortV==='rating')books.sort((a,b2)=>(b2.rating||0)-(a.rating||0));
   else if(sortV==='az')books.sort((a,b2)=>a.title.localeCompare(b2.title));
   else if(sortV==='status'){const ord={'reading':0,'to-read':1,'finished':2};books.sort((a,b2)=>(ord[a.status||'to-read']||0)-(ord[b2.status||'to-read']||0));}
-  books.forEach(b=>{
-    const actualIdx=S.books.indexOf(b);
+  /* Object→index map once (was S.books.indexOf per row = O(n²)) + a render cap
+     so a big library can't freeze a low-RAM Kindle. */
+  const _bIdx=new Map();S.books.forEach((x,i)=>{_bIdx.set(x,i);});
+  const _bTotal=books.length;renderBooks._shown=renderBooks._shown||40;
+  books.slice(0,renderBooks._shown).forEach(b=>{
+    const actualIdx=_bIdx.has(b)?_bIdx.get(b):S.books.indexOf(b);
     const d=el('div',{className:'book-item'});
     const info=el('div',{style:{flex:'1',minWidth:0}});
     info.appendChild(txt('div',b.title,{style:{fontWeight:'700',fontSize:'14px'}}));
@@ -26739,6 +26819,11 @@ function renderBooks(){
     }
     d.appendChild(right);listEl.appendChild(d);
   });
+  if(_bTotal>renderBooks._shown){
+    const more=txt('button','Show more ('+(_bTotal-renderBooks._shown)+')',{className:'btn small',style:{display:'block',margin:'8px auto 0'}});
+    more.onclick=function(){renderBooks._shown+=40;renderBooks();};
+    listEl.appendChild(more);
+  }
 }
 
 let pendingCards=[];
@@ -46780,7 +46865,7 @@ rss:()=>{
     }
 
     const artDiv=el('div',{className:'rss-articles'});
-    filtered.slice(0,100).forEach(item=>{
+    filtered.slice(0,30).forEach(item=>{
       const id=artId(item);
       const isRead=(S.rssRead||{})[id];
       const isSaved=(S.rssSaved||[]).some(s=>s.id===id);
@@ -47471,6 +47556,7 @@ notes:()=>{
      Export selected / Cancel". Lets the user clean out 20+ notes in
      one go instead of clicking each Delete button individually. */
   let _bulkMode=false;
+  let _notesShown=50;/* cap the notes rendered at once (low-RAM Kindle) — "Show more" raises it */
   const _bulkSet=new Set();/* selected note IDs */
   const bulkBtn=txt('button','Select…',{className:'btn small',style:{fontSize:'11px'}});
   bulkBtn.onclick=()=>{
@@ -47699,8 +47785,15 @@ notes:()=>{
 
     if(!notes.length){listEl.appendChild(txt('div',ft||tag?'No notes match your search.':'No notes yet. Write your first note above.',{style:{color:'var(--muted)',fontSize:'13px',padding:'12px 0'}}));return;}
 
-    notes.forEach(n=>{
-      const realIdx=S.notes.findIndex(x=>x.id===n.id||(x.date===n.date&&x.text===n.text));
+    /* Build an object→index map ONCE — was S.notes.findIndex per card (O(n²) →
+       thousands of comparisons for a heavy note-taker). */
+    const _nIdx=new Map();(S.notes||[]).forEach((x,i)=>{_nIdx.set(x,i);});
+    /* Cap how many notes render at once so a big library can't freeze a
+       low-RAM Kindle; a "Show more" reveals the next batch. */
+    const _noteTotal=notes.length;
+    const _noteView=notes.slice(0,_notesShown);
+    _noteView.forEach(n=>{
+      const realIdx=_nIdx.has(n)?_nIdx.get(n):S.notes.indexOf(n);
       const card=el('div',{className:'card',style:{marginBottom:'8px',borderLeft:n.pinned?'3px solid var(--fg)':'',background:_bulkMode&&_bulkSet.has(n.id)?'var(--highlight)':''}});
 
       /* Header row — bulk checkbox + smart date + reading-time + actions */
@@ -47779,6 +47872,11 @@ notes:()=>{
 
       listEl.appendChild(card);
     });
+    if(_noteTotal>_notesShown){
+      const more=txt('button','Show more ('+(_noteTotal-_notesShown)+')',{className:'btn small',style:{display:'block',margin:'8px auto 0'}});
+      more.onclick=function(){_notesShown+=50;renderList();};
+      listEl.appendChild(more);
+    }
   }
 
   searchInp.oninput=khDebounce(renderList,180);
@@ -49066,12 +49164,18 @@ imagesearch:()=>{
     items.forEach(function(im){
       const thumb=im.thumbnail||im.url;if(!thumb)return;
       const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'6px',background:'var(--card)',border:'var(--thin)',cursor:'pointer'}});
-      const img=new Image();img.alt=im.title||'image';img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+      const img=new Image();img.alt=im.title||'image';img.loading='lazy';img.decoding='async';/* stop off-screen bitmaps decoding eagerly on newer engines (no-op on Silk) */
+      img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
       img.onerror=function(){cell.style.display='none';};
       img.src=thumb;cell.appendChild(img);
       cell.onclick=function(){_openImage(im);};
       grid.appendChild(cell);
     });
+    /* Decoded bitmaps are the single heaviest thing a low-RAM Kindle holds, and
+       "Load more" APPENDS. Drop the oldest cells so the live grid stays bounded
+       (was unbounded → freeze after a few Load-mores). */
+    var IMG_CAP=48;while(grid.children.length>IMG_CAP)grid.removeChild(grid.firstChild);
+    Array.prototype.slice.call(v.querySelectorAll('.imgMore')).forEach(function(bn){bn.remove();});/* don't stack Load-more buttons */
     if(items.length>=12){
       const more=txt('button','Load more',{className:'btn small imgMore',style:{display:'block',margin:'12px auto 0'}});
       more.onclick=function(){run(_q,_page+1);};
@@ -52005,7 +52109,7 @@ cookbook:()=>{
 
   function mealCard(m){
     const card=el('div',{className:'ckb-card'});
-    const img=el('img',{className:'ckb-thumb',src:(m.strMealThumb||'')+'/preview',alt:''});
+    const img=el('img',{className:'ckb-thumb',src:(m.strMealThumb||'')+'/preview',alt:'',loading:'lazy',decoding:'async'});
     img.onerror=()=>{img.src=m.strMealThumb||'';img.onerror=null;};
     const info=el('div',{className:'ckb-card-info'});
     info.appendChild(txt('div',m.strMeal,{className:'ckb-card-title'}));
@@ -52231,10 +52335,10 @@ cookbook:()=>{
           const r2=await fetch('https://www.themealdb.com/api/json/v1/1/filter.php?i='+encodeURIComponent(q));
           const d2=await r2.json();
           if(!d2.meals){showError('No recipes found for "'+q+'". Try another term.');return;}
-          d2.meals.slice(0,40).forEach(m=>results.appendChild(mealCard(m)));
+          d2.meals.slice(0,18).forEach(m=>results.appendChild(mealCard(m)));
           return;
         }
-        d.meals.slice(0,40).forEach(m=>results.appendChild(mealCard(m)));
+        d.meals.slice(0,18).forEach(m=>results.appendChild(mealCard(m)));
       }catch(e){showError('Network error — check your connection.');}
     }
 
@@ -52250,7 +52354,7 @@ cookbook:()=>{
         const hit=cache[cat];
         if(hit&&Array.isArray(hit.meals)&&hit.meals.length){
           results.innerHTML='';
-          hit.meals.slice(0,40).forEach(m=>results.appendChild(mealCard(m)));
+          hit.meals.slice(0,18).forEach(m=>results.appendChild(mealCard(m)));
           painted=true;
         }
       }catch(_){}
