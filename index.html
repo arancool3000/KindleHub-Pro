@@ -21342,7 +21342,7 @@ const SetGame=(()=>{
     wrap.appendChild(grid);
     if(game.over){var res=(game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!')));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
     var ctr=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',justifyContent:'center'}});
-    var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){showMenu();};ctr.appendChild(ng);
+    var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){stopAi();stopBuzz();stopNet();showMenu();};ctr.appendChild(ng);/* clear pending AI/buzz timers first — else a stale timer fires on the menu and replaces it with a self-playing board */
     wrap.appendChild(ctr);
     immersiveContent.appendChild(wrap);
   }
@@ -60446,6 +60446,7 @@ BUILDERS.games=()=>{
 function _initCandyCrush(){if(window.CandyCrush)return;
 window.CandyCrush=(()=>{
   const COLS=8,ROWS=8;
+  let _ccStopped=false;/* set on exit — bail the async cascade + its overlays so nothing paints after you leave the game */
 
   // Base gems
   const BASE_GEMS=[
@@ -60863,6 +60864,7 @@ window.CandyCrush=(()=>{
   }
 
   function showLevelComplete(){
+    if(_ccStopped)return;/* left the game mid-cascade — don't drop a full-screen overlay over whatever's on screen now */
     const win=document.createElement('div');
     win.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.82);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:600000;gap:10px;padding:20px;box-sizing:border-box;';
     const box=document.createElement('div');
@@ -61030,11 +61032,13 @@ window.CandyCrush=(()=>{
 
   return{
     start(){
+      _ccStopped=false;
       score=0;level=1;levelScore=0;combo=0;selected=null;animating=false;gameOver=false;
       upgrades={bonusMoves:0,scoreMult:1,startBombs:0,startWilds:0};
       const def=getLevelDef(1);moves=def.moves;
       initBoard();buildUI();
-    }
+    },
+    stop(){_ccStopped=true;}
   };
 })();
 }
