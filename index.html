@@ -8373,7 +8373,25 @@ var _KH_PAGE_DESC={
   mail:'Your KindleHub inbox.',
   rss:'News headlines and the Kindle Gazette.',
   pet:'Adopt and raise a virtual pet.',
-  starmap:'A live sky map of stars and planets.'
+  starmap:'A live sky map of stars and planets.',
+  /* Extra "how it works" lines so the tour teaches even auto-added pages. */
+  sports:'Live scores: pick a league, walk the date bar for past or upcoming games, and tap a game for team stats and player lines.',
+  imagesearch:'Search the web for images — type a term and tap any thumbnail to view it full-size.',
+  animals:'A zoo field guide: browse by class or search, then tap an animal for photos, stats and fun facts.',
+  unitconv:'Convert units — pick a category, type a value, and it converts instantly. Tap Swap to reverse.',
+  tipcalc:'Split a bill: enter the amount, pick a tip %, set the number of people, and it shows tip, total and each share.',
+  dictionary:'Look up any word for its meaning, pronunciation and examples.',
+  periodic:'The full periodic table — tap any element for its detailed profile.',
+  sleeplog:'Log your sleep each night and watch your patterns and averages build up over time.',
+  cipher:'Encode and decode secret messages with classic ciphers.',
+  translate:'Translate text between languages — type on one side, read the translation on the other.',
+  breathe:'Guided breathing exercises — follow the on-screen pacer to relax or focus.',
+  formulas:'A searchable library of physics, maths and chemistry formulas, each with a built-in calculator.',
+  science:'The periodic table plus a formula library — tap anything to explore or calculate.',
+  tools:'A hub of small utilities: unit converter, timers, word count, QR codes and more.',
+  kanban:'A To-Do board — drag cards between To Do, Doing and Done; it saves and syncs automatically.',
+  stocks:'Track stocks and crypto — add tickers to your watchlist and see live prices and charts.',
+  maps:'Search any place and explore it on an interactive map, with nearby points of interest.'
 };
 function _khOtherStorePages(){
   var out=[],known={},perm={home:1,settings:1,appstore:1};
@@ -31893,7 +31911,7 @@ home:()=>{
   /* quote and flashcards live inside the today card — they need today to be on */
   const CHILDREN_OF_TODAY=['quote','flashcards'];
   const btnMap={};
-  [['welcome','Welcome & Nav'],['weather','Weather Widget'],['goal','Daily Goal'],['countdown','Countdown'],['wotd','Word of the Day'],['stats','Quick Stats'],['lastplayed','Last Played'],['ai','AI Status'],['today','Today Card'],['flashcards','  > Flashcards Due'],['quote','  > Quote of the Day'],['briefing','Daily Briefing'],['khi','✦ Intelligence Brief']].forEach(([key,label])=>{
+  [['welcome','Welcome & Nav'],['ultra','KindleHub Ultra'],['weather','Weather Widget'],['goal','Daily Goal'],['countdown','Countdown'],['wotd','Word of the Day'],['stats','Quick Stats'],['lastplayed','Last Played'],['ai','AI Status'],['today','Today Card'],['flashcards','  > Flashcards Due'],['quote','  > Quote of the Day'],['briefing','Daily Briefing'],['khi','✦ Intelligence Brief']].forEach(([key,label])=>{
     const isChild=CHILDREN_OF_TODAY.includes(key);
     const todayOff=isChild&&HW.today===false;
     const on=HW[key]!==false;
@@ -31986,6 +32004,43 @@ home:()=>{
       const sb=txt('button','Set countdown',{className:'btn small',style:{marginTop:'6px'}});sb.onclick=setCD;cc.appendChild(sb);
     }
     g.appendChild(cc);
+  }
+
+  /* ── KindleHub Ultra widget ── Surfaced on Home so the FREE unlock tier is
+     obvious to everyone (it used to be buried in Settings → Account). Shows
+     your tier, this-week progress, and exactly what Ultra unlocks. Toggle it
+     off via Customise Home once you know it's there. */
+  if(HW.ultra!==false){
+    const p=(typeof _khUltraProgress==='function')?_khUltraProgress():{tier:'pro',windowDays:0,need:3,todayMin:0,todayQualified:false};
+    const uc=el('div',{className:'card',style:{gridColumn:'1/-1'}});
+    const uhead=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}});
+    uhead.appendChild(txt('h2','KindleHub Ultra',{style:{margin:'0'}}));
+    if(typeof _khBadgeEl==='function'){try{const bd=_khBadgeEl(p.tier);if(bd)uhead.appendChild(bd);}catch(_){}}
+    uc.appendChild(uhead);
+    const signedIn=!!S.authToken;
+    if(p.tier==='creator'){
+      uc.appendChild(txt('div','Creator — every feature is unlocked, permanently.',{style:{fontSize:'13px',fontWeight:'700',color:'var(--success)',marginTop:'5px'}}));
+    } else if(p.tier==='ultra'){
+      uc.appendChild(txt('div','Ultra is active — you have more AI, 3 MB cloud storage, online multiplayer and the Big Contributor badge.',{style:{fontSize:'12px',lineHeight:'1.5',marginTop:'5px'}}));
+      uc.appendChild(txt('div','Active '+p.windowDays+'/'+p.need+' days this week — stay active 3 days a week (15+ min each) and you never lose it.',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'3px'}}));
+    } else {
+      uc.appendChild(txt('div','Unlock Ultra FREE — no payment, ever. Just use KindleHub 15+ minutes on any 3 days a week.',{style:{fontSize:'13px',lineHeight:'1.5',marginTop:'5px'}}));
+      const bar=el('div',{style:{height:'10px',borderRadius:'999px',background:'var(--highlight)',border:'var(--thin)',overflow:'hidden',margin:'7px 0 5px'}});
+      const pct=Math.max(0,Math.min(100,Math.round((p.windowDays/Math.max(1,p.need))*100)));
+      bar.appendChild(el('div',{style:{height:'100%',width:pct+'%',background:'var(--accent)'}}));
+      uc.appendChild(bar);
+      if(signedIn){
+        const need=Math.max(0,p.need-p.windowDays);
+        uc.appendChild(txt('div',p.todayQualified?('Today counts ✓ · '+p.windowDays+'/'+p.need+' days this week'):('Today: '+p.todayMin+'/15 min · '+p.windowDays+'/'+p.need+' days this week'),{style:{fontSize:'12px',fontWeight:'700',marginBottom:'2px'}}));
+        uc.appendChild(txt('div',need<=0?'You qualify — Ultra unlocks shortly!':(need+' more active day'+(need===1?'':'s')+' unlocks: more AI, 3 MB cloud storage, online multiplayer and premium themes.'),{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+      } else {
+        uc.appendChild(txt('div','Sign in to start earning it — perks include more AI, 3 MB cloud storage, online multiplayer and premium themes.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'2px'}}));
+      }
+      const ub=txt('button',signedIn?'See Ultra details':'Sign in to start',{className:'btn small primary',style:{marginTop:'7px'}});
+      ub.onclick=()=>{const t=document.querySelector('nav .tab[data-view="settings"]');if(t){t.style.display='';t.click();}};
+      uc.appendChild(ub);
+    }
+    g.appendChild(uc);
   }
 
   /* Weather widget */
@@ -59892,8 +59947,8 @@ BUILDERS.games=()=>{
 (function(){
   const STEPS=[
     {view:null,target:null,pos:'center',
-     title:'Welcome to KindleHub Pro v7.9',
-     body:'This guided tour covers every feature. Tap Next to walk through each one, or Skip to start exploring. You can replay this tour anytime from the Feedback page.'},
+     title:'How KindleHub works',
+     body:'This tour walks you through the app and explains HOW each feature works — not just where it lives. Tap Next to learn each one, or Skip to explore. You can replay it anytime from the Feedback page.'},
 
     {view:'home',target:'header',pos:'below',label:'Header',
      title:'Header Bar',
@@ -59920,8 +59975,12 @@ BUILDERS.games=()=>{
      body:'Tap the Launcher button at the top of KindleOS to switch to a full app grid. Every KindleHub feature appears as an icon - 30+ apps in categories: Play, Create, Connect, Learn, Info, Utility, Wellness and System.'},
 
     {view:'games',target:'.tab[data-view="games"]',pos:'below',label:'Arcade',
-     title:'Arcade - 15+ Games',
-     body:'Wordle, Hangman, Snake, Tetris, 2048, Sudoku, Minesweeper, Connect 4, Tic-Tac-Toe, Chess, Battleship, Solitaire, Snakes and Ladders, Space Invaders, Tower Defence and Flight Simulator. High scores are tracked.'},
+     title:'Arcade - 38 Games',
+     body:'How it works: tap any game card to play full-screen; your high scores save automatically and appear on the global leaderboard when you are signed in. Wordle, Snake, Tetris, 2048, Sudoku, Chess, a Mario-style platformer, 8-Ball pool and more. Some play online 2-player if you have Ultra.'},
+
+    {view:'appstore',target:'.tab[data-view="appstore"]',pos:'below',label:'App Store',
+     title:'App Store',
+     body:'How it works: install extra pages into your top menu with one tap, or publish your own — describe an app, let the AI build it, and it is safety-reviewed before going live for everyone. Downloaded apps run in their own full screen. This is also where you manage which pages show in your nav bar.'},
 
     {view:'chat',target:'.tab[data-view="chat"]',pos:'below',label:'AI Chat',
      title:'AI Assistant and HTML Builder',
@@ -59993,7 +60052,11 @@ BUILDERS.games=()=>{
 
     {view:'settings',target:'.tab[data-view="settings"]',pos:'below',label:'Settings',
      title:'Settings',
-     body:'Set display name, font size, colour theme and pattern. Toggle nav tabs on or off. The Account section lets you register and sync all your data - encrypted with your password before upload so only you can read it.'},
+     body:'Set display name, font size and colour theme. The Account section lets you register and sync all your data - encrypted with your password before upload so only you can read it. Signing in also starts earning you Ultra (next step).'},
+
+    {view:'settings',target:null,pos:'center',label:'Ultra',
+     title:'KindleHub Ultra - free',
+     body:'How it works: everyone starts on Pro. Just USE KindleHub - 15+ minutes a day on any 3 days a week (while signed in) - and you unlock Ultra automatically. No payment, ever. Ultra gives you more AI, 3x the cloud storage, online multiplayer games and premium themes. It rolls week to week, so staying active keeps it. Watch your progress on the Home page or here in Settings - Account.'},
 
     {view:'settings',target:'#simpleModeRow',pos:'below',label:'Simple Mode',
      title:'Simple Mode (E-Ink)',
@@ -60030,8 +60093,12 @@ BUILDERS.games=()=>{
         if(t.style.display==='none')return;/* skip hidden / advanced tabs */
         const label=(t.textContent||v).trim();
         covered.add(v);
+        /* Educational body: use the real page description ("what it does / how
+           it works") rather than a generic "tap to open" line, so an auto-added
+           page still teaches the user something. */
+        const desc=(typeof _KH_PAGE_DESC!=='undefined'&&_KH_PAGE_DESC[v])?_KH_PAGE_DESC[v]:('Open the '+label+' page and try it out.');
         extra.push({view:v,target:'.tab[data-view="'+v+'"]',pos:'below',label:label,
-          title:label,body:'The '+label+' page - tap to open it and explore.'});
+          title:label,body:desc});
       });
       if(extra.length)STEPS.splice(Math.max(0,STEPS.length-2),0,...extra);
     }catch(e){}
