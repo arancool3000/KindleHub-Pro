@@ -1007,6 +1007,17 @@ body.launcher-ui .view{padding-bottom:80px;}
      app below replaces the view once JS runs). Keeps KindleHub's real feature set
      accurate wherever it's indexed or summarised. -->
 <noscript><div style="max-width:720px;margin:24px auto;padding:16px;font-family:sans-serif;line-height:1.6;color:#111;">
+<div style="border:3px solid #000;border-radius:10px;padding:18px;margin-bottom:22px;background:#f5f5f5;">
+<div style="font-size:22px;font-weight:800;margin-bottom:8px;">JavaScript is turned off</div>
+<p style="margin:0 0 10px;">KindleHub Pro needs JavaScript to run. Turn it on in your Kindle browser:</p>
+<ol style="margin:0 0 6px 22px;padding:0;font-size:15px;">
+<li>Tap the <b>three dots</b> (the <b>&#8942;</b> menu, top-right of the browser).</li>
+<li>Tap <b>Settings</b> (may be called <b>Web Settings</b>).</li>
+<li>Turn <b>JavaScript</b> ON. While you are there, turn <b>Load images</b> / <b>Show images</b> ON too.</li>
+<li>Return to this page and <b>Reload</b> it.</li>
+</ol>
+<p style="margin:8px 0 0;font-size:13px;color:#444;">Once JavaScript is on, the full app loads automatically.</p>
+</div>
 <h1>KindleHub Pro — a free everything-app for your Kindle browser</h1>
 <p>KindleHub Pro turns your Kindle's built-in web browser into a full mini-OS — no jailbreak, no install, free forever. It's a comprehensive, free alternative to ReKindle, and includes:</p>
 <ul>
@@ -1022,6 +1033,45 @@ body.launcher-ui .view{padding-bottom:80px;}
 </ul>
 <p>Free, offline-friendly, with optional encrypted cloud sync. <a href="/landing.html">Learn more about KindleHub Pro</a>.</p>
 </div></noscript>
+<script>
+/* ── Images-disabled detector ── If the Kindle browser has "Load images" OFF,
+   pictures (image search, cookbook, avatars, wallpapers) silently fail. Load a
+   tiny embedded data-URI image; if it never decodes (naturalWidth stays 0, or
+   neither load nor error fires within a few seconds), images are off — show a
+   dismissible banner telling the user how to turn them on. Inline SVG icons
+   still render either way, so this is a notice, not a hard block. */
+(function(){
+  try{
+    if(localStorage.getItem('kh_img_notice_dismissed')==='1')return;
+  }catch(_){}
+  function showBanner(){
+    try{
+      if(document.getElementById('kh-img-off-banner'))return;
+      var mount=function(){
+        if(!document.body){setTimeout(mount,120);return;}
+        if(document.getElementById('kh-img-off-banner'))return;
+        var b=document.createElement('div');
+        b.id='kh-img-off-banner';
+        b.style.cssText='position:fixed;left:0;right:0;top:0;z-index:2147483646;background:#111;color:#fff;font-family:sans-serif;font-size:13px;line-height:1.5;padding:10px 12px;box-shadow:0 2px 8px rgba(0,0,0,.4);';
+        b.innerHTML='<b>Images are turned off.</b> To see pictures: tap the browser’s three-dots menu (⋮) → <b>Settings</b> → turn <b>Load images</b> ON, then reload. <button id="kh-img-off-x" style="margin-left:8px;background:#fff;color:#111;border:none;border-radius:4px;padding:4px 10px;font-weight:800;font-size:12px;">Dismiss</button>';
+        document.body.appendChild(b);
+        var x=document.getElementById('kh-img-off-x');
+        if(x)x.onclick=function(){try{localStorage.setItem('kh_img_notice_dismissed','1');}catch(_){}try{b.parentNode.removeChild(b);}catch(_){}};
+      };
+      mount();
+    }catch(_){}
+  }
+  try{
+    var img=new Image();var done=false;
+    img.onload=function(){done=true;if(!(img.naturalWidth>0))showBanner();};
+    img.onerror=function(){done=true;showBanner();};
+    /* 1x1 transparent PNG, embedded — needs no network, so a failure to decode
+       means image rendering itself is disabled (not a connectivity issue). */
+    img.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    setTimeout(function(){if(!done&&!(img.naturalWidth>0))showBanner();},3000);
+  }catch(_){}
+})();
+</script>
 <!-- ────────────────────────────────────────────────────────────────
      UI MODE + THEME PRELOADER
      Runs synchronously during body parsing, BEFORE any visible
@@ -1748,6 +1798,12 @@ function _stateFingerprint(){
 function scheduleCloudSync(force=false){
   if(!S.authToken||!S.syncEnabled)return;
   _stateDirty=true;
+  /* Honour the documented contract that scheduling a sync marks the fingerprint
+     stale. Callers that mutate S then call scheduleCloudSync() WITHOUT save()
+     would otherwise be silently skipped by the egress short-circuit (the cached
+     _fpS still holds the pre-mutation hash). Only the cheap state hash is nulled;
+     the expensive localStorage hash stays cached. */
+  try{if(typeof _invalidateFpState==='function')_invalidateFpState();}catch(_){}
   if(_syncTimer)clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>{
     _syncTimer=null;
@@ -1835,7 +1891,7 @@ async function _doCloudSync(force){
     _stateDirty=wasDirty||_stateDirty;
   }catch(_){}
   const fp=_stateFingerprint();
-  if(fp===_lastSyncedHash){_stateDirty=false;return;}
+  if(!force&&fp===_lastSyncedHash){_stateDirty=false;return;}/* a FORCED sync ("Sync Now") must actually upload even if the fingerprint looks unchanged */
   try{
     await syncToCloud();
     _lastSyncedHash=fp;
@@ -12546,6 +12602,11 @@ function mergeCloudState(cloudState,opts){
      merges — other tabs share our localStorage already). */
   if(!opts.noLsBackup&&cloudState&&cloudState._lsBackup){
     try{_restoreLocalStorage(cloudState._lsBackup);}catch(_){}
+    /* _restoreLocalStorage writes under __khAutoSyncSilent, so the setItem
+       wrapper skips fingerprint invalidation — but the side-car DID change, so
+       recompute both hashes (else the merged superset can lag reaching cloud
+       and the post-merge re-render check can miss side-car-only changes). */
+    try{if(typeof _invalidateFp==='function')_invalidateFp();}catch(_){}
   }
   if(cloudState&&cloudState._lsBackup)delete cloudState._lsBackup;
   /* SECURITY: localFixes is executable JS run via new Function() at boot and is
@@ -14880,6 +14941,17 @@ const DigQuest=(function(){
     keysHave=0;lives=3+(up.lives||0);flash=0;acc=0;last=0;hurtCool=0;
     drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;jumpBuf=0;coyote=0;
     hideOverlay();mode='play';updateHud();render();
+    /* Guarantee exactly ONE live loop AND live input. loadChapter is also the
+       "Retry chapter" / "Restart chapter" path, which used to just reset state
+       and RELY on the loop already running — so if the loop had stopped (stop()
+       nulls the RAF and removes the key listeners), the game froze (the reported
+       "lose a life → restart freezes" bug). Cancel any existing frame + re-arm,
+       and re-bind the keys (remove-then-add = exactly one set), so a restart
+       always fully revives the game. */
+    try{if(raf)cancelAnimationFrame(raf);}catch(_){}
+    running=true;last=0;lastRender=0;
+    try{document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);document.addEventListener('keydown',onKey);document.addEventListener('keyup',onKeyUp);}catch(_){}
+    raf=requestAnimationFrame(loop);
   }
 
   function digDir(){if(input.down)return 'down';if(input.left&&!input.right)return 'left';if(input.right&&!input.left)return 'right';return player.facing>0?'right':'left';}
@@ -21270,7 +21342,7 @@ const SetGame=(()=>{
     wrap.appendChild(grid);
     if(game.over){var res=(game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!')));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
     var ctr=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',justifyContent:'center'}});
-    var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){showMenu();};ctr.appendChild(ng);
+    var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){stopAi();stopBuzz();stopNet();showMenu();};ctr.appendChild(ng);/* clear pending AI/buzz timers first — else a stale timer fires on the menu and replaces it with a self-playing board */
     wrap.appendChild(ctr);
     immersiveContent.appendChild(wrap);
   }
@@ -40919,6 +40991,7 @@ feedback:()=>{
 
   const tabRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px',flexWrap:'wrap'}});
   let activeType='suggestion';
+  let _fbShown=10,_fbShownType='';/* paginate the board in batches of 10 (a long list can crash a low-RAM Kindle) */
   const tSug=txt('button','Feature Suggestions',{className:'btn small primary'});
   const tBug=txt('button','Bug Reports',{className:'btn small'});
   tabRow.append(tSug,tBug);
@@ -42111,16 +42184,27 @@ feedback:()=>{
         clrBtn.onclick=async function(){
           if(!await kindleConfirm('Delete ALL cloud error logs? This cannot be undone.'))return;
           clrBtn.disabled=true;clrBtn.textContent='Clearing…';
+          /* Also wipe the LOCAL sources — else the panel keeps showing this
+             device's session errors and the retry buffer re-uploads queued
+             failures on the next report/boot, which read as "clear didn't stick". */
+          function _clearLocalErrs(){
+            try{if(window._khAutoErrors)window._khAutoErrors.length=0;}catch(_){}
+            try{localStorage.removeItem('kh_err_queue');}catch(_){}
+          }
           try{
             if(_sbActive()){
-              /* Admin delete — _sbHeaders sends the X-KH-Admin token and the worker
-                 now permits an admin to wipe kh_errors. Empty filter = clear all. */
-              await _sbDelete('kh_errors','');
+              /* Admin delete — _sbHeaders sends the X-KH-Admin token. Use an
+                 always-true filter (id != a sentinel that never exists) so it
+                 deletes every row AND works even where the backend refuses an
+                 UNFILTERED delete. This is the instant cloud wipe. */
+              await _sbDelete('kh_errors','id=neq.__kh_none__');
               try{await _masterWrite(function(doc){doc.autoErrors=[];});}catch(_){}
+              _clearLocalErrs();
               toast('Cloud error log cleared.');renderErrPanel();
               return;
             }
             await _masterWrite(function(doc){doc.autoErrors=[];});
+            _clearLocalErrs();
             toast('Error log cleared');renderErrPanel();
           }catch(e){
             clrBtn.disabled=false;clrBtn.textContent='Clear Cloud Error Log';
@@ -42303,9 +42387,13 @@ feedback:()=>{
       return (b.votes||0)-(a.votes||0);
     });
     if(!filtered.length){listEl.appendChild(txt('div','No '+activeType+'s yet — be the first!',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'12px 0'}}));return;}
+    /* Reset the page size when the tab (suggestions / bugs / errors) changes,
+       then show 10 at a time so a big backlog can't overwhelm the Kindle. */
+    if(activeType!==_fbShownType){_fbShown=10;_fbShownType=activeType;}
+    const _fbTotal=filtered.length;
     const voted=getVoted();
     const isAdmin=window._isAdminCached===true;
-    filtered.forEach((item,rank)=>{
+    filtered.slice(0,_fbShown).forEach((item,rank)=>{
       const status=item.status||'open';
       const closed=(status==='done'||status==='ignored');
       const card=el('div',{style:{border:(rank<3&&!closed)?'2px solid var(--fg)':'var(--thin)',borderRadius:'8px',padding:'10px',marginBottom:'8px',background:'var(--card)',position:'relative',opacity:closed?'0.65':'1'}});
@@ -42446,6 +42534,11 @@ feedback:()=>{
 
       listEl.appendChild(card);
     });
+    if(_fbTotal>_fbShown){
+      const more=txt('button','Show more ('+(_fbTotal-_fbShown)+' more)',{className:'btn small',style:{display:'block',margin:'6px auto 10px'}});
+      more.onclick=function(){_fbShown+=10;renderItems();};
+      listEl.appendChild(more);
+    }
   }
 
   /* Comment thread modal — read + post on a single feedback item.
@@ -60353,6 +60446,7 @@ BUILDERS.games=()=>{
 function _initCandyCrush(){if(window.CandyCrush)return;
 window.CandyCrush=(()=>{
   const COLS=8,ROWS=8;
+  let _ccStopped=false;/* set on exit — bail the async cascade + its overlays so nothing paints after you leave the game */
 
   // Base gems
   const BASE_GEMS=[
@@ -60770,6 +60864,7 @@ window.CandyCrush=(()=>{
   }
 
   function showLevelComplete(){
+    if(_ccStopped)return;/* left the game mid-cascade — don't drop a full-screen overlay over whatever's on screen now */
     const win=document.createElement('div');
     win.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.82);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:600000;gap:10px;padding:20px;box-sizing:border-box;';
     const box=document.createElement('div');
@@ -60937,11 +61032,13 @@ window.CandyCrush=(()=>{
 
   return{
     start(){
+      _ccStopped=false;
       score=0;level=1;levelScore=0;combo=0;selected=null;animating=false;gameOver=false;
       upgrades={bonusMoves:0,scoreMult:1,startBombs:0,startWilds:0};
       const def=getLevelDef(1);moves=def.moves;
       initBoard();buildUI();
-    }
+    },
+    stop(){_ccStopped=true;}
   };
 })();
 }
