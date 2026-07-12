@@ -14941,6 +14941,17 @@ const DigQuest=(function(){
     keysHave=0;lives=3+(up.lives||0);flash=0;acc=0;last=0;hurtCool=0;
     drillT=0;shieldT=0;hasSpring=!!up.spring;jumpsLeft=hasSpring?1:0;wasJump=false;jumpQueued=false;jumpBuf=0;coyote=0;
     hideOverlay();mode='play';updateHud();render();
+    /* Guarantee exactly ONE live loop AND live input. loadChapter is also the
+       "Retry chapter" / "Restart chapter" path, which used to just reset state
+       and RELY on the loop already running — so if the loop had stopped (stop()
+       nulls the RAF and removes the key listeners), the game froze (the reported
+       "lose a life → restart freezes" bug). Cancel any existing frame + re-arm,
+       and re-bind the keys (remove-then-add = exactly one set), so a restart
+       always fully revives the game. */
+    try{if(raf)cancelAnimationFrame(raf);}catch(_){}
+    running=true;last=0;lastRender=0;
+    try{document.removeEventListener('keydown',onKey);document.removeEventListener('keyup',onKeyUp);document.addEventListener('keydown',onKey);document.addEventListener('keyup',onKeyUp);}catch(_){}
+    raf=requestAnimationFrame(loop);
   }
 
   function digDir(){if(input.down)return 'down';if(input.left&&!input.right)return 'left';if(input.right&&!input.left)return 'right';return player.facing>0?'right':'left';}
