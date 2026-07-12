@@ -11848,25 +11848,49 @@ async function _khRecoverWithCode(username,code,newPassword){
     if(!username||!String(username).trim())return{success:false,error:'Enter your username.'};
     if(!newPassword||newPassword.length<6)return{success:false,error:'New password must be at least 6 characters.'};
     if(typeof navigator!=='undefined'&&navigator.onLine===false)return{success:false,error:'You\'re offline — connect to the internet to recover your account.'};
-    var name=(typeof _khCanonicalUsername==='function')?_khCanonicalUsername(String(username).trim()):String(username).trim();
+    var typed=(typeof _khCanonicalUsername==='function')?_khCanonicalUsername(String(username).trim()):String(username).trim();
     /* Fetch + decrypt the account using the recovery code AS the key. */
     var packed=null;try{packed=await _loadUser(recKey);}catch(_){}
     if(!packed){try{var fc=_offlineCred(recKey);if(fc&&fc.packed)packed=fc.packed;}catch(_){}}
     if(!packed)return{success:false,error:'No account found for that recovery code. Double-check the code (and that you\'re online).'};
     var state=await _decryptState(recKey,packed);
     if(!state||typeof state!=='object')return{success:false,error:'That recovery code didn\'t unlock the account — check for a typo.'};
-    /* Valid. Re-key under the new password so the user can sign in normally. */
-    var newKey=await _userKey(name,newPassword);
+    /* SECURITY — the code only proves you own the account it UNLOCKS. Take the
+       identity from THAT account (state.email), never from the typed username:
+       otherwise someone could recover their own account while typing another
+       user's name (e.g. the admin's) and inherit that identity/privileges. The
+       typed name is just cross-checked to catch a wrong code, never trusted. */
+    var ownerName=(typeof _khCanonicalUsername==='function')?_khCanonicalUsername(String(state.email||'').trim()):String(state.email||'').trim();
+    if(!ownerName)return{success:false,error:'This account has no username on record, so it can\'t be recovered this way. Sign in with your password if you can.'};
+    if(typed&&typed.toLowerCase()!==ownerName.toLowerCase())return{success:false,error:'That recovery code belongs to a different account than "'+username+'".'};
+    /* Re-key under the new password, under the account's REAL identity. */
+    var newKey=await _userKey(ownerName,newPassword);
     if(newKey===recKey)return{success:false,error:'Choose a different password than your old one.'};
-    S.userId=newKey.slice(0,16);S.authToken=newKey;S.email=name;S.syncEnabled=true;S._encKey=newKey;
+    /* Snapshot auth so a failed save can't strand a half-authenticated session. */
+    var _prev={userId:S.userId,authToken:S.authToken,email:S.email,syncEnabled:S.syncEnabled,_encKey:S._encKey};
+    S.userId=newKey.slice(0,16);S.authToken=newKey;S.email=ownerName;S.syncEnabled=true;S._encKey=newKey;
     window.__khStateLoadFailed=false;
     if(Object.keys(state).length>0)mergeCloudState(state);
-    await _saveUser(newKey,name,_buildSafeState());
+    try{
+      await _saveUser(newKey,ownerName,_buildSafeState());
+    }catch(saveErr){
+      S.userId=_prev.userId;S.authToken=_prev.authToken;S.email=_prev.email;S.syncEnabled=_prev.syncEnabled;S._encKey=_prev._encKey;
+      return{success:false,error:'Recovered, but the reset couldn\'t be saved — check your connection and try again.'};
+    }
     save();
+    /* Revoke the OLD credential: delete the row the old code/password opened so a
+       leaked old code can't keep reading the account. Best-effort (the backend
+       may refuse); the new account is already saved either way. */
+    if(recKey!==newKey){
+      try{await _sbDelete('kh_users','hash=eq.'+encodeURIComponent(recKey));}catch(_){}
+      /* R2 gateway: the blob lives in R2 (kh_users row is null), so also blank the
+         old R2 object — login treats an empty state as "no account", revoking it. */
+      try{var _rgw=(typeof _stateGatewayUrl==='function')?_stateGatewayUrl():'';if(_rgw)await _r2PutState(_rgw,recKey,'','');}catch(_){}
+    }
     try{if(typeof _resetAdminCache==='function')_resetAdminCache();}catch(_){}
     try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}}).catch(function(){});}catch(_){}
-    try{localStorage.setItem('kh_last_user',name);}catch(_){}
-    return{success:true,username:name,newKey:newKey};
+    try{localStorage.setItem('kh_last_user',ownerName);}catch(_){}
+    return{success:true,username:ownerName,newKey:newKey};
   }catch(e){return{success:false,error:(e&&e.message)||'Recovery failed.'};}
 }
 window._khRecoverWithCode=_khRecoverWithCode;
