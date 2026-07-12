@@ -11820,6 +11820,144 @@ async function authLogin(email,password){
   }catch(e){console.error('Login error',e);return{success:false,error:e.message};}
 }
 
+/* ── Password recovery (end-to-end-safe) ──────────────────────────────────────
+   The account's data is encrypted with a key derived from the password
+   (_userKey = SHA-256('kh::'+name+'::'+password)); by design NOBODY — not even
+   the server — can decrypt or reset it without that. So a SECURE "forgot
+   password" can't be a server-side reset; it has to be a RECOVERY CODE the user
+   saved in advance. That code IS the account's real key, shown once so the user
+   can keep it safe. With it + the username they reopen the account and set a new
+   password. Nothing extra is stored on the server — the code alone is the
+   secret, and it's 256-bit random-strength (a hash), so it can't be guessed. */
+function _khRecoveryCode(key){
+  var h=String(key||'').replace(/[^0-9a-fA-F]/g,'').toLowerCase();
+  if(h.length<64)return h.toUpperCase();
+  var out=[];for(var i=0;i<64;i+=8)out.push(h.slice(i,i+8).toUpperCase());
+  return out.join('-');/* 8 dash-separated 8-char groups — easier to transcribe */
+}
+function _khParseRecoveryCode(s){
+  var h=String(s||'').replace(/[^0-9a-fA-F]/g,'').toLowerCase();
+  return /^[0-9a-f]{64}$/.test(h)?h:null;
+}
+window._khRecoveryCode=_khRecoveryCode;window._khParseRecoveryCode=_khParseRecoveryCode;
+/* Recover an account with its code, then re-key it under a NEW password. */
+async function _khRecoverWithCode(username,code,newPassword){
+  try{
+    var recKey=_khParseRecoveryCode(code);
+    if(!recKey)return{success:false,error:'That recovery code isn\'t valid (it should be 64 letters/numbers).'};
+    if(!username||!String(username).trim())return{success:false,error:'Enter your username.'};
+    if(!newPassword||newPassword.length<6)return{success:false,error:'New password must be at least 6 characters.'};
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return{success:false,error:'You\'re offline — connect to the internet to recover your account.'};
+    var typed=(typeof _khCanonicalUsername==='function')?_khCanonicalUsername(String(username).trim()):String(username).trim();
+    /* Fetch + decrypt the account using the recovery code AS the key. */
+    var packed=null;try{packed=await _loadUser(recKey);}catch(_){}
+    if(!packed){try{var fc=_offlineCred(recKey);if(fc&&fc.packed)packed=fc.packed;}catch(_){}}
+    if(!packed)return{success:false,error:'No account found for that recovery code. Double-check the code (and that you\'re online).'};
+    var state=await _decryptState(recKey,packed);
+    if(!state||typeof state!=='object')return{success:false,error:'That recovery code didn\'t unlock the account — check for a typo.'};
+    /* SECURITY — the code only proves you own the account it UNLOCKS. Take the
+       identity from THAT account (state.email), never from the typed username:
+       otherwise someone could recover their own account while typing another
+       user's name (e.g. the admin's) and inherit that identity/privileges. The
+       typed name is just cross-checked to catch a wrong code, never trusted. */
+    var ownerName=(typeof _khCanonicalUsername==='function')?_khCanonicalUsername(String(state.email||'').trim()):String(state.email||'').trim();
+    if(!ownerName)return{success:false,error:'This account has no username on record, so it can\'t be recovered this way. Sign in with your password if you can.'};
+    if(typed&&typed.toLowerCase()!==ownerName.toLowerCase())return{success:false,error:'That recovery code belongs to a different account than "'+username+'".'};
+    /* Re-key under the new password, under the account's REAL identity. */
+    var newKey=await _userKey(ownerName,newPassword);
+    if(newKey===recKey)return{success:false,error:'Choose a different password than your old one.'};
+    /* Snapshot auth so a failed save can't strand a half-authenticated session. */
+    var _prev={userId:S.userId,authToken:S.authToken,email:S.email,syncEnabled:S.syncEnabled,_encKey:S._encKey};
+    S.userId=newKey.slice(0,16);S.authToken=newKey;S.email=ownerName;S.syncEnabled=true;S._encKey=newKey;
+    window.__khStateLoadFailed=false;
+    if(Object.keys(state).length>0)mergeCloudState(state);
+    try{
+      await _saveUser(newKey,ownerName,_buildSafeState());
+    }catch(saveErr){
+      S.userId=_prev.userId;S.authToken=_prev.authToken;S.email=_prev.email;S.syncEnabled=_prev.syncEnabled;S._encKey=_prev._encKey;
+      return{success:false,error:'Recovered, but the reset couldn\'t be saved — check your connection and try again.'};
+    }
+    save();
+    /* Revoke the OLD credential: delete the row the old code/password opened so a
+       leaked old code can't keep reading the account. Best-effort (the backend
+       may refuse); the new account is already saved either way. */
+    if(recKey!==newKey){
+      try{await _sbDelete('kh_users','hash=eq.'+encodeURIComponent(recKey));}catch(_){}
+      /* R2 gateway: the blob lives in R2 (kh_users row is null), so also blank the
+         old R2 object — login treats an empty state as "no account", revoking it. */
+      try{var _rgw=(typeof _stateGatewayUrl==='function')?_stateGatewayUrl():'';if(_rgw)await _r2PutState(_rgw,recKey,'','');}catch(_){}
+    }
+    try{if(typeof _resetAdminCache==='function')_resetAdminCache();}catch(_){}
+    try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}}).catch(function(){});}catch(_){}
+    try{localStorage.setItem('kh_last_user',ownerName);}catch(_){}
+    return{success:true,username:ownerName,newKey:newKey};
+  }catch(e){return{success:false,error:(e&&e.message)||'Recovery failed.'};}
+}
+window._khRecoverWithCode=_khRecoverWithCode;
+/* Modal that shows a recovery code (at registration, after a reset, or on
+   demand from Settings) with a Copy button and a save-it warning. */
+function _khShowRecoveryModal(key,opts){
+  opts=opts||{};
+  var code=_khRecoveryCode(key);
+  var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.62)',zIndex:'1000000',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'}});
+  var box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'14px',padding:'18px',width:'min(94vw,410px)',maxHeight:'88vh',overflowY:'auto',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('h3',opts.title||'Your recovery code',{style:{margin:'0 0 6px',fontFamily:'var(--title-font)'}}));
+  box.appendChild(txt('p','This is the ONLY way back into your account if you forget your password. Your data is encrypted with your password, so nobody — not even us — can reset it or read it without this code. Save it now: write it down, or keep it in a password manager.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 10px'}}));
+  var codeBox=el('div',{style:{fontFamily:'monospace',fontSize:'13px',fontWeight:'700',letterSpacing:'0.5px',wordBreak:'break-all',background:'var(--highlight)',border:'var(--thin)',borderRadius:'8px',padding:'12px',textAlign:'center',lineHeight:'1.9'}});
+  codeBox.textContent=code;box.appendChild(codeBox);
+  var copyBtn=txt('button','Copy code',{className:'btn small primary',style:{width:'100%',marginTop:'10px'}});
+  copyBtn.onclick=function(){
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(function(){copyBtn.textContent='Copied ✓';},function(){_khCopyFallback(code,copyBtn);});}
+      else _khCopyFallback(code,copyBtn);
+    }catch(_){_khCopyFallback(code,copyBtn);}
+  };
+  box.appendChild(copyBtn);
+  var ack=txt('button',opts.ackLabel||'I have saved it',{className:'btn small',style:{width:'100%',marginTop:'8px'}});
+  ack.onclick=function(){ov.remove();if(opts.onClose)try{opts.onClose();}catch(_){}};
+  box.appendChild(ack);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+}
+function _khCopyFallback(text,btn){try{var ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();var ok=false;try{ok=document.execCommand('copy');}catch(_){}ta.remove();if(btn)btn.textContent=ok?'Copied ✓':'Copy failed — select the code above';}catch(_){}}
+window._khShowRecoveryModal=_khShowRecoveryModal;
+/* The "Forgot password?" flow: username + recovery code → set a new password. */
+function _khForgotPasswordDialog(prefillUser){
+  var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,0.62)',zIndex:'1000000',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'}});
+  var box=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'14px',padding:'18px',width:'min(94vw,410px)',maxHeight:'90vh',overflowY:'auto',boxShadow:'var(--shadow-md)',display:'flex',flexDirection:'column',gap:'8px'}});
+  box.appendChild(txt('h3','Forgot password',{style:{margin:'0',fontFamily:'var(--title-font)'}}));
+  box.appendChild(txt('p','Enter your username and the recovery code you saved. You\'ll then choose a new password. Because your data is encrypted with your password (that\'s what keeps it private), the recovery code is the only way to get back in — without one it can\'t be recovered, but you can register a new account.',{style:{fontSize:'11.5px',color:'var(--muted)',lineHeight:'1.55',margin:'0 0 2px'}}));
+  var inStyle={width:'100%',boxSizing:'border-box',padding:'8px',border:'var(--thin)',borderRadius:'6px',background:'var(--card)',color:'var(--fg)',fontSize:'13px'};
+  var userIn=el('input',{type:'text',placeholder:'Username',value:prefillUser||'',autocomplete:'username',style:inStyle});
+  var codeIn=el('textarea',{rows:'2',placeholder:'Recovery code',style:Object.assign({},inStyle,{fontFamily:'monospace',resize:'vertical'})});
+  var pwIn=el('input',{type:'password',placeholder:'New password (min 6)',autocomplete:'new-password',style:inStyle});
+  var pw2In=el('input',{type:'password',placeholder:'Confirm new password',autocomplete:'new-password',style:inStyle});
+  box.append(userIn,codeIn,pwIn,pw2In);
+  var status=el('div',{style:{fontSize:'12px',color:'var(--danger)',minHeight:'15px',lineHeight:'1.4'}});box.appendChild(status);
+  var row=el('div',{style:{display:'flex',gap:'8px',marginTop:'2px'}});
+  var cancel=txt('button','Cancel',{className:'btn small',style:{flex:'1'}});cancel.onclick=function(){ov.remove();};
+  var go=txt('button','Recover account',{className:'btn small primary',style:{flex:'2'}});
+  go.onclick=async function(){
+    var u=userIn.value.trim(),c=codeIn.value.trim(),p=pwIn.value,p2=pw2In.value;
+    status.style.color='var(--danger)';
+    if(!u||!c){status.textContent='Enter your username and recovery code.';return;}
+    if(p!==p2){status.textContent='Passwords do not match.';return;}
+    if(!p||p.length<6){status.textContent='New password must be at least 6 characters.';return;}
+    go.disabled=true;go.textContent='Recovering…';status.textContent='';
+    var res=await _khRecoverWithCode(u,c,p);
+    go.disabled=false;go.textContent='Recover account';
+    if(res&&res.success){
+      ov.remove();
+      if(typeof toast==='function')toast('Account recovered — signed in and password reset.',4500);
+      try{delete VIEWS['settings'];if(typeof currentView!=='undefined'&&currentView==='settings'&&typeof showView==='function')showView('settings');}catch(_){}
+      _khShowRecoveryModal(res.newKey,{title:'Your NEW recovery code',ackLabel:'Done'});
+    }else{status.textContent=(res&&res.error)||'Recovery failed.';}
+  };
+  row.append(cancel,go);box.appendChild(row);
+  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  setTimeout(function(){try{userIn.focus();}catch(_){}},60);
+}
+window._khForgotPasswordDialog=_khForgotPasswordDialog;
+
 async function authLogout(){
   if(S.authToken)try{await syncToCloud();}catch(e){}
   S.userId=null;S.authToken=null;S.email=null;S.syncEnabled=false;S._encKey=null;
@@ -40038,6 +40176,7 @@ settings:()=>{
         const res=await authLogin(em,pw);
         if(res.success){
           _accForm.style.display='none';
+          try{_forgotRow.style.display='none';}catch(_){}
           _updateAccStatus();
           _accBtnRow.innerHTML='';
           _buildSignedInBtns();
@@ -40062,9 +40201,11 @@ settings:()=>{
       try{
         const res=await authRegister(em,pw);
         if(res.success){
-          _accForm.style.display='none';_updateAccStatus();_accBtnRow.innerHTML='';_buildSignedInBtns();
+          _accForm.style.display='none';try{_forgotRow.style.display='none';}catch(_){}_updateAccStatus();_accBtnRow.innerHTML='';_buildSignedInBtns();
           toast(res.adjusted?('That username was taken — you\'re registered as "'+res.username+'".'):'Account created and signed in! Your data has been saved to the cloud.',res.adjusted?6500:4000);
-          setTimeout(()=>toast('Reminder: do not save private info (passwords, bank details, IDs) in KindleHub Pro.',5500),1200);
+          /* Show the recovery code right after sign-up — it's the ONLY way back
+             in if they forget their password (E2E: we can't reset it). */
+          try{if(typeof _khShowRecoveryModal==='function'&&S.authToken)_khShowRecoveryModal(S.authToken,{title:'Save your recovery code',ackLabel:'I have saved it — continue',onClose:function(){setTimeout(()=>toast('Reminder: do not save private info (passwords, bank details, IDs) in KindleHub Pro.',5500),400);}});}catch(_){}
         } else {
           toast('Registration failed: '+(res.error||'Try again'));
         }
@@ -40073,6 +40214,12 @@ settings:()=>{
     };
     if(!S.authToken)_accBtnRow.append(_loginBtn,_regBtn);
   }
+
+  /* Forgot-password link — only meaningful when signed out and not registering. */
+  const _forgotRow=el('div',{style:{marginTop:'2px',display:S.authToken?'none':'block'}});
+  const _forgotLink=txt('button','Forgot password?',{className:'btn small',style:{background:'none',border:'none',color:'var(--accent)',padding:'2px 0',fontSize:'11px',textDecoration:'underline',boxShadow:'none',minHeight:'0',cursor:'pointer'}});
+  _forgotLink.onclick=function(){if(typeof _khForgotPasswordDialog==='function')_khForgotPasswordDialog((_accEmail&&_accEmail.value||'').trim());};
+  _forgotRow.appendChild(_forgotLink);
 
   function _buildSignedInBtns(){
     const _syncNowBtn=txt('button','Sync Now ⟳',{className:'btn primary'});
@@ -40243,12 +40390,18 @@ settings:()=>{
       _signOutBtn.disabled=true;
       try{await authLogout();}catch(e){}
       _updateAccStatus();_accForm.style.display='flex';_accBtnRow.innerHTML='';
+      try{_forgotRow.style.display='block';}catch(_){}
       _setRegMode(false);
       _accBtnRow.append(_loginBtn,_regBtn);
       toast('Signed out.');
       _signOutBtn.disabled=false;
     };
-    _accBtnRow.append(_syncNowBtn,_syncToggle,_signOutBtn);
+    /* Recovery code — let a signed-in user view/save their code any time (it's
+       derived from the key held in memory, so nothing extra is stored). This is
+       how users who registered before recovery existed can get their code. */
+    const _recBtn=txt('button','Recovery code',{className:'btn small'});
+    _recBtn.onclick=function(){if(S.authToken&&typeof _khShowRecoveryModal==='function')_khShowRecoveryModal(S.authToken,{title:'Your recovery code',ackLabel:'Done'});else toast('Sign in first.');};
+    _accBtnRow.append(_syncNowBtn,_syncToggle,_recBtn,_signOutBtn);
   }
 
   /* (The login + register buttons are built above with working handlers; the
@@ -40256,6 +40409,7 @@ settings:()=>{
 
   if(S.authToken)_buildSignedInBtns();
   cAccount.appendChild(_accBtnRow);
+  cAccount.appendChild(_forgotRow);
   g.appendChild(cAccount);
 
   /* ── Storage card — usage meter + Supercompress ── */
