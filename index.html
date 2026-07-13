@@ -50196,6 +50196,7 @@ appstore:()=>{
     v.appendChild(txt('div',DAYS[d.getDay()]+' '+d.getDate()+' '+MONS[d.getMonth()],{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'1px 0 2px'}}));
   })();
   let _tab='discover';
+  let _editApp=null;   /* set by My Apps → Edit; renderPublish prefills from it */
   const tabRow=el('div',{style:{display:'flex',gap:'6px',margin:'6px 0 10px'}});
   const body=el('div',{});
   function tabBtn(id,label){const b=txt('button',label,{className:'btn small'+(_tab===id?' primary':'')});b.onclick=function(){_tab=id;draw();};return b;}
@@ -50276,6 +50277,36 @@ appstore:()=>{
     });
     sh.appendChild(strip);
     sh.appendChild(txt('div',a.desc||'A KindleHub app.',{style:{fontSize:'13px',lineHeight:'1.6',marginBottom:'14px'}}));
+    /* Live "try before you get" preview — only for HTML apps (own published or
+       community); built-in apps are real views with no standalone HTML. Runs in
+       the same locked sandbox + CSP as a real install, so previewing is safe. */
+    (function(){
+      const canPreview=(a.pub&&a.pub.html)||a.shared;
+      if(!canPreview)return;
+      const pvWrap=el('div',{style:{margin:'0 0 14px'}});
+      const pvBtn=txt('button','Preview app',{className:'btn small'});
+      pvWrap.appendChild(pvBtn);
+      sh.appendChild(pvWrap);
+      function mount(html){
+        pvBtn.style.display='none';
+        const box=el('div',{style:{border:'var(--thin)',borderRadius:'12px',overflow:'hidden',height:'300px',background:'#fff',marginTop:'2px'}});
+        const fr=document.createElement('iframe');
+        fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals allow-downloads');
+        fr.style.cssText='width:100%;height:100%;border:none;display:block;';
+        fr.srcdoc=(typeof _khWrapAppSecure==='function')?_khWrapAppSecure(String(html)):String(html);
+        box.appendChild(fr);pvWrap.appendChild(box);
+        pvWrap.appendChild(txt('div','A live, sandboxed preview — it can\'t reach your data.',{style:{fontSize:'9px',color:'var(--muted)',marginTop:'4px'}}));
+      }
+      pvBtn.onclick=function(){
+        if(a.pub&&a.pub.html){mount(a.pub.html);return;}
+        /* community app: fetch the full HTML on demand */
+        pvBtn.disabled=true;pvBtn.textContent='Loading preview…';
+        _sbSelect('kh_store_apps','select=html&id=eq.'+encodeURIComponent(a.shared.id)).then(function(rows){
+          if(Array.isArray(rows)&&rows[0]&&rows[0].html)mount(rows[0].html);
+          else{pvBtn.disabled=false;pvBtn.textContent='Preview unavailable';}
+        }).catch(function(){pvBtn.disabled=false;pvBtn.textContent='Preview unavailable';});
+      };
+    })();
     const row=el('div',{style:{display:'flex',gap:'8px'}});
     if(a.shared){
       if(_khStoreDownloaded(a.shared.id)){
@@ -50299,10 +50330,28 @@ appstore:()=>{
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
 
+  /* Share a published app as a KHAPP1 code (peer-to-peer install, no store). */
+  function _shareAppCode(a){
+    let code='';
+    try{code='KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:a.name,color:'#2563eb',icon:'',html:a.html}))));}catch(e){toast('Could not build a share code.');return;}
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.5)',zIndex:'100060',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'}});
+    const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'460px',width:'100%',borderRadius:'12px',padding:'16px',display:'flex',flexDirection:'column',gap:'10px'}});
+    card.appendChild(txt('div','Share "'+a.name+'"',{style:{fontSize:'15px',fontWeight:'800'}}));
+    card.appendChild(txt('div','Copy this code and send it to anyone. They paste it into App Store → Import (or KindleOS) to install it on their device.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+    const taShare=el('textarea',{style:{width:'100%',height:'100px',fontFamily:'monospace',fontSize:'11px',padding:'8px',boxSizing:'border-box',wordBreak:'break-all'}});taShare.value=code;taShare.readOnly=true;
+    card.appendChild(taShare);
+    const rowS=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+    const cp=txt('button','Copy',{className:'btn small primary'});cp.onclick=function(){try{taShare.select();}catch(_){}try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(code);else document.execCommand('copy');}catch(_){}toast('App code copied');};
+    const cl=txt('button','Close',{className:'btn small'});cl.onclick=function(){ov.remove();};
+    rowS.append(cp,cl);card.appendChild(rowS);
+    ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
   function renderDiscover(){
     const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
     body.appendChild(sb);
     let _cat='All';
+    let _commSort='top';   /* community apps: 'top' (downloads) | 'new' (recent) */
     const chips=el('div',{style:{display:'flex',gap:'6px',overflowX:'auto',padding:'2px 0 8px'}});
     body.appendChild(chips);
     const host=el('div',{});body.appendChild(host);
@@ -50331,7 +50380,7 @@ appstore:()=>{
         chips.appendChild(b);
       });
       const inCat=function(a){return _cat==='All'||a.cat===_cat;};
-      const match=function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0;};
+      const match=function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0||(a.desc&&a.desc.toLowerCase().indexOf(q)>=0);};
       const front=(!q&&_cat==='All');
       /* HERO — App of the Day: brand-colour editorial card with big watermark
          icon art (rotates daily via NOW()). e-ink gets a crisp black card. */
@@ -50433,21 +50482,35 @@ appstore:()=>{
          downloadable by everyone. Fetched async, ranked by downloads. */
       const showComm=(_cat==='All'||_cat==='Community'||true);
       const commHdr=secHdr('Community Apps');
+      const commHdrRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}});
+      commHdrRow.appendChild(commHdr);commHdr.style.margin='10px 0 7px';
+      const sortRow=el('div',{style:{display:'flex',gap:'4px'}});
+      [['top','Top'],['new','New']].forEach(function(s){const b=txt('button',s[1],{className:'btn small'+(_commSort===s[0]?' primary':''),style:{borderRadius:'14px'}});b.onclick=function(){_commSort=s[0];paint();};sortRow.appendChild(b);});
+      commHdrRow.appendChild(sortRow);
       const commGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
       const commLoad=txt('div','Loading community apps…',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 2px'}});
-      host.appendChild(commHdr);host.appendChild(commLoad);host.appendChild(commGrid);
+      host.appendChild(commHdrRow);host.appendChild(commLoad);host.appendChild(commGrid);
       const shownCats=Object.keys(cats).length;
       const _paintTok=(window.__khStorePaintTok=(window.__khStorePaintTok||0)+1);
       _khFetchStoreApps().then(function(apps){
         if(window.__khStorePaintTok!==_paintTok)return; /* a newer paint ran — bail */
         try{if(commLoad.parentNode)commLoad.remove();}catch(_){}
         const list=(apps||[]).filter(function(a){
-          if(q&&String(a.name||'').toLowerCase().indexOf(q)<0)return false;
+          if(q&&String(a.name||'').toLowerCase().indexOf(q)<0&&String(a.cat||'').toLowerCase().indexOf(q)<0)return false;
           if(_cat!=='All'&&_cat!=='Community'&&String(a.cat||'')!==_cat)return false;
           return true;
         });
+        if(_commSort==='new')list.sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));});
+        else list.sort(function(a,b){return (b.downloads||0)-(a.downloads||0);});
         if(!list.length){
-          if(_cat!=='All'&&_cat!=='Community'){try{commHdr.remove();}catch(_){}return;}
+          /* Nothing in the community list. If the user was SEARCHING and nothing
+             built-in matched either, that's a true "no results" — say so clearly. */
+          if(q){
+            try{commHdrRow.remove();}catch(_){}
+            if(!shownCats)host.appendChild(txt('div','No apps found for "'+q+'". Try a different word, or publish it yourself from the Publish tab.',{style:{fontSize:'12px',color:'var(--muted)',padding:'14px 8px',textAlign:'center'}}));
+            return;
+          }
+          if(_cat!=='All'&&_cat!=='Community'){try{commHdrRow.remove();}catch(_){}return;}
           commGrid.appendChild(txt('div',(typeof _sbActive==='function'&&_sbActive())?'No community apps yet — publish one from the Publish tab and it appears here for everyone.':'Community apps need a backend connection.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px'}}));
           return;
         }
@@ -50463,7 +50526,6 @@ appstore:()=>{
           commGrid.appendChild(appCard({name:a.name,cat:(a.cat||'Fun'),by:(dl+(dl===1?' dl':' dls')),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},paint);}}));
         });
       });
-      if(q&&!shownCats)host.appendChild(txt('div','',{style:{display:'none'}}));
       if(front)host.appendChild(txt('div',(allFirst.length)+' built-in apps · community apps download free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
@@ -50471,14 +50533,17 @@ appstore:()=>{
 
   function renderPublish(){
     body.appendChild(txt('div','Publish your own app — build it with AI or paste your HTML/JS. When you press Publish, an AI reviewer checks it (it can only approve or decline, never edit). Approved apps appear in your App Store and menu; they live on your device/account, not in the site code.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6',marginBottom:'10px'}}));
+    if(_editApp){body.appendChild(txt('div','Editing "'+_editApp.name+'" — publishing runs a fresh AI review and replaces the old version.',{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700',marginBottom:'8px'}}));}
     const nameInp=el('input',{type:'text',placeholder:'App name',maxLength:40,style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'6px'}});
+    if(_editApp)nameInp.value=_editApp.name||'';
     body.appendChild(nameInp);
     const catRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'6px'}});
-    let _cat='Fun';const CATS=['Fun','Games','Tools','Productivity','Creativity','Other'];
+    let _cat=(_editApp&&_editApp.cat)||'Fun';const CATS=['Fun','Games','Tools','Productivity','Creativity','Other'];
     CATS.forEach(function(c){const b=txt('button',c,{className:'btn small'+(c===_cat?' primary':'')});b.onclick=function(){_cat=c;catRow.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});b.classList.add('primary');};catRow.appendChild(b);});
     body.appendChild(txt('div','Category',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0'}}));
     body.appendChild(catRow);
     const ta=el('textarea',{placeholder:'Paste your app HTML/JS here, or use “Build with AI” below…',style:{width:'100%',minHeight:'180px',fontFamily:'monospace',fontSize:'12px',padding:'9px',boxSizing:'border-box'}});
+    if(_editApp)ta.value=_editApp.html||'';
     body.appendChild(ta);
     const aiRow=el('div',{style:{display:'flex',gap:'6px',margin:'8px 0'}});
     const aiInp=el('input',{type:'text',placeholder:'Describe an app for AI to build…',style:{flex:'1',fontSize:'13px',padding:'8px 10px'}});
@@ -50499,11 +50564,17 @@ appstore:()=>{
     const pubBtn=txt('button','Publish',{className:'btn primary',style:{width:'100%',marginTop:'4px'}});
     pubBtn.onclick=async function(){
       pubBtn.disabled=true;
+      const _editingId=_editApp&&_editApp.id;
       await _khPublishApp({name:nameInp.value,html:ta.value,cat:_cat,isGame:(_cat==='Games')},
         function(msg){status.textContent=msg;},
-        function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){_tab='mine';draw();}});
+        function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){
+          /* replace the old version once the new one is approved */
+          if(_editingId&&Array.isArray(S.publishedApps)){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==_editingId;});try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}}
+          _editApp=null;_tab='mine';draw();
+        }});
     };
     body.appendChild(pubBtn);
+    if(_editApp){const cancelE=txt('button','Cancel edit',{className:'btn small',style:{width:'100%',marginTop:'6px'}});cancelE.onclick=function(){_editApp=null;draw();};body.appendChild(cancelE);}
   }
 
   function renderMine(){
@@ -50522,11 +50593,13 @@ appstore:()=>{
     body.appendChild(txt('div','YOUR PUBLISHED APPS',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'10px 0 6px'}}));
     const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
     mine.forEach(function(a){
-      const act=el('div',{style:{display:'flex',gap:'4px'}});
+      const act=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}});
       const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
+      const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun'};_tab='publish';draw();};
+      const shareB=txt('button','Share',{className:'btn small'});shareB.onclick=function(){_shareAppCode(a);};
       const delB=txt('button','Delete',{className:'btn small'});delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"?',function(ok){if(ok){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}});else{S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}};
-      act.append(openB,delB);
-      grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'reviewed by '+(a.model||'AI'),action:act}));
+      act.append(openB,editB,shareB,delB);
+      grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:(a.mine?'live in the store':('by '+(a.by||'you'))),desc:'Reviewed by '+(a.model||'AI')+'. '+(a.mine?'Anyone can find & download it from Community Apps.':'Downloaded to this device.'),action:act}));
     });
     body.appendChild(grid);
   }
