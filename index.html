@@ -10893,6 +10893,11 @@ function _parseItemIds(text){
       msg:shortMsg,where:where,line:lineno||'?',col:colno||'',stack:stack,
       date:entry.date,kind:kind,aiPrompt:aiPrompt,ctx:ctx,fullText:safeText
     });
+    /* HARD CAP the in-memory session log — a recurring error (e.g. a poller
+       throwing every 15s) used to grow this unbounded, so the admin Feedback
+       panel then rendered hundreds of heavy error cards and CRASHED the Kindle.
+       Keep only the newest 20; the panel paginates on top of this. */
+    if(window._khAutoErrors.length>20)window._khAutoErrors.splice(0,window._khAutoErrors.length-20);
 
     /* Even offline, stash the report locally so the next online boot
        can retry. The retry loop below picks these up. */
@@ -42517,6 +42522,9 @@ feedback:()=>{
     }
     async function renderErrPanel(){
       errPanel.innerHTML='';
+      /* Paginate — never render more than a page of heavy error cards at once,
+         or the Kindle crashes. "Show more" raises the cap. */
+      const _EP=renderErrPanel._page||8;
       /* Admin-only cards: backend Diagnostics (exposes DB user/group counts),
          the Shared-key proxy setup, Cleanup and Visits. Regular users only get
          the per-device AI bug-fix + their own error list + Local Fixes — so we
@@ -42600,8 +42608,8 @@ feedback:()=>{
         return m?m[1].trim():'';
       }
       if(sessionErrs.length){
-        errPanel.appendChild(txt('div','THIS SESSION',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-        sessionErrs.slice().reverse().forEach(function(e){
+        errPanel.appendChild(txt('div','THIS SESSION'+(sessionErrs.length>_EP?(' ('+_EP+' of '+sessionErrs.length+')'):''),{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
+        sessionErrs.slice().reverse().slice(0,_EP).forEach(function(e){
           const c=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px',marginBottom:'8px',borderLeft:'3px solid var(--danger)'}});
           var kindLabel=e.kind?'['+e.kind.toUpperCase()+'] ':'';
           c.appendChild(txt('div',kindLabel+e.msg,{style:{fontWeight:'700',fontSize:'13px',marginBottom:'3px',color:'var(--danger)'}}));
@@ -42661,8 +42669,8 @@ feedback:()=>{
         });
       }
       if(cloudErrs.length){
-        errPanel.appendChild(txt('div','ALL DEVICES (CLOUD)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px',marginTop:'12px'}}));
-        cloudErrs.slice(-30).reverse().forEach(function(e){
+        errPanel.appendChild(txt('div','ALL DEVICES (CLOUD)'+(cloudErrs.length>_EP?(' ('+_EP+' of '+cloudErrs.length+')'):''),{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px',marginTop:'12px'}}));
+        cloudErrs.slice().reverse().slice(0,_EP).forEach(function(e){
           const c=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px',marginBottom:'8px',borderLeft:'3px solid var(--muted)'}});
           c.appendChild(txt('pre',e.text||'',{style:{fontSize:'11px',overflow:'auto',color:'var(--fg)',whiteSpace:'pre-wrap',margin:'0 0 4px',maxHeight:'320px'}}));
           /* Cloud entries store the AI prompt embedded in `text` — pull it
@@ -42699,6 +42707,13 @@ feedback:()=>{
           c.appendChild(txt('div',new Date(e.date).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px'}}));
           errPanel.appendChild(c);
         });
+        /* Show more — reveal the next page of errors (keeps the initial render
+           light so the Kindle doesn't choke on hundreds of heavy cards). */
+        if(sessionErrs.length>_EP||cloudErrs.length>_EP){
+          const moreBtn=txt('button','Show more errors',{className:'btn small',style:{marginTop:'8px',marginRight:'6px'}});
+          moreBtn.onclick=function(){renderErrPanel._page=(renderErrPanel._page||8)+8;renderErrPanel();};
+          errPanel.appendChild(moreBtn);
+        }
         const clrBtn=txt('button','Clear Cloud Error Log',{className:'btn small danger',style:{marginTop:'8px'}});
         clrBtn.onclick=async function(){
           if(!await kindleConfirm('Delete ALL cloud error logs? This cannot be undone.'))return;
@@ -42709,14 +42724,21 @@ feedback:()=>{
           function _clearLocalErrs(){
             try{if(window._khAutoErrors)window._khAutoErrors.length=0;}catch(_){}
             try{localStorage.removeItem('kh_err_queue');}catch(_){}
+            renderErrPanel._page=8;
+            /* Belt-and-suspenders: mark every cloud row currently loaded as
+               resolved, so the panel EMPTIES immediately even if the backend
+               refuses the DELETE (Supabase RLS makes kh_errors write-only for
+               the anon key) — the admin sees "cleared" instantly either way. */
+            try{(cloudErrs||[]).forEach(function(e){if(e&&e.id)_markResolved(e.id);});}catch(_){}
           }
           try{
             if(_sbActive()){
-              /* Admin delete — _sbHeaders sends the X-KH-Admin token. Use an
-                 always-true filter (id != a sentinel that never exists) so it
-                 deletes every row AND works even where the backend refuses an
-                 UNFILTERED delete. This is the instant cloud wipe. */
-              await _sbDelete('kh_errors','id=neq.__kh_none__');
+              /* Admin delete — _sbHeaders sends the X-KH-Admin token. Filter with
+                 date=gte.2000-01-01 (every real error row is after 2000): a
+                 SUPPORTED operator on the D1 worker (gte), unlike the old
+                 id=neq.* which the worker's filter parser doesn't accept — that
+                 was why "Clear" silently did nothing. Instant cloud wipe on D1. */
+              await _sbDelete('kh_errors','date=gte.2000-01-01');
               try{await _masterWrite(function(doc){doc.autoErrors=[];});}catch(_){}
               _clearLocalErrs();
               toast('Cloud error log cleared.');renderErrPanel();
@@ -42726,6 +42748,9 @@ feedback:()=>{
             _clearLocalErrs();
             toast('Error log cleared');renderErrPanel();
           }catch(e){
+            /* Even on a backend error, we already marked rows resolved locally,
+               so hide them from this device now rather than leaving the panel full. */
+            try{_clearLocalErrs();renderErrPanel();}catch(_){}
             clrBtn.disabled=false;clrBtn.textContent='Clear Cloud Error Log';
             toast('Could not clear: '+String((e&&e.message)||e).slice(0,120)+' — redeploy the api-worker if this persists.',7000);
           }
