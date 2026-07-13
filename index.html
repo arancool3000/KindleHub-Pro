@@ -50347,6 +50347,37 @@ appstore:()=>{
     ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
+  /* Import a KHAPP1 code someone shared → installs to your apps. Mirrors the
+     KindleOS importer, incl. the Kindle keyboard-off fix so native paste works. */
+  function _importAppCode(){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.5)',zIndex:'100060',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'}});
+    const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'460px',width:'100%',borderRadius:'12px',padding:'16px',display:'flex',flexDirection:'column',gap:'10px'}});
+    card.appendChild(txt('div','Import an app',{style:{fontSize:'15px',fontWeight:'800'}}));
+    card.appendChild(txt('div','Paste an app code (starts with KHAPP1:) someone shared. On Kindle: tap the box, then long-press it and choose Paste.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+    const taI=el('textarea',{style:{width:'100%',height:'100px',fontFamily:'monospace',fontSize:'11px',padding:'8px',boxSizing:'border-box',wordBreak:'break-all'}});taI.placeholder='KHAPP1:…';
+    card.appendChild(taI);
+    let _kbR=false;function _restore(){if(_kbR)return;_kbR=true;try{if(window._khKeyboard&&window._khKeyboard.refresh)window._khKeyboard.refresh();}catch(_){}}
+    try{if(window._khKeyboard&&window._khKeyboard.disable)window._khKeyboard.disable();}catch(_){}
+    const rowI=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+    const inst=txt('button','Install',{className:'btn small primary'});
+    inst.onclick=function(){
+      const v=(taI.value||'').trim();
+      if(v.indexOf('KHAPP1:')!==0){toast('That doesn\'t look like an app code');return;}
+      let obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
+      if(!obj||!obj.html){toast('Could not read that app code');return;}
+      if(String(obj.html).length>512*1024){toast('That app is too large to import');return;}
+      if(!Array.isArray(S.publishedApps))S.publishedApps=[];
+      const label=String(obj.label||'App').slice(0,60);
+      S.publishedApps.unshift({id:'imp_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:label,html:String(obj.html),cat:'Fun',by:'imported',at:(typeof NOW==='function'?NOW():Date.now()),downloaded:true});
+      if(S.publishedApps.length>60)S.publishedApps.length=60;
+      try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}
+      _restore();ov.remove();_tab='mine';draw();toast('"'+label+'" installed.');
+    };
+    const clI=txt('button','Close',{className:'btn small'});clI.onclick=function(){_restore();ov.remove();};
+    rowI.append(inst,clI);card.appendChild(rowI);
+    ov.appendChild(card);ov.onclick=function(e){if(e.target===ov){_restore();ov.remove();}};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
   function renderDiscover(){
     const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
     body.appendChild(sb);
@@ -50580,6 +50611,11 @@ appstore:()=>{
   function renderMine(){
     const mine=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
     const q=(Array.isArray(S.appReviewQueue)?S.appReviewQueue:[]);
+    /* Import a shared app code (pairs with the Share button on each app). */
+    const impRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+    const impBtn=txt('button','Import an app code',{className:'btn small'});impBtn.onclick=function(){_importAppCode();};
+    const newBtn=txt('button','Publish a new app',{className:'btn small primary'});newBtn.onclick=function(){_editApp=null;_tab='publish';draw();};
+    impRow.append(newBtn,impBtn);body.appendChild(impRow);
     if(q.length){
       body.appendChild(txt('div','IN REVIEW QUEUE',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0 6px'}}));
       q.forEach(function(a){body.appendChild(txt('div','• '+a.name+' — waiting for a review model to free up (auto-retried).',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'3px'}}));});
