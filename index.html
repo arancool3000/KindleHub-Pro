@@ -29340,7 +29340,7 @@ function tryLocalCommand(raw){
     if(isoMatch)d=new Date(+isoMatch[1],+isoMatch[2]-1,+isoMatch[3]);
     else {
       /* Try common holidays */
-      const now=new Date();const yr=now.getFullYear();
+      const now=NOW();const yr=now.getFullYear();
       const HOLIDAYS={'christmas':[11,25],'xmas':[11,25],'new year':[0,1],'new years':[0,1],'halloween':[9,31],'valentines':[1,14],'valentine\'s':[1,14]};
       for(const[k,v]of Object.entries(HOLIDAYS)){
         if(tgt.toLowerCase().includes(k)){
@@ -29351,7 +29351,7 @@ function tryLocalCommand(raw){
       }
     }
     if(d&&!isNaN(d.getTime())){
-      const ms=d-new Date();
+      const ms=d-NOW();
       const days=Math.ceil(ms/86400000);
       if(days<0)return 'That date is '+(-days)+' days in the past.';
       if(days===0)return 'That\'s today!';
@@ -38841,7 +38841,6 @@ reading:()=>{
     });
     /* Progress bar */
     const progWrap=el('div',{style:{width:'100%',borderTop:'var(--thin)',paddingTop:'8px',marginTop:'4px'}});
-    const progLabel=txt('div','Reading Goal: '+finished+'/'+goal+' ('+pct+'%)',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center'}});
     const goalInp=el('input',{type:'number',value:goal,style:{width:'50px',fontSize:'11px',padding:'2px 4px',border:'var(--thin)',borderRadius:'4px',background:'var(--card)',color:'var(--fg)'}});
     goalInp.onchange=()=>{S.readingGoal=Math.max(1,parseInt(goalInp.value)||12);save();updateStatBar();};
     const progLabelRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}});
@@ -48190,7 +48189,7 @@ notes:()=>{
   /* Helper: "Today", "Yesterday", "N days ago" or full date. Used in
      card headers so the user can scan recency at a glance. */
   function _relDate(iso){
-    const then=new Date(iso),now=new Date();
+    const then=new Date(iso),now=NOW();
     const sameDay=then.toDateString()===now.toDateString();
     if(sameDay)return 'Today, '+then.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     const y=new Date(now);y.setDate(y.getDate()-1);
@@ -48210,7 +48209,7 @@ notes:()=>{
   function _currentDailyStreak(){
     const days=new Set();
     (S.notes||[]).forEach(n=>{try{days.add(new Date(n.date).toDateString());}catch(_){}});
-    let streak=0;const today=new Date();
+    let streak=0;const today=NOW();
     for(let i=0;i<366;i++){
       const d=new Date(today);d.setDate(d.getDate()-i);
       if(days.has(d.toDateString()))streak++;
@@ -53412,7 +53411,7 @@ habits:()=>{
           const d=NOW();d.setDate(d.getDate()-j);
           const k=_localDayKey(d);
           const cellDone=!!(h.log&&h.log[k]);
-          const cell=el('div',{style:{aspectRatio:'1',background:cellDone?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',borderRadius:'3px',cursor:'pointer',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:cellDone?'var(--bg)':'var(--muted)',fontWeight:'700'}});
+          const cell=el('div',{style:{height:'26px',background:cellDone?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',borderRadius:'3px',cursor:'pointer',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:cellDone?'var(--bg)':'var(--muted)',fontWeight:'700'}});
           cell.textContent=d.getDate();
           cell.title=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+(cellDone?' — done':'');
           cell.onclick=()=>{if(!h.log)h.log={};if(h.log[k])delete h.log[k];else h.log[k]=true;saveHabits(habits);render();};
@@ -55981,7 +55980,7 @@ calendar:()=>{
   if(!S.calEvents)S.calEvents=[];
 
   /* ── State ── */
-  const now=new Date();
+  const now=NOW();  /* clock-offset aware — so the calendar opens on the right month/day and Today jumps correctly */
   let curYear=now.getFullYear();
   let curMonth=now.getMonth(); // 0-indexed
   let selectedDay=null; // {y,m,d}
