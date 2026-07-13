@@ -278,9 +278,12 @@ html.kh-no-aspectratio .g2048-cell{width:70px;height:70px}
 .btn:active{opacity:0.6;}
 .btn.small{
   padding:0 12px;font-size:11px;
-  min-height:34px;border-radius:6px;
+  min-height:var(--touch-min);border-radius:6px;
   box-shadow:none;font-weight:600;
 }
+/* Uniform button height (= --touch-min): small/khi buttons stay visually lighter
+   via smaller font + tighter padding, but never render shorter than a full .btn in
+   the same row/column — kills the "the 1st button is a bit bigger than the rest" look. */
 .btn.primary{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);box-shadow:var(--btn-shadow);}
 .btn.primary:active{opacity:0.72;}
 .btn.danger{border-color:var(--danger);color:var(--danger);box-shadow:none;}
@@ -443,7 +446,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
     font-size:12px;border-radius:8px;
   }
   .btn.small{
-    min-height:34px;padding:0 10px;
+    min-height:var(--touch-min);padding:0 10px;
     font-size:11px;border-radius:6px;
   }
   .header-controls .btn.small{min-height:34px;padding:0 7px;font-size:8px;}
@@ -546,7 +549,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 }
 
 /* ── KindleHub Intelligence ── */
-.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:32px!important;letter-spacing:0.2px;}
+.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:var(--touch-min)!important;letter-spacing:0.2px;}
 .khi-spark{font-size:11px;opacity:0.8;margin-right:1px;}
 .khi-output{background:var(--highlight);border:var(--thin);border-radius:var(--radius);
   padding:10px 12px;font-size:12px;line-height:1.6;margin-top:8px;white-space:pre-wrap;}
@@ -643,7 +646,7 @@ body.simple-ui .btn,body.simple-ui button.btn{
   min-height:36px;padding:0 11px;font-size:11.5px;
 }
 body.simple-ui .btn.small,body.simple-ui button.btn.small{
-  min-height:28px;padding:0 8px;font-size:10.5px;box-shadow:1px 1px 0 #000;
+  min-height:36px;padding:0 8px;font-size:10.5px;box-shadow:1px 1px 0 #000;
 }
 /* Tighter still for the chevron-only back button in the Messages header —
    the chunky retro shadow makes the default 36-px square look oversized
@@ -985,7 +988,7 @@ body.launcher-ui .btn,body.launcher-ui button.btn{
   min-height:38px;padding:0 12px;font-size:11.5px;
 }
 body.launcher-ui .btn.small,body.launcher-ui button.btn.small{
-  min-height:32px;padding:0 10px;font-size:10.5px;border-radius:10px;
+  min-height:38px;padding:0 10px;font-size:10.5px;border-radius:10px;
 }
 /* Slimmer chevron back-button in Messages header — matches the airier
    Launcher proportions without forcing a min 36-px square. */
@@ -1238,8 +1241,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div style="display:flex;gap:6px;align-items:center">
       <span id="immersiveHi" style="font-family:monospace;font-size:11px;color:var(--muted)"></span>
       <span id="immersiveScore" style="font-family:monospace;font-size:12px;color:var(--muted)"></span>
-      <button class="btn small" id="immersiveHelp" title="How to play" style="min-width:34px">?</button>
-      <button class="btn small" id="immersiveScores" title="Leaderboard" style="min-width:34px">★</button>
+      <button class="btn small" id="immersiveHelp" title="How to play" style="min-width:40px">?</button>
+      <button class="btn small" id="immersiveScores" title="Leaderboard" style="min-width:40px">★</button>
       <button class="btn small" id="immersiveExit">Back</button>
     </div>
   </div>
@@ -14704,6 +14707,15 @@ function showView(id){
     if(typeof _khUseBump==='function')_khUseBump(id);
   }catch(_){}
   const _host=_viewHost();
+  /* PERF (e-ink): re-showing the SAME already-mounted cached view — re-tapping the
+     active nav tab, or a showView(currentView) refresh that didn't invalidate the
+     cache — used to clear + re-append the identical node: a needless full-screen
+     e-ink flash plus a scroll-to-top. Skip the DOM churn when the exact cached node
+     is already the sole child; the ON_SHOW + related-pages hooks below still run
+     (both idempotent). Force-refresh callers do `delete VIEWS[id]` first, so they
+     never satisfy this and always rebuild. ALWAYS_REBUILD views never skip. */
+  const _sameMounted=VIEWS[id]&&!ALWAYS_REBUILD.has(id)&&!_needSecondaryRemount&&_host.firstChild===VIEWS[id]&&VIEWS[id].nextSibling===null;
+  if(!_sameMounted){
   while(_host.firstChild)_host.removeChild(_host.firstChild);
   if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
   if(!VIEWS[id]){
@@ -14734,6 +14746,7 @@ function showView(id){
     }
   }
   _host.appendChild(VIEWS[id]);
+  }
   try{if(ON_SHOW[id])ON_SHOW[id]();}
   catch(e){
     if(typeof window._khReportBug==='function'){
