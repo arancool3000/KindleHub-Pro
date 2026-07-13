@@ -795,6 +795,11 @@ const SCHEMA_DDL = [
   /* Shared App Store: apps published by any user, downloadable by everyone. */
   "CREATE TABLE IF NOT EXISTS kh_store_apps (id TEXT PRIMARY KEY, name TEXT NOT NULL, html TEXT NOT NULL, cat TEXT DEFAULT 'Fun', author TEXT DEFAULT '', model TEXT DEFAULT '', created_at TEXT, downloads INTEGER DEFAULT 0)",
   "CREATE INDEX IF NOT EXISTS kh_store_apps_rank ON kh_store_apps(downloads DESC, created_at DESC)",
+  /* Auto-maintenance bug queue: one row per distinct bug signature, persisted so
+     the daily cron RESUMES tomorrow when Gemini free quota runs out. status:
+     new | fixed | needs_review | wont_fix | deferred | failed */
+  "CREATE TABLE IF NOT EXISTS kh_maint (sig TEXT PRIMARY KEY, status TEXT DEFAULT 'new', view TEXT DEFAULT '', err TEXT DEFAULT '', fix_kind TEXT DEFAULT '', fix_code TEXT DEFAULT '', detect TEXT DEFAULT '', confirm TEXT DEFAULT '', attempts INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_maint_status ON kh_maint(status, updated_at)",
 ];
 let _schemaReady = false;
 async function ensureSchema(DB){
@@ -959,6 +964,140 @@ async function runAutoModeration(DB, env){
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AUTO-MAINTENANCE — a daily cron that finds bugs KindleHub users actually hit
+   (from kh_errors) and, using a 3-model Gemini pipeline, drafts + verifies +
+   auto-publishes small defensive fixes to every client. Fully opt-in.
+
+   Pipeline (models overridable via env): DETECT (gemini-3.1-flash-lite) →
+   FIX (gemini-3.5-flash) → CONFIRM (gemini-2.5-flash). A server-side Kindle-Silk
+   safety gate sits between FIX and CONFIRM: anything it can't prove safe is
+   STAGED (needs_review) instead of published. Verified fixes are appended to a
+   reserved [[KH_FIX]] broadcast record that every client applies (deferred +
+   try/caught so a fix can never brick boot; respects the per-device opt-out).
+
+   Persistence: every distinct bug (by signature) is a row in kh_maint, so when
+   the Gemini free quota runs out mid-run the rest is marked 'deferred' and the
+   NEXT day's tick resumes exactly where it left off. "Remembers for tomorrow."
+
+   Env: MAINT_ON=1 (master switch) + MAINT_KEY (dedicated Gemini key). Optional:
+   MAINT_DETECT_MODEL / MAINT_FIX_MODEL / MAINT_CONFIRM_MODEL, MAINT_MAX (bugs per
+   tick, default 3 — casual), MAINT_STAGE_ONLY=1 (never auto-publish; stage all
+   for admin approval). ═════════════════════════════════════════════════════ */
+const MAINT_FIX_TAG='[[KH_FIX]]';
+function maintSig(text){
+  let s=String(text||'');
+  s=s.replace(/^User:[^\n]*\n/,'').replace(/─{3,}[\s\S]*$/,'');
+  s=s.slice(0,300).replace(/\d+/g,'#').replace(/\s+/g,' ').trim().toLowerCase();
+  let h=5381; for(let i=0;i<s.length;i++){ h=((h*33)^s.charCodeAt(i))>>>0; }
+  return 'm'+h.toString(36);
+}
+function maintParseJson(t){ try{ const m=String(t||'').match(/\{[\s\S]*\}/); return m?JSON.parse(m[0]):null; }catch(_){ return null; } }
+async function geminiModel(env, key, model, prompt, maxTokens, temp){
+  if(!key) return {text:'',quota:false};
+  try{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+key,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{temperature:(temp==null?0.2:temp),maxOutputTokens:maxTokens||512}})
+    });
+    if(r.status===429) return {text:'',quota:true};
+    if(!r.ok){ let t=''; try{ t=await r.text(); }catch(_){} return {text:'',quota:/RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(t)}; }
+    const j=await r.json();
+    const parts=((((j.candidates||[])[0]||{}).content)||{}).parts||[];
+    return {text: parts.map(p=>p.text||'').join('').trim(), quota:false};
+  }catch(_){ return {text:'',quota:false}; }
+}
+/* Server-side Kindle-Silk safety + auth-deny gate — mirrors the client's
+   _khSiteScanSilk + _khSiteBlockRE so a fix can't ship Silk-incompatible or
+   credential-touching code. Returns '' when safe, else a reason. */
+function maintUnsafe(code, kind){
+  const c=String(code||'');
+  if(!c.trim()) return 'empty';
+  if(c.length>8000) return 'too large';
+  if(kind==='css'){ if(/@import\b|expression\s*\(|javascript:/i.test(c)) return 'unsafe CSS'; return ''; }
+  const P=[[/[)\]\w$]\?\?=/,'??='],[/[)\]\w$]\?\?(?!=)/,'??'],[/[)\]\w$]\?\.\s*[A-Za-z_$([]/,'?.'],[/(?:^|[^A-Za-z0-9_$])catch\s*\{/,'parameterless catch'],[/[)\]\w$]\s*\|\|=/,'||='],[/[)\]\w$]\s*&&=/,'&&='],[/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators'],[/\(\?<[=!]/,'regex lookbehind'],[/\(\?<[A-Za-z_]/,'regex named group'],[/\\[pP]\{/,'regex \\p{}'],[/[^A-Za-z0-9_$.]\d[\d_]*n(?![A-Za-z0-9_$])/,'BigInt']];
+  for(const p of P){ if(p[0].test(c)) return 'Kindle-incompatible: '+p[1]; }
+  if(/_ADMIN_HASHES|ADMIN_HASHES|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|SUPABASE_ANON_KEY|service_role|document\.cookie|\bkh_users\b/.test(c)) return 'touches auth/crypto internals';
+  try{ new Function(c); }catch(e){ return 'syntax error: '+((e&&e.message)||e); }
+  return '';
+}
+async function readMaintFixes(DB){
+  try{
+    const res=await DB.prepare("SELECT text FROM kh_announcements WHERE active=1 AND text LIKE ? ORDER BY id DESC LIMIT 1").bind(MAINT_FIX_TAG+'%').all();
+    const row=res&&res.results&&res.results[0];
+    if(!row) return [];
+    const arr=JSON.parse(String(row.text).slice(MAINT_FIX_TAG.length));
+    return Array.isArray(arr)?arr:[];
+  }catch(_){ return []; }
+}
+async function writeMaintFixes(DB, arr){
+  try{
+    await DB.prepare("DELETE FROM kh_announcements WHERE text LIKE ?").bind(MAINT_FIX_TAG+'%').run();
+    await DB.prepare("INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,'[]',?)").bind(MAINT_FIX_TAG+JSON.stringify((arr||[]).slice(-40)), nowIso()).run();
+  }catch(_){}
+}
+function maintDetectPrompt(err){
+  return 'You are the automatic bug-triage step for KindleHub, a single-file JavaScript e-reader web app that must run on OLD Kindle Silk WebKit. Below is a captured runtime error. Decide if it is a REAL, fixable CLIENT-side bug that a small DEFENSIVE JavaScript or CSS patch could safely guard against (missing null-check, undefined property access, bad DOM lookup) — NOT a network/backend/third-party/CORS issue. Reply ONLY strict JSON: {"fixable": true|false, "cause":"<one short sentence>", "approach":"<how a tiny defensive patch would guard it>"}.\n\nERROR:\n'+String(err||'').slice(0,1500);
+}
+function maintFixPrompt(err, dv){
+  return 'Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this KindleHub bug at runtime. It runs once on every client with full page access. Root cause: '+String((dv&&dv.cause)||'')+'. Approach: '+String((dv&&dv.approach)||'')+'.\nHARD RULES: OLD Kindle Silk WebKit, ES5/ES2015 ONLY — do NOT use optional chaining, nullish coalescing, logical-assignment operators, numeric separators, BigInt, or modern regex (lookbehind, named groups, unicode-property, or s/y/d/u flags); give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credential storage, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Keep it under ~40 lines. Output ONLY the raw JavaScript — no markdown, no comments, no explanation.\n\nERROR:\n'+String(err||'').slice(0,1200);
+}
+function maintConfirmPrompt(err, code, dv){
+  return 'You are the FINAL safety check for an auto-published KindleHub fix. Does the JavaScript patch below (a) plausibly fix or guard the described bug, AND (b) look safe + minimal (no auth/network/storage tampering, no infinite loops, old-Kindle-safe, cannot make things worse)? Reply ONLY strict JSON: {"ok": true|false, "reason":"<short>"}.\n\nBUG: '+String((dv&&dv.cause)||err).slice(0,400)+'\n\nPATCH:\n'+String(code||'').slice(0,2000);
+}
+async function runAutoMaintenance(DB, env){
+  const KEY=env&&env.MAINT_KEY; if(!KEY) return {ran:false,reason:'no MAINT_KEY'};
+  const mDetect=(env&&env.MAINT_DETECT_MODEL)||'gemini-3.1-flash-lite';
+  const mFix=(env&&env.MAINT_FIX_MODEL)||'gemini-3.5-flash';
+  const mConfirm=(env&&env.MAINT_CONFIRM_MODEL)||'gemini-2.5-flash';
+  const MAX=parseInt((env&&env.MAINT_MAX)||'',10)||3;
+  const stageOnly=env&&String(env.MAINT_STAGE_ONLY)==='1';
+  const stats={seeded:0,fixed:0,staged:0,wontfix:0,deferred:0};
+  /* 1. Seed new bug signatures from the errors users actually hit. */
+  try{
+    const res=await DB.prepare("SELECT id,text FROM kh_errors ORDER BY date DESC LIMIT 50").all();
+    for(const r of ((res&&res.results)||[])){
+      const sig=maintSig(r.text);
+      const ins=await DB.prepare("INSERT INTO kh_maint(sig,status,err,created_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(sig) DO NOTHING")
+        .bind(sig,'new',String(r.text||'').slice(0,2000),nowIso(),nowIso()).run();
+      if(ins&&ins.meta&&ins.meta.changes) stats.seeded++;
+    }
+  }catch(_){}
+  /* 2. Process a small casual batch (oldest-touched new/deferred first). */
+  let items=[];
+  try{
+    const res=await DB.prepare("SELECT sig,err FROM kh_maint WHERE status IN ('new','deferred') ORDER BY updated_at ASC LIMIT ?").bind(MAX).all();
+    items=(res&&res.results)||[];
+  }catch(_){ return {ran:false,reason:'query failed'}; }
+  const fixes=await readMaintFixes(DB); let changed=false, quotaHit=false;
+  const setRow=async(sig,status,ex)=>{ try{ await DB.prepare("UPDATE kh_maint SET status=?, detect=COALESCE(?,detect), fix_kind=COALESCE(?,fix_kind), fix_code=COALESCE(?,fix_code), confirm=COALESCE(?,confirm), attempts=attempts+1, updated_at=? WHERE sig=?")
+    .bind(status,(ex&&ex.detect)||null,(ex&&ex.kind)||null,(ex&&ex.code)||null,(ex&&ex.confirm)||null,nowIso(),sig).run(); }catch(_){} };
+  for(const it of items){
+    const d=await geminiModel(env,KEY,mDetect,maintDetectPrompt(it.err),300,0.1);
+    if(d.quota){ quotaHit=true; break; }
+    const dv=maintParseJson(d.text);
+    if(!dv || dv.fixable===false || dv.fixable==='false'){ await setRow(it.sig,'wont_fix',{detect:String(d.text||'').slice(0,400)}); stats.wontfix++; continue; }
+    const f=await geminiModel(env,KEY,mFix,maintFixPrompt(it.err,dv),900,0.2);
+    if(f.quota){ quotaHit=true; break; }
+    const code=String(f.text||'').replace(/```[a-z]*\n?|```/g,'').trim();
+    const kind=(/^\s*[.#@*a-zA-Z][^{;=]*\{[^}]*\}/.test(code)&&!/\bfunction\b|=>|\bvar \b|\blet \b|\bconst \b/.test(code))?'css':'js';
+    const bad=maintUnsafe(code,kind);
+    if(!code||bad){ await setRow(it.sig,'needs_review',{detect:String(d.text||'').slice(0,400),kind:kind,code:code.slice(0,4000),confirm:'unsafe: '+bad}); stats.staged++; continue; }
+    const c=await geminiModel(env,KEY,mConfirm,maintConfirmPrompt(it.err,code,dv),200,0);
+    if(c.quota){ quotaHit=true; break; }
+    const cv=maintParseJson(c.text);
+    const okFix=cv&&(cv.ok===true||cv.ok==='true');
+    if(!okFix||stageOnly){ await setRow(it.sig,'needs_review',{detect:String(d.text||'').slice(0,400),kind:kind,code:code.slice(0,4000),confirm:String(c.text||'').slice(0,300)}); stats.staged++; continue; }
+    fixes.push({id:it.sig,kind:kind,code:code,note:String((dv&&dv.cause)||'auto-fix').slice(0,120),ts:Date.now()});
+    changed=true;
+    await setRow(it.sig,'fixed',{detect:String(d.text||'').slice(0,400),kind:kind,code:code.slice(0,4000),confirm:String(c.text||'').slice(0,300)});
+    stats.fixed++;
+  }
+  if(quotaHit){ try{ const r=await DB.prepare("UPDATE kh_maint SET status='deferred', updated_at=? WHERE status='new'").bind(nowIso()).run(); stats.deferred=(r&&r.meta&&r.meta.changes)||0; }catch(_){} }
+  if(changed) await writeMaintFixes(DB, fixes);
+  return {ran:true,quotaHit:quotaHit,stats:stats};
+}
+
 /* ── Per-IP rate limit (Cache API — no KV, free, per-colo) ───────────────────
    Stops ONE source from flooding the Worker and tripping the shared daily budget
    for everyone. Two windows: a short burst limit + a generous daily limit (well
@@ -991,6 +1130,9 @@ export default {
       /* AI moderation (opt-in via AUTO_MOD + GEMINI_KEY). */
       const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
       if(on && env.GEMINI_KEY) await runAutoModeration(DB, env);
+      /* Auto-maintenance (opt-in via MAINT_ON + MAINT_KEY) — daily self-healing. */
+      const maintOn = env && env.MAINT_ON && String(env.MAINT_ON)!=='0' && String(env.MAINT_ON).toLowerCase()!=='false';
+      if(maintOn && env.MAINT_KEY) await runAutoMaintenance(DB, env);
     }catch(_){ /* never throw out of a cron tick */ }
   },
   async fetch(request, env){
@@ -1000,6 +1142,27 @@ export default {
     await ensureSchema(DB);
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
+
+    /* Auto-maintenance admin endpoints (admin token required). /maint/run kicks a
+       tick on demand (same work the daily cron does); /maint/status returns the
+       queue counts + recent rows for the admin monitor UI. */
+    if(url.pathname==='/maint/run' || url.pathname==='/maint/status'){
+      if(!(await isAdmin(request.headers.get('x-kh-admin')||''))) return json({error:'admin only'},403,env);
+      if(url.pathname==='/maint/run'){
+        if(!(env&&env.MAINT_KEY)) return json({error:'MAINT_KEY not set on the worker'},400,env);
+        const r=await runAutoMaintenance(DB, env);
+        return json({ok:true,result:r},200,env);
+      }
+      let counts={}, recent=[];
+      try{
+        const cr=await DB.prepare("SELECT status, COUNT(*) n FROM kh_maint GROUP BY status").all();
+        for(const row of ((cr&&cr.results)||[])) counts[row.status]=row.n;
+        const rr=await DB.prepare("SELECT sig,status,fix_kind,detect,confirm,updated_at FROM kh_maint ORDER BY updated_at DESC LIMIT 30").all();
+        recent=(rr&&rr.results)||[];
+      }catch(_){}
+      let fixCount=0; try{ fixCount=(await readMaintFixes(DB)).length; }catch(_){}
+      return json({ok:true,counts:counts,recent:recent,liveFixes:fixCount,enabled:!!(env&&env.MAINT_ON&&env.MAINT_KEY)},200,env);
+    }
 
     /* Per-IP rate limit — one abuser can't burn the shared daily budget for
        everyone. Tunable via env RL_BURST (per 10s) / RL_DAY (per day); admin
@@ -1065,3 +1228,7 @@ export default {
     }
   },
 };
+
+/* Named exports for the test harness only — Cloudflare Workers use ONLY the
+   default export as the handler, so these are ignored at deploy time. */
+export { runAutoMaintenance, maintUnsafe, maintSig, maintParseJson, readMaintFixes, writeMaintFixes, ensureSchema };
