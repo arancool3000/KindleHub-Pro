@@ -9116,7 +9116,7 @@ const _CAP_TAG='[[KH_CAP]]';
    marker, so they can be routed OUT of the general announcements widget (into
    the admin panel) while the WARNED user still sees theirs prominently. */
 const _WARN_TAG='[[KH_WARN]]';
-function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);if(t.indexOf(_EDIT_TAG)===0)return '';return t;}
+function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);if(t.indexOf(_EDIT_TAG)===0||t.indexOf('[[KH_FIX]]')===0)return '';return t;}
 /* Set of usernames who currently have an active warning (from warn-marked
    announcements) — used to show "already warned" on ban requests. Admin-loaded. */
 async function _khLoadWarnedSet(){
@@ -9340,6 +9340,62 @@ async function _khGlobalEditClear(){
   return ok;
 }
 window._khApplyGlobalEdit=_khApplyGlobalEdit;window._khGlobalEditGet=_khGlobalEditGet;window._khGlobalEditPublish=_khGlobalEditPublish;window._khGlobalEditClear=_khGlobalEditClear;
+/* ── Auto-maintenance fixes ────────────────────────────────────────────────
+   The daily server cron (api-worker runAutoMaintenance) auto-publishes small,
+   verified, defensive fixes for bugs users hit, as a reserved [[KH_FIX]] record
+   holding an ARRAY of {id,kind,code,note,ts}. Every client applies them here —
+   CSS immediately, JS deferred + try/caught (a bad fix can NEVER brick boot),
+   each run ONCE by id, and ALL gated on the SAME per-device opt-out as the
+   Website Editor (S.blockGlobalJs). Filtered out of announcement display. */
+const _FIX_TAG='[[KH_FIX]]';
+window._khMaintApplied=window._khMaintApplied||{};
+function _khApplyMaintFixes(arr){
+  try{
+    if(!Array.isArray(arr))return;
+    var st=document.getElementById('kh-maint-css');
+    var css='';
+    for(var i=0;i<arr.length;i++){
+      var fx=arr[i];if(!fx||!fx.code)continue;
+      if(fx.kind==='css'){css+='\n/* '+String(fx.id||'')+' */\n'+String(fx.code);continue;}
+      /* JS fix — opt-out honoured, run once per id, deferred + guarded */
+      if(typeof S!=='undefined'&&S.blockGlobalJs)continue;
+      var key=String(fx.id||fx.ts||i);
+      if(window._khMaintApplied[key])continue;
+      window._khMaintApplied[key]=1;
+      (function(code,k){setTimeout(function(){try{(0,eval)(String(code));}catch(e){try{console.warn('[maint fix '+k+']',e);}catch(_){}}},1400);})(fx.code,key);
+    }
+    if(css){if(!st){st=document.createElement('style');st.id='kh-maint-css';(document.head||document.documentElement).appendChild(st);}st.textContent=css.slice(0,120000);}
+    else if(st){st.parentNode&&st.parentNode.removeChild(st);}
+  }catch(_){}
+}
+async function _khRefreshMaintFixes(){
+  if(typeof _sbActive!=='function'||!_sbActive())return;
+  try{
+    var rows=await _sbSelect('kh_announcements','select=text,created_at&active=eq.true&order=created_at.desc&limit=25');
+    var rec=null;
+    if(Array.isArray(rows))for(var i=0;i<rows.length;i++){var tx=String(rows[i].text||'');if(tx.indexOf(_FIX_TAG)===0){rec=tx.slice(_FIX_TAG.length);break;}}
+    var arr=[];if(rec){try{arr=JSON.parse(rec)||[];}catch(_){arr=[];}}
+    try{localStorage.setItem('kh_maint_fixes',JSON.stringify(arr));}catch(_){}
+    _khApplyMaintFixes(arr);
+  }catch(_){}
+}
+function _khMaintFixesCached(){try{return JSON.parse(localStorage.getItem('kh_maint_fixes')||'[]')||[];}catch(_){return [];}}
+window._khApplyMaintFixes=_khApplyMaintFixes;window._khRefreshMaintFixes=_khRefreshMaintFixes;window._khMaintFixesCached=_khMaintFixesCached;
+/* Admin controls for the auto-maintenance cron (endpoints live on the D1 worker
+   root, admin-token gated). */
+async function _khMaintCall(path){
+  var base=(typeof _apiGatewayUrl==='function')?_apiGatewayUrl():'';
+  if(!base)throw new Error('Auto-maintenance runs on the Cloudflare D1 worker — set the API gateway in Admin first.');
+  var r=await fetch(base.replace(/\/+$/,'')+path,{method:'POST',headers:{'X-KH-Admin':window._adminToken||''}});
+  if(!r.ok){var t='';try{t=(await r.json()).error||'';}catch(_){}throw new Error(t||('HTTP '+r.status));}
+  return await r.json();
+}
+async function _khMaintClearFixes(){
+  var ok=await _announceRpc('kh_post_announcement',{p_text:'[[KH_FIX]]'+JSON.stringify([]),p_token:window._adminToken||'',p_targets:[]});
+  if(ok){try{localStorage.setItem('kh_maint_fixes','[]');}catch(_){}try{var st=document.getElementById('kh-maint-css');if(st)st.remove();}catch(_){}}
+  return ok;
+}
+window._khMaintCall=_khMaintCall;window._khMaintClearFixes=_khMaintClearFixes;
 /* Admin-only editor overlay: describe a change, let Gemini draft the CSS/JS,
    preview it on THIS device, then publish it to everyone. */
 /* ── Site Editor verification + polish tools ──────────────────────────────
@@ -9456,10 +9512,10 @@ async function _khOpenSiteEditor(){
   let tab='edit';
   const tabRow=el('div',{className:'card-row',style:{gap:'6px'}});
   const tabBtns={};
-  [['edit','Edit'],['saved','Saved edits']].forEach(function(t){const b=txt('button',t[1],{className:'btn small'+(t[0]==='edit'?' primary':'')});b.onclick=function(){tab=t[0];_showTab();};tabBtns[t[0]]=b;tabRow.appendChild(b);});
+  [['edit','Edit'],['saved','Saved edits'],['auto','Auto-fix']].forEach(function(t){const b=txt('button',t[1],{className:'btn small'+(t[0]==='edit'?' primary':'')});b.onclick=function(){tab=t[0];_showTab();};tabBtns[t[0]]=b;tabRow.appendChild(b);});
   card.appendChild(tabRow);
-  const editWrap=el('div',{});const savedWrap=el('div',{style:{display:'none'}});
-  card.appendChild(editWrap);card.appendChild(savedWrap);
+  const editWrap=el('div',{});const savedWrap=el('div',{style:{display:'none'}});const autoWrap=el('div',{style:{display:'none'}});
+  card.appendChild(editWrap);card.appendChild(savedWrap);card.appendChild(autoWrap);
 
   /* ── EDIT tab ── */
   const seg=el('div',{className:'card-row',style:{gap:'6px'}});
@@ -9601,11 +9657,47 @@ async function _khOpenSiteEditor(){
       row.append(viewB,repubB);c.appendChild(row);savedWrap.appendChild(c);
     });
   }
+  /* ── AUTO-FIX tab — monitor + control the daily self-healing cron ── */
+  function _renderAuto(){
+    autoWrap.innerHTML='';
+    autoWrap.appendChild(txt('div','Auto-maintenance runs daily on the server: it reads the bugs users actually hit, then Gemini 3.1-flash-lite finds them, 3.5-flash writes a fix, and 2.5-flash confirms it. Verified fixes auto-publish to everyone (revertible); anything it can\'t prove safe is staged below for you. Unfinished work resumes tomorrow when the free quota resets.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+    var status=txt('div','Loading status…',{style:{fontSize:'12px',marginBottom:'8px'}});
+    autoWrap.appendChild(status);
+    var row=el('div',{className:'card-row'});
+    var runB=txt('button','Run maintenance now',{className:'btn small primary'});
+    var refreshB=txt('button','Refresh',{className:'btn small'});
+    var revertB=txt('button','Revert all auto-fixes',{className:'btn small danger'});
+    row.append(runB,refreshB,revertB);autoWrap.appendChild(row);
+    var log=el('div',{style:{marginTop:'10px'}});autoWrap.appendChild(log);
+    function paint(d){
+      status.innerHTML='';
+      if(!d){status.appendChild(txt('span','Could not reach the maintenance service.',{style:{color:'var(--danger)'}}));return;}
+      var c=d.counts||{};
+      status.appendChild(txt('div',(d.enabled?'● Enabled':'○ Not enabled (set MAINT_ON + MAINT_KEY on the worker)'),{style:{fontWeight:'800',fontSize:'12px',color:d.enabled?'var(--success)':'var(--muted)'}}));
+      status.appendChild(txt('div',(d.liveFixes||0)+' fix'+((d.liveFixes===1)?'':'es')+' live on all devices  ·  fixed '+(c.fixed||0)+' · staged '+(c['needs_review']||0)+' · won\'t-fix '+(c.wont_fix||0)+' · queued '+((c['new']||0)+(c.deferred||0)),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'3px'}}));
+      log.innerHTML='';
+      var rec=d.recent||[];
+      if(rec.length)log.appendChild(txt('div','RECENT',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0 4px'}}));
+      rec.slice(0,12).forEach(function(r){
+        var b=el('div',{style:{borderLeft:'3px solid '+(r.status==='fixed'?'var(--success)':(r.status==='needs_review'?'var(--accent)':'var(--muted)')),padding:'4px 8px',marginBottom:'5px',background:'var(--highlight)',borderRadius:'6px'}});
+        b.appendChild(txt('div','['+r.status+'] '+String(r.detect||'').replace(/[{}"]/g,'').slice(0,90),{style:{fontSize:'11px',lineHeight:'1.35'}}));
+        if(r.confirm)b.appendChild(txt('div',String(r.confirm).replace(/[{}"]/g,'').slice(0,90),{style:{fontSize:'10px',color:'var(--muted)'}}));
+        log.appendChild(b);
+      });
+    }
+    function load(){status.textContent='Loading status…';_khMaintCall('/maint/status').then(paint).catch(function(e){status.textContent='';status.appendChild(txt('span',(e&&e.message)||'error',{style:{color:'var(--danger)',fontSize:'11px'}}));});}
+    runB.onclick=function(){runB.disabled=true;runB.textContent='Running…';_khMaintCall('/maint/run').then(function(r){if(typeof toast==='function')toast('Maintenance ran: '+JSON.stringify((r&&r.result&&r.result.stats)||{}));runB.disabled=false;runB.textContent='Run maintenance now';load();}).catch(function(e){runB.disabled=false;runB.textContent='Run maintenance now';if(typeof toast==='function')toast((e&&e.message)||'failed');});};
+    refreshB.onclick=load;
+    revertB.onclick=async function(){if(!window.confirm('Revert ALL auto-published fixes for everyone? (Applied JS clears on next reload; CSS clears immediately.)'))return;var ok=await _khMaintClearFixes();if(typeof toast==='function')toast(ok?'All auto-fixes reverted.':'Failed — check connection.');load();};
+    load();
+  }
   function _showTab(){
     editWrap.style.display=tab==='edit'?'block':'none';
     savedWrap.style.display=tab==='saved'?'block':'none';
+    autoWrap.style.display=tab==='auto'?'block':'none';
     Object.keys(tabBtns).forEach(function(x){tabBtns[x].classList.toggle('primary',x===tab);});
     if(tab==='saved')_renderSaved();
+    if(tab==='auto')_renderAuto();
   }
 
   _syncBox();_verify();
@@ -9860,6 +9952,7 @@ async function _renderAnnouncementWidget(card){
       const t=String(a.text||'');
       if(t.indexOf(_CAP_TAG)===0)return false;/* capacity control record — never a real announcement */
       if(t.indexOf(_EDIT_TAG)===0)return false;/* global site-edit record — never a real announcement */
+      if(t.indexOf('[[KH_FIX]]')===0)return false;/* auto-maintenance fix record — never a real announcement */
       if(t.indexOf(_WARN_TAG)===0){
         /* Moderator warnings aren't general announcements: only the WARNED user
            still sees theirs here (prominently, below); for everyone else — incl.
@@ -62378,6 +62471,10 @@ window._showWelcome=function(){
        refresh it from the cloud so a new/lifted edit propagates to every client. */
     try{if(typeof _khApplyGlobalEdit==='function')_khApplyGlobalEdit(_khGlobalEditGet());}catch(_){}
     setTimeout(()=>{try{if(typeof _khRefreshGlobalEdit==='function')_khRefreshGlobalEdit();}catch(_){}},1800);
+    /* Auto-maintenance fixes: apply the cached set instantly, then refresh from
+       the cloud so the daily cron's new fixes reach every client. */
+    try{if(typeof _khApplyMaintFixes==='function')_khApplyMaintFixes(_khMaintFixesCached());}catch(_){}
+    setTimeout(()=>{try{if(typeof _khRefreshMaintFixes==='function')_khRefreshMaintFixes();}catch(_){}},2100);
     /* Auto-restore KindleOS launcher if it was the last active surface.
        Already detected up-front as `_willLaunchOS` — we just need to
        fire the actual launch now and pull down the bootmask. No setTimeout

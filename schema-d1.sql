@@ -147,3 +147,21 @@ CREATE TABLE IF NOT EXISTS kh_store_apps (
   downloads  INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS kh_store_apps_rank ON kh_store_apps(downloads DESC, created_at DESC);
+
+-- Auto-maintenance bug queue (daily self-healing cron). One row per distinct bug
+-- signature, persisted so a run that hits the Gemini free-quota resumes tomorrow.
+-- status: new | fixed | needs_review | wont_fix | deferred | failed
+CREATE TABLE IF NOT EXISTS kh_maint (
+  sig        TEXT PRIMARY KEY,
+  status     TEXT DEFAULT 'new',
+  view       TEXT DEFAULT '',
+  err        TEXT DEFAULT '',
+  fix_kind   TEXT DEFAULT '',
+  fix_code   TEXT DEFAULT '',
+  detect     TEXT DEFAULT '',
+  confirm    TEXT DEFAULT '',
+  attempts   INTEGER DEFAULT 0,
+  created_at TEXT,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS kh_maint_status ON kh_maint(status, updated_at);
