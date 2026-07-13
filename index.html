@@ -9046,7 +9046,7 @@ async function _checkAdmin(){
   return result;
 }
 /* Invalidate cache whenever the user signs in/out so the gate re-checks */
-function _resetAdminCache(){delete window._isAdminCached;}
+function _resetAdminCache(){delete window._isAdminCached;try{if(window._khSyncWebsiteEditorCard)window._khSyncWebsiteEditorCard();}catch(_){}}
 
 /* ── Community announcements ──────────────────────────────────────────
    One active announcement (kh_announcements) broadcast to every visitor's
@@ -9728,6 +9728,29 @@ async function _khOpenSiteEditor(){
   (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 window._khOpenSiteEditor=_khOpenSiteEditor;
+/* Keep the admin-only Website Editor entry card in sync with the CURRENT admin
+   state: present for an admin, REMOVED for a non-admin/guest — including from a
+   CACHED chat view after an account switch or logout (re-showing a cached view
+   would otherwise re-add a stale card). Called on chat build, on every chat show
+   (ON_SHOW.chat), on tier change, and on admin-cache reset, so the editor can
+   never leak to a non-admin. Pass the (possibly detached) chatPanel at build; on
+   later calls it finds the mounted one. */
+window._khSyncWebsiteEditorCard=function(cp){
+  try{
+    cp=cp||document.getElementById('chatPanel');
+    var card=document.getElementById('kh-website-editor-card');
+    if(!cp||window._isAdminCached!==true){ if(card&&card.parentNode)card.parentNode.removeChild(card); return; }
+    if(card)return;
+    var weCard=el('div',{id:'kh-website-editor-card',style:{margin:'8px',padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',background:'var(--highlight)',flexShrink:'0'}});
+    weCard.appendChild(txt('div','Website Editor',{style:{fontWeight:'800',fontSize:'12px',marginBottom:'2px'}}));
+    var _le=(typeof _khGlobalEditGet==='function')?_khGlobalEditGet():null;
+    weCard.appendChild(txt('div',(_le&&(_le.css||_le.js||_le.banner))?('A live edit is published'+(_le.note?(' — "'+_le.note+'"'):'')+'. Edit or manage it here.'):'Edit the live site for everyone — CSS, a banner, or advanced JS, with AI help. Admin only.',{style:{fontSize:'10.5px',color:'var(--muted)',lineHeight:'1.45',marginBottom:'6px'}}));
+    var weBtn=txt('button','Open Website Editor',{className:'btn small primary'});
+    weBtn.onclick=function(){try{_khOpenSiteEditor();}catch(e){if(typeof toast==='function')toast('Editor error: '+((e&&e.message)||e));}};
+    weCard.appendChild(weBtn);
+    cp.insertBefore(weCard,cp.firstChild);
+  }catch(_){}
+};
 /* ── Username ban list ────────────────────────────────────────────────
    Approving a username report bans the NAME (you can't rename an account —
    the login hash is SHA-256(username+password), so the name is the
@@ -35642,29 +35665,19 @@ chat:()=>{
   const chatPanel=el('div',{id:'chatPanel',style:{flex:'1',display:'flex',flexDirection:'column',overflow:'hidden',minHeight:'0'}});
 
   /* Admin-only Website Editor entry — lives here in the Assistant tab (not the
-     admin panel). Shown only to a resolved admin; if the tier resolves after
-     the view was built, a kh-tier-changed listener mounts it in. */
-  function _mountWebsiteEditorCard(){
-    if(window._isAdminCached!==true)return;
-    if(document.getElementById('kh-website-editor-card'))return;
-    const weCard=el('div',{id:'kh-website-editor-card',style:{margin:'8px',padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',background:'var(--highlight)',flexShrink:'0'}});
-    weCard.appendChild(txt('div','Website Editor',{style:{fontWeight:'800',fontSize:'12px',marginBottom:'2px'}}));
-    const _le=(typeof _khGlobalEditGet==='function')?_khGlobalEditGet():null;
-    weCard.appendChild(txt('div',(_le&&(_le.css||_le.js||_le.banner))?('A live edit is published'+(_le.note?(' — "'+_le.note+'"'):'')+'. Edit or manage it here.'):'Edit the live site for everyone — CSS, a banner, or advanced JS, with AI help. Verified + auto-polished so you can\'t break it.',{style:{fontSize:'10.5px',color:'var(--muted)',lineHeight:'1.45',marginBottom:'6px'}}));
-    const weBtn=txt('button','Open Website Editor',{className:'btn small primary'});
-    weBtn.onclick=function(){try{_khOpenSiteEditor();}catch(e){if(typeof toast==='function')toast('Editor error: '+((e&&e.message)||e));}};
-    weCard.appendChild(weBtn);
-    chatPanel.insertBefore(weCard,chatPanel.firstChild);
-  }
+     admin panel). Delegated ENTIRELY to the global window._khSyncWebsiteEditorCard
+     so the card presence is re-evaluated against the CURRENT admin state on every
+     call (build, chat show, tier change, admin-cache reset) — never baked into the
+     cached view at build time (that was the account-switch leak). */
+  function _mountWebsiteEditorCard(){ try{ if(window._khSyncWebsiteEditorCard)window._khSyncWebsiteEditorCard(chatPanel); }catch(_){} }
   const log=el('div',{id:'chatLog',className:'chat-log',style:{flex:'1',minHeight:'0'}});
   chatPanel.appendChild(log);
   try{_mountWebsiteEditorCard();}catch(_){}
-  /* If admin wasn't resolved yet at build time, mount when the tier resolves. */
-  if(window._isAdminCached!==true){
-    var _weTierFn=function(){try{if(document.getElementById('view-chat')&&window._isAdminCached===true)_mountWebsiteEditorCard();}catch(_){}if(!document.getElementById('view-chat'))window.removeEventListener('kh-tier-changed',_weTierFn);};
-    try{window.addEventListener('kh-tier-changed',_weTierFn);}catch(_){}
-    try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(document.getElementById('view-chat'))_mountWebsiteEditorCard();}catch(_){}});}catch(_){}
-  }
+  /* Re-sync when the tier resolves/changes after build (admin resolves async, or
+     an account switch fires kh-tier-changed) — the sync fn adds OR removes. */
+  var _weTierFn=function(){try{if(document.getElementById('view-chat')){if(window._khSyncWebsiteEditorCard)window._khSyncWebsiteEditorCard();}else{window.removeEventListener('kh-tier-changed',_weTierFn);}}catch(_){}};
+  try{window.addEventListener('kh-tier-changed',_weTierFn);}catch(_){}
+  try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(document.getElementById('view-chat')&&window._khSyncWebsiteEditorCard)window._khSyncWebsiteEditorCard();}catch(_){}});}catch(_){}
 
   const inp=el('div',{style:{display:'flex',gap:'5px',padding:'7px 8px',borderTop:'var(--thin)',alignItems:'center',flexShrink:'0'}});
   const histBtn=txt('button','Menu',{id:'histToggleBtn'});
@@ -59776,6 +59789,10 @@ ON_SHOW.tools=()=>{
 ON_SHOW.dictionary=()=>{const di=document.getElementById('dictSearch');if(di)setTimeout(()=>di.focus(),100);};
 ON_SHOW.maps=()=>{const mw=document.getElementById('mapCanvas');if(mw&&mw._renderMap)mw._renderMap();};
 ON_SHOW.chat=()=>{
+  /* Re-evaluate the admin-only Website Editor card against the CURRENT admin
+     state every time the (possibly cached) chat view is shown — removes a stale
+     card left over from a prior admin session after an account switch/logout. */
+  try{if(window._khSyncWebsiteEditorCard)window._khSyncWebsiteEditorCard();}catch(_){}
   updateAIMsgCounter();
   const log=document.getElementById('chatLog');
   if(log&&!log.children.length){
