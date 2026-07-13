@@ -4539,7 +4539,7 @@ function launchKindleDesktop(){
          a unique opaque origin, so an imported/shared app CANNOT read this page's
          localStorage (the encrypted state, auth hash, device id), cookies, or call
          our APIs as the user. Stops a malicious shared app from stealing accounts. */
-      fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+      fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads');
       /* Inject the same strict CSP the store uses (connect-src 'none' blocks any
          data exfiltration, form-action 'none' blocks phishing posts) so an AI-
          built / downloaded app can't call out even though it runs JS. */
@@ -5779,7 +5779,15 @@ function launchKindleDesktop(){
     ta.style.cssText='width:100%;height:110px;font-family:monospace;font-size:11px;padding:8px;border:var(--thin);border-radius:8px;background:var(--bg,#f0f0f0);color:var(--fg,#111);box-sizing:border-box;resize:none;word-break:break-all;';
     const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;justify-content:flex-end;';
     const closeBtn=document.createElement('button');closeBtn.textContent='Close';closeBtn.className='btn small';
-    closeBtn.onclick=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
+    /* The KindleHub on-screen keyboard forces every textarea readOnly to suppress
+       the native keyboard — but on Kindle Silk a readOnly field ALSO can't receive
+       the native long-press "Paste", which is the only way to paste a KHAPP1 code
+       copied from outside the app (Silk blocks navigator.clipboard.readText). So
+       for the IMPORT box we turn the KH keyboard off while the dialog is open (the
+       observer that re-applies readOnly then no-ops), and restore it on close. */
+    let _kbRestored=false;
+    function _restoreKb(){if(_kbRestored)return;_kbRestored=true;try{if(window._khKeyboard&&window._khKeyboard.refresh)window._khKeyboard.refresh();}catch(_){}}
+    closeBtn.onclick=()=>{_restoreKb();if(ov.parentNode)ov.parentNode.removeChild(ov);};
     if(mode==='export'&&app){
       ttl.textContent='Share "'+_censorText(app.label)+'"';
       hint.textContent='Copy this code and send it to anyone. They tap Import in their KindleOS app store and paste it — it installs straight onto their home screen.';
@@ -5790,8 +5798,21 @@ function launchKindleDesktop(){
       btnRow.appendChild(copyBtn);btnRow.appendChild(closeBtn);
     } else {
       ttl.textContent='Import an app';
-      hint.textContent='Paste an app code (starts with KHAPP1:) below. It will be added to your home screen.';
+      hint.textContent='Paste an app code (starts with KHAPP1:) below, then tap Install. On Kindle: tap the box, then long-press it and choose Paste. It will be added to your home screen.';
       ta.placeholder='KHAPP1:…';
+      /* Keep the field a plain editable textarea so the Kindle native long-press
+         Paste works — turn the KH keyboard off for the dialog's lifetime. */
+      try{if(window._khKeyboard&&window._khKeyboard.disable)window._khKeyboard.disable();}catch(_){}
+      /* Explicit Paste button — works where the Clipboard API is allowed (desktop/
+         phone); on Kindle Silk it rejects, so we fall back to a long-press hint. */
+      const pasteBtn=document.createElement('button');pasteBtn.textContent='Paste';pasteBtn.className='btn small';
+      pasteBtn.onclick=()=>{
+        try{ta.focus();}catch(_){}
+        if(navigator.clipboard&&navigator.clipboard.readText){
+          navigator.clipboard.readText().then(t=>{if(t){ta.value=t;if(typeof toast==='function')toast('Pasted');}else if(typeof toast==='function')toast('Clipboard was empty');})
+            .catch(()=>{if(typeof toast==='function')toast('Long-press the box and choose Paste');});
+        }else{if(typeof toast==='function')toast('Long-press the box and choose Paste');}
+      };
       const instBtn=document.createElement('button');instBtn.textContent='Install';instBtn.className='btn small primary';
       instBtn.onclick=()=>{
         const v=(ta.value||'').trim();
@@ -5812,10 +5833,11 @@ function launchKindleDesktop(){
         const icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+safeInitials+'</text></svg>';
         const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:html,builtWith:'Imported'};
         osState.customApps.push(newApp);persistOS();buildPages();renderInstalled();
+        _restoreKb();
         if(ov.parentNode)ov.parentNode.removeChild(ov);
         if(typeof toast==='function')toast('"'+label+'" added to your home screen');
       };
-      btnRow.appendChild(instBtn);btnRow.appendChild(closeBtn);
+      btnRow.appendChild(pasteBtn);btnRow.appendChild(instBtn);btnRow.appendChild(closeBtn);
     }
     card.appendChild(ttl);card.appendChild(hint);card.appendChild(ta);card.appendChild(btnRow);
     ov.appendChild(card);ov.onclick=function(ev){if(ev.target===ov)closeBtn.onclick();};
@@ -6065,7 +6087,7 @@ GENERAL RULES:
 - Return ONLY valid JSON, no markdown, no preamble, no code fences.
 - Schema: {"label":"App Name","color":"#hexcolor","html":"complete HTML string"}
 - The html field must be a fully working standalone HTML document.
-- All CSS and JS inline. No external resources except APIs via allorigins proxy.
+- All CSS and JS inline. The app runs fully SANDBOXED with NO network access once installed — fetch/XMLHttpRequest/WebSocket and external <img>/<script>/<link> are all blocked. Everything must be self-contained and work OFFLINE. Do NOT rely on any web API or CDN.
 - Design for portrait ~360x580px. High contrast black/white. Large tap targets (min 44px height).
 - No emoji in UI. Use borders and patterns instead of color-only distinctions.
 - Use Georgia, Helvetica, or monospace fonts only.
@@ -6073,21 +6095,22 @@ GENERAL RULES:
 - Make it fully functional — not a mockup.
 - color: a hex representing the app's purpose.
 
-WEB SEARCH & LIVE DATA:
-- For apps needing current data (news, weather, prices, facts), include fetch() calls inside the HTML.
-- CORS proxy for any HTTP API: https://api.allorigins.win/get?url=ENCODED_URL
-  Usage: fetch('https://api.allorigins.win/get?url='+encodeURIComponent('https://api.target.com/endpoint'))
-         .then(r=>r.json()).then(d=>JSON.parse(d.contents))
-- Free APIs you can call directly (no key): 
-    Open-Meteo weather: https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current_weather=true
-    Wikipedia: https://en.wikipedia.org/api/rest_v1/page/summary/TOPIC
-    REST Countries: https://restcountries.com/v3.1/name/COUNTRY
-    Open Library: https://openlibrary.org/search.json?q=QUERY
-    JokeAPI: https://v2.jokeapi.dev/joke/Programming?type=single
-    Trivia: https://opentdb.com/api.php?amount=10&type=multiple
-    Exchange rates: https://open.er-api.com/v6/latest/USD
-    DuckDuckGo search: https://api.duckduckgo.com/?q=QUERY&format=json&no_html=1
-- Always handle fetch errors gracefully with a fallback UI message.`;
+NO NETWORK — the app is sandboxed and CANNOT fetch live data (weather, news, prices, search). Do NOT generate fetch()/API code — it will silently fail. For "live" apps, either ship built-in sample data or ask the user to type the numbers in. Persist data with localStorage (it works inside the app).
+
+DOWNLOAD / EXPORT (this DOES work — use it for CSV/text/data export):
+  var blob=new Blob([csvString],{type:'text/csv'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='export.csv'; document.body.appendChild(a); a.click();
+  setTimeout(function(){a.remove();},0);
+
+SEND EMAIL — the app has NO email/network of its own. To send mail, ask the HOST via postMessage (the host shows the user a confirmation and sends it from their KindleHub account). This is the ONLY way an app can email:
+  var _rid='m'+Date.now();
+  window.addEventListener('message',function(ev){
+    var d=ev.data; if(!d||d.kh!=='app'||d.action!=='sendMail'||d.rid!==_rid) return;
+    if(d.ok){ /* sent */ } else { /* d.error, e.g. user declined */ }
+  });
+  parent.postMessage({kh:'app',action:'sendMail',rid:_rid,to:'someone@example.com',subject:'Hi',body:'text'},'*');
+Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in the sandbox. Only the postMessage bridge above works.`;
       const userMsg='Build this app: '+desc;
       let raw=await _khCallActiveAI(systemPrompt,userMsg);
       const clean=raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
@@ -6131,7 +6154,7 @@ WEB SEARCH & LIVE DATA:
       /* SECURITY: sandbox the AI-generated preview (opaque origin, no same-origin)
          so generated code can't touch our localStorage / auth hash. See the
          custom-app overlay above for the full rationale. */
-      pframe.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+      pframe.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads');
       pframe.srcdoc=parsed.html;
       const installBtn=document.createElement('button');
       installBtn.textContent='Add to KindleOS';
@@ -8705,7 +8728,7 @@ function _khOpenPublishedApp(app){
     /* Locked sandbox: NO allow-same-origin (can't reach our storage/auth) and NO
        allow-popups (can't open windows or tab-nab). allow-forms/modals stay for
        normal interactivity — the injected CSP still blocks external form posts. */
-    fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals');
+    fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals allow-downloads');
     ov.appendChild(fr);
     var bar=el('div',{style:{flexShrink:'0',display:'flex',alignItems:'center',gap:'8px',padding:'7px 12px',background:'var(--card,#fff)',borderTop:'1px solid rgba(0,0,0,0.14)'}});
     var back=txt('button','‹ Back',{style:{display:'inline-flex',alignItems:'center',padding:'8px 16px',background:'var(--fg,#111)',color:'var(--bg,#fff)',border:'none',borderRadius:'16px',fontSize:'12px',fontWeight:'800',cursor:'pointer',minHeight:'40px'}});
@@ -8854,6 +8877,39 @@ window._khPublishedOsApps=_khPublishedOsApps;window._khSyncAppNavTabs=_khSyncApp
 function _khInGame(){try{var r=document.getElementById('immersiveRoot');return !!(r&&getComputedStyle(r).display!=='none'&&r.offsetHeight>0);}catch(_){return false;}}
 window._khInGame=_khInGame;
 window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
+/* ── App bridge: a NARROW, always-user-confirmed channel so a sandboxed AI-built
+   app can use the ONE host capability users keep asking for — sending mail —
+   WITHOUT piercing the sandbox (the iframe still has no same-origin and no
+   network; connect-src stays 'none'). The app calls:
+     parent.postMessage({kh:'app',action:'sendMail',to,subject,body,rid:'x'},'*')
+   and listens for {kh:'app',action:'sendMail',rid:'x',ok,error} back. We verify
+   the message came from a live app iframe, ALWAYS confirm with the user before
+   sending, run it through the host mail path (the auth secret never leaves host
+   scope), and cool down 1.5s so a rogue app can't spam the confirm dialog. */
+(function(){
+  var _cool=0;
+  function _appFrameFor(src){try{var fs=document.querySelectorAll('iframe');for(var i=0;i<fs.length;i++){if(fs[i].contentWindow===src)return fs[i];}}catch(_){}return null;}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||d.kh!=='app')return;
+    if(!_appFrameFor(ev.source))return;                 /* only from a real app iframe */
+    var reply=function(ok,err){try{ev.source.postMessage({kh:'app',action:d.action,rid:d.rid,ok:!!ok,error:err||''},'*');}catch(_){}};
+    if(d.action==='sendMail'){
+      if(Date.now()<_cool){reply(false,'too many requests — try again in a moment');return;}
+      _cool=Date.now()+1500;
+      var to=String(d.to||'').trim().slice(0,120);
+      var subj=String(d.subject||'').slice(0,160);
+      var body=String(d.body||'').slice(0,8000);
+      if(!to){reply(false,'no recipient');return;}
+      var okGo=false;
+      try{okGo=window.confirm('An app wants to send an email from your KindleHub account:\n\nTo: '+to+'\nSubject: '+(subj||'(none)')+'\n\nSend it?');}catch(_){okGo=false;}
+      if(!okGo){reply(false,'declined by user');return;}
+      if(typeof _mailSend!=='function'){reply(false,'mail is unavailable');return;}
+      _mailSend(to,subj,body,'').then(function(){reply(true,'');try{if(typeof toast==='function')toast('Email sent');}catch(_){}})
+        .catch(function(e){var m=(e&&e.message)||'send failed';reply(false,m);try{if(typeof toast==='function')toast(m);}catch(_){}});
+    }
+  },false);
+})();
 /* Boot: run the one-time migration (move default apps into the store / hide
    their nav tabs), apply it to the DOM, and show the "what's new" notice once. */
 (function(){
