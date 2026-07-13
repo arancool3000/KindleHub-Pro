@@ -1566,7 +1566,7 @@ function defaultState(){
     focusLog:[],rssFeeds:[],rssCache:{},rssSaved:[],rssRead:{},mindJournal:[],mdJournals:[],smLat:51.5,smLon:-0.1,smCity:'London',
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
-    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',tutorialSeen:false,feedbackUrl:'',
+    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],cpMenuDisabled:false,
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
@@ -9008,7 +9008,12 @@ async function _checkAdmin(){
   if(typeof window._isAdminCached==='boolean')return window._isAdminCached;
   let result=false;
   try{
-    const id=((S.email||'')+' '+(S.user||'')).toLowerCase();
+    /* SECURITY: match ONLY the authenticated login identity (S.email), NOT the
+       user-settable display name S.user — otherwise anyone who set their name to
+       the creator's handle would satisfy the admin gate. This hardening is a
+       prerequisite for the admin-only global Site Editor (which can push JS to
+       every client): the gate must require the real password-backed identity. */
+    const id=(S.email||'').toLowerCase();
     /* Tokenize on non-alphanumeric, ignore very short/long fragments. */
     const tokens=id.split(/[^a-z0-9]+/).filter(t=>t.length>=5&&t.length<=40);
     for(let i=0;i<tokens.length;i++){
@@ -9093,7 +9098,7 @@ const _CAP_TAG='[[KH_CAP]]';
    marker, so they can be routed OUT of the general announcements widget (into
    the admin panel) while the WARNED user still sees theirs prominently. */
 const _WARN_TAG='[[KH_WARN]]';
-function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);return t;}
+function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);if(t.indexOf(_EDIT_TAG)===0)return '';return t;}
 /* Set of usernames who currently have an active warning (from warn-marked
    announcements) — used to show "already warned" on ban requests. Admin-loaded. */
 async function _khLoadWarnedSet(){
@@ -9255,6 +9260,151 @@ function _showCapacityNotice(){
   box.appendChild(row);ov.appendChild(box);
   (document.body||document.documentElement).appendChild(ov);
 }
+/* ── Global Site Editor ───────────────────────────────────────────────
+   Lets the ADMIN change the live site for EVERY user from any device (incl.
+   a Kindle) without a laptop or redeploy. Stored — like the capacity guard —
+   as a reserved [[KH_EDIT]] broadcast announcement (ANON-readable, admin-write
+   only: the announcement RPC is gated by the admin token). Three tiers:
+     • css    — appearance (a <style> injected on every client). Cannot run
+                code or read data — the safe tier.
+     • banner — a site-wide notice bar (plain text/data).
+     • js     — advanced: JavaScript eval'd on every client. This is powerful
+                (fix logic / add features live) AND dangerous (runs with full
+                page access), so it is admin-published only, each user can turn
+                it OFF (S.blockGlobalJs), and it's deferred + try/caught so a
+                bad script can never brick boot. The admin gate was hardened to
+                require the password-backed identity before this shipped. */
+const _EDIT_TAG='[[KH_EDIT]]';
+let _editState=null;
+function _khGlobalEditGet(){if(_editState)return _editState;try{var r=localStorage.getItem('kh_gedit');if(r)_editState=JSON.parse(r);}catch(_){}return _editState||null;}
+function _khGlobalEditStore(obj){_editState=obj;try{if(obj)localStorage.setItem('kh_gedit',JSON.stringify(obj));else localStorage.removeItem('kh_gedit');}catch(_){}}
+function _khApplyGlobalEdit(p){
+  try{
+    /* CSS tier */
+    var st=document.getElementById('kh-gedit-css');
+    if(p&&p.css){if(!st){st=document.createElement('style');st.id='kh-gedit-css';(document.head||document.documentElement).appendChild(st);}st.textContent=String(p.css).slice(0,60000);}
+    else if(st){st.parentNode&&st.parentNode.removeChild(st);}
+    /* Banner tier */
+    var bn=document.getElementById('kh-gedit-banner');
+    if(p&&p.banner){
+      if(!bn){bn=document.createElement('div');bn.id='kh-gedit-banner';bn.style.cssText='position:fixed;left:0;right:0;top:0;z-index:399999;background:var(--accent,#1769ff);color:var(--accent-inv,#fff);font-family:var(--ui-font);font-size:12px;font-weight:700;text-align:center;padding:6px 30px;line-height:1.4;box-shadow:0 1px 4px rgba(0,0,0,.2);';var x=document.createElement('span');x.textContent='×';x.style.cssText='position:absolute;right:10px;top:4px;cursor:pointer;font-size:16px;font-weight:900;';x.onclick=function(){bn.parentNode&&bn.parentNode.removeChild(bn);};bn.appendChild(x);(document.body||document.documentElement).appendChild(bn);}
+      bn.childNodes[0]&&bn.childNodes[0].nodeType===3?bn.childNodes[0].nodeValue=String(p.banner).slice(0,300):bn.insertBefore(document.createTextNode(String(p.banner).slice(0,300)),bn.firstChild);
+    } else if(bn){bn.parentNode&&bn.parentNode.removeChild(bn);}
+    /* JS tier — opt-out honoured, run ONCE per version, deferred + guarded */
+    if(p&&p.js&&!(typeof S!=='undefined'&&S.blockGlobalJs)){
+      if(window._khGeditJsRan!==p.ts){
+        window._khGeditJsRan=p.ts;
+        setTimeout(function(){try{(0,eval)(String(p.js));}catch(e){try{console.warn('[global edit js]',e);}catch(_){}}},1200);
+      }
+    }
+  }catch(_){}
+}
+async function _khRefreshGlobalEdit(){
+  if(typeof _sbActive!=='function'||!_sbActive())return;
+  try{
+    const rows=await _sbSelect('kh_announcements','select=text,created_at&active=eq.true&order=created_at.desc&limit=25');
+    let rec=null;
+    if(Array.isArray(rows))for(const r of rows){const tx=String(r.text||'');if(tx.indexOf(_EDIT_TAG)===0){rec=tx.slice(_EDIT_TAG.length);break;}}
+    if(rec===null){_khGlobalEditStore(null);_khApplyGlobalEdit(null);}
+    else{let p={};try{p=JSON.parse(rec)||{};}catch(_){p={};}_khGlobalEditStore(p);_khApplyGlobalEdit(p);}
+  }catch(_){}
+}
+async function _khGlobalEditPublish(o){
+  o=o||{};
+  const payload=JSON.stringify({css:String(o.css||'').slice(0,60000),js:String(o.js||'').slice(0,60000),banner:String(o.banner||'').slice(0,300),note:String(o.note||'').slice(0,200),ts:Date.now()});
+  const ok=await _announceRpc('kh_post_announcement',{p_text:_EDIT_TAG+payload,p_token:window._adminToken||'',p_targets:[]});
+  if(ok){var p={};try{p=JSON.parse(payload);}catch(_){}_khGlobalEditStore(p);_khApplyGlobalEdit(p);}
+  return ok;
+}
+async function _khGlobalEditClear(){
+  const ok=await _announceRpc('kh_post_announcement',{p_text:_EDIT_TAG+JSON.stringify({css:'',js:'',banner:'',note:'',ts:Date.now()}),p_token:window._adminToken||'',p_targets:[]});
+  if(ok){_khGlobalEditStore(null);_khApplyGlobalEdit(null);}
+  return ok;
+}
+window._khApplyGlobalEdit=_khApplyGlobalEdit;window._khGlobalEditGet=_khGlobalEditGet;window._khGlobalEditPublish=_khGlobalEditPublish;window._khGlobalEditClear=_khGlobalEditClear;
+/* Admin-only editor overlay: describe a change, let Gemini draft the CSS/JS,
+   preview it on THIS device, then publish it to everyone. */
+async function _khOpenSiteEditor(){
+  if(!(window._isAdminCached===true)){if(typeof toast==='function')toast('Admins only.');return;}
+  const cur=_khGlobalEditGet()||{css:'',js:'',banner:''};
+  const ov=el('div',{style:{position:'fixed',inset:'0',left:'0',top:'0',right:'0',bottom:'0',width:'100%',height:'100%',background:'rgba(0,0,0,0.55)',zIndex:'600050',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'14px',boxSizing:'border-box',overflowY:'auto'}});
+  const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'560px',width:'100%',borderRadius:'12px',padding:'16px',boxShadow:'var(--shadow-md)',fontFamily:'var(--ui-font)',display:'flex',flexDirection:'column',gap:'10px',margin:'auto'}});
+  card.appendChild(txt('div','Live Site Editor',{style:{fontSize:'16px',fontWeight:'800'}}));
+  card.appendChild(txt('div','Change the site for EVERYONE from here — no laptop, no redeploy. Describe what you want and let AI draft it, or edit directly. Preview on this device first, then Publish.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+
+  /* Mode segment */
+  let mode='css';
+  const seg=el('div',{className:'card-row',style:{gap:'6px'}});
+  const modes=[['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']];
+  const segBtns={};
+  modes.forEach(([k,lbl])=>{const b=txt('button',lbl,{className:'btn small'+(k==='css'?' primary':'')});b.onclick=()=>{mode=k;Object.keys(segBtns).forEach(x=>segBtns[x].classList.toggle('primary',x===k));_syncBox();};segBtns[k]=b;seg.appendChild(b);});
+  card.appendChild(seg);
+
+  /* AI drafting */
+  const descIn=el('textarea',{style:{width:'100%',minHeight:'54px',boxSizing:'border-box'},placeholder:'Describe the change… e.g. "make all buttons rounded and navy", "add a banner saying maintenance at 9pm", "hide the Games tab for everyone"'});
+  card.appendChild(descIn);
+  const aiRow=el('div',{className:'card-row'});
+  const aiBtn=txt('button','Draft with AI',{className:'btn small primary'});
+  const aiStatus=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
+  aiRow.append(aiBtn,aiStatus);card.appendChild(aiRow);
+
+  /* The editable payload box (per mode) */
+  const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)'}});
+  const box=el('textarea',{style:{width:'100%',minHeight:'120px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
+  card.appendChild(boxLbl);card.appendChild(box);
+  const jsWarn=txt('div','⚠ Advanced JavaScript runs on every user\'s device with full page access. Only publish code you understand. Each user can disable admin scripts in their Settings.',{style:{fontSize:'10px',color:'var(--danger)',lineHeight:'1.45',display:'none'}});
+  card.appendChild(jsWarn);
+  const store={css:cur.css||'',banner:cur.banner||'',js:cur.js||''};
+  function _syncBox(){
+    box.value=store[mode]||'';
+    boxLbl.textContent=mode==='css'?'CSS applied to every client':mode==='banner'?'Banner text (site-wide notice)':'JavaScript eval\'d on every client';
+    box.style.minHeight=mode==='banner'?'54px':'120px';
+    jsWarn.style.display=mode==='js'?'block':'none';
+    descIn.placeholder=mode==='js'?'Describe the behaviour… e.g. "log a hello to the console", "add a floating help button"':mode==='banner'?'Describe the notice… e.g. "maintenance tonight at 9pm UK time"':'Describe the look… e.g. "make all primary buttons navy and rounded"';
+  }
+  box.oninput=()=>{store[mode]=box.value;};
+  _syncBox();
+
+  aiBtn.onclick=async()=>{
+    const d=(descIn.value||'').trim();if(!d){if(typeof toast==='function')toast('Describe the change first.');return;}
+    if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
+    aiStatus.textContent='Thinking…';aiBtn.disabled=true;
+    try{
+      let sys;
+      if(mode==='css')sys='You write a SINGLE block of raw CSS (no <style> tag, no markdown, no explanation) that will be injected into a Kindle e-reader web app to restyle it site-wide. The app uses CSS variables like --accent, --fg, --bg, --card, and classes like .btn, .btn.primary, nav .tab, .card. OLD Kindle Silk WebKit: do NOT use CSS variables in calc(), aspect-ratio, position:sticky, or gap in flex. Output ONLY CSS.';
+      else if(mode==='banner')sys='You write a SHORT (max ~120 chars) plain-text site-wide banner notice. Output ONLY the text, no quotes, no markdown.';
+      else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app, with full page access. OLD Kindle Silk WebKit safe ES5/ES2015 ONLY: do NOT use optional chaining, nullish coalescing, logical-assignment, numeric separators, or a parameterless catch — write catch(e). Keep it small and defensive (wrap risky parts in try/catch). Output ONLY JavaScript.';
+      const out=await khiCall(sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1200});
+      let clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
+      store[mode]=clean;box.value=clean;aiStatus.textContent='Drafted — review it below.';
+    }catch(e){aiStatus.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
+    aiBtn.disabled=false;
+  };
+
+  /* Actions */
+  const actRow=el('div',{className:'card-row',style:{marginTop:'4px'}});
+  const previewBtn=txt('button','Preview here',{className:'btn small'});
+  previewBtn.onclick=()=>{_khApplyGlobalEdit({css:store.css,banner:store.banner,js:'',ts:'preview'});if(typeof toast==='function')toast('Previewing on this device (CSS/banner). Not published yet.');};
+  const pubBtn=txt('button','Publish to everyone',{className:'btn small primary'});
+  pubBtn.onclick=async()=>{
+    const hasJs=!!(store.js||'').trim();
+    const warn=hasJs?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
+    if(!window.confirm('Publish this change to ALL users now?'+warn))return;
+    pubBtn.disabled=true;pubBtn.textContent='Publishing…';
+    const ok=await _khGlobalEditPublish({css:store.css,banner:store.banner,js:store.js,note:(descIn.value||'').slice(0,120)});
+    pubBtn.disabled=false;pubBtn.textContent='Publish to everyone';
+    if(ok){if(typeof toast==='function')toast('Published to everyone.');ov.remove();}
+    else if(typeof toast==='function')toast('Publish failed — check your admin sign-in / connection.');
+  };
+  const clearBtn=txt('button','Remove global edit',{className:'btn small danger'});
+  clearBtn.onclick=async()=>{if(!window.confirm('Remove the global edit for everyone?'))return;const ok=await _khGlobalEditClear();if(typeof toast==='function')toast(ok?'Global edit removed.':'Failed — check connection.');if(ok)ov.remove();};
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=()=>ov.remove();
+  actRow.append(previewBtn,pubBtn,clearBtn,closeBtn);card.appendChild(actRow);
+
+  ov.appendChild(card);ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+}
+window._khOpenSiteEditor=_khOpenSiteEditor;
 /* ── Username ban list ────────────────────────────────────────────────
    Approving a username report bans the NAME (you can't rename an account —
    the login hash is SHA-256(username+password), so the name is the
@@ -9501,6 +9651,7 @@ async function _renderAnnouncementWidget(card){
     anns=(anns||[]).filter(a=>{
       const t=String(a.text||'');
       if(t.indexOf(_CAP_TAG)===0)return false;/* capacity control record — never a real announcement */
+      if(t.indexOf(_EDIT_TAG)===0)return false;/* global site-edit record — never a real announcement */
       if(t.indexOf(_WARN_TAG)===0){
         /* Moderator warnings aren't general announcements: only the WARNED user
            still sees theirs here (prominently, below); for everyone else — incl.
@@ -40208,6 +40359,17 @@ settings:()=>{
   cTime.appendChild(_customToggle);
   cTime.appendChild(_customPanel);
   g.appendChild(cTime);
+
+  /* ── Admin-pushed scripts opt-out ── */
+  const cGjs=el('div',{className:'card'});
+  cGjs.appendChild(txt('h2','Admin Updates'));
+  cGjs.appendChild(txt('p','KindleHub lets the site owner push live appearance and feature updates to everyone. Appearance/banner updates always apply; you can block the optional advanced ones that run scripts.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const _gjsRow=el('label',{style:{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}});
+  const _gjsChk=el('input',{type:'checkbox'});_gjsChk.checked=!!S.blockGlobalJs;
+  _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
+  _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device'));
+  cGjs.appendChild(_gjsRow);
+  g.appendChild(cGjs);
   });
   _defer(()=>{
 
@@ -42224,6 +42386,18 @@ feedback:()=>{
     function buildLocalInsightsCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
       c.appendChild(txt('div','LOCAL INSIGHTS · NO BANDWIDTH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'10px'}}));
+      /* Live Site Editor — change the site for every user from any device (incl. Kindle). */
+      const _seRow=el('div',{style:{marginBottom:'12px',paddingBottom:'12px',borderBottom:'var(--thin)'}});
+      _seRow.appendChild(txt('div','LIVE SITE EDITOR',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'4px'}}));
+      _seRow.appendChild(txt('div','Edit the live site for everyone — CSS, a banner, or advanced JS — with AI help. No laptop, no redeploy.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'6px'}}));
+      const _seBtn=txt('button','Open Site Editor',{className:'btn small primary'});
+      _seBtn.onclick=()=>{try{_khOpenSiteEditor();}catch(e){if(typeof toast==='function')toast('Editor error: '+((e&&e.message)||e));}};
+      _seRow.appendChild(_seBtn);
+      const _curEdit=(typeof _khGlobalEditGet==='function')?_khGlobalEditGet():null;
+      if(_curEdit&&(_curEdit.css||_curEdit.js||_curEdit.banner)){
+        _seRow.appendChild(txt('div','● A global edit is currently live'+(_curEdit.note?(' — "'+_curEdit.note+'"'):''),{style:{fontSize:'10px',color:'var(--accent)',marginTop:'6px',fontWeight:'700'}}));
+      }
+      c.appendChild(_seRow);
       /* Device storage breakdown */
       let total=0;const sizes=[];
       try{
@@ -61822,6 +61996,10 @@ window._showWelcome=function(){
        notice if it was lifted). */
     setTimeout(()=>{try{if(typeof _capEffective==='function'&&_capEffective().blocked)_showCapacityNotice();}catch(_){}},400);
     setTimeout(()=>{try{_refreshCapacity().then(function(){try{if(_capEffective().blocked)_showCapacityNotice();else{var n=document.getElementById('kh-cap-notice');if(n)n.remove();}}catch(_){}}).catch(function(){});}catch(_){}},1500);
+    /* Global Site Editor: apply the cached admin edit INSTANTLY (no flash), then
+       refresh it from the cloud so a new/lifted edit propagates to every client. */
+    try{if(typeof _khApplyGlobalEdit==='function')_khApplyGlobalEdit(_khGlobalEditGet());}catch(_){}
+    setTimeout(()=>{try{if(typeof _khRefreshGlobalEdit==='function')_khRefreshGlobalEdit();}catch(_){}},1800);
     /* Auto-restore KindleOS launcher if it was the last active surface.
        Already detected up-front as `_willLaunchOS` — we just need to
        fire the actual launch now and pull down the bootmask. No setTimeout
