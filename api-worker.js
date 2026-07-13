@@ -984,10 +984,14 @@ async function runAutoModeration(DB, env){
    the Gemini free quota runs out mid-run the rest is marked 'deferred' and the
    NEXT day's tick resumes exactly where it left off. "Remembers for tomorrow."
 
-   Env: MAINT_ON=1 (master switch) + MAINT_KEY (dedicated Gemini key). Optional:
-   MAINT_DETECT_MODEL / MAINT_FIX_MODEL / MAINT_CONFIRM_MODEL, MAINT_MAX (bugs per
-   tick, default 3 — casual), MAINT_STAGE_ONLY=1 (never auto-publish; stage all
-   for admin approval). ═════════════════════════════════════════════════════ */
+   Config: set the key + on/off in the app (Auto-fix tab) OR via env vars
+   MAINT_ON=1 + MAINT_KEY (a Worker env var always overrides the in-app config).
+   Optional: MAINT_DETECT_MODEL / MAINT_FIX_MODEL / MAINT_CONFIRM_MODEL, MAINT_MAX
+   (bugs per tick, default 3 — casual), MAINT_STAGE_ONLY=1 (never auto-publish).
+   SCHEDULE: the scheduled() hook self-limits maintenance to ONCE PER UTC DAY, so
+   ANY cron trigger that fires at least daily works — including the same hourly
+   trigger auto-moderation uses. No separate/dedicated schedule to configure.
+   ═════════════════════════════════════════════════════════════════════════ */
 const MAINT_FIX_TAG='[[KH_FIX]]';
 function maintSig(text){
   let s=String(text||'');
@@ -1141,8 +1145,19 @@ export default {
       /* AI moderation (opt-in via AUTO_MOD + GEMINI_KEY). */
       const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
       if(on && env.GEMINI_KEY) await runAutoModeration(DB, env);
-      /* Auto-maintenance (opt-in via MAINT_ON+MAINT_KEY env, OR the in-app config) — daily self-healing. */
-      if(await maintEnabled(env, DB) && await maintKey(env, DB)) await runAutoMaintenance(DB, env);
+      /* Auto-maintenance (opt-in via MAINT_ON+MAINT_KEY env, OR the in-app config).
+         Self-limits to ONCE PER UTC DAY via a kh_config marker, so it's "daily"
+         no matter how often the cron fires — reuse ANY existing trigger (even the
+         hourly auto-moderation one); no need to configure a separate schedule.
+         The day is stamped BEFORE the run so overlapping ticks can't double-fire.
+         (The manual "Run now" button bypasses this gate.) */
+      if(await maintEnabled(env, DB) && await maintKey(env, DB)){
+        const _today=nowIso().slice(0,10);
+        if((await getConfig(DB,'maint_last_day'))!==_today){
+          await setConfig(DB, 'maint_last_day', _today);
+          await runAutoMaintenance(DB, env);
+        }
+      }
     }catch(_){ /* never throw out of a cron tick */ }
   },
   async fetch(request, env){
