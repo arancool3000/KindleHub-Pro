@@ -831,13 +831,35 @@ const PROXY_MODELS = new Set([
   'gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash',
   'gemini-3.5-flash','gemini-3.1-flash',
 ]);
+/* Shared-proxy allow-list = the hard-coded PROXY_MODELS PLUS any live model the
+   daily catalogue refresh discovered (cached in kh_config.model_live), so a
+   newly-launched free Gemini model works through the shared key without a
+   redeploy. Isolate-cached ~10 min to avoid a D1 read on every proxy call. Only
+   NON-pro Gemini flash/lite ids are accepted from the live list (pro models
+   would burn the shared free budget). */
+let _proxyLive=null, _proxyLiveAt=0;
+async function proxyModelAllowed(model, DB){
+  if(!model) return false;
+  if(PROXY_MODELS.has(model)) return true;
+  if(String(model).indexOf('pro')>=0) return false;
+  if(!/^gemini-[0-9]+(\.[0-9]+)?-(flash)(-lite)?$/.test(String(model))) return false;
+  try{
+    const now=Date.now();
+    if(!_proxyLive || (now-_proxyLiveAt)>600000){
+      const v=await getConfig(DB,'model_live');
+      _proxyLive={}; (JSON.parse(v||'[]')||[]).forEach(function(id){ _proxyLive[id]=1; });
+      _proxyLiveAt=now;
+    }
+    return !!_proxyLive[model];
+  }catch(_){ return false; }
+}
 async function handleGeminiProxy(request, env, DB){
   if(request.method!=='POST') return err('method not allowed',405,env);
   const KEY = env && env.GEMINI_KEY;
   if(!KEY) return json({error:'GEMINI_KEY not set on this Worker.'},500,env);
   let body; try{ body = await request.json(); }catch(_){ return json({error:'Bad JSON'},400,env); }
   const model = body && body.model;
-  if(!model || !PROXY_MODELS.has(model)) return json({error:'Model not allowed',code:'BAD_MODEL'},400,env);
+  if(!model || !(await proxyModelAllowed(model, DB))) return json({error:'Model not allowed',code:'BAD_MODEL'},400,env);
   const cap = parseInt((env && env.DAILY_CAP)||'',10) || 3580;
   const today = nowIso().slice(0,10);
   let newCount=0, capActive=false;
@@ -1047,8 +1069,12 @@ async function writeMaintFixes(DB, arr){
 function maintDetectPrompt(err){
   return 'You are the automatic bug-triage step for KindleHub, a single-file JavaScript e-reader web app that must run on OLD Kindle Silk WebKit. Below is a captured runtime error. Decide if it is a REAL, fixable CLIENT-side bug that a small DEFENSIVE JavaScript or CSS patch could safely guard against (missing null-check, undefined property access, bad DOM lookup) — NOT a network/backend/third-party/CORS issue. Reply ONLY strict JSON: {"fixable": true|false, "cause":"<one short sentence>", "approach":"<how a tiny defensive patch would guard it>"}.\n\nERROR:\n'+String(err||'').slice(0,1500);
 }
+/* Compact architecture briefing so the fix model knows the app it's patching
+   (state object, persistence, time source, global helpers, theme vars). Named
+   in words so it can't trip a raw-text Silk-operator scan. */
+const KH_MAINT_CONTEXT='KindleHub internals you can rely on: global state object S (persisted gzip-packed to localStorage key kindlehub_v5); all time via NOW() not new Date(); views built by BUILDERS.<id>() and shown with showView(id); global helpers el(tag,attrs,kids), txt(tag,text,attrs), toast(msg), $ (getElementById), save(); theme CSS variables --accent --fg --bg --card --muted --highlight; button classes .btn/.btn.primary/.btn.small. Guard against missing globals with typeof checks before use.';
 function maintFixPrompt(err, dv){
-  return 'Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this KindleHub bug at runtime. It runs once on every client with full page access. Root cause: '+String((dv&&dv.cause)||'')+'. Approach: '+String((dv&&dv.approach)||'')+'.\nHARD RULES: OLD Kindle Silk WebKit, ES5/ES2015 ONLY — do NOT use optional chaining, nullish coalescing, logical-assignment operators, numeric separators, BigInt, or modern regex (lookbehind, named groups, unicode-property, or s/y/d/u flags); give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credential storage, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Keep it under ~40 lines. Output ONLY the raw JavaScript — no markdown, no comments, no explanation.\n\nERROR:\n'+String(err||'').slice(0,1200);
+  return 'Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this KindleHub bug at runtime. It runs once on every client with full page access. Root cause: '+String((dv&&dv.cause)||'')+'. Approach: '+String((dv&&dv.approach)||'')+'.\n'+KH_MAINT_CONTEXT+'\nHARD RULES: OLD Kindle Silk WebKit, ES5/ES2015 ONLY — do NOT use optional chaining, nullish coalescing, logical-assignment operators, numeric separators, BigInt, or modern regex (lookbehind, named groups, unicode-property, or s/y/d/u flags); give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credential storage, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Keep it under ~40 lines. Output ONLY the raw JavaScript — no markdown, no comments, no explanation.\n\nERROR:\n'+String(err||'').slice(0,1200);
 }
 function maintConfirmPrompt(err, code, dv){
   return 'You are the FINAL safety check for an auto-published KindleHub fix. Does the JavaScript patch below (a) plausibly fix or guard the described bug, AND (b) look safe + minimal (no auth/network/storage tampering, no infinite loops, old-Kindle-safe, cannot make things worse)? Reply ONLY strict JSON: {"ok": true|false, "reason":"<short>"}.\n\nBUG: '+String((dv&&dv.cause)||err).slice(0,400)+'\n\nPATCH:\n'+String(code||'').slice(0,2000);
@@ -1113,6 +1139,93 @@ async function runAutoMaintenance(DB, env){
   return {ran:true,quotaHit:quotaHit,stats:stats};
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   LIVE MODEL CATALOGUE — keep the app's model menus current automatically.
+   Google's ListModels API is ground-truth for which Gemini models are live, so
+   the daily maintenance calls it, diffs against what the app SHIPS, and
+   publishes the delta in a reserved [[KH_MODELS]] broadcast the client merges
+   into every model menu (new models appear, discontinued ones vanish) — no code
+   deploy. Purely additive/subtractive; the shipped defaults still work if this
+   record is absent. Additions are always published (low risk); removals only
+   when the live list looks complete (sanity gate) so a truncated API response
+   can't wrongly hide a working model.
+   ═════════════════════════════════════════════════════════════════════════ */
+const MODELS_TAG='[[KH_MODELS]]';
+/* The Gemini ids the app currently ships (mirror the client lists so the diff
+   is meaningful). Keep in rough sync with index.html's GEMINI_GROUPS /
+   CHAT_GEMINI_GROUPS — drift is self-correcting for adds (client dedups) and
+   only affects which removals are proposed. */
+const KNOWN_GEMINI_MODELS=new Set([
+  'gemini-3.1-flash-lite','gemini-3.5-flash','gemini-3.1-flash','gemini-2.5-flash',
+  'gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.0-flash-lite',
+  'gemini-3.1-pro','gemini-2.5-pro',
+]);
+/* Build a human label from an id: gemini-2.5-flash-lite -> "Gemini 2.5 Flash Lite". */
+function _modelLabel(id){
+  return String(id||'').split('-').map(function(w){
+    if(/^\d/.test(w)) return w;                 /* keep version numbers as-is */
+    return w.charAt(0).toUpperCase()+w.slice(1);
+  }).join(' ');
+}
+/* Keep only clean, stable, chat-capable Gemini ids — drop experimental / dated
+   preview / non-chat (vision/tts/embedding/image) variants that would clutter a
+   menu. */
+function _isCleanGeminiId(id){
+  var s=String(id||'');
+  if(s.indexOf('gemini-')!==0) return false;
+  if(/(exp|thinking|vision|embedding|aqa|tts|image|audio|learnlm|preview|latest|native|dialog|-\d{2}-\d{2}|-\d{3,})/.test(s)) return false;
+  return /^gemini-[0-9]+(\.[0-9]+)?-(flash|pro)(-lite)?$/.test(s);
+}
+async function readModelDelta(DB){
+  try{
+    const res=await DB.prepare("SELECT text FROM kh_announcements WHERE active=1 AND text LIKE ? ORDER BY id DESC LIMIT 1").bind(MODELS_TAG+'%').all();
+    const row=res&&res.results&&res.results[0];
+    if(!row) return null;
+    return JSON.parse(String(row.text).slice(MODELS_TAG.length));
+  }catch(_){ return null; }
+}
+async function writeModelDelta(DB, obj){
+  try{
+    await DB.prepare("DELETE FROM kh_announcements WHERE text LIKE ?").bind(MODELS_TAG+'%').run();
+    await DB.prepare("INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,'[]',?)").bind(MODELS_TAG+JSON.stringify(obj), nowIso()).run();
+  }catch(_){}
+}
+async function runModelRefresh(DB, env){
+  const KEY=await maintKey(env, DB); if(!KEY) return {ran:false,reason:'no key'};
+  let live=[];
+  try{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key='+KEY);
+    if(!r.ok) return {ran:false,reason:'listmodels '+r.status};
+    const j=await r.json();
+    const seen={};
+    for(const m of (j.models||[])){
+      const id=String(m.name||'').replace(/^models\//,'');
+      const methods=m.supportedGenerationMethods||m.supported_generation_methods||[];
+      if(methods.indexOf&&methods.indexOf('generateContent')<0) continue;
+      if(!_isCleanGeminiId(id)) continue;
+      if(seen[id]) continue; seen[id]=1;
+      live.push(id);
+    }
+  }catch(_){ return {ran:false,reason:'fetch failed'}; }
+  if(!live.length) return {ran:false,reason:'no models returned'};
+  const liveSet={}; live.forEach(function(id){liveSet[id]=1;});
+  /* Additions: live models the app doesn't ship. */
+  const addGemini=[];
+  for(const id of live){ if(!KNOWN_GEMINI_MODELS.has(id)) addGemini.push([id,_modelLabel(id)]); }
+  /* Removals: shipped models Google no longer lists — only when the response
+     looks complete (>=6 models) so a partial list can't wrongly hide models. */
+  const removeGemini=[];
+  if(live.length>=6){ KNOWN_GEMINI_MODELS.forEach(function(id){ if(!liveSet[id]) removeGemini.push(id); }); }
+  const delta={addGemini:addGemini,removeGemini:removeGemini,live:live,at:nowIso()};
+  /* Persist a plain live-id list for the shared proxy allow-list refresh. */
+  try{ await setConfig(DB,'model_live',JSON.stringify(live)); }catch(_){}
+  /* Only (re)publish the broadcast when the delta actually changed. */
+  const prev=await readModelDelta(DB);
+  const sig=function(o){ return o?JSON.stringify([(o.addGemini||[]).map(function(x){return x[0];}).sort(),(o.removeGemini||[]).slice().sort()]):''; };
+  if(sig(prev)!==sig(delta)){ await writeModelDelta(DB, delta); }
+  return {ran:true,add:addGemini.length,remove:removeGemini.length,live:live.length};
+}
+
 /* ── Per-IP rate limit (Cache API — no KV, free, per-colo) ───────────────────
    Stops ONE source from flooding the Worker and tripping the shared daily budget
    for everyone. Two windows: a short burst limit + a generous daily limit (well
@@ -1156,6 +1269,10 @@ export default {
         if((await getConfig(DB,'maint_last_day'))!==_today){
           await setConfig(DB, 'maint_last_day', _today);
           await runAutoMaintenance(DB, env);
+          /* Once a day, also refresh the live model catalogue so menus keep up
+             with new/discontinued Gemini models. Cheap (one ListModels call);
+             never blocks the bug pipeline. */
+          try{ await runModelRefresh(DB, env); }catch(_){}
         }
       }
     }catch(_){ /* never throw out of a cron tick */ }
@@ -1186,7 +1303,10 @@ export default {
       if(url.pathname==='/maint/run'){
         if(!(await maintKey(env, DB))) return json({error:'No maintenance key set — add your Gemini key in the Auto-fix tab (or set MAINT_KEY on the Worker).'},400,env);
         const r=await runAutoMaintenance(DB, env);
-        return json({ok:true,result:r},200,env);
+        /* Also refresh the model catalogue on a manual run, so "Run now" both
+           fixes bugs AND updates the model menus. */
+        let models=null; try{ models=await runModelRefresh(DB, env); }catch(_){}
+        return json({ok:true,result:r,models:models},200,env);
       }
       let counts={}, recent=[];
       try{
@@ -1196,8 +1316,9 @@ export default {
         recent=(rr&&rr.results)||[];
       }catch(_){}
       let fixCount=0; try{ fixCount=(await readMaintFixes(DB)).length; }catch(_){}
+      let modelDelta=null; try{ const md=await readModelDelta(DB); if(md) modelDelta={added:(md.addGemini||[]).length,removed:(md.removeGemini||[]).length,live:(md.live||[]).length,at:md.at||''}; }catch(_){}
       const keyOn=!!(await maintKey(env, DB)), enOn=await maintEnabled(env, DB);
-      return json({ok:true,counts:counts,recent:recent,liveFixes:fixCount,keyConfigured:keyOn,enabled:(enOn&&keyOn),envKey:!!(env&&env.MAINT_KEY)},200,env);
+      return json({ok:true,counts:counts,recent:recent,liveFixes:fixCount,models:modelDelta,keyConfigured:keyOn,enabled:(enOn&&keyOn),envKey:!!(env&&env.MAINT_KEY)},200,env);
     }
 
     /* Per-IP rate limit — one abuser can't burn the shared daily budget for
@@ -1267,4 +1388,4 @@ export default {
 
 /* Named exports for the test harness only — Cloudflare Workers use ONLY the
    default export as the handler, so these are ignored at deploy time. */
-export { runAutoMaintenance, maintUnsafe, maintSig, maintParseJson, readMaintFixes, writeMaintFixes, ensureSchema, setConfig, getConfig, maintKey, maintEnabled };
+export { runAutoMaintenance, maintUnsafe, maintSig, maintParseJson, readMaintFixes, writeMaintFixes, ensureSchema, setConfig, getConfig, maintKey, maintEnabled, runModelRefresh, readModelDelta, writeModelDelta, proxyModelAllowed, _isCleanGeminiId, _modelLabel, KNOWN_GEMINI_MODELS };
