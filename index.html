@@ -244,8 +244,21 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
    cross-axis margin is absorbed by alignment. Applies ONLY on no-gap engines, so
    modern screens keep real gap and never double-space. Attribute selector covers
    the ~283 inline `gap:` uses; the class rules tune the common containers. */
-html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:6px}
-html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:6px}
+/* margin-top is split top+bottom (not top-only): a top-only margin makes a
+   non-first child's MARGIN BOX taller than the first child's, and in a
+   single-line row (the common case — most rows never wrap) align-items:center
+   centers each item's margin box independently, so the first child (no extra
+   margin) sits centered a few px LOWER while children 2+ (taller margin box,
+   already "pre-centered" by their own margin) sit a few px HIGHER — same
+   height, different vertical position. On e-ink's hard pixel edges that reads
+   as "the first button/option is bigger than the rest" — real-device-only,
+   since this whole branch only exists on engines that fail the flex-gap probe
+   (never headless Chromium, which always supports gap). Symmetric top+bottom
+   keeps each child vertically self-centered so first vs. rest align exactly,
+   while the wrapped-line spacing total is unchanged (top+bottom still sums
+   to the original value). */
+html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:3px;margin-bottom:3px}
+html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:3px;margin-bottom:3px}
 html.kh-no-flexgap .header-controls > * + *{margin-left:5px;margin-top:0}
 html.kh-no-flexgap nav .tab + .tab{margin-left:2px}
 /* ── CSS Grid fallback (old Kindle Silk) ── Only the game boards rely on
@@ -278,9 +291,12 @@ html.kh-no-aspectratio .g2048-cell{width:70px;height:70px}
 .btn:active{opacity:0.6;}
 .btn.small{
   padding:0 12px;font-size:11px;
-  min-height:34px;border-radius:6px;
+  min-height:var(--touch-min);border-radius:6px;
   box-shadow:none;font-weight:600;
 }
+/* Uniform button height (= --touch-min): small/khi buttons stay visually lighter
+   via smaller font + tighter padding, but never render shorter than a full .btn in
+   the same row/column — kills the "the 1st button is a bit bigger than the rest" look. */
 .btn.primary{background:var(--accent);color:var(--accent-inv);border-color:var(--accent);box-shadow:var(--btn-shadow);}
 .btn.primary:active{opacity:0.72;}
 .btn.danger{border-color:var(--danger);color:var(--danger);box-shadow:none;}
@@ -443,7 +459,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
     font-size:12px;border-radius:8px;
   }
   .btn.small{
-    min-height:34px;padding:0 10px;
+    min-height:var(--touch-min);padding:0 10px;
     font-size:11px;border-radius:6px;
   }
   .header-controls .btn.small{min-height:34px;padding:0 7px;font-size:8px;}
@@ -546,7 +562,7 @@ footer.small{font-size:11px;color:var(--muted);padding:6px 10px;text-align:cente
 }
 
 /* ── KindleHub Intelligence ── */
-.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:32px!important;letter-spacing:0.2px;}
+.khi-btn{font-size:10px!important;padding:2px 8px!important;min-height:var(--touch-min)!important;letter-spacing:0.2px;}
 .khi-spark{font-size:11px;opacity:0.8;margin-right:1px;}
 .khi-output{background:var(--highlight);border:var(--thin);border-radius:var(--radius);
   padding:10px 12px;font-size:12px;line-height:1.6;margin-top:8px;white-space:pre-wrap;}
@@ -643,7 +659,7 @@ body.simple-ui .btn,body.simple-ui button.btn{
   min-height:36px;padding:0 11px;font-size:11.5px;
 }
 body.simple-ui .btn.small,body.simple-ui button.btn.small{
-  min-height:28px;padding:0 8px;font-size:10.5px;box-shadow:1px 1px 0 #000;
+  min-height:36px;padding:0 8px;font-size:10.5px;box-shadow:1px 1px 0 #000;
 }
 /* Tighter still for the chevron-only back button in the Messages header —
    the chunky retro shadow makes the default 36-px square look oversized
@@ -985,7 +1001,7 @@ body.launcher-ui .btn,body.launcher-ui button.btn{
   min-height:38px;padding:0 12px;font-size:11.5px;
 }
 body.launcher-ui .btn.small,body.launcher-ui button.btn.small{
-  min-height:32px;padding:0 10px;font-size:10.5px;border-radius:10px;
+  min-height:38px;padding:0 10px;font-size:10.5px;border-radius:10px;
 }
 /* Slimmer chevron back-button in Messages header — matches the airier
    Launcher proportions without forcing a min 36-px square. */
@@ -1238,8 +1254,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div style="display:flex;gap:6px;align-items:center">
       <span id="immersiveHi" style="font-family:monospace;font-size:11px;color:var(--muted)"></span>
       <span id="immersiveScore" style="font-family:monospace;font-size:12px;color:var(--muted)"></span>
-      <button class="btn small" id="immersiveHelp" title="How to play" style="min-width:34px">?</button>
-      <button class="btn small" id="immersiveScores" title="Leaderboard" style="min-width:34px">★</button>
+      <button class="btn small" id="immersiveHelp" title="How to play" style="min-width:40px">?</button>
+      <button class="btn small" id="immersiveScores" title="Leaderboard" style="min-width:40px">★</button>
       <button class="btn small" id="immersiveExit">Back</button>
     </div>
   </div>
@@ -1563,7 +1579,7 @@ function defaultState(){
     focusLog:[],rssFeeds:[],rssCache:{},rssSaved:[],rssRead:{},mindJournal:[],mdJournals:[],smLat:51.5,smLon:-0.1,smCity:'London',
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
-    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,tutorialSeen:false,feedbackUrl:'',
+    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],cpMenuDisabled:false,
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
@@ -2882,7 +2898,12 @@ function _khTrackDeletions(){
    snapshot, so items deleted before the session's first save() are NOT
    tombstoned — and the cloud-merge resurrects them on the next sync. That was
    the "delete all my calendar events, press Sync, they all come back" bug. */
-try{if(typeof S!=='undefined'&&S&&!window._khPrevIds)_khTrackDeletions();}catch(_){}
+/* Deferred off the synchronous boot path (setTimeout 0, after first paint): on a
+   big account this loop over every note/book/journal/event to snapshot ids added
+   tens of ms to the boot freeze. It only has to run before the session's first
+   save()/delete — 0ms is comfortably before any UI deletion — and save() also
+   seeds it itself, so this is just the belt-and-suspenders pre-seed. */
+try{if(typeof S!=='undefined'&&S&&!window._khPrevIds)setTimeout(function(){try{if(!window._khPrevIds)_khTrackDeletions();}catch(_){}},0);}catch(_){}
 /* Reclaim localStorage space when a write genuinely won't fit. The biggest
    easy win is `kh_offline_cred`, which caches whole encrypted state blobs for
    recent accounts (each ~the size of the main blob) — drop all but the most
@@ -2990,6 +3011,76 @@ function saveNow(){
    timestamp (e.g. saving a note, logging a session).
 ────────────────────────────────────────────────────────────────────────── */
 function NOW(){return new Date(Date.now()+((typeof S!=='undefined'&&S.clockOffset)||0));}
+/* ── Time zone with daylight-saving (Silk-safe, no Intl timeZone dependency) ──
+   Old Kindle WebKit's Intl has no reliable IANA-timezone support, so we compute
+   each offered zone's CURRENT UTC offset (including DST) in pure JS and fold it
+   into S.clockOffset — the same value NOW() already applies. The zone is stored
+   in S.clockZone and re-derived at every boot, so DST switch-overs self-correct
+   without the user touching anything. Picking a zone > manual nudge; a manual
+   nudge clears the zone so it becomes the override. */
+const CLOCK_ZONES=[
+  {id:'',label:'Device time (no override)',std:0,dst:null},
+  {id:'America/New_York',label:'New York — US Eastern',std:-5,dst:'us'},
+  {id:'America/Chicago',label:'Chicago — US Central',std:-6,dst:'us'},
+  {id:'America/Denver',label:'Denver — US Mountain',std:-7,dst:'us'},
+  {id:'America/Phoenix',label:'Arizona — Mountain, no DST',std:-7,dst:null},
+  {id:'America/Los_Angeles',label:'Los Angeles — US Pacific',std:-8,dst:'us'},
+  {id:'America/Anchorage',label:'Alaska',std:-9,dst:'us'},
+  {id:'Pacific/Honolulu',label:'Hawaii — no DST',std:-10,dst:null},
+  {id:'America/Sao_Paulo',label:'São Paulo — Brazil',std:-3,dst:null},
+  {id:'UTC',label:'UTC / GMT',std:0,dst:null},
+  {id:'Europe/London',label:'London — UK & Ireland',std:0,dst:'eu'},
+  {id:'Europe/Paris',label:'Central Europe — Paris/Berlin/Madrid',std:1,dst:'eu'},
+  {id:'Europe/Athens',label:'Eastern Europe — Athens/Helsinki',std:2,dst:'eu'},
+  {id:'Asia/Dubai',label:'Dubai — Gulf',std:4,dst:null},
+  {id:'Asia/Kolkata',label:'India',std:5.5,dst:null},
+  {id:'Asia/Shanghai',label:'China',std:8,dst:null},
+  {id:'Asia/Tokyo',label:'Japan/Korea',std:9,dst:null},
+  {id:'Australia/Sydney',label:'Sydney — Australia East',std:10,dst:'au'}
+];
+function _nthSundayUTC(y,mon,n){
+  /* date (1-31) of the n-th Sunday of month `mon` (0-11); n>=5 => LAST Sunday */
+  if(n>=5){
+    var last=new Date(Date.UTC(y,mon+1,0)).getUTCDate();
+    return last-new Date(Date.UTC(y,mon,last)).getUTCDay();
+  }
+  var firstDow=new Date(Date.UTC(y,mon,1)).getUTCDay();
+  return 1+((7-firstDow)%7)+(n-1)*7;
+}
+function _zoneOffsetHours(zone,utcMs){
+  /* zone's offset from UTC in hours at instant utcMs, INCLUDING DST */
+  var std=zone.std;
+  if(!zone.dst)return std;
+  var y=new Date(utcMs).getUTCFullYear(),on=false;
+  if(zone.dst==='us'){                                              /* 2nd Sun Mar 2am → 1st Sun Nov 2am, local */
+    var s=Date.UTC(y,2,_nthSundayUTC(y,2,2),2,0,0)-std*3600000;
+    var e=Date.UTC(y,10,_nthSundayUTC(y,10,1),2,0,0)-(std+1)*3600000;
+    on=utcMs>=s&&utcMs<e;
+  }else if(zone.dst==='eu'){                                        /* last Sun Mar 01:00 UTC → last Sun Oct 01:00 UTC */
+    var es=Date.UTC(y,2,_nthSundayUTC(y,2,5),1,0,0);
+    var ee=Date.UTC(y,9,_nthSundayUTC(y,9,5),1,0,0);
+    on=utcMs>=es&&utcMs<ee;
+  }else if(zone.dst==='au'){                                        /* southern: 1st Sun Oct → 1st Sun Apr (wraps year) */
+    var as=Date.UTC(y,9,_nthSundayUTC(y,9,1),2,0,0)-std*3600000;
+    var ae=Date.UTC(y,3,_nthSundayUTC(y,3,1),3,0,0)-(std+1)*3600000;
+    on=utcMs>=as||utcMs<ae;
+  }
+  return std+(on?1:0);
+}
+function _clockZoneById(id){for(var i=0;i<CLOCK_ZONES.length;i++){if(CLOCK_ZONES[i].id===id)return CLOCK_ZONES[i];}return null;}
+function _clockOffsetForZone(id){
+  var z=_clockZoneById(id);if(!z||!z.id)return 0;
+  /* clockOffset makes new Date(Date.now()+off).getHours() read the zone's wall clock */
+  return Math.round(_zoneOffsetHours(z,Date.now())*3600000+new Date().getTimezoneOffset()*60000);
+}
+function _applyClockZone(){
+  /* Re-derive S.clockOffset from the saved zone (DST-correct). Boot + on-pick. */
+  try{if(typeof S!=='undefined'&&S.clockZone)S.clockOffset=_clockOffsetForZone(S.clockZone);}catch(_){}
+}
+/* Recompute at boot so a saved zone (e.g. New York) tracks DST automatically.
+   Runs here — after the CLOCK_ZONES const is initialised and S is loaded (line
+   ~1611) — because CLOCK_ZONES is in its temporal dead zone earlier in boot. */
+try{_applyClockZone();}catch(_){}
 /* LOCAL calendar day-key (YYYY-MM-DD) for streaks/habits/daily-goal. Uses the
    device's LOCAL date parts, NOT toISOString() (which is UTC) — so a habit
    marked done at 8pm in New York records under the correct local day instead of
@@ -4466,7 +4557,7 @@ function launchKindleDesktop(){
          a unique opaque origin, so an imported/shared app CANNOT read this page's
          localStorage (the encrypted state, auth hash, device id), cookies, or call
          our APIs as the user. Stops a malicious shared app from stealing accounts. */
-      fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+      fr.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads');
       /* Inject the same strict CSP the store uses (connect-src 'none' blocks any
          data exfiltration, form-action 'none' blocks phishing posts) so an AI-
          built / downloaded app can't call out even though it runs JS. */
@@ -5706,7 +5797,15 @@ function launchKindleDesktop(){
     ta.style.cssText='width:100%;height:110px;font-family:monospace;font-size:11px;padding:8px;border:var(--thin);border-radius:8px;background:var(--bg,#f0f0f0);color:var(--fg,#111);box-sizing:border-box;resize:none;word-break:break-all;';
     const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;justify-content:flex-end;';
     const closeBtn=document.createElement('button');closeBtn.textContent='Close';closeBtn.className='btn small';
-    closeBtn.onclick=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
+    /* The KindleHub on-screen keyboard forces every textarea readOnly to suppress
+       the native keyboard — but on Kindle Silk a readOnly field ALSO can't receive
+       the native long-press "Paste", which is the only way to paste a KHAPP1 code
+       copied from outside the app (Silk blocks navigator.clipboard.readText). So
+       for the IMPORT box we turn the KH keyboard off while the dialog is open (the
+       observer that re-applies readOnly then no-ops), and restore it on close. */
+    let _kbRestored=false;
+    function _restoreKb(){if(_kbRestored)return;_kbRestored=true;try{if(window._khKeyboard&&window._khKeyboard.refresh)window._khKeyboard.refresh();}catch(_){}}
+    closeBtn.onclick=()=>{_restoreKb();if(ov.parentNode)ov.parentNode.removeChild(ov);};
     if(mode==='export'&&app){
       ttl.textContent='Share "'+_censorText(app.label)+'"';
       hint.textContent='Copy this code and send it to anyone. They tap Import in their KindleOS app store and paste it — it installs straight onto their home screen.';
@@ -5717,8 +5816,21 @@ function launchKindleDesktop(){
       btnRow.appendChild(copyBtn);btnRow.appendChild(closeBtn);
     } else {
       ttl.textContent='Import an app';
-      hint.textContent='Paste an app code (starts with KHAPP1:) below. It will be added to your home screen.';
+      hint.textContent='Paste an app code (starts with KHAPP1:) below, then tap Install. On Kindle: tap the box, then long-press it and choose Paste. It will be added to your home screen.';
       ta.placeholder='KHAPP1:…';
+      /* Keep the field a plain editable textarea so the Kindle native long-press
+         Paste works — turn the KH keyboard off for the dialog's lifetime. */
+      try{if(window._khKeyboard&&window._khKeyboard.disable)window._khKeyboard.disable();}catch(_){}
+      /* Explicit Paste button — works where the Clipboard API is allowed (desktop/
+         phone); on Kindle Silk it rejects, so we fall back to a long-press hint. */
+      const pasteBtn=document.createElement('button');pasteBtn.textContent='Paste';pasteBtn.className='btn small';
+      pasteBtn.onclick=()=>{
+        try{ta.focus();}catch(_){}
+        if(navigator.clipboard&&navigator.clipboard.readText){
+          navigator.clipboard.readText().then(t=>{if(t){ta.value=t;if(typeof toast==='function')toast('Pasted');}else if(typeof toast==='function')toast('Clipboard was empty');})
+            .catch(()=>{if(typeof toast==='function')toast('Long-press the box and choose Paste');});
+        }else{if(typeof toast==='function')toast('Long-press the box and choose Paste');}
+      };
       const instBtn=document.createElement('button');instBtn.textContent='Install';instBtn.className='btn small primary';
       instBtn.onclick=()=>{
         const v=(ta.value||'').trim();
@@ -5739,10 +5851,11 @@ function launchKindleDesktop(){
         const icon='<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="10" fill="#fff" opacity=".9"/><text x="24" y="30" text-anchor="middle" font-size="15" font-weight="900" fill="'+color+'" font-family="sans-serif">'+safeInitials+'</text></svg>';
         const newApp={id:'custom_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),label:label,color:color,icon:icon,customHTML:html,builtWith:'Imported'};
         osState.customApps.push(newApp);persistOS();buildPages();renderInstalled();
+        _restoreKb();
         if(ov.parentNode)ov.parentNode.removeChild(ov);
         if(typeof toast==='function')toast('"'+label+'" added to your home screen');
       };
-      btnRow.appendChild(instBtn);btnRow.appendChild(closeBtn);
+      btnRow.appendChild(pasteBtn);btnRow.appendChild(instBtn);btnRow.appendChild(closeBtn);
     }
     card.appendChild(ttl);card.appendChild(hint);card.appendChild(ta);card.appendChild(btnRow);
     ov.appendChild(card);ov.onclick=function(ev){if(ev.target===ov)closeBtn.onclick();};
@@ -5992,7 +6105,7 @@ GENERAL RULES:
 - Return ONLY valid JSON, no markdown, no preamble, no code fences.
 - Schema: {"label":"App Name","color":"#hexcolor","html":"complete HTML string"}
 - The html field must be a fully working standalone HTML document.
-- All CSS and JS inline. No external resources except APIs via allorigins proxy.
+- All CSS and JS inline. The app runs fully SANDBOXED with NO network access once installed — fetch/XMLHttpRequest/WebSocket and external <img>/<script>/<link> are all blocked. Everything must be self-contained and work OFFLINE. Do NOT rely on any web API or CDN.
 - Design for portrait ~360x580px. High contrast black/white. Large tap targets (min 44px height).
 - No emoji in UI. Use borders and patterns instead of color-only distinctions.
 - Use Georgia, Helvetica, or monospace fonts only.
@@ -6000,21 +6113,22 @@ GENERAL RULES:
 - Make it fully functional — not a mockup.
 - color: a hex representing the app's purpose.
 
-WEB SEARCH & LIVE DATA:
-- For apps needing current data (news, weather, prices, facts), include fetch() calls inside the HTML.
-- CORS proxy for any HTTP API: https://api.allorigins.win/get?url=ENCODED_URL
-  Usage: fetch('https://api.allorigins.win/get?url='+encodeURIComponent('https://api.target.com/endpoint'))
-         .then(r=>r.json()).then(d=>JSON.parse(d.contents))
-- Free APIs you can call directly (no key): 
-    Open-Meteo weather: https://api.open-meteo.com/v1/forecast?latitude=LAT&longitude=LON&current_weather=true
-    Wikipedia: https://en.wikipedia.org/api/rest_v1/page/summary/TOPIC
-    REST Countries: https://restcountries.com/v3.1/name/COUNTRY
-    Open Library: https://openlibrary.org/search.json?q=QUERY
-    JokeAPI: https://v2.jokeapi.dev/joke/Programming?type=single
-    Trivia: https://opentdb.com/api.php?amount=10&type=multiple
-    Exchange rates: https://open.er-api.com/v6/latest/USD
-    DuckDuckGo search: https://api.duckduckgo.com/?q=QUERY&format=json&no_html=1
-- Always handle fetch errors gracefully with a fallback UI message.`;
+NO NETWORK — the app is sandboxed and CANNOT fetch live data (weather, news, prices, search). Do NOT generate fetch()/API code — it will silently fail. For "live" apps, either ship built-in sample data or ask the user to type the numbers in. Persist data with localStorage (it works inside the app).
+
+DOWNLOAD / EXPORT (this DOES work — use it for CSV/text/data export):
+  var blob=new Blob([csvString],{type:'text/csv'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='export.csv'; document.body.appendChild(a); a.click();
+  setTimeout(function(){a.remove();},0);
+
+SEND EMAIL — the app has NO email/network of its own. To send mail, ask the HOST via postMessage (the host shows the user a confirmation and sends it from their KindleHub account). This is the ONLY way an app can email:
+  var _rid='m'+Date.now();
+  window.addEventListener('message',function(ev){
+    var d=ev.data; if(!d||d.kh!=='app'||d.action!=='sendMail'||d.rid!==_rid) return;
+    if(d.ok){ /* sent */ } else { /* d.error, e.g. user declined */ }
+  });
+  parent.postMessage({kh:'app',action:'sendMail',rid:_rid,to:'someone@example.com',subject:'Hi',body:'text'},'*');
+Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in the sandbox. Only the postMessage bridge above works.`;
       const userMsg='Build this app: '+desc;
       let raw=await _khCallActiveAI(systemPrompt,userMsg);
       const clean=raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
@@ -6058,7 +6172,7 @@ WEB SEARCH & LIVE DATA:
       /* SECURITY: sandbox the AI-generated preview (opaque origin, no same-origin)
          so generated code can't touch our localStorage / auth hash. See the
          custom-app overlay above for the full rationale. */
-      pframe.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals');
+      pframe.setAttribute('sandbox','allow-scripts allow-forms allow-popups allow-modals allow-downloads');
       pframe.srcdoc=parsed.html;
       const installBtn=document.createElement('button');
       installBtn.textContent='Add to KindleOS';
@@ -8632,7 +8746,7 @@ function _khOpenPublishedApp(app){
     /* Locked sandbox: NO allow-same-origin (can't reach our storage/auth) and NO
        allow-popups (can't open windows or tab-nab). allow-forms/modals stay for
        normal interactivity — the injected CSP still blocks external form posts. */
-    fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals');
+    fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals allow-downloads');
     ov.appendChild(fr);
     var bar=el('div',{style:{flexShrink:'0',display:'flex',alignItems:'center',gap:'8px',padding:'7px 12px',background:'var(--card,#fff)',borderTop:'1px solid rgba(0,0,0,0.14)'}});
     var back=txt('button','‹ Back',{style:{display:'inline-flex',alignItems:'center',padding:'8px 16px',background:'var(--fg,#111)',color:'var(--bg,#fff)',border:'none',borderRadius:'16px',fontSize:'12px',fontWeight:'800',cursor:'pointer',minHeight:'40px'}});
@@ -8781,6 +8895,39 @@ window._khPublishedOsApps=_khPublishedOsApps;window._khSyncAppNavTabs=_khSyncApp
 function _khInGame(){try{var r=document.getElementById('immersiveRoot');return !!(r&&getComputedStyle(r).display!=='none'&&r.offsetHeight>0);}catch(_){return false;}}
 window._khInGame=_khInGame;
 window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
+/* ── App bridge: a NARROW, always-user-confirmed channel so a sandboxed AI-built
+   app can use the ONE host capability users keep asking for — sending mail —
+   WITHOUT piercing the sandbox (the iframe still has no same-origin and no
+   network; connect-src stays 'none'). The app calls:
+     parent.postMessage({kh:'app',action:'sendMail',to,subject,body,rid:'x'},'*')
+   and listens for {kh:'app',action:'sendMail',rid:'x',ok,error} back. We verify
+   the message came from a live app iframe, ALWAYS confirm with the user before
+   sending, run it through the host mail path (the auth secret never leaves host
+   scope), and cool down 1.5s so a rogue app can't spam the confirm dialog. */
+(function(){
+  var _cool=0;
+  function _appFrameFor(src){try{var fs=document.querySelectorAll('iframe');for(var i=0;i<fs.length;i++){if(fs[i].contentWindow===src)return fs[i];}}catch(_){}return null;}
+  window.addEventListener('message',function(ev){
+    var d=ev&&ev.data;
+    if(!d||typeof d!=='object'||d.kh!=='app')return;
+    if(!_appFrameFor(ev.source))return;                 /* only from a real app iframe */
+    var reply=function(ok,err){try{ev.source.postMessage({kh:'app',action:d.action,rid:d.rid,ok:!!ok,error:err||''},'*');}catch(_){}};
+    if(d.action==='sendMail'){
+      if(Date.now()<_cool){reply(false,'too many requests — try again in a moment');return;}
+      _cool=Date.now()+1500;
+      var to=String(d.to||'').trim().slice(0,120);
+      var subj=String(d.subject||'').slice(0,160);
+      var body=String(d.body||'').slice(0,8000);
+      if(!to){reply(false,'no recipient');return;}
+      var okGo=false;
+      try{okGo=window.confirm('An app wants to send an email from your KindleHub account:\n\nTo: '+to+'\nSubject: '+(subj||'(none)')+'\n\nSend it?');}catch(_){okGo=false;}
+      if(!okGo){reply(false,'declined by user');return;}
+      if(typeof _mailSend!=='function'){reply(false,'mail is unavailable');return;}
+      _mailSend(to,subj,body,'').then(function(){reply(true,'');try{if(typeof toast==='function')toast('Email sent');}catch(_){}})
+        .catch(function(e){var m=(e&&e.message)||'send failed';reply(false,m);try{if(typeof toast==='function')toast(m);}catch(_){}});
+    }
+  },false);
+})();
 /* Boot: run the one-time migration (move default apps into the store / hide
    their nav tabs), apply it to the DOM, and show the "what's new" notice once. */
 (function(){
@@ -8879,7 +9026,12 @@ async function _checkAdmin(){
   if(typeof window._isAdminCached==='boolean')return window._isAdminCached;
   let result=false;
   try{
-    const id=((S.email||'')+' '+(S.user||'')).toLowerCase();
+    /* SECURITY: match ONLY the authenticated login identity (S.email), NOT the
+       user-settable display name S.user — otherwise anyone who set their name to
+       the creator's handle would satisfy the admin gate. This hardening is a
+       prerequisite for the admin-only global Site Editor (which can push JS to
+       every client): the gate must require the real password-backed identity. */
+    const id=(S.email||'').toLowerCase();
     /* Tokenize on non-alphanumeric, ignore very short/long fragments. */
     const tokens=id.split(/[^a-z0-9]+/).filter(t=>t.length>=5&&t.length<=40);
     for(let i=0;i<tokens.length;i++){
@@ -8964,7 +9116,7 @@ const _CAP_TAG='[[KH_CAP]]';
    marker, so they can be routed OUT of the general announcements widget (into
    the admin panel) while the WARNED user still sees theirs prominently. */
 const _WARN_TAG='[[KH_WARN]]';
-function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);return t;}
+function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);if(t.indexOf(_EDIT_TAG)===0)return '';return t;}
 /* Set of usernames who currently have an active warning (from warn-marked
    announcements) — used to show "already warned" on ban requests. Admin-loaded. */
 async function _khLoadWarnedSet(){
@@ -9126,6 +9278,341 @@ function _showCapacityNotice(){
   box.appendChild(row);ov.appendChild(box);
   (document.body||document.documentElement).appendChild(ov);
 }
+/* ── Global Site Editor ───────────────────────────────────────────────
+   Lets the ADMIN change the live site for EVERY user from any device (incl.
+   a Kindle) without a laptop or redeploy. Stored — like the capacity guard —
+   as a reserved [[KH_EDIT]] broadcast announcement (ANON-readable, admin-write
+   only: the announcement RPC is gated by the admin token). Three tiers:
+     • css    — appearance (a <style> injected on every client). Cannot run
+                code or read data — the safe tier.
+     • banner — a site-wide notice bar (plain text/data).
+     • js     — advanced: JavaScript eval'd on every client. This is powerful
+                (fix logic / add features live) AND dangerous (runs with full
+                page access), so it is admin-published only, each user can turn
+                it OFF (S.blockGlobalJs), and it's deferred + try/caught so a
+                bad script can never brick boot. The admin gate was hardened to
+                require the password-backed identity before this shipped. */
+const _EDIT_TAG='[[KH_EDIT]]';
+let _editState=null;
+function _khGlobalEditGet(){if(_editState)return _editState;try{var r=localStorage.getItem('kh_gedit');if(r)_editState=JSON.parse(r);}catch(_){}return _editState||null;}
+function _khGlobalEditStore(obj){_editState=obj;try{if(obj)localStorage.setItem('kh_gedit',JSON.stringify(obj));else localStorage.removeItem('kh_gedit');}catch(_){}}
+function _khApplyGlobalEdit(p){
+  try{
+    /* CSS tier */
+    var st=document.getElementById('kh-gedit-css');
+    if(p&&p.css){if(!st){st=document.createElement('style');st.id='kh-gedit-css';(document.head||document.documentElement).appendChild(st);}st.textContent=String(p.css).slice(0,60000);}
+    else if(st){st.parentNode&&st.parentNode.removeChild(st);}
+    /* Banner tier */
+    var bn=document.getElementById('kh-gedit-banner');
+    if(p&&p.banner){
+      if(!bn){bn=document.createElement('div');bn.id='kh-gedit-banner';bn.style.cssText='position:fixed;left:0;right:0;top:0;z-index:399999;background:var(--accent,#1769ff);color:var(--accent-inv,#fff);font-family:var(--ui-font);font-size:12px;font-weight:700;text-align:center;padding:6px 30px;line-height:1.4;box-shadow:0 1px 4px rgba(0,0,0,.2);';var x=document.createElement('span');x.textContent='×';x.style.cssText='position:absolute;right:10px;top:4px;cursor:pointer;font-size:16px;font-weight:900;';x.onclick=function(){bn.parentNode&&bn.parentNode.removeChild(bn);};bn.appendChild(x);(document.body||document.documentElement).appendChild(bn);}
+      bn.childNodes[0]&&bn.childNodes[0].nodeType===3?bn.childNodes[0].nodeValue=String(p.banner).slice(0,300):bn.insertBefore(document.createTextNode(String(p.banner).slice(0,300)),bn.firstChild);
+    } else if(bn){bn.parentNode&&bn.parentNode.removeChild(bn);}
+    /* JS tier — opt-out honoured, run ONCE per version, deferred + guarded */
+    if(p&&p.js&&!(typeof S!=='undefined'&&S.blockGlobalJs)){
+      if(window._khGeditJsRan!==p.ts){
+        window._khGeditJsRan=p.ts;
+        setTimeout(function(){try{(0,eval)(String(p.js));}catch(e){try{console.warn('[global edit js]',e);}catch(_){}}},1200);
+      }
+    }
+  }catch(_){}
+}
+async function _khRefreshGlobalEdit(){
+  if(typeof _sbActive!=='function'||!_sbActive())return;
+  try{
+    const rows=await _sbSelect('kh_announcements','select=text,created_at&active=eq.true&order=created_at.desc&limit=25');
+    let rec=null;
+    if(Array.isArray(rows))for(const r of rows){const tx=String(r.text||'');if(tx.indexOf(_EDIT_TAG)===0){rec=tx.slice(_EDIT_TAG.length);break;}}
+    if(rec===null){_khGlobalEditStore(null);_khApplyGlobalEdit(null);}
+    else{let p={};try{p=JSON.parse(rec)||{};}catch(_){p={};}_khGlobalEditStore(p);_khApplyGlobalEdit(p);}
+  }catch(_){}
+}
+async function _khGlobalEditPublish(o){
+  o=o||{};
+  const payload=JSON.stringify({css:String(o.css||'').slice(0,60000),js:String(o.js||'').slice(0,60000),banner:String(o.banner||'').slice(0,300),note:String(o.note||'').slice(0,200),ts:Date.now()});
+  const ok=await _announceRpc('kh_post_announcement',{p_text:_EDIT_TAG+payload,p_token:window._adminToken||'',p_targets:[]});
+  if(ok){var p={};try{p=JSON.parse(payload);}catch(_){}_khGlobalEditStore(p);_khApplyGlobalEdit(p);}
+  return ok;
+}
+async function _khGlobalEditClear(){
+  const ok=await _announceRpc('kh_post_announcement',{p_text:_EDIT_TAG+JSON.stringify({css:'',js:'',banner:'',note:'',ts:Date.now()}),p_token:window._adminToken||'',p_targets:[]});
+  if(ok){_khGlobalEditStore(null);_khApplyGlobalEdit(null);}
+  return ok;
+}
+window._khApplyGlobalEdit=_khApplyGlobalEdit;window._khGlobalEditGet=_khGlobalEditGet;window._khGlobalEditPublish=_khGlobalEditPublish;window._khGlobalEditClear=_khGlobalEditClear;
+/* Admin-only editor overlay: describe a change, let Gemini draft the CSS/JS,
+   preview it on THIS device, then publish it to everyone. */
+/* ── Site Editor verification + polish tools ──────────────────────────────
+   Admin site-edits are eval'd on EVERY client, so before publishing we run a
+   battery of checks. (Apply-time eval is ALSO deferred + try/caught, so even a
+   bad edit can't brick boot — verification is the belt on top of those braces
+   AND it makes sure the edit actually WORKS on old Kindle Silk.) */
+function _khSiteScanSilk(code){
+  /* The Kindle-Silk-hostile operators — mirrors _khSilkScan + the minify deploy
+     gate EXACTLY (engine-independent: catches these even when the admin's own
+     browser is modern and would happily run them), PLUS numeric separators the
+     regex gate misses. Leading [)\]\w$] guard avoids string/regex false hits. */
+  if(!code)return [];
+  var C=String(code),hits=[];
+  var P=[
+    [/[)\]\w$]\?\?=/,'nullish assignment (??=)'],
+    [/[)\]\w$]\?\?(?!=)/,'nullish coalescing (??)'],
+    [/[)\]\w$]\?\.\s*[A-Za-z_$([]/,'optional chaining (?.)'],
+    [/(?:^|[^A-Za-z0-9_$])catch\s*\{/,'parameterless catch (needs an error variable)'],
+    [/[)\]\w$]\s*\|\|=/,'logical-OR assignment'],
+    [/[)\]\w$]\s*&&=/,'logical-AND assignment'],
+    [/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators (1_000)'],
+    [/\.\d[\d]*_/,'numeric separators in a decimal'],
+    /* ES2018+ regex constructs + BigInt: a modern browser's new Function()
+       compiles these fine, so the admin's own "Test JS" passes — but they are
+       parse-time SyntaxErrors on old Kindle Silk. Detected here (not by
+       new Function, and not even by the app's own minify deploy gate) so the
+       edit can't silently no-op on every Kindle. Distinctive shapes only, to
+       avoid false positives on ordinary division/strings. */
+    [/\(\?<[=!]/,'regex lookbehind (unsupported on Kindle)'],
+    [/\(\?<[A-Za-z_]/,'regex named capture group (unsupported on Kindle)'],
+    [/\\[pP]\{/,'regex unicode-property escape (unsupported on Kindle)'],
+    [/[^A-Za-z0-9_$.]\d[\d_]*n(?![A-Za-z0-9_$])/,'BigInt literal (unsupported on Kindle)'],
+    [/0[xXoObB][0-9a-fA-F_]+n\b/,'BigInt literal (unsupported on Kindle)']
+  ];
+  P.forEach(function(p){if(p[0].test(C))hits.push(p[1]);});
+  return hits;
+}
+function _khSiteAutofix(code){ return String(code).replace(/([^A-Za-z0-9_$])catch\s*\{/g,'$1catch(_e){'); }
+/* Auth/crypto/credential internals that must NEVER be in a site edit — HARD
+   block (no legit reason; a hijacked edit touching these = catastrophic). This
+   is narrower than _khPatchDenyRE on purpose: an admin CAN legitimately use
+   fetch/localStorage/etc. in a real site tweak, so those are WARN, not BLOCK. */
+var _khSiteBlockRE=/_ADMIN_HASHES|\bADMIN_HASHES\b|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|SUPABASE_ANON_KEY|service_role|document\.cookie|\bkh_users\b/;
+function _khVerifySiteEdit(payload){
+  /* Returns {ok, blocking:[str], warnings:[str], silk:[str], risk:[str], compileErr} */
+  var out={ok:true,blocking:[],warnings:[],silk:[],risk:[],compileErr:''};
+  var css=String((payload&&payload.css)||''),js=String((payload&&payload.js)||''),banner=String((payload&&payload.banner)||'');
+  if(css.length>60000)out.blocking.push('CSS is too large (max 60,000 chars).');
+  if(js.length>60000)out.blocking.push('JavaScript is too large (max 60,000 chars).');
+  if(banner.length>300)out.warnings.push('Banner is over 300 chars — it will be trimmed.');
+  if(js){
+    out.silk=_khSiteScanSilk(js);
+    out.silk.forEach(function(s){out.blocking.push('Kindle-incompatible JS syntax: '+s);});
+    try{ new Function(js); }catch(se){ out.compileErr=String((se&&se.message)||se); out.blocking.push('JavaScript syntax error: '+out.compileErr); }
+    if(_khSiteBlockRE.test(js))out.blocking.push('JavaScript references protected auth/encryption internals — not allowed.');
+    try{ if(typeof _khAppRiskFlags==='function')out.risk=_khAppRiskFlags(js)||[]; }catch(_){}
+    out.risk.forEach(function(r){out.warnings.push('JS '+r);});
+  }
+  if(css){
+    if(/position\s*:\s*sticky/i.test(css))out.warnings.push('CSS uses position:sticky (ignored on old Kindle Silk).');
+    if(/aspect-ratio\s*:/i.test(css))out.warnings.push('CSS uses aspect-ratio (ignored on old Kindle Silk).');
+    if(/@import\b/i.test(css))out.warnings.push('CSS @import is blocked by the page security policy — inline the styles instead.');
+  }
+  out.ok=out.blocking.length===0;
+  return out;
+}
+/* Iterative AI polish — re-runs the model up to maxPasses times, feeding each
+   round's remaining blocking issues back in, accepting a rewrite ONLY if it has
+   strictly fewer blocking issues (mirrors the app-builder repair guard + the
+   _khReviewApp model/backoff shape). onProgress(text) reports each pass. */
+async function _khPolishSiteEditJs(js,onProgress,maxPasses){
+  maxPasses=maxPasses||4;
+  var cur=_khSiteAutofix(String(js||''));
+  var v=_khVerifySiteEdit({js:cur});
+  var pass=0;
+  while(!v.ok && pass<maxPasses){
+    pass++;
+    if(onProgress)onProgress('Polishing — pass '+pass+' of '+maxPasses+', fixing '+v.blocking.length+' issue'+(v.blocking.length===1?'':'s')+'…');
+    var issues=v.blocking.join('; ');
+    var sys='You are fixing JavaScript so it runs on an OLD Kindle Silk WebKit browser. Detected problems: '+issues+'. Rewrite to FIX EXACTLY these and change NOTHING else — keep identical behaviour. Rules: replace optional chaining with an explicit and-guard such as (a && a.b); replace nullish coalescing with a not-null ternary such as (a != null ? a : b); expand every logical-assignment operator to its long form; give every catch block an error parameter, for example catch(e); write all numbers without digit-separator underscores; use no ES2020-or-newer operator; fix any syntax error; never touch login, auth, or encryption. Return ONLY the raw corrected JavaScript — no markdown, no commentary.';
+    var out=null;
+    try{ out=await khiCall(sys+'\n\nCODE:\n'+cur,{temperature:0,maxTokens:1600}); }catch(_){ out=null; }
+    if(!out){ if(onProgress)onProgress('Pass '+pass+' — AI unavailable, retrying…'); await new Promise(function(r){setTimeout(r,1200*pass);}); continue; }
+    var cand=_khSiteAutofix(String(out).replace(/```[a-z]*\n?|```/g,'').trim());
+    var cv=_khVerifySiteEdit({js:cand});
+    if(cv.blocking.length<v.blocking.length){ cur=cand; v=cv; }
+    else if(onProgress){ onProgress('Pass '+pass+' didn\'t improve it — trying a different fix…'); }
+  }
+  return {js:cur,verify:v,passes:pass};
+}
+/* Saved-edits history (device/account state) — every publish is recorded so the
+   admin can view past edits and re-publish / revert. Newest first, capped 25. */
+function _khSiteEditHistoryAdd(payload){
+  try{
+    if(!Array.isArray(S.siteEdits))S.siteEdits=[];
+    S.siteEdits.unshift({css:String((payload&&payload.css)||''),js:String((payload&&payload.js)||''),banner:String((payload&&payload.banner)||''),note:String((payload&&payload.note)||''),ts:(typeof NOW==='function'?NOW().getTime():Date.now())});
+    if(S.siteEdits.length>25)S.siteEdits.length=25;
+    save();
+  }catch(_){}
+}
+window._khSiteScanSilk=_khSiteScanSilk;window._khVerifySiteEdit=_khVerifySiteEdit;window._khPolishSiteEditJs=_khPolishSiteEditJs;window._khSiteEditHistoryAdd=_khSiteEditHistoryAdd;
+async function _khOpenSiteEditor(){
+  if(!(window._isAdminCached===true)){if(typeof toast==='function')toast('Admins only.');return;}
+  const cur=_khGlobalEditGet()||{css:'',js:'',banner:''};
+  const store={css:cur.css||'',banner:cur.banner||'',js:cur.js||''};
+  let mode='css';
+  const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',width:'100%',height:'100%',background:'rgba(0,0,0,0.55)',zIndex:'600050',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'14px',boxSizing:'border-box',overflowY:'auto'}});
+  const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'600px',width:'100%',borderRadius:'12px',padding:'16px',boxShadow:'var(--shadow-md)',fontFamily:'var(--ui-font)',display:'flex',flexDirection:'column',gap:'9px',margin:'auto'}});
+  card.appendChild(txt('div','Website Editor',{style:{fontSize:'17px',fontWeight:'900'}}));
+  card.appendChild(txt('div','Admin only. Change the LIVE site for everyone — no laptop, no redeploy. Every edit is checked for Kindle safety and auto-polished before you can publish, so a bad edit can\'t break the site.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+
+  /* Top tabs: Edit | Saved edits */
+  let tab='edit';
+  const tabRow=el('div',{className:'card-row',style:{gap:'6px'}});
+  const tabBtns={};
+  [['edit','Edit'],['saved','Saved edits']].forEach(function(t){const b=txt('button',t[1],{className:'btn small'+(t[0]==='edit'?' primary':'')});b.onclick=function(){tab=t[0];_showTab();};tabBtns[t[0]]=b;tabRow.appendChild(b);});
+  card.appendChild(tabRow);
+  const editWrap=el('div',{});const savedWrap=el('div',{style:{display:'none'}});
+  card.appendChild(editWrap);card.appendChild(savedWrap);
+
+  /* ── EDIT tab ── */
+  const seg=el('div',{className:'card-row',style:{gap:'6px'}});
+  const segBtns={};
+  [['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']].forEach(function(m){const b=txt('button',m[1],{className:'btn small'+(m[0]==='css'?' primary':'')});b.onclick=function(){mode=m[0];Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x===mode);});_syncBox();_verify();};segBtns[m[0]]=b;seg.appendChild(b);});
+  editWrap.appendChild(seg);
+  const descIn=el('textarea',{style:{width:'100%',minHeight:'50px',boxSizing:'border-box'},placeholder:'Describe the change and let AI draft it…'});
+  editWrap.appendChild(descIn);
+  const aiRow=el('div',{className:'card-row'});
+  const aiBtn=txt('button','Draft with AI',{className:'btn small primary'});
+  const aiStatus=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
+  aiRow.append(aiBtn,aiStatus);editWrap.appendChild(aiRow);
+  const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'2px'}});
+  const box=el('textarea',{style:{width:'100%',minHeight:'120px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
+  editWrap.appendChild(boxLbl);editWrap.appendChild(box);
+  const jsWarn=txt('div','Advanced JavaScript runs on every user\'s device with full page access. Only publish code you understand — each user can also disable admin scripts in their Settings.',{style:{fontSize:'10px',color:'var(--danger)',lineHeight:'1.45',display:'none'}});
+  editWrap.appendChild(jsWarn);
+  /* Verification report */
+  const reportHost=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'8px 10px',background:'var(--highlight)',minHeight:'20px'}});
+  editWrap.appendChild(reportHost);
+  const statusEl=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'15px'}});
+  editWrap.appendChild(statusEl);
+
+  function _syncBox(){
+    box.value=store[mode]||'';
+    boxLbl.textContent=mode==='css'?'CSS — injected on every client':mode==='banner'?'Banner text — a site-wide notice bar':'JavaScript — runs once on every client';
+    box.style.minHeight=mode==='banner'?'50px':'120px';
+    jsWarn.style.display=mode==='js'?'block':'none';
+    descIn.placeholder=mode==='js'?'Describe the behaviour… e.g. "add a floating Help button that scrolls to the top"':mode==='banner'?'Describe the notice… e.g. "maintenance tonight at 9pm UK time"':'Describe the look… e.g. "make all primary buttons navy and rounded"';
+  }
+  function _renderReport(v){
+    reportHost.innerHTML='';
+    if(!v){reportHost.appendChild(txt('div','Edit or draft something, then Verify.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
+    if(v.ok){reportHost.appendChild(txt('div',v.warnings.length?'Checks passed (with warnings) — safe to publish.':'✓ All checks passed — safe to publish.',{style:{fontSize:'12px',fontWeight:'800',color:'var(--success)'}}));}
+    if(v.blocking.length){
+      reportHost.appendChild(txt('div','MUST FIX before publishing:',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',margin:'2px 0'}}));
+      v.blocking.forEach(function(b){reportHost.appendChild(txt('div','• '+b,{style:{fontSize:'11px',color:'var(--danger)',lineHeight:'1.4'}}));});
+    }
+    if(v.warnings.length){
+      reportHost.appendChild(txt('div','Warnings (publishing still allowed):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'4px 0 2px'}}));
+      v.warnings.forEach(function(w){reportHost.appendChild(txt('div','• '+w,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));});
+    }
+  }
+  let _lastV=null;
+  function _verify(){ _lastV=_khVerifySiteEdit(store); _renderReport(_lastV); pubBtn.disabled=!_lastV.ok; return _lastV; }
+  box.oninput=function(){store[mode]=box.value;khDebounce(_verify,300)();};
+
+  aiBtn.onclick=async function(){
+    const d=(descIn.value||'').trim();if(!d){if(typeof toast==='function')toast('Describe the change first.');return;}
+    if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
+    aiStatus.textContent='Thinking…';aiBtn.disabled=true;
+    try{
+      let sys;
+      if(mode==='css')sys='You write a SINGLE block of raw CSS (no <style> tag, no markdown, no explanation) injected into a Kindle e-reader web app to restyle it site-wide. It uses CSS variables --accent --fg --bg --card and classes .btn .btn.primary "nav .tab" .card. OLD Kindle Silk WebKit: do NOT use variables in calc(), aspect-ratio, position:sticky, flex gap, or @import. Output ONLY CSS.';
+      else if(mode==='banner')sys='You write a SHORT (max ~120 chars) plain-text site-wide banner notice. Output ONLY the text, no quotes, no markdown.';
+      else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app with full page access. OLD Kindle Silk WebKit ES5/ES2015 ONLY: NO optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter (catch(e)). Never touch login/auth/encryption. Keep it small and wrap risky parts in try/catch. Output ONLY JavaScript.';
+      let out=await khiCall(sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400});
+      let clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
+      store[mode]=clean;box.value=clean;
+      /* Auto-polish drafted JS immediately so the admin starts from safe code. */
+      if(mode==='js'&&clean){aiStatus.textContent='Checking for Kindle safety…';const r=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=r.js;box.value=r.js;}
+      aiStatus.textContent='Drafted — review it below.';_verify();
+    }catch(e){aiStatus.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
+    aiBtn.disabled=false;
+  };
+
+  /* Shared publish flow: verify → auto-polish JS → confirm → publish → history. */
+  async function _doPublish(payload){
+    const p={css:String(payload.css||''),banner:String(payload.banner||''),js:String(payload.js||''),note:String(payload.note||'').slice(0,120)};
+    statusEl.textContent='Verifying…';
+    let v=_khVerifySiteEdit(p);
+    if(p.js&&!v.ok){
+      const r=await _khPolishSiteEditJs(p.js,function(t){statusEl.textContent=t;});
+      p.js=r.js;v=r.verify;store.js=p.js;if(mode==='js')box.value=p.js;
+    }
+    _lastV=v;_renderReport(v);pubBtn.disabled=!v.ok;
+    if(!v.ok){statusEl.textContent='';if(typeof toast==='function')toast('Still has issues that could break the site — fix the red items first.',5000);return false;}
+    const jtxt=p.js?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
+    const wtxt=v.warnings.length?('\n\nWarnings:\n• '+v.warnings.join('\n• ')):'';
+    if(!window.confirm('Publish this to ALL users now?'+jtxt+wtxt)){statusEl.textContent='';return false;}
+    statusEl.textContent='Publishing…';
+    const ok=await _khGlobalEditPublish(p);
+    if(ok){_khSiteEditHistoryAdd(p);statusEl.textContent='';if(typeof toast==='function')toast('Published to everyone.',4000);ov.remove();return true;}
+    statusEl.textContent='';if(typeof toast==='function')toast('Publish failed — check your admin sign-in / connection.',5000);return false;
+  }
+
+  /* Tool buttons */
+  const toolRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
+  const verifyBtn=txt('button','Verify & polish',{className:'btn small'});
+  verifyBtn.onclick=async function(){
+    let v=_verify();
+    if(mode==='js'&&store.js&&!v.ok){
+      verifyBtn.disabled=true;
+      const r=await _khPolishSiteEditJs(store.js,function(t){statusEl.textContent=t;});
+      store.js=r.js;box.value=r.js;v=r.verify;_lastV=v;_renderReport(v);pubBtn.disabled=!v.ok;
+      statusEl.textContent=v.ok?'Polished — now Kindle-safe.':'Couldn\'t fully auto-fix — see the red items.';
+      verifyBtn.disabled=false;
+    } else { statusEl.textContent=v.ok?'Looks good.':'See the items above.'; }
+  };
+  const previewBtn=txt('button','Preview here',{className:'btn small'});
+  previewBtn.onclick=function(){_khApplyGlobalEdit({css:store.css,banner:store.banner,js:'',ts:'preview'});if(typeof toast==='function')toast('Previewing CSS + banner on THIS device only. Not published.',3500);};
+  const testJsBtn=txt('button','Test JS on my device',{className:'btn small'});
+  testJsBtn.onclick=function(){
+    if(!(store.js||'').trim()){if(typeof toast==='function')toast('No JavaScript to test.');return;}
+    const v=_verify();if(!v.ok){if(typeof toast==='function')toast('Fix the red items first (Verify & polish).',4000);return;}
+    try{(0,eval)(String(store.js));statusEl.textContent='JS ran on this device with no error.';if(typeof toast==='function')toast('Ran cleanly on this device.',3000);}
+    catch(e){statusEl.textContent='JS threw on this device: '+((e&&e.message)||e);if(typeof toast==='function')toast('It threw: '+((e&&e.message)||e),6000);}
+  };
+  toolRow.append(verifyBtn,previewBtn,testJsBtn);editWrap.appendChild(toolRow);
+
+  /* Publish / remove */
+  const actRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
+  const pubBtn=txt('button','Publish to everyone',{className:'btn small primary'});
+  pubBtn.onclick=function(){_doPublish({css:store.css,banner:store.banner,js:store.js,note:(descIn.value||'').slice(0,120)});};
+  const clearBtn=txt('button','Remove live edit',{className:'btn small danger'});
+  clearBtn.onclick=async function(){if(!window.confirm('Remove the live edit for everyone?'))return;const ok=await _khGlobalEditClear();if(typeof toast==='function')toast(ok?'Live edit removed for everyone.':'Failed — check connection.');if(ok)ov.remove();};
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=function(){ov.remove();};
+  actRow.append(pubBtn,clearBtn,closeBtn);editWrap.appendChild(actRow);
+
+  /* ── SAVED tab ── */
+  function _renderSaved(){
+    savedWrap.innerHTML='';
+    const arr=Array.isArray(S.siteEdits)?S.siteEdits:[];
+    const live=_khGlobalEditGet();
+    if(live&&(live.css||live.js||live.banner)){
+      savedWrap.appendChild(txt('div','● A live edit is currently published'+(live.note?(' — "'+live.note+'"'):''),{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700',marginBottom:'8px'}}));
+    }
+    if(!arr.length){savedWrap.appendChild(txt('div','No saved edits yet. When you publish, the edit is saved here so you can view, re-publish or revert to it later.',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 0'}}));return;}
+    arr.forEach(function(h){
+      const c=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'10px',marginBottom:'8px'}});
+      const tiers=[];if(h.css)tiers.push('CSS');if(h.banner)tiers.push('Banner');if(h.js)tiers.push('JS');
+      c.appendChild(txt('div',h.note||'(no description)',{style:{fontWeight:'700',fontSize:'12px'}}));
+      c.appendChild(txt('div',(tiers.join(' · ')||'empty')+' · '+new Date(h.ts).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'6px'}}));
+      const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
+      const viewB=txt('button','View / edit',{className:'btn small'});
+      viewB.onclick=function(){store.css=h.css||'';store.banner=h.banner||'';store.js=h.js||'';descIn.value=h.note||'';tab='edit';_showTab();_syncBox();_verify();};
+      const repubB=txt('button','Re-publish',{className:'btn small primary'});
+      repubB.onclick=function(){_doPublish({css:h.css,banner:h.banner,js:h.js,note:h.note});};
+      row.append(viewB,repubB);c.appendChild(row);savedWrap.appendChild(c);
+    });
+  }
+  function _showTab(){
+    editWrap.style.display=tab==='edit'?'block':'none';
+    savedWrap.style.display=tab==='saved'?'block':'none';
+    Object.keys(tabBtns).forEach(function(x){tabBtns[x].classList.toggle('primary',x===tab);});
+    if(tab==='saved')_renderSaved();
+  }
+
+  _syncBox();_verify();
+  ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+}
+window._khOpenSiteEditor=_khOpenSiteEditor;
 /* ── Username ban list ────────────────────────────────────────────────
    Approving a username report bans the NAME (you can't rename an account —
    the login hash is SHA-256(username+password), so the name is the
@@ -9372,6 +9859,7 @@ async function _renderAnnouncementWidget(card){
     anns=(anns||[]).filter(a=>{
       const t=String(a.text||'');
       if(t.indexOf(_CAP_TAG)===0)return false;/* capacity control record — never a real announcement */
+      if(t.indexOf(_EDIT_TAG)===0)return false;/* global site-edit record — never a real announcement */
       if(t.indexOf(_WARN_TAG)===0){
         /* Moderator warnings aren't general announcements: only the WARNED user
            still sees theirs here (prominently, below); for everyone else — incl.
@@ -9867,15 +10355,27 @@ function _compStr(json){
 }
 function _decompStr(s){
   if(!s)return s;
-  let out=s;
-  /* Walk in reverse so longer tokens (substituted first) are restored
-     before shorter ones could collide. */
-  for(let i=_COMP_DICT.length-1;i>=0;i--){
-    const mk='\x01'+String.fromCharCode(i);
-    if(out.indexOf(mk)<0)continue;
-    out=out.split(mk).join(_COMP_DICT[i]);
+  s=String(s);
+  /* Fast O(n) SINGLE pass (was ~90 full-string split/join passes — a multi-MB
+     multi-second freeze at boot on a big account). Markers are unambiguous: a
+     marker is 0x01 followed by the dictionary-index char, and JSON.stringify
+     escapes any real 0x01 in the data as , so a raw 0x01 only ever starts
+     a marker. Restoration order is irrelevant (dict tokens contain no 0x01), so
+     one scan is byte-identical to the old reverse split/join. */
+  if(s.indexOf('\x01')<0)return s;
+  const out=[];const n=s.length;let last=0;
+  for(let i=0;i<n;i++){
+    if(s.charCodeAt(i)===1&&i+1<n){
+      const idx=s.charCodeAt(i+1);
+      if(idx<_COMP_DICT.length){
+        if(i>last)out.push(s.slice(last,i));
+        out.push(_COMP_DICT[idx]);
+        i++;last=i+1;                 /* skip the index char */
+      }
+    }
   }
-  return out;
+  if(last<n)out.push(s.slice(last));
+  return out.join('');
 }
 
 /* ── Master document helpers (single-item architecture) ────────────────
@@ -10070,26 +10570,32 @@ function _jsInflate(gz){
       while(bcnt<n){if(p>=inEnd)throw new Error('eos');bbuf|=inp[p++]<<bcnt;bcnt+=8;}
       const v=bbuf&((1<<n)-1);bbuf>>>=n;bcnt-=n;return v;
     }
-    /* Build a Huffman decode table from a list of code lengths */
+    /* Build a CANONICAL-Huffman decode table (integer arrays only) — was a
+       plain-object keyed by the string `len+':'+code`, rebuilt per block and
+       hash-looked-up once PER BIT per symbol: the dominant constant-factor cost
+       of the boot freeze. `counts[l]` = #codes of length l; `symbols[]` = the
+       symbols sorted by (length, then symbol index), exactly the canonical
+       assignment the old `codes[i]=next[len]++` produced — so decode is
+       byte-identical. */
     function buildTree(lens){
-      const max=Math.max.apply(null,lens);if(!max)return null;
-      const blCount=new Uint32Array(max+1);
-      for(let i=0;i<lens.length;i++)if(lens[i])blCount[lens[i]]++;
-      const next=new Uint32Array(max+2);let code=0;
-      for(let b=1;b<=max;b++){code=(code+blCount[b-1])<<1;next[b]=code;}
-      const codes=new Int32Array(lens.length);
-      for(let i=0;i<lens.length;i++)if(lens[i])codes[i]=next[lens[i]]++;
-      /* Return decoder using table lookup */
-      const tbl={};
-      for(let i=0;i<lens.length;i++)if(lens[i])tbl[lens[i]+':'+codes[i]]=i;
-      return{tbl:tbl,max:max};
+      let max=0;for(let i=0;i<lens.length;i++)if(lens[i]>max)max=lens[i];
+      if(!max)return null;
+      const counts=new Uint16Array(max+1),symbols=new Uint16Array(lens.length);
+      for(let i=0;i<lens.length;i++)if(lens[i])counts[lens[i]]++;
+      const offs=new Uint32Array(max+2);let s=0;
+      for(let l=1;l<=max;l++){offs[l]=s;s+=counts[l];}
+      for(let i=0;i<lens.length;i++)if(lens[i])symbols[offs[lens[i]]++]=i;
+      return{counts:counts,symbols:symbols,max:max};
     }
     function decodeSym(t){
-      let code=0;
+      /* Standard canonical decode (puff/tinf): accumulate the code MSB-first and
+         at each length test whether it falls in that length's contiguous range. */
+      let code=0,first=0,index=0;
       for(let len=1;len<=t.max;len++){
-        code=(code<<1)|bits(1);
-        const sym=t.tbl[len+':'+code];
-        if(sym!==undefined)return sym;
+        code|=bits(1);
+        const count=t.counts[len];
+        if(code-first<count)return t.symbols[index+(code-first)];
+        index+=count;first=(first+count)<<1;code<<=1;
       }
       throw new Error('huffman decode');
     }
@@ -10117,8 +10623,15 @@ function _jsInflate(gz){
       return FIXED_DIST=buildTree(lens);
     }
 
-    const out=[];let opos=0;
-    function emit(b){out.push(b);opos++;}
+    /* Output buffer: PREALLOCATE a Uint8Array from the gzip ISIZE trailer (the
+       last 4 bytes = exact uncompressed length mod 2^32, previously ignored) and
+       write by index — was `out.push(b)` a byte at a time into a plain JS Array
+       (millions of pushes + a full final Uint8Array copy). Back-refs read
+       out[start+k] directly. The grow path is a safety net for a malformed
+       ISIZE; for our < few-MB blobs the preallocation is exact and never grows. */
+    const isize=((inp[inp.length-4]|(inp[inp.length-3]<<8)|(inp[inp.length-2]<<16)|(inp[inp.length-1]<<24))>>>0);
+    let out=new Uint8Array(isize>0?isize:65536);let opos=0;
+    function emit(b){if(opos>=out.length){const _n=new Uint8Array(out.length*2);_n.set(out);out=_n;}out[opos++]=b;}
 
     let bfinal=0;
     do{
@@ -10170,7 +10683,7 @@ function _jsInflate(gz){
         }
       }
     }while(!bfinal);
-    return new Uint8Array(out);
+    return opos===out.length?out:out.subarray(0,opos);
   }catch(e){return null;}
 }
 window._jsInflate=_jsInflate;
@@ -10600,6 +11113,11 @@ function _parseItemIds(text){
       msg:shortMsg,where:where,line:lineno||'?',col:colno||'',stack:stack,
       date:entry.date,kind:kind,aiPrompt:aiPrompt,ctx:ctx,fullText:safeText
     });
+    /* HARD CAP the in-memory session log — a recurring error (e.g. a poller
+       throwing every 15s) used to grow this unbounded, so the admin Feedback
+       panel then rendered hundreds of heavy error cards and CRASHED the Kindle.
+       Keep only the newest 20; the panel paginates on top of this. */
+    if(window._khAutoErrors.length>20)window._khAutoErrors.splice(0,window._khAutoErrors.length-20);
 
     /* Even offline, stash the report locally so the next online boot
        can retry. The retry loop below picks these up. */
@@ -14704,6 +15222,15 @@ function showView(id){
     if(typeof _khUseBump==='function')_khUseBump(id);
   }catch(_){}
   const _host=_viewHost();
+  /* PERF (e-ink): re-showing the SAME already-mounted cached view — re-tapping the
+     active nav tab, or a showView(currentView) refresh that didn't invalidate the
+     cache — used to clear + re-append the identical node: a needless full-screen
+     e-ink flash plus a scroll-to-top. Skip the DOM churn when the exact cached node
+     is already the sole child; the ON_SHOW + related-pages hooks below still run
+     (both idempotent). Force-refresh callers do `delete VIEWS[id]` first, so they
+     never satisfy this and always rebuild. ALWAYS_REBUILD views never skip. */
+  const _sameMounted=VIEWS[id]&&!ALWAYS_REBUILD.has(id)&&!_needSecondaryRemount&&_host.firstChild===VIEWS[id]&&VIEWS[id].nextSibling===null;
+  if(!_sameMounted){
   while(_host.firstChild)_host.removeChild(_host.firstChild);
   if(ALWAYS_REBUILD.has(id))delete VIEWS[id];
   if(!VIEWS[id]){
@@ -14734,6 +15261,7 @@ function showView(id){
     }
   }
   _host.appendChild(VIEWS[id]);
+  }
   try{if(ON_SHOW[id])ON_SHOW[id]();}
   catch(e){
     if(typeof window._khReportBug==='function'){
@@ -29037,7 +29565,7 @@ function tryLocalCommand(raw){
     if(isoMatch)d=new Date(+isoMatch[1],+isoMatch[2]-1,+isoMatch[3]);
     else {
       /* Try common holidays */
-      const now=new Date();const yr=now.getFullYear();
+      const now=NOW();const yr=now.getFullYear();
       const HOLIDAYS={'christmas':[11,25],'xmas':[11,25],'new year':[0,1],'new years':[0,1],'halloween':[9,31],'valentines':[1,14],'valentine\'s':[1,14]};
       for(const[k,v]of Object.entries(HOLIDAYS)){
         if(tgt.toLowerCase().includes(k)){
@@ -29048,7 +29576,7 @@ function tryLocalCommand(raw){
       }
     }
     if(d&&!isNaN(d.getTime())){
-      const ms=d-new Date();
+      const ms=d-NOW();
       const days=Math.ceil(ms/86400000);
       if(days<0)return 'That date is '+(-days)+' days in the past.';
       if(days===0)return 'That\'s today!';
@@ -34997,8 +35525,30 @@ chat:()=>{
   const mainPanel=el('div',{style:{flex:'1',display:'flex',flexDirection:'column',overflow:'hidden',minWidth:'0'}});
   const chatPanel=el('div',{id:'chatPanel',style:{flex:'1',display:'flex',flexDirection:'column',overflow:'hidden',minHeight:'0'}});
 
+  /* Admin-only Website Editor entry — lives here in the Assistant tab (not the
+     admin panel). Shown only to a resolved admin; if the tier resolves after
+     the view was built, a kh-tier-changed listener mounts it in. */
+  function _mountWebsiteEditorCard(){
+    if(window._isAdminCached!==true)return;
+    if(document.getElementById('kh-website-editor-card'))return;
+    const weCard=el('div',{id:'kh-website-editor-card',style:{margin:'8px',padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',background:'var(--highlight)',flexShrink:'0'}});
+    weCard.appendChild(txt('div','Website Editor',{style:{fontWeight:'800',fontSize:'12px',marginBottom:'2px'}}));
+    const _le=(typeof _khGlobalEditGet==='function')?_khGlobalEditGet():null;
+    weCard.appendChild(txt('div',(_le&&(_le.css||_le.js||_le.banner))?('A live edit is published'+(_le.note?(' — "'+_le.note+'"'):'')+'. Edit or manage it here.'):'Edit the live site for everyone — CSS, a banner, or advanced JS, with AI help. Verified + auto-polished so you can\'t break it.',{style:{fontSize:'10.5px',color:'var(--muted)',lineHeight:'1.45',marginBottom:'6px'}}));
+    const weBtn=txt('button','Open Website Editor',{className:'btn small primary'});
+    weBtn.onclick=function(){try{_khOpenSiteEditor();}catch(e){if(typeof toast==='function')toast('Editor error: '+((e&&e.message)||e));}};
+    weCard.appendChild(weBtn);
+    chatPanel.insertBefore(weCard,chatPanel.firstChild);
+  }
   const log=el('div',{id:'chatLog',className:'chat-log',style:{flex:'1',minHeight:'0'}});
   chatPanel.appendChild(log);
+  try{_mountWebsiteEditorCard();}catch(_){}
+  /* If admin wasn't resolved yet at build time, mount when the tier resolves. */
+  if(window._isAdminCached!==true){
+    var _weTierFn=function(){try{if(document.getElementById('view-chat')&&window._isAdminCached===true)_mountWebsiteEditorCard();}catch(_){}if(!document.getElementById('view-chat'))window.removeEventListener('kh-tier-changed',_weTierFn);};
+    try{window.addEventListener('kh-tier-changed',_weTierFn);}catch(_){}
+    try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(document.getElementById('view-chat'))_mountWebsiteEditorCard();}catch(_){}});}catch(_){}
+  }
 
   const inp=el('div',{style:{display:'flex',gap:'5px',padding:'7px 8px',borderTop:'var(--thin)',alignItems:'center',flexShrink:'0'}});
   const histBtn=txt('button','Menu',{id:'histToggleBtn'});
@@ -38538,7 +39088,6 @@ reading:()=>{
     });
     /* Progress bar */
     const progWrap=el('div',{style:{width:'100%',borderTop:'var(--thin)',paddingTop:'8px',marginTop:'4px'}});
-    const progLabel=txt('div','Reading Goal: '+finished+'/'+goal+' ('+pct+'%)',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px',display:'flex',justifyContent:'space-between',alignItems:'center'}});
     const goalInp=el('input',{type:'number',value:goal,style:{width:'50px',fontSize:'11px',padding:'2px 4px',border:'var(--thin)',borderRadius:'4px',background:'var(--card)',color:'var(--fg)'}});
     goalInp.onchange=()=>{S.readingGoal=Math.max(1,parseInt(goalInp.value)||12);save();updateStatBar();};
     const progLabelRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}});
@@ -39937,9 +40486,49 @@ settings:()=>{
   const _offsetStatus=txt('p','Current offset: '+_offsetDesc,{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px'}});
   cTime.appendChild(_offsetStatus);
 
+  /* Live clock readout — the header shows only the DATE now, so without this a
+     "+1 Hour" / zone change looked like it did nothing. Shows the adjusted time. */
+  const _liveClock=txt('div','',{style:{fontFamily:'monospace',fontSize:'27px',fontWeight:'900',letterSpacing:'1px',textAlign:'center',padding:'4px 0 0',color:'var(--fg)'}});
+  const _liveSub=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',marginBottom:'10px'}});
+  cTime.appendChild(_liveClock);cTime.appendChild(_liveSub);
+  const _DOW=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function _p2(n){return (n<10?'0':'')+n;}
+  function _tickLive(){
+    try{
+      const d=NOW();
+      const v=_p2(d.getHours())+':'+_p2(d.getMinutes())+':'+_p2(d.getSeconds());
+      if(_liveClock.textContent!==v)_liveClock.textContent=v;
+      const z=S.clockZone?_clockZoneById(S.clockZone):null;
+      const sub=_DOW[d.getDay()]+', '+d.getDate()+' '+_MON[d.getMonth()]+(z?('  ·  '+z.label.split(' — ')[0]):'');
+      if(_liveSub.textContent!==sub)_liveSub.textContent=sub;
+    }catch(_){}
+  }
+  _tickLive();
+  const _liveIv=setInterval(()=>{if(!document.body.contains(_liveClock)){clearInterval(_liveIv);return;}if(!document.hidden)_tickLive();},1000);
+
+  /* Time-zone picker — set a city and the clock tracks it, DST handled automatically. */
+  const _tzWrap=el('div',{style:{marginBottom:'12px'}});
+  _tzWrap.appendChild(txt('label','Time zone',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.5px',color:'var(--muted)',display:'block',marginBottom:'4px'}}));
+  const _tzSel=el('select',{style:{width:'100%'}});
+  CLOCK_ZONES.forEach(z=>{const o=el('option',{value:z.id});o.textContent=z.label;if((S.clockZone||'')===z.id)o.selected=true;_tzSel.appendChild(o);});
+  _tzSel.onchange=()=>{
+    S.clockZone=_tzSel.value;
+    S.clockOffset=S.clockZone?_clockOffsetForZone(S.clockZone):0;
+    save();_tickLive();
+    _offsetStatus.textContent='Current offset: '+(S.clockOffset===0?'No adjustment':((S.clockOffset>0?'+':'-')+Math.round(Math.abs(S.clockOffset)/60000)+'min'));
+    const z=_clockZoneById(S.clockZone);
+    toast(z&&z.id?('Clock set to '+z.label.split(' — ')[0]+' (DST auto)'):'Using device time');
+  };
+  _tzWrap.appendChild(_tzSel);
+  _tzWrap.appendChild(txt('div','Daylight-saving / standard time switches automatically for the chosen zone.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.4'}}));
+  cTime.appendChild(_tzWrap);
+
   function _applyTimeOffset(deltaMs){
+    /* a manual nudge overrides any zone selection (so it isn't wiped at next boot) */
+    S.clockZone='';try{_tzSel.value='';}catch(_){}
     S.clockOffset=(S.clockOffset||0)+deltaMs;
-    save();
+    save();try{_tickLive();}catch(_){}
     const ms=S.clockOffset;
     const sign=ms>=0?'+':'-';
     const abs=Math.abs(ms);
@@ -39960,7 +40549,7 @@ settings:()=>{
   const _btnMinus=txt('button','-1 Hour',{className:'btn'});
   _btnMinus.onclick=()=>_applyTimeOffset(-3600000);
   const _btnReset=txt('button','Reset',{className:'btn small danger'});
-  _btnReset.onclick=()=>{S.clockOffset=0;save();_offsetStatus.textContent='Current offset: No adjustment';toast('Clock reset to system time');};
+  _btnReset.onclick=()=>{S.clockOffset=0;S.clockZone='';try{_tzSel.value='';}catch(_){}save();_offsetStatus.textContent='Current offset: No adjustment';try{_tickLive();}catch(_){}toast('Clock reset to system time');};
   _quickRow.append(_btnPlus,_btnMinus,_btnReset);
   cTime.appendChild(_quickRow);
 
@@ -40029,6 +40618,17 @@ settings:()=>{
   cTime.appendChild(_customToggle);
   cTime.appendChild(_customPanel);
   g.appendChild(cTime);
+
+  /* ── Admin-pushed scripts opt-out ── */
+  const cGjs=el('div',{className:'card'});
+  cGjs.appendChild(txt('h2','Admin Updates'));
+  cGjs.appendChild(txt('p','KindleHub lets the site owner push live appearance and feature updates to everyone. Appearance/banner updates always apply; you can block the optional advanced ones that run scripts.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const _gjsRow=el('label',{style:{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}});
+  const _gjsChk=el('input',{type:'checkbox'});_gjsChk.checked=!!S.blockGlobalJs;
+  _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
+  _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device'));
+  cGjs.appendChild(_gjsRow);
+  g.appendChild(cGjs);
   });
   _defer(()=>{
 
@@ -42045,6 +42645,8 @@ feedback:()=>{
     function buildLocalInsightsCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
       c.appendChild(txt('div','LOCAL INSIGHTS · NO BANDWIDTH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'10px'}}));
+      /* (The Website Editor moved OUT of the admin panel — it now lives in the
+         Assistant tab, per the admin's request.) */
       /* Device storage breakdown */
       let total=0;const sizes=[];
       try{
@@ -42152,6 +42754,9 @@ feedback:()=>{
     }
     async function renderErrPanel(){
       errPanel.innerHTML='';
+      /* Paginate — never render more than a page of heavy error cards at once,
+         or the Kindle crashes. "Show more" raises the cap. */
+      const _EP=renderErrPanel._page||8;
       /* Admin-only cards: backend Diagnostics (exposes DB user/group counts),
          the Shared-key proxy setup, Cleanup and Visits. Regular users only get
          the per-device AI bug-fix + their own error list + Local Fixes — so we
@@ -42235,8 +42840,8 @@ feedback:()=>{
         return m?m[1].trim():'';
       }
       if(sessionErrs.length){
-        errPanel.appendChild(txt('div','THIS SESSION',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
-        sessionErrs.slice().reverse().forEach(function(e){
+        errPanel.appendChild(txt('div','THIS SESSION'+(sessionErrs.length>_EP?(' ('+_EP+' of '+sessionErrs.length+')'):''),{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px'}}));
+        sessionErrs.slice().reverse().slice(0,_EP).forEach(function(e){
           const c=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px',marginBottom:'8px',borderLeft:'3px solid var(--danger)'}});
           var kindLabel=e.kind?'['+e.kind.toUpperCase()+'] ':'';
           c.appendChild(txt('div',kindLabel+e.msg,{style:{fontWeight:'700',fontSize:'13px',marginBottom:'3px',color:'var(--danger)'}}));
@@ -42296,8 +42901,8 @@ feedback:()=>{
         });
       }
       if(cloudErrs.length){
-        errPanel.appendChild(txt('div','ALL DEVICES (CLOUD)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px',marginTop:'12px'}}));
-        cloudErrs.slice(-30).reverse().forEach(function(e){
+        errPanel.appendChild(txt('div','ALL DEVICES (CLOUD)'+(cloudErrs.length>_EP?(' ('+_EP+' of '+cloudErrs.length+')'):''),{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'6px',marginTop:'12px'}}));
+        cloudErrs.slice().reverse().slice(0,_EP).forEach(function(e){
           const c=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'10px',marginBottom:'8px',borderLeft:'3px solid var(--muted)'}});
           c.appendChild(txt('pre',e.text||'',{style:{fontSize:'11px',overflow:'auto',color:'var(--fg)',whiteSpace:'pre-wrap',margin:'0 0 4px',maxHeight:'320px'}}));
           /* Cloud entries store the AI prompt embedded in `text` — pull it
@@ -42334,6 +42939,13 @@ feedback:()=>{
           c.appendChild(txt('div',new Date(e.date).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px'}}));
           errPanel.appendChild(c);
         });
+        /* Show more — reveal the next page of errors (keeps the initial render
+           light so the Kindle doesn't choke on hundreds of heavy cards). */
+        if(sessionErrs.length>_EP||cloudErrs.length>_EP){
+          const moreBtn=txt('button','Show more errors',{className:'btn small',style:{marginTop:'8px',marginRight:'6px'}});
+          moreBtn.onclick=function(){renderErrPanel._page=(renderErrPanel._page||8)+8;renderErrPanel();};
+          errPanel.appendChild(moreBtn);
+        }
         const clrBtn=txt('button','Clear Cloud Error Log',{className:'btn small danger',style:{marginTop:'8px'}});
         clrBtn.onclick=async function(){
           if(!await kindleConfirm('Delete ALL cloud error logs? This cannot be undone.'))return;
@@ -42344,14 +42956,21 @@ feedback:()=>{
           function _clearLocalErrs(){
             try{if(window._khAutoErrors)window._khAutoErrors.length=0;}catch(_){}
             try{localStorage.removeItem('kh_err_queue');}catch(_){}
+            renderErrPanel._page=8;
+            /* Belt-and-suspenders: mark every cloud row currently loaded as
+               resolved, so the panel EMPTIES immediately even if the backend
+               refuses the DELETE (Supabase RLS makes kh_errors write-only for
+               the anon key) — the admin sees "cleared" instantly either way. */
+            try{(cloudErrs||[]).forEach(function(e){if(e&&e.id)_markResolved(e.id);});}catch(_){}
           }
           try{
             if(_sbActive()){
-              /* Admin delete — _sbHeaders sends the X-KH-Admin token. Use an
-                 always-true filter (id != a sentinel that never exists) so it
-                 deletes every row AND works even where the backend refuses an
-                 UNFILTERED delete. This is the instant cloud wipe. */
-              await _sbDelete('kh_errors','id=neq.__kh_none__');
+              /* Admin delete — _sbHeaders sends the X-KH-Admin token. Filter with
+                 date=gte.2000-01-01 (every real error row is after 2000): a
+                 SUPPORTED operator on the D1 worker (gte), unlike the old
+                 id=neq.* which the worker's filter parser doesn't accept — that
+                 was why "Clear" silently did nothing. Instant cloud wipe on D1. */
+              await _sbDelete('kh_errors','date=gte.2000-01-01');
               try{await _masterWrite(function(doc){doc.autoErrors=[];});}catch(_){}
               _clearLocalErrs();
               toast('Cloud error log cleared.');renderErrPanel();
@@ -42361,6 +42980,9 @@ feedback:()=>{
             _clearLocalErrs();
             toast('Error log cleared');renderErrPanel();
           }catch(e){
+            /* Even on a backend error, we already marked rows resolved locally,
+               so hide them from this device now rather than leaving the panel full. */
+            try{_clearLocalErrs();renderErrPanel();}catch(_){}
             clrBtn.disabled=false;clrBtn.textContent='Clear Cloud Error Log';
             toast('Could not clear: '+String((e&&e.message)||e).slice(0,120)+' — redeploy the api-worker if this persists.',7000);
           }
@@ -47824,7 +48446,7 @@ notes:()=>{
   /* Helper: "Today", "Yesterday", "N days ago" or full date. Used in
      card headers so the user can scan recency at a glance. */
   function _relDate(iso){
-    const then=new Date(iso),now=new Date();
+    const then=new Date(iso),now=NOW();
     const sameDay=then.toDateString()===now.toDateString();
     if(sameDay)return 'Today, '+then.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     const y=new Date(now);y.setDate(y.getDate()-1);
@@ -47844,7 +48466,7 @@ notes:()=>{
   function _currentDailyStreak(){
     const days=new Set();
     (S.notes||[]).forEach(n=>{try{days.add(new Date(n.date).toDateString());}catch(_){}});
-    let streak=0;const today=new Date();
+    let streak=0;const today=NOW();
     for(let i=0;i<366;i++){
       const d=new Date(today);d.setDate(d.getDate()-i);
       if(days.has(d.toDateString()))streak++;
@@ -49830,6 +50452,7 @@ appstore:()=>{
     v.appendChild(txt('div',DAYS[d.getDay()]+' '+d.getDate()+' '+MONS[d.getMonth()],{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',margin:'1px 0 2px'}}));
   })();
   let _tab='discover';
+  let _editApp=null;   /* set by My Apps → Edit; renderPublish prefills from it */
   const tabRow=el('div',{style:{display:'flex',gap:'6px',margin:'6px 0 10px'}});
   const body=el('div',{});
   function tabBtn(id,label){const b=txt('button',label,{className:'btn small'+(_tab===id?' primary':'')});b.onclick=function(){_tab=id;draw();};return b;}
@@ -49910,6 +50533,36 @@ appstore:()=>{
     });
     sh.appendChild(strip);
     sh.appendChild(txt('div',a.desc||'A KindleHub app.',{style:{fontSize:'13px',lineHeight:'1.6',marginBottom:'14px'}}));
+    /* Live "try before you get" preview — only for HTML apps (own published or
+       community); built-in apps are real views with no standalone HTML. Runs in
+       the same locked sandbox + CSP as a real install, so previewing is safe. */
+    (function(){
+      const canPreview=(a.pub&&a.pub.html)||a.shared;
+      if(!canPreview)return;
+      const pvWrap=el('div',{style:{margin:'0 0 14px'}});
+      const pvBtn=txt('button','Preview app',{className:'btn small'});
+      pvWrap.appendChild(pvBtn);
+      sh.appendChild(pvWrap);
+      function mount(html){
+        pvBtn.style.display='none';
+        const box=el('div',{style:{border:'var(--thin)',borderRadius:'12px',overflow:'hidden',height:'300px',background:'#fff',marginTop:'2px'}});
+        const fr=document.createElement('iframe');
+        fr.setAttribute('sandbox','allow-scripts allow-forms allow-modals allow-downloads');
+        fr.style.cssText='width:100%;height:100%;border:none;display:block;';
+        fr.srcdoc=(typeof _khWrapAppSecure==='function')?_khWrapAppSecure(String(html)):String(html);
+        box.appendChild(fr);pvWrap.appendChild(box);
+        pvWrap.appendChild(txt('div','A live, sandboxed preview — it can\'t reach your data.',{style:{fontSize:'9px',color:'var(--muted)',marginTop:'4px'}}));
+      }
+      pvBtn.onclick=function(){
+        if(a.pub&&a.pub.html){mount(a.pub.html);return;}
+        /* community app: fetch the full HTML on demand */
+        pvBtn.disabled=true;pvBtn.textContent='Loading preview…';
+        _sbSelect('kh_store_apps','select=html&id=eq.'+encodeURIComponent(a.shared.id)).then(function(rows){
+          if(Array.isArray(rows)&&rows[0]&&rows[0].html)mount(rows[0].html);
+          else{pvBtn.disabled=false;pvBtn.textContent='Preview unavailable';}
+        }).catch(function(){pvBtn.disabled=false;pvBtn.textContent='Preview unavailable';});
+      };
+    })();
     const row=el('div',{style:{display:'flex',gap:'8px'}});
     if(a.shared){
       if(_khStoreDownloaded(a.shared.id)){
@@ -49933,10 +50586,59 @@ appstore:()=>{
     (document.getElementById('rotateRoot')||document.body).appendChild(ov);
   }
 
+  /* Share a published app as a KHAPP1 code (peer-to-peer install, no store). */
+  function _shareAppCode(a){
+    let code='';
+    try{code='KHAPP1:'+btoa(unescape(encodeURIComponent(JSON.stringify({label:a.name,color:'#2563eb',icon:'',html:a.html}))));}catch(e){toast('Could not build a share code.');return;}
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.5)',zIndex:'100060',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'}});
+    const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'460px',width:'100%',borderRadius:'12px',padding:'16px',display:'flex',flexDirection:'column',gap:'10px'}});
+    card.appendChild(txt('div','Share "'+a.name+'"',{style:{fontSize:'15px',fontWeight:'800'}}));
+    card.appendChild(txt('div','Copy this code and send it to anyone. They paste it into App Store → Import (or KindleOS) to install it on their device.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+    const taShare=el('textarea',{style:{width:'100%',height:'100px',fontFamily:'monospace',fontSize:'11px',padding:'8px',boxSizing:'border-box',wordBreak:'break-all'}});taShare.value=code;taShare.readOnly=true;
+    card.appendChild(taShare);
+    const rowS=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+    const cp=txt('button','Copy',{className:'btn small primary'});cp.onclick=function(){try{taShare.select();}catch(_){}try{if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(code);else document.execCommand('copy');}catch(_){}toast('App code copied');};
+    const cl=txt('button','Close',{className:'btn small'});cl.onclick=function(){ov.remove();};
+    rowS.append(cp,cl);card.appendChild(rowS);
+    ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
+  /* Import a KHAPP1 code someone shared → installs to your apps. Mirrors the
+     KindleOS importer, incl. the Kindle keyboard-off fix so native paste works. */
+  function _importAppCode(){
+    const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.5)',zIndex:'100060',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',boxSizing:'border-box'}});
+    const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'460px',width:'100%',borderRadius:'12px',padding:'16px',display:'flex',flexDirection:'column',gap:'10px'}});
+    card.appendChild(txt('div','Import an app',{style:{fontSize:'15px',fontWeight:'800'}}));
+    card.appendChild(txt('div','Paste an app code (starts with KHAPP1:) someone shared. On Kindle: tap the box, then long-press it and choose Paste.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
+    const taI=el('textarea',{style:{width:'100%',height:'100px',fontFamily:'monospace',fontSize:'11px',padding:'8px',boxSizing:'border-box',wordBreak:'break-all'}});taI.placeholder='KHAPP1:…';
+    card.appendChild(taI);
+    let _kbR=false;function _restore(){if(_kbR)return;_kbR=true;try{if(window._khKeyboard&&window._khKeyboard.refresh)window._khKeyboard.refresh();}catch(_){}}
+    try{if(window._khKeyboard&&window._khKeyboard.disable)window._khKeyboard.disable();}catch(_){}
+    const rowI=el('div',{style:{display:'flex',gap:'8px',justifyContent:'flex-end'}});
+    const inst=txt('button','Install',{className:'btn small primary'});
+    inst.onclick=function(){
+      const v=(taI.value||'').trim();
+      if(v.indexOf('KHAPP1:')!==0){toast('That doesn\'t look like an app code');return;}
+      let obj=null;try{obj=JSON.parse(decodeURIComponent(escape(atob(v.slice(7)))));}catch(e){}
+      if(!obj||!obj.html){toast('Could not read that app code');return;}
+      if(String(obj.html).length>512*1024){toast('That app is too large to import');return;}
+      if(!Array.isArray(S.publishedApps))S.publishedApps=[];
+      const label=String(obj.label||'App').slice(0,60);
+      S.publishedApps.unshift({id:'imp_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:label,html:String(obj.html),cat:'Fun',by:'imported',at:(typeof NOW==='function'?NOW():Date.now()),downloaded:true});
+      if(S.publishedApps.length>60)S.publishedApps.length=60;
+      try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}
+      _restore();ov.remove();_tab='mine';draw();toast('"'+label+'" installed.');
+    };
+    const clI=txt('button','Close',{className:'btn small'});clI.onclick=function(){_restore();ov.remove();};
+    rowI.append(inst,clI);card.appendChild(rowI);
+    ov.appendChild(card);ov.onclick=function(e){if(e.target===ov){_restore();ov.remove();}};
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
   function renderDiscover(){
     const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
     body.appendChild(sb);
     let _cat='All';
+    let _commSort='top';   /* community apps: 'top' (downloads) | 'new' (recent) */
     const chips=el('div',{style:{display:'flex',gap:'6px',overflowX:'auto',padding:'2px 0 8px'}});
     body.appendChild(chips);
     const host=el('div',{});body.appendChild(host);
@@ -49965,7 +50667,7 @@ appstore:()=>{
         chips.appendChild(b);
       });
       const inCat=function(a){return _cat==='All'||a.cat===_cat;};
-      const match=function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0;};
+      const match=function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0||(a.desc&&a.desc.toLowerCase().indexOf(q)>=0);};
       const front=(!q&&_cat==='All');
       /* HERO — App of the Day: brand-colour editorial card with big watermark
          icon art (rotates daily via NOW()). e-ink gets a crisp black card. */
@@ -50067,21 +50769,35 @@ appstore:()=>{
          downloadable by everyone. Fetched async, ranked by downloads. */
       const showComm=(_cat==='All'||_cat==='Community'||true);
       const commHdr=secHdr('Community Apps');
+      const commHdrRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}});
+      commHdrRow.appendChild(commHdr);commHdr.style.margin='10px 0 7px';
+      const sortRow=el('div',{style:{display:'flex',gap:'4px'}});
+      [['top','Top'],['new','New']].forEach(function(s){const b=txt('button',s[1],{className:'btn small'+(_commSort===s[0]?' primary':''),style:{borderRadius:'14px'}});b.onclick=function(){_commSort=s[0];paint();};sortRow.appendChild(b);});
+      commHdrRow.appendChild(sortRow);
       const commGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
       const commLoad=txt('div','Loading community apps…',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 2px'}});
-      host.appendChild(commHdr);host.appendChild(commLoad);host.appendChild(commGrid);
+      host.appendChild(commHdrRow);host.appendChild(commLoad);host.appendChild(commGrid);
       const shownCats=Object.keys(cats).length;
       const _paintTok=(window.__khStorePaintTok=(window.__khStorePaintTok||0)+1);
       _khFetchStoreApps().then(function(apps){
         if(window.__khStorePaintTok!==_paintTok)return; /* a newer paint ran — bail */
         try{if(commLoad.parentNode)commLoad.remove();}catch(_){}
         const list=(apps||[]).filter(function(a){
-          if(q&&String(a.name||'').toLowerCase().indexOf(q)<0)return false;
+          if(q&&String(a.name||'').toLowerCase().indexOf(q)<0&&String(a.cat||'').toLowerCase().indexOf(q)<0)return false;
           if(_cat!=='All'&&_cat!=='Community'&&String(a.cat||'')!==_cat)return false;
           return true;
         });
+        if(_commSort==='new')list.sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));});
+        else list.sort(function(a,b){return (b.downloads||0)-(a.downloads||0);});
         if(!list.length){
-          if(_cat!=='All'&&_cat!=='Community'){try{commHdr.remove();}catch(_){}return;}
+          /* Nothing in the community list. If the user was SEARCHING and nothing
+             built-in matched either, that's a true "no results" — say so clearly. */
+          if(q){
+            try{commHdrRow.remove();}catch(_){}
+            if(!shownCats)host.appendChild(txt('div','No apps found for "'+q+'". Try a different word, or publish it yourself from the Publish tab.',{style:{fontSize:'12px',color:'var(--muted)',padding:'14px 8px',textAlign:'center'}}));
+            return;
+          }
+          if(_cat!=='All'&&_cat!=='Community'){try{commHdrRow.remove();}catch(_){}return;}
           commGrid.appendChild(txt('div',(typeof _sbActive==='function'&&_sbActive())?'No community apps yet — publish one from the Publish tab and it appears here for everyone.':'Community apps need a backend connection.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px'}}));
           return;
         }
@@ -50097,7 +50813,6 @@ appstore:()=>{
           commGrid.appendChild(appCard({name:a.name,cat:(a.cat||'Fun'),by:(dl+(dl===1?' dl':' dls')),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},paint);}}));
         });
       });
-      if(q&&!shownCats)host.appendChild(txt('div','',{style:{display:'none'}}));
       if(front)host.appendChild(txt('div',(allFirst.length)+' built-in apps · community apps download free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
@@ -50105,14 +50820,17 @@ appstore:()=>{
 
   function renderPublish(){
     body.appendChild(txt('div','Publish your own app — build it with AI or paste your HTML/JS. When you press Publish, an AI reviewer checks it (it can only approve or decline, never edit). Approved apps appear in your App Store and menu; they live on your device/account, not in the site code.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.6',marginBottom:'10px'}}));
+    if(_editApp){body.appendChild(txt('div','Editing "'+_editApp.name+'" — publishing runs a fresh AI review and replaces the old version.',{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700',marginBottom:'8px'}}));}
     const nameInp=el('input',{type:'text',placeholder:'App name',maxLength:40,style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'6px'}});
+    if(_editApp)nameInp.value=_editApp.name||'';
     body.appendChild(nameInp);
     const catRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'6px'}});
-    let _cat='Fun';const CATS=['Fun','Games','Tools','Productivity','Creativity','Other'];
+    let _cat=(_editApp&&_editApp.cat)||'Fun';const CATS=['Fun','Games','Tools','Productivity','Creativity','Other'];
     CATS.forEach(function(c){const b=txt('button',c,{className:'btn small'+(c===_cat?' primary':'')});b.onclick=function(){_cat=c;catRow.querySelectorAll('button').forEach(function(x){x.classList.remove('primary');});b.classList.add('primary');};catRow.appendChild(b);});
     body.appendChild(txt('div','Category',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0'}}));
     body.appendChild(catRow);
     const ta=el('textarea',{placeholder:'Paste your app HTML/JS here, or use “Build with AI” below…',style:{width:'100%',minHeight:'180px',fontFamily:'monospace',fontSize:'12px',padding:'9px',boxSizing:'border-box'}});
+    if(_editApp)ta.value=_editApp.html||'';
     body.appendChild(ta);
     const aiRow=el('div',{style:{display:'flex',gap:'6px',margin:'8px 0'}});
     const aiInp=el('input',{type:'text',placeholder:'Describe an app for AI to build…',style:{flex:'1',fontSize:'13px',padding:'8px 10px'}});
@@ -50133,16 +50851,27 @@ appstore:()=>{
     const pubBtn=txt('button','Publish',{className:'btn primary',style:{width:'100%',marginTop:'4px'}});
     pubBtn.onclick=async function(){
       pubBtn.disabled=true;
+      const _editingId=_editApp&&_editApp.id;
       await _khPublishApp({name:nameInp.value,html:ta.value,cat:_cat,isGame:(_cat==='Games')},
         function(msg){status.textContent=msg;},
-        function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){_tab='mine';draw();}});
+        function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){
+          /* replace the old version once the new one is approved */
+          if(_editingId&&Array.isArray(S.publishedApps)){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==_editingId;});try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}}
+          _editApp=null;_tab='mine';draw();
+        }});
     };
     body.appendChild(pubBtn);
+    if(_editApp){const cancelE=txt('button','Cancel edit',{className:'btn small',style:{width:'100%',marginTop:'6px'}});cancelE.onclick=function(){_editApp=null;draw();};body.appendChild(cancelE);}
   }
 
   function renderMine(){
     const mine=(Array.isArray(S.publishedApps)?S.publishedApps:[]);
     const q=(Array.isArray(S.appReviewQueue)?S.appReviewQueue:[]);
+    /* Import a shared app code (pairs with the Share button on each app). */
+    const impRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+    const impBtn=txt('button','Import an app code',{className:'btn small'});impBtn.onclick=function(){_importAppCode();};
+    const newBtn=txt('button','Publish a new app',{className:'btn small primary'});newBtn.onclick=function(){_editApp=null;_tab='publish';draw();};
+    impRow.append(newBtn,impBtn);body.appendChild(impRow);
     if(q.length){
       body.appendChild(txt('div','IN REVIEW QUEUE',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'2px 0 6px'}}));
       q.forEach(function(a){body.appendChild(txt('div','• '+a.name+' — waiting for a review model to free up (auto-retried).',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'3px'}}));});
@@ -50156,11 +50885,13 @@ appstore:()=>{
     body.appendChild(txt('div','YOUR PUBLISHED APPS',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'10px 0 6px'}}));
     const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
     mine.forEach(function(a){
-      const act=el('div',{style:{display:'flex',gap:'4px'}});
+      const act=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}});
       const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
+      const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun'};_tab='publish';draw();};
+      const shareB=txt('button','Share',{className:'btn small'});shareB.onclick=function(){_shareAppCode(a);};
       const delB=txt('button','Delete',{className:'btn small'});delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"?',function(ok){if(ok){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}});else{S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}};
-      act.append(openB,delB);
-      grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:'reviewed by '+(a.model||'AI'),action:act}));
+      act.append(openB,editB,shareB,delB);
+      grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:(a.mine?'live in the store':('by '+(a.by||'you'))),desc:'Reviewed by '+(a.model||'AI')+'. '+(a.mine?'Anyone can find & download it from Community Apps.':'Downloaded to this device.'),action:act}));
     });
     body.appendChild(grid);
   }
@@ -52937,7 +53668,7 @@ habits:()=>{
           const d=NOW();d.setDate(d.getDate()-j);
           const k=_localDayKey(d);
           const cellDone=!!(h.log&&h.log[k]);
-          const cell=el('div',{style:{aspectRatio:'1',background:cellDone?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',borderRadius:'3px',cursor:'pointer',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:cellDone?'var(--bg)':'var(--muted)',fontWeight:'700'}});
+          const cell=el('div',{style:{height:'26px',background:cellDone?'var(--success)':'var(--highlight)',border:'1px solid var(--muted)',borderRadius:'3px',cursor:'pointer',position:'relative',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'8px',color:cellDone?'var(--bg)':'var(--muted)',fontWeight:'700'}});
           cell.textContent=d.getDate();
           cell.title=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+(cellDone?' — done':'');
           cell.onclick=()=>{if(!h.log)h.log={};if(h.log[k])delete h.log[k];else h.log[k]=true;saveHabits(habits);render();};
@@ -55506,7 +56237,7 @@ calendar:()=>{
   if(!S.calEvents)S.calEvents=[];
 
   /* ── State ── */
-  const now=new Date();
+  const now=NOW();  /* clock-offset aware — so the calendar opens on the right month/day and Today jumps correctly */
   let curYear=now.getFullYear();
   let curMonth=now.getMonth(); // 0-indexed
   let selectedDay=null; // {y,m,d}
@@ -61643,6 +62374,10 @@ window._showWelcome=function(){
        notice if it was lifted). */
     setTimeout(()=>{try{if(typeof _capEffective==='function'&&_capEffective().blocked)_showCapacityNotice();}catch(_){}},400);
     setTimeout(()=>{try{_refreshCapacity().then(function(){try{if(_capEffective().blocked)_showCapacityNotice();else{var n=document.getElementById('kh-cap-notice');if(n)n.remove();}}catch(_){}}).catch(function(){});}catch(_){}},1500);
+    /* Global Site Editor: apply the cached admin edit INSTANTLY (no flash), then
+       refresh it from the cloud so a new/lifted edit propagates to every client. */
+    try{if(typeof _khApplyGlobalEdit==='function')_khApplyGlobalEdit(_khGlobalEditGet());}catch(_){}
+    setTimeout(()=>{try{if(typeof _khRefreshGlobalEdit==='function')_khRefreshGlobalEdit();}catch(_){}},1800);
     /* Auto-restore KindleOS launcher if it was the last active surface.
        Already detected up-front as `_willLaunchOS` — we just need to
        fire the actual launch now and pull down the bootmask. No setTimeout
