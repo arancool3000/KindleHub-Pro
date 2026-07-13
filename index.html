@@ -9361,7 +9361,19 @@ function _khSiteScanSilk(code){
     [/(?:^|[^A-Za-z0-9_$])catch\s*\{/,'parameterless catch (needs an error variable)'],
     [/[)\]\w$]\s*\|\|=/,'logical-OR assignment'],
     [/[)\]\w$]\s*&&=/,'logical-AND assignment'],
-    [/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators (1_000)']
+    [/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators (1_000)'],
+    [/\.\d[\d]*_/,'numeric separators in a decimal'],
+    /* ES2018+ regex constructs + BigInt: a modern browser's new Function()
+       compiles these fine, so the admin's own "Test JS" passes — but they are
+       parse-time SyntaxErrors on old Kindle Silk. Detected here (not by
+       new Function, and not even by the app's own minify deploy gate) so the
+       edit can't silently no-op on every Kindle. Distinctive shapes only, to
+       avoid false positives on ordinary division/strings. */
+    [/\(\?<[=!]/,'regex lookbehind (unsupported on Kindle)'],
+    [/\(\?<[A-Za-z_]/,'regex named capture group (unsupported on Kindle)'],
+    [/\\[pP]\{/,'regex unicode-property escape (unsupported on Kindle)'],
+    [/[^A-Za-z0-9_$.]\d[\d_]*n(?![A-Za-z0-9_$])/,'BigInt literal (unsupported on Kindle)'],
+    [/0[xXoObB][0-9a-fA-F_]+n\b/,'BigInt literal (unsupported on Kindle)']
   ];
   P.forEach(function(p){if(p[0].test(C))hits.push(p[1]);});
   return hits;
