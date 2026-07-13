@@ -5585,7 +5585,10 @@ function launchKindleDesktop(){
   ];
   const gemModelSel=document.createElement('select');
   gemModelSel.style.cssText='width:100%;padding:9px 12px;border-radius:10px;border:var(--thin);background:var(--card,#fff);color:var(--fg,#111);font-family:inherit;font-size:13px;box-sizing:border-box;';
-  GEMINI_GROUPS.forEach(g=>{
+  /* Merge any live model-catalogue delta from auto-maintenance so new/removed
+     models show without a code deploy. No-op if none is published. */
+  const GEMINI_GROUPS_EFF=(typeof _khApplyGemModelOverrides==='function')?_khApplyGemModelOverrides(GEMINI_GROUPS):GEMINI_GROUPS;
+  GEMINI_GROUPS_EFF.forEach(g=>{
     const og=document.createElement('optgroup');og.label=g.group;
     g.items.forEach(([id,name])=>{
       const o=document.createElement('option');o.value=id;o.textContent=name;
@@ -8919,12 +8922,17 @@ window._khWrapAppSecure=_khWrapAppSecure;window._khAppRiskFlags=_khAppRiskFlags;
       var subj=String(d.subject||'').slice(0,160);
       var body=String(d.body||'').slice(0,8000);
       if(!to){reply(false,'no recipient');return;}
-      var okGo=false;
-      try{okGo=window.confirm('An app wants to send an email from your KindleHub account:\n\nTo: '+to+'\nSubject: '+(subj||'(none)')+'\n\nSend it?');}catch(_){okGo=false;}
-      if(!okGo){reply(false,'declined by user');return;}
-      if(typeof _mailSend!=='function'){reply(false,'mail is unavailable');return;}
-      _mailSend(to,subj,body,'').then(function(){reply(true,'');try{if(typeof toast==='function')toast('Email sent');}catch(_){}})
-        .catch(function(e){var m=(e&&e.message)||'send failed';reply(false,m);try{if(typeof toast==='function')toast(m);}catch(_){}});
+      /* Ask with the Kindle-safe modal (kindleConfirm) — the native
+         confirm() dialog doesn't render on old Silk. Runs the send inside
+         the callback so nothing depends on a synchronous return value. */
+      var _ask='An app wants to send an email from your KindleHub account:\n\nTo: '+to+'\nSubject: '+(subj||'(none)')+'\n\nSend it?';
+      var _proceed=function(okGo){
+        if(!okGo){reply(false,'declined by user');return;}
+        if(typeof _mailSend!=='function'){reply(false,'mail is unavailable');return;}
+        _mailSend(to,subj,body,'').then(function(){reply(true,'');try{if(typeof toast==='function')toast('Email sent');}catch(_){}})
+          .catch(function(e){var m=(e&&e.message)||'send failed';reply(false,m);try{if(typeof toast==='function')toast(m);}catch(_){}});
+      };
+      try{ if(typeof kindleConfirm==='function')kindleConfirm(_ask,_proceed); else _proceed(false); }catch(_){ _proceed(false); }
     }
   },false);
 })();
@@ -9116,7 +9124,7 @@ const _CAP_TAG='[[KH_CAP]]';
    marker, so they can be routed OUT of the general announcements widget (into
    the admin panel) while the WARNED user still sees theirs prominently. */
 const _WARN_TAG='[[KH_WARN]]';
-function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);if(t.indexOf(_EDIT_TAG)===0||t.indexOf('[[KH_FIX]]')===0)return '';return t;}
+function _dispAnnText(t){t=String(t||'');if(t.indexOf(_WARN_TAG)===0)return t.slice(_WARN_TAG.length);if(t.indexOf(_CAP_TAG)===0)return t.slice(_CAP_TAG.length);if(t.indexOf(_EDIT_TAG)===0||t.indexOf('[[KH_FIX]]')===0||t.indexOf('[[KH_MODELS]]')===0)return '';return t;}
 /* Set of usernames who currently have an active warning (from warn-marked
    announcements) — used to show "already warned" on ban requests. Admin-loaded. */
 async function _khLoadWarnedSet(){
@@ -9292,6 +9300,19 @@ function _showCapacityNotice(){
                 it OFF (S.blockGlobalJs), and it's deferred + try/caught so a
                 bad script can never brick boot. The admin gate was hardened to
                 require the password-backed identity before this shipped. */
+/* Shared "what KindleHub is" briefing given to the editor AI (and mirrored in
+   the server maintenance prompts) so a live edit is written with real knowledge
+   of the app instead of blind. Kept factual + compact to stay within token
+   budget. Deliberately NAMES the banned Silk operators in words, never as the
+   literal character sequences, so the minifier's old-WebKit gate can't trip on
+   this string. */
+const _KH_EDIT_CONTEXT='ABOUT KINDLEHUB (edit with this knowledge):\n'
+  +'• It is a SINGLE-FILE web app (one big index.html: one <style>, the markup, then a few inline <script> blocks). No build step, no framework, no external libraries at runtime.\n'
+  +'• Target device: OLD Kindle e-ink Silk WebKit (roughly ES5/ES2015). It is slow, repaints flash the screen, and it hard-crashes the whole script on any unsupported modern syntax.\n'
+  +'• State lives in a global object S, persisted (gzip-packed) to localStorage key kindlehub_v5. Never store big blobs (book text, images, data URLs) in S. All time/date display uses the global NOW() (Date.now()+S.clockOffset), never a raw new Date().\n'
+  +'• Views are built by BUILDERS.<id>() and mounted with showView(id); nav tabs come from NAV_TABS. Global helpers you can rely on: el(tag,attrs,kids), txt(tag,text,attrs), toast(msg), $ (getElementById), khiCall (AI), save().\n'
+  +'• Theme is driven by CSS variables: --accent --fg --bg --card --muted --highlight --danger --success --thin. Buttons use .btn / .btn.primary / .btn.small; the nav is "nav .tab". Restyle via these so light/dark/sepia all keep working.\n'
+  +'• NEVER touch login, auth, encryption, credentials, or the admin gate. Keep edits small, defensive (typeof/guards + try-catch), and reversible.';
 const _EDIT_TAG='[[KH_EDIT]]';
 let _editState=null;
 function _khGlobalEditGet(){if(_editState)return _editState;try{var r=localStorage.getItem('kh_gedit');if(r)_editState=JSON.parse(r);}catch(_){}return _editState||null;}
@@ -9372,15 +9393,70 @@ async function _khRefreshMaintFixes(){
   if(typeof _sbActive!=='function'||!_sbActive())return;
   try{
     var rows=await _sbSelect('kh_announcements','select=text,created_at&active=eq.true&order=created_at.desc&limit=25');
-    var rec=null;
-    if(Array.isArray(rows))for(var i=0;i<rows.length;i++){var tx=String(rows[i].text||'');if(tx.indexOf(_FIX_TAG)===0){rec=tx.slice(_FIX_TAG.length);break;}}
+    var rec=null,mrec=null;
+    if(Array.isArray(rows))for(var i=0;i<rows.length;i++){var tx=String(rows[i].text||'');if(rec===null&&tx.indexOf(_FIX_TAG)===0)rec=tx.slice(_FIX_TAG.length);else if(mrec===null&&tx.indexOf(_MODELS_TAG)===0)mrec=tx.slice(_MODELS_TAG.length);}
     var arr=[];if(rec){try{arr=JSON.parse(rec)||[];}catch(_){arr=[];}}
     try{localStorage.setItem('kh_maint_fixes',JSON.stringify(arr));}catch(_){}
     _khApplyMaintFixes(arr);
+    /* Live model-catalogue delta (same announcements fetch — no extra call). */
+    if(mrec!==null){var mov=null;try{mov=JSON.parse(mrec);}catch(_){mov=null;}if(mov&&typeof mov==='object'){window._khModelOverrides=mov;try{localStorage.setItem('kh_model_overrides',JSON.stringify(mov));}catch(_){}}}
   }catch(_){}
 }
 function _khMaintFixesCached(){try{return JSON.parse(localStorage.getItem('kh_maint_fixes')||'[]')||[];}catch(_){return [];}}
 window._khApplyMaintFixes=_khApplyMaintFixes;window._khRefreshMaintFixes=_khRefreshMaintFixes;window._khMaintFixesCached=_khMaintFixesCached;
+/* ── Live model catalogue (auto-maintenance keeps model menus current) ────────
+   The daily server maintenance also refreshes the list of AVAILABLE Gemini
+   models (Google's ListModels API is ground-truth for what's live) and, when it
+   differs from what the app ships, publishes the delta in a reserved
+   [[KH_MODELS]] broadcast record: {addGemini:[[id,label],…], removeGemini:[id,…]}.
+   Every model menu merges it at build time, so newly-launched models appear and
+   discontinued ones disappear WITHOUT a code deploy. Device-cached so it works
+   offline. Purely additive/subtractive to the hard-coded lists — the shipped
+   defaults still work if the record is absent or the backend is down. */
+const _MODELS_TAG='[[KH_MODELS]]';
+window._khModelOverrides=window._khModelOverrides||null;
+function _khModelOverridesCached(){
+  if(window._khModelOverrides)return window._khModelOverrides;
+  try{var o=JSON.parse(localStorage.getItem('kh_model_overrides')||'null');if(o&&typeof o==='object')window._khModelOverrides=o;}catch(_){}
+  return window._khModelOverrides;
+}
+/* Merge the override into an array of {group,items:[[id,label]…]} groups.
+   Returns a NEW array (never mutates the caller's constant). Silk-safe. */
+function _khApplyGemModelOverrides(groups){
+  try{
+    var ov=_khModelOverridesCached();
+    if(!ov||(!ov.addGemini&&!ov.removeGemini))return groups;
+    var rm={};if(Array.isArray(ov.removeGemini))for(var r=0;r<ov.removeGemini.length;r++)rm[String(ov.removeGemini[r])]=1;
+    var seen={};var out=[];
+    for(var g=0;g<groups.length;g++){
+      var grp=groups[g];var items=[];
+      var src=(grp&&grp.items)||[];
+      for(var i=0;i<src.length;i++){
+        var id=src[i]&&src[i][0];if(id==null)continue;
+        if(rm[String(id)])continue;              /* drop discontinued */
+        if(seen[String(id)])continue;seen[String(id)]=1;
+        items.push(src[i]);
+      }
+      out.push({group:grp.group,items:items});
+    }
+    /* Append genuinely-new models to the first "Free"-ish group (else group 0). */
+    if(Array.isArray(ov.addGemini)&&ov.addGemini.length){
+      var target=-1;
+      for(var t=0;t<out.length;t++){if(/free/i.test(String(out[t].group||''))){target=t;break;}}
+      if(target<0)target=0;
+      if(out[target]){
+        for(var a=0;a<ov.addGemini.length;a++){
+          var na=ov.addGemini[a];var nid=na&&na[0];
+          if(nid==null||seen[String(nid)]||rm[String(nid)])continue;
+          seen[String(nid)]=1;
+          out[target].items.push([String(nid),String((na[1]!=null?na[1]:nid))]);
+        }
+      }
+    }
+    return out;
+  }catch(_){return groups;}
+}
+window._khApplyGemModelOverrides=_khApplyGemModelOverrides;window._khModelOverridesCached=_khModelOverridesCached;
 /* Admin controls for the auto-maintenance cron (endpoints live on the D1 worker
    root, admin-token gated). */
 async function _khMaintCall(path, body){
@@ -9574,7 +9650,7 @@ async function _khOpenSiteEditor(){
       if(mode==='css')sys='You write a SINGLE block of raw CSS (no <style> tag, no markdown, no explanation) injected into a Kindle e-reader web app to restyle it site-wide. It uses CSS variables --accent --fg --bg --card and classes .btn .btn.primary "nav .tab" .card. OLD Kindle Silk WebKit: do NOT use variables in calc(), aspect-ratio, position:sticky, flex gap, or @import. Output ONLY CSS.';
       else if(mode==='banner')sys='You write a SHORT (max ~120 chars) plain-text site-wide banner notice. Output ONLY the text, no quotes, no markdown.';
       else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app with full page access. OLD Kindle Silk WebKit ES5/ES2015 ONLY: NO optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter (catch(e)). Never touch login/auth/encryption. Keep it small and wrap risky parts in try/catch. Output ONLY JavaScript.';
-      let out=await khiCall(sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400});
+      let out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400});
       let clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       store[mode]=clean;box.value=clean;
       /* Auto-polish drafted JS immediately so the admin starts from safe code. */
@@ -9597,7 +9673,7 @@ async function _khOpenSiteEditor(){
     if(!v.ok){statusEl.textContent='';if(typeof toast==='function')toast('Still has issues that could break the site — fix the red items first.',5000);return false;}
     const jtxt=p.js?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
     const wtxt=v.warnings.length?('\n\nWarnings:\n• '+v.warnings.join('\n• ')):'';
-    if(!window.confirm('Publish this to ALL users now?'+jtxt+wtxt)){statusEl.textContent='';return false;}
+    if(!(await kindleConfirm('Publish this to ALL users now?'+jtxt+wtxt))){statusEl.textContent='';return false;}
     statusEl.textContent='Publishing…';
     const ok=await _khGlobalEditPublish(p);
     if(ok){_khSiteEditHistoryAdd(p);statusEl.textContent='';if(typeof toast==='function')toast('Published to everyone.',4000);ov.remove();return true;}
@@ -9633,7 +9709,7 @@ async function _khOpenSiteEditor(){
   const pubBtn=txt('button','Publish to everyone',{className:'btn small primary'});
   pubBtn.onclick=function(){_doPublish({css:store.css,banner:store.banner,js:store.js,note:(descIn.value||'').slice(0,120)});};
   const clearBtn=txt('button','Remove live edit',{className:'btn small danger'});
-  clearBtn.onclick=async function(){if(!window.confirm('Remove the live edit for everyone?'))return;const ok=await _khGlobalEditClear();if(typeof toast==='function')toast(ok?'Live edit removed for everyone.':'Failed — check connection.');if(ok)ov.remove();};
+  clearBtn.onclick=async function(){if(!(await kindleConfirm('Remove the live edit for everyone?')))return;const ok=await _khGlobalEditClear();if(typeof toast==='function')toast(ok?'Live edit removed for everyone.':'Failed — check connection.');if(ok)ov.remove();};
   const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=function(){ov.remove();};
   actRow.append(pubBtn,clearBtn,closeBtn);editWrap.appendChild(actRow);
 
@@ -9662,7 +9738,7 @@ async function _khOpenSiteEditor(){
   /* ── AUTO-FIX tab — monitor + control the daily self-healing cron ── */
   function _renderAuto(){
     autoWrap.innerHTML='';
-    autoWrap.appendChild(txt('div','Auto-maintenance runs daily on the server: it reads the bugs users actually hit, then Gemini 3.1-flash-lite finds them, 3.5-flash writes a fix, and 2.5-flash confirms it. Verified fixes auto-publish to everyone (revertible); anything it can\'t prove safe is staged below for you. Unfinished work resumes tomorrow when the free quota resets.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+    autoWrap.appendChild(txt('div','Auto-maintenance runs daily on the server: it reads the bugs users actually hit, then Gemini 3.1-flash-lite finds them, 3.5-flash writes a fix, and 2.5-flash confirms it. Verified fixes auto-publish to everyone (revertible); anything it can\'t prove safe is staged below for you. It also refreshes the AI model menus each day so new Gemini models appear and discontinued ones drop off automatically. Unfinished work resumes tomorrow when the free quota resets.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
     /* ── Setup: key + enable, right here (no Cloudflare env vars needed) ── */
     var setup=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'10px',marginBottom:'10px',background:'var(--highlight)'}});
     setup.appendChild(txt('div','SETUP',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -9676,7 +9752,12 @@ async function _khOpenSiteEditor(){
     var saveB=txt('button','Save',{className:'btn small primary'});
     var saveMsg=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
     saveRow.append(saveB,saveMsg);setup.appendChild(saveRow);
-    setup.appendChild(txt('div','Your key is stored on your own D1 backend (encrypted if you set KH_PEPPER) — never in the app\'s public code. It powers only this maintenance, separate from users\' AI.',{style:{fontSize:'9.5px',color:'var(--muted)',marginTop:'6px',lineHeight:'1.4'}}));
+    setup.appendChild(txt('div','Your key is stored on your own D1 backend (encrypted if you set KH_PEPPER) — NEVER in the app\'s public code. The worker\'s source is on GitHub, but the key is not in it: it lives only in your database or a Worker env var. It powers only this maintenance, separate from users\' AI.',{style:{fontSize:'9.5px',color:'var(--muted)',marginTop:'6px',lineHeight:'1.4'}}));
+    /* Answer the common "what setup is there?" question inline. */
+    var setupHelp=el('details',{style:{marginTop:'8px'}});
+    setupHelp.appendChild(el('summary',{style:{fontSize:'10px',fontWeight:'700',color:'var(--muted)',cursor:'pointer'}},['What setup does this need?']));
+    setupHelp.appendChild(txt('div','1) The D1 worker deployed with a database bound (already required for cloud sync/chat). 2) The worker URL set as your API gateway (Admin → Local Insights). 3) Paste your Gemini key above and tick Enable. That\'s it for on-demand "Run now". 4) For the DAILY automatic run, add a Cron Trigger to the worker (any schedule that fires at least once a day, e.g. hourly 0 * * * * — it self-limits to once per day, and reuses an existing trigger if you already have one). No Cloudflare env vars are required — everything above is set from inside the app.',{style:{fontSize:'9.5px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.5'}}));
+    setup.appendChild(setupHelp);
     saveB.onclick=function(){
       var payload={};var k=(keyIn.value||'').trim();if(k)payload.key=k;payload.on=!!enChk.checked;
       saveB.disabled=true;saveMsg.textContent='Saving…';
@@ -9711,7 +9792,7 @@ async function _khOpenSiteEditor(){
     function load(){status.textContent='Loading status…';_khMaintCall('/maint/status').then(paint).catch(function(e){status.textContent='';status.appendChild(txt('span',(e&&e.message)||'error',{style:{color:'var(--danger)',fontSize:'11px'}}));});}
     runB.onclick=function(){runB.disabled=true;runB.textContent='Running…';_khMaintCall('/maint/run').then(function(r){if(typeof toast==='function')toast('Maintenance ran: '+JSON.stringify((r&&r.result&&r.result.stats)||{}));runB.disabled=false;runB.textContent='Run maintenance now';load();}).catch(function(e){runB.disabled=false;runB.textContent='Run maintenance now';if(typeof toast==='function')toast((e&&e.message)||'failed');});};
     refreshB.onclick=load;
-    revertB.onclick=async function(){if(!window.confirm('Revert ALL auto-published fixes for everyone? (Applied JS clears on next reload; CSS clears immediately.)'))return;var ok=await _khMaintClearFixes();if(typeof toast==='function')toast(ok?'All auto-fixes reverted.':'Failed — check connection.');load();};
+    revertB.onclick=async function(){if(!(await kindleConfirm('Revert ALL auto-published fixes for everyone? (Applied JS clears on next reload; CSS clears immediately.)')))return;var ok=await _khMaintClearFixes();if(typeof toast==='function')toast(ok?'All auto-fixes reverted.':'Failed — check connection.');load();};
     load();
   }
   function _showTab(){
@@ -9999,6 +10080,7 @@ async function _renderAnnouncementWidget(card){
       if(t.indexOf(_CAP_TAG)===0)return false;/* capacity control record — never a real announcement */
       if(t.indexOf(_EDIT_TAG)===0)return false;/* global site-edit record — never a real announcement */
       if(t.indexOf('[[KH_FIX]]')===0)return false;/* auto-maintenance fix record — never a real announcement */
+      if(t.indexOf('[[KH_MODELS]]')===0)return false;/* live model-catalogue delta — never a real announcement */
       if(t.indexOf(_WARN_TAG)===0){
         /* Moderator warnings aren't general announcements: only the WARNED user
            still sees theirs here (prominently, below); for everyone else — incl.
@@ -28827,7 +28909,12 @@ function buildAIModelPicker(opts){
       ['mistralai/mistral-large','Mistral Large'],
     ]},
   ];
-  const CHAT_GEMINI_MODELS=CHAT_GEMINI_GROUPS.reduce((a,g)=>a.concat(g.items),[]);
+  /* Effective Gemini groups = shipped defaults + any live catalogue delta from
+     auto-maintenance (new models added, discontinued ones removed). No-op if no
+     [[KH_MODELS]] record is published. Used for BOTH the flat label list and the
+     rendered dropdown so every menu stays consistent. */
+  const CHAT_GEMINI_GROUPS_EFF=(typeof _khApplyGemModelOverrides==='function')?_khApplyGemModelOverrides(CHAT_GEMINI_GROUPS):CHAT_GEMINI_GROUPS;
+  const CHAT_GEMINI_MODELS=CHAT_GEMINI_GROUPS_EFF.reduce((a,g)=>a.concat(g.items),[]);
   const CHAT_OR_MODELS=CHAT_OR_GROUPS.reduce((a,g)=>a.concat(g.items),[]);
 
   function chatModelLabel(){
@@ -28912,11 +28999,26 @@ function buildAIModelPicker(opts){
     if(S.aiProvider==='openrouter')groups=CHAT_OR_GROUPS;
     else if(S.aiProvider==='anthropic')groups=[{group:'Paid — needs billing on your key',items:ANTHROPIC_MODELS}];
     else if(S.aiProvider==='openai')groups=[{group:'Paid — needs billing on your key',items:OPENAI_MODELS}];
-    else groups=CHAT_GEMINI_GROUPS;
+    else groups=CHAT_GEMINI_GROUPS_EFF;
     /* Public/shared: list ONLY the models the proxy actually allows (the
        auto-switch chain), so a pick always takes effect. Your pick is tried
        first; the rest still auto-rescue it if it's overloaded. */
-    if(S.aiProvider==='shared')groups=[{group:'Public models — your pick is tried first',items:SHARED_MODEL_QUOTAS.map(function(m){return [m.id,m.name];})}];
+    if(S.aiProvider==='shared'){
+      /* Shared list is tied to the proxy allow-list; apply the live catalogue
+         delta too — drop discontinued models, and add NEW free-tier ones
+         (flash/lite only; pro models are never offered on the free shared key).
+         The worker's proxy allow-list is refreshed from the SAME maintenance
+         run, so client + server stay consistent. */
+      var _shared=[{group:'Public models — your pick is tried first',items:SHARED_MODEL_QUOTAS.map(function(m){return [m.id,m.name];})}];
+      var _sov=(typeof _khModelOverridesCached==='function')?_khModelOverridesCached():null;
+      if(_sov){
+        var _srm={};if(Array.isArray(_sov.removeGemini))for(var _sr=0;_sr<_sov.removeGemini.length;_sr++)_srm[String(_sov.removeGemini[_sr])]=1;
+        _shared[0].items=_shared[0].items.filter(function(it){return !_srm[String(it[0])];});
+        var _sseen={};_shared[0].items.forEach(function(it){_sseen[String(it[0])]=1;});
+        if(Array.isArray(_sov.addGemini))for(var _sa=0;_sa<_sov.addGemini.length;_sa++){var _na=_sov.addGemini[_sa];var _nid=_na&&_na[0];if(_nid==null||_sseen[String(_nid)])continue;if(String(_nid).indexOf('pro')>=0)continue;_sseen[String(_nid)]=1;_shared[0].items.push([String(_nid),String(_na[1]!=null?_na[1]:_nid)]);}
+      }
+      groups=_shared;
+    }
     const currentModel=S.aiProvider==='openrouter'?(S.openrouterModel||'openrouter/free'):(S.aiProvider==='anthropic'?(S.anthropicModel||'claude-haiku-4-5-20251001'):(S.aiProvider==='openai'?(S.openaiModel||'gpt-5.4-mini'):(S.aiProvider==='shared'?(S.sharedModel||SHARED_KEY_FALLBACK_CHAIN[0]):(S.hbGeminiModel||'gemini-3.1-flash-lite'))));
     const listEl=el('div',{style:{maxHeight:'280px',overflowY:'auto'}});
     groups.forEach(g=>{
@@ -62514,6 +62616,9 @@ window._showWelcome=function(){
     /* Auto-maintenance fixes: apply the cached set instantly, then refresh from
        the cloud so the daily cron's new fixes reach every client. */
     try{if(typeof _khApplyMaintFixes==='function')_khApplyMaintFixes(_khMaintFixesCached());}catch(_){}
+    /* Warm the live model-catalogue override from the device cache so model
+       menus are current on first paint; _khRefreshMaintFixes refreshes it. */
+    try{if(typeof _khModelOverridesCached==='function')_khModelOverridesCached();}catch(_){}
     setTimeout(()=>{try{if(typeof _khRefreshMaintFixes==='function')_khRefreshMaintFixes();}catch(_){}},2100);
     /* Auto-restore KindleOS launcher if it was the last active surface.
        Already detected up-front as `_willLaunchOS` — we just need to
