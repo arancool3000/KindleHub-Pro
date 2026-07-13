@@ -244,8 +244,21 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
    cross-axis margin is absorbed by alignment. Applies ONLY on no-gap engines, so
    modern screens keep real gap and never double-space. Attribute selector covers
    the ~283 inline `gap:` uses; the class rules tune the common containers. */
-html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:6px}
-html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:6px}
+/* margin-top is split top+bottom (not top-only): a top-only margin makes a
+   non-first child's MARGIN BOX taller than the first child's, and in a
+   single-line row (the common case — most rows never wrap) align-items:center
+   centers each item's margin box independently, so the first child (no extra
+   margin) sits centered a few px LOWER while children 2+ (taller margin box,
+   already "pre-centered" by their own margin) sit a few px HIGHER — same
+   height, different vertical position. On e-ink's hard pixel edges that reads
+   as "the first button/option is bigger than the rest" — real-device-only,
+   since this whole branch only exists on engines that fail the flex-gap probe
+   (never headless Chromium, which always supports gap). Symmetric top+bottom
+   keeps each child vertically self-centered so first vs. rest align exactly,
+   while the wrapped-line spacing total is unchanged (top+bottom still sums
+   to the original value). */
+html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:3px;margin-bottom:3px}
+html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:3px;margin-bottom:3px}
 html.kh-no-flexgap .header-controls > * + *{margin-left:5px;margin-top:0}
 html.kh-no-flexgap nav .tab + .tab{margin-left:2px}
 /* ── CSS Grid fallback (old Kindle Silk) ── Only the game boards rely on
