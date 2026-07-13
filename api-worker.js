@@ -800,6 +800,10 @@ const SCHEMA_DDL = [
      new | fixed | needs_review | wont_fix | deferred | failed */
   "CREATE TABLE IF NOT EXISTS kh_maint (sig TEXT PRIMARY KEY, status TEXT DEFAULT 'new', view TEXT DEFAULT '', err TEXT DEFAULT '', fix_kind TEXT DEFAULT '', fix_code TEXT DEFAULT '', detect TEXT DEFAULT '', confirm TEXT DEFAULT '', attempts INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_maint_status ON kh_maint(status, updated_at)",
+  /* Small admin-settable config (e.g. the maintenance key + on/off) so the admin
+     can configure auto-maintenance from the app UI instead of Worker env vars.
+     The maintenance key is stored envelope-wrapped when KH_PEPPER is set. */
+  "CREATE TABLE IF NOT EXISTS kh_config (k TEXT PRIMARY KEY, v TEXT)",
 ];
 let _schemaReady = false;
 async function ensureSchema(DB){
@@ -1045,13 +1049,20 @@ function maintFixPrompt(err, dv){
 function maintConfirmPrompt(err, code, dv){
   return 'You are the FINAL safety check for an auto-published KindleHub fix. Does the JavaScript patch below (a) plausibly fix or guard the described bug, AND (b) look safe + minimal (no auth/network/storage tampering, no infinite loops, old-Kindle-safe, cannot make things worse)? Reply ONLY strict JSON: {"ok": true|false, "reason":"<short>"}.\n\nBUG: '+String((dv&&dv.cause)||err).slice(0,400)+'\n\nPATCH:\n'+String(code||'').slice(0,2000);
 }
+/* Config resolution: a Worker env var ALWAYS wins (the secure path); otherwise
+   fall back to the admin-settable kh_config row (set from the app UI). */
+async function getConfig(DB, key){ try{ const r=await DB.prepare("SELECT v FROM kh_config WHERE k=?").bind(key).first(); return r?String(r.v||''):''; }catch(_){ return ''; } }
+async function setConfig(DB, key, val){ try{ await DB.prepare("INSERT INTO kh_config(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(key,String(val==null?'':val)).run(); }catch(_){} }
+async function maintKey(env, DB){ if(env&&env.MAINT_KEY) return env.MAINT_KEY; const v=await getConfig(DB,'maint_key'); return v?await unwrapCell(v, env):''; }
+async function maintEnabled(env, DB){ if(env&&env.MAINT_ON&&String(env.MAINT_ON)!=='0'&&String(env.MAINT_ON).toLowerCase()!=='false') return true; return (await getConfig(DB,'maint_on'))==='1'; }
+async function maintStageOnly(env, DB){ if(env&&String(env.MAINT_STAGE_ONLY)==='1') return true; return (await getConfig(DB,'maint_stage_only'))==='1'; }
 async function runAutoMaintenance(DB, env){
-  const KEY=env&&env.MAINT_KEY; if(!KEY) return {ran:false,reason:'no MAINT_KEY'};
+  const KEY=await maintKey(env, DB); if(!KEY) return {ran:false,reason:'no maintenance key'};
   const mDetect=(env&&env.MAINT_DETECT_MODEL)||'gemini-3.1-flash-lite';
   const mFix=(env&&env.MAINT_FIX_MODEL)||'gemini-3.5-flash';
   const mConfirm=(env&&env.MAINT_CONFIRM_MODEL)||'gemini-2.5-flash';
   const MAX=parseInt((env&&env.MAINT_MAX)||'',10)||3;
-  const stageOnly=env&&String(env.MAINT_STAGE_ONLY)==='1';
+  const stageOnly=await maintStageOnly(env, DB);
   const stats={seeded:0,fixed:0,staged:0,wontfix:0,deferred:0};
   /* 1. Seed new bug signatures from the errors users actually hit. */
   try{
@@ -1130,9 +1141,8 @@ export default {
       /* AI moderation (opt-in via AUTO_MOD + GEMINI_KEY). */
       const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
       if(on && env.GEMINI_KEY) await runAutoModeration(DB, env);
-      /* Auto-maintenance (opt-in via MAINT_ON + MAINT_KEY) — daily self-healing. */
-      const maintOn = env && env.MAINT_ON && String(env.MAINT_ON)!=='0' && String(env.MAINT_ON).toLowerCase()!=='false';
-      if(maintOn && env.MAINT_KEY) await runAutoMaintenance(DB, env);
+      /* Auto-maintenance (opt-in via MAINT_ON+MAINT_KEY env, OR the in-app config) — daily self-healing. */
+      if(await maintEnabled(env, DB) && await maintKey(env, DB)) await runAutoMaintenance(DB, env);
     }catch(_){ /* never throw out of a cron tick */ }
   },
   async fetch(request, env){
@@ -1146,10 +1156,20 @@ export default {
     /* Auto-maintenance admin endpoints (admin token required). /maint/run kicks a
        tick on demand (same work the daily cron does); /maint/status returns the
        queue counts + recent rows for the admin monitor UI. */
-    if(url.pathname==='/maint/run' || url.pathname==='/maint/status'){
+    if(url.pathname==='/maint/run' || url.pathname==='/maint/status' || url.pathname==='/maint/config'){
       if(!(await isAdmin(request.headers.get('x-kh-admin')||''))) return json({error:'admin only'},403,env);
+      /* Set the maintenance key / on-off from the app (stored envelope-wrapped
+         when KH_PEPPER is set). A Worker env var, if present, still overrides. */
+      if(url.pathname==='/maint/config'){
+        let body={}; try{ body=await request.json(); }catch(_){}
+        if(typeof body.key==='string' && body.key.trim()){ await setConfig(DB, 'maint_key', await wrapCell(body.key.trim(), env)); }
+        if(body.clearKey===true){ await setConfig(DB, 'maint_key', ''); }
+        if(typeof body.on!=='undefined'){ await setConfig(DB, 'maint_on', body.on ? '1' : '0'); }
+        if(typeof body.stageOnly!=='undefined'){ await setConfig(DB, 'maint_stage_only', body.stageOnly ? '1' : '0'); }
+        return json({ok:true, keyConfigured: !!(await maintKey(env, DB)), enabled: await maintEnabled(env, DB)},200,env);
+      }
       if(url.pathname==='/maint/run'){
-        if(!(env&&env.MAINT_KEY)) return json({error:'MAINT_KEY not set on the worker'},400,env);
+        if(!(await maintKey(env, DB))) return json({error:'No maintenance key set — add your Gemini key in the Auto-fix tab (or set MAINT_KEY on the Worker).'},400,env);
         const r=await runAutoMaintenance(DB, env);
         return json({ok:true,result:r},200,env);
       }
@@ -1161,7 +1181,8 @@ export default {
         recent=(rr&&rr.results)||[];
       }catch(_){}
       let fixCount=0; try{ fixCount=(await readMaintFixes(DB)).length; }catch(_){}
-      return json({ok:true,counts:counts,recent:recent,liveFixes:fixCount,enabled:!!(env&&env.MAINT_ON&&env.MAINT_KEY)},200,env);
+      const keyOn=!!(await maintKey(env, DB)), enOn=await maintEnabled(env, DB);
+      return json({ok:true,counts:counts,recent:recent,liveFixes:fixCount,keyConfigured:keyOn,enabled:(enOn&&keyOn),envKey:!!(env&&env.MAINT_KEY)},200,env);
     }
 
     /* Per-IP rate limit — one abuser can't burn the shared daily budget for
@@ -1231,4 +1252,4 @@ export default {
 
 /* Named exports for the test harness only — Cloudflare Workers use ONLY the
    default export as the handler, so these are ignored at deploy time. */
-export { runAutoMaintenance, maintUnsafe, maintSig, maintParseJson, readMaintFixes, writeMaintFixes, ensureSchema };
+export { runAutoMaintenance, maintUnsafe, maintSig, maintParseJson, readMaintFixes, writeMaintFixes, ensureSchema, setConfig, getConfig, maintKey, maintEnabled };

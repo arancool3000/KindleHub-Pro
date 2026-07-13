@@ -9383,10 +9383,12 @@ function _khMaintFixesCached(){try{return JSON.parse(localStorage.getItem('kh_ma
 window._khApplyMaintFixes=_khApplyMaintFixes;window._khRefreshMaintFixes=_khRefreshMaintFixes;window._khMaintFixesCached=_khMaintFixesCached;
 /* Admin controls for the auto-maintenance cron (endpoints live on the D1 worker
    root, admin-token gated). */
-async function _khMaintCall(path){
+async function _khMaintCall(path, body){
   var base=(typeof _apiGatewayUrl==='function')?_apiGatewayUrl():'';
   if(!base)throw new Error('Auto-maintenance runs on the Cloudflare D1 worker — set the API gateway in Admin first.');
-  var r=await fetch(base.replace(/\/+$/,'')+path,{method:'POST',headers:{'X-KH-Admin':window._adminToken||''}});
+  var opts={method:'POST',headers:{'X-KH-Admin':window._adminToken||''}};
+  if(body){opts.headers['Content-Type']='application/json';opts.body=JSON.stringify(body);}
+  var r=await fetch(base.replace(/\/+$/,'')+path,opts);
   if(!r.ok){var t='';try{t=(await r.json()).error||'';}catch(_){}throw new Error(t||('HTTP '+r.status));}
   return await r.json();
 }
@@ -9661,6 +9663,26 @@ async function _khOpenSiteEditor(){
   function _renderAuto(){
     autoWrap.innerHTML='';
     autoWrap.appendChild(txt('div','Auto-maintenance runs daily on the server: it reads the bugs users actually hit, then Gemini 3.1-flash-lite finds them, 3.5-flash writes a fix, and 2.5-flash confirms it. Verified fixes auto-publish to everyone (revertible); anything it can\'t prove safe is staged below for you. Unfinished work resumes tomorrow when the free quota resets.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+    /* ── Setup: key + enable, right here (no Cloudflare env vars needed) ── */
+    var setup=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'10px',marginBottom:'10px',background:'var(--highlight)'}});
+    setup.appendChild(txt('div','SETUP',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
+    setup.appendChild(txt('label','Gemini API key (from Google AI Studio)',{style:{fontSize:'10px',fontWeight:'700',color:'var(--muted)',display:'block',marginBottom:'3px'}}));
+    var keyIn=el('input',{type:'password',placeholder:'Paste your Gemini key…',style:{width:'100%',fontSize:'12px',boxSizing:'border-box'}});
+    setup.appendChild(keyIn);
+    var enRow=el('label',{style:{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'12px',margin:'8px 0'}});
+    var enChk=el('input',{type:'checkbox'});
+    enRow.append(enChk,txt('span','Enable daily auto-maintenance'));setup.appendChild(enRow);
+    var saveRow=el('div',{className:'card-row'});
+    var saveB=txt('button','Save',{className:'btn small primary'});
+    var saveMsg=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
+    saveRow.append(saveB,saveMsg);setup.appendChild(saveRow);
+    setup.appendChild(txt('div','Your key is stored on your own D1 backend (encrypted if you set KH_PEPPER) — never in the app\'s public code. It powers only this maintenance, separate from users\' AI.',{style:{fontSize:'9.5px',color:'var(--muted)',marginTop:'6px',lineHeight:'1.4'}}));
+    saveB.onclick=function(){
+      var payload={};var k=(keyIn.value||'').trim();if(k)payload.key=k;payload.on=!!enChk.checked;
+      saveB.disabled=true;saveMsg.textContent='Saving…';
+      _khMaintCall('/maint/config',payload).then(function(r){saveB.disabled=false;keyIn.value='';saveMsg.textContent=r&&r.keyConfigured?('Saved — '+(r.enabled?'enabled.':'key saved (not enabled).')):'Saved.';load();}).catch(function(e){saveB.disabled=false;saveMsg.textContent=(e&&e.message)||'failed';});
+    };
+    autoWrap.appendChild(setup);
     var status=txt('div','Loading status…',{style:{fontSize:'12px',marginBottom:'8px'}});
     autoWrap.appendChild(status);
     var row=el('div',{className:'card-row'});
@@ -9671,9 +9693,10 @@ async function _khOpenSiteEditor(){
     var log=el('div',{style:{marginTop:'10px'}});autoWrap.appendChild(log);
     function paint(d){
       status.innerHTML='';
-      if(!d){status.appendChild(txt('span','Could not reach the maintenance service.',{style:{color:'var(--danger)'}}));return;}
+      if(!d){status.appendChild(txt('span','Could not reach the maintenance service — is the API gateway set and the worker redeployed?',{style:{color:'var(--danger)',fontSize:'11px'}}));return;}
+      try{enChk.checked=!!d.enabled;keyIn.placeholder=d.keyConfigured?'A key is saved — paste a new one to replace it':'Paste your Gemini key…';}catch(_){}
       var c=d.counts||{};
-      status.appendChild(txt('div',(d.enabled?'● Enabled':'○ Not enabled (set MAINT_ON + MAINT_KEY on the worker)'),{style:{fontWeight:'800',fontSize:'12px',color:d.enabled?'var(--success)':'var(--muted)'}}));
+      status.appendChild(txt('div',(d.enabled?'● Enabled — running daily':(d.keyConfigured?'○ Key saved but not enabled — tick the box above and Save':'○ Not set up — add your key above')),{style:{fontWeight:'800',fontSize:'12px',color:d.enabled?'var(--success)':'var(--muted)'}}));
       status.appendChild(txt('div',(d.liveFixes||0)+' fix'+((d.liveFixes===1)?'':'es')+' live on all devices  ·  fixed '+(c.fixed||0)+' · staged '+(c['needs_review']||0)+' · won\'t-fix '+(c.wont_fix||0)+' · queued '+((c['new']||0)+(c.deferred||0)),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'3px'}}));
       log.innerHTML='';
       var rec=d.recent||[];
