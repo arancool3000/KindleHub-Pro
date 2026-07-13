@@ -1566,7 +1566,7 @@ function defaultState(){
     focusLog:[],rssFeeds:[],rssCache:{},rssSaved:[],rssRead:{},mindJournal:[],mdJournals:[],smLat:51.5,smLon:-0.1,smCity:'London',
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
-    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,tutorialSeen:false,feedbackUrl:'',
+    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],cpMenuDisabled:false,
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
@@ -2993,6 +2993,76 @@ function saveNow(){
    timestamp (e.g. saving a note, logging a session).
 ────────────────────────────────────────────────────────────────────────── */
 function NOW(){return new Date(Date.now()+((typeof S!=='undefined'&&S.clockOffset)||0));}
+/* ── Time zone with daylight-saving (Silk-safe, no Intl timeZone dependency) ──
+   Old Kindle WebKit's Intl has no reliable IANA-timezone support, so we compute
+   each offered zone's CURRENT UTC offset (including DST) in pure JS and fold it
+   into S.clockOffset — the same value NOW() already applies. The zone is stored
+   in S.clockZone and re-derived at every boot, so DST switch-overs self-correct
+   without the user touching anything. Picking a zone > manual nudge; a manual
+   nudge clears the zone so it becomes the override. */
+const CLOCK_ZONES=[
+  {id:'',label:'Device time (no override)',std:0,dst:null},
+  {id:'America/New_York',label:'New York — US Eastern',std:-5,dst:'us'},
+  {id:'America/Chicago',label:'Chicago — US Central',std:-6,dst:'us'},
+  {id:'America/Denver',label:'Denver — US Mountain',std:-7,dst:'us'},
+  {id:'America/Phoenix',label:'Arizona — Mountain, no DST',std:-7,dst:null},
+  {id:'America/Los_Angeles',label:'Los Angeles — US Pacific',std:-8,dst:'us'},
+  {id:'America/Anchorage',label:'Alaska',std:-9,dst:'us'},
+  {id:'Pacific/Honolulu',label:'Hawaii — no DST',std:-10,dst:null},
+  {id:'America/Sao_Paulo',label:'São Paulo — Brazil',std:-3,dst:null},
+  {id:'UTC',label:'UTC / GMT',std:0,dst:null},
+  {id:'Europe/London',label:'London — UK & Ireland',std:0,dst:'eu'},
+  {id:'Europe/Paris',label:'Central Europe — Paris/Berlin/Madrid',std:1,dst:'eu'},
+  {id:'Europe/Athens',label:'Eastern Europe — Athens/Helsinki',std:2,dst:'eu'},
+  {id:'Asia/Dubai',label:'Dubai — Gulf',std:4,dst:null},
+  {id:'Asia/Kolkata',label:'India',std:5.5,dst:null},
+  {id:'Asia/Shanghai',label:'China',std:8,dst:null},
+  {id:'Asia/Tokyo',label:'Japan/Korea',std:9,dst:null},
+  {id:'Australia/Sydney',label:'Sydney — Australia East',std:10,dst:'au'}
+];
+function _nthSundayUTC(y,mon,n){
+  /* date (1-31) of the n-th Sunday of month `mon` (0-11); n>=5 => LAST Sunday */
+  if(n>=5){
+    var last=new Date(Date.UTC(y,mon+1,0)).getUTCDate();
+    return last-new Date(Date.UTC(y,mon,last)).getUTCDay();
+  }
+  var firstDow=new Date(Date.UTC(y,mon,1)).getUTCDay();
+  return 1+((7-firstDow)%7)+(n-1)*7;
+}
+function _zoneOffsetHours(zone,utcMs){
+  /* zone's offset from UTC in hours at instant utcMs, INCLUDING DST */
+  var std=zone.std;
+  if(!zone.dst)return std;
+  var y=new Date(utcMs).getUTCFullYear(),on=false;
+  if(zone.dst==='us'){                                              /* 2nd Sun Mar 2am → 1st Sun Nov 2am, local */
+    var s=Date.UTC(y,2,_nthSundayUTC(y,2,2),2,0,0)-std*3600000;
+    var e=Date.UTC(y,10,_nthSundayUTC(y,10,1),2,0,0)-(std+1)*3600000;
+    on=utcMs>=s&&utcMs<e;
+  }else if(zone.dst==='eu'){                                        /* last Sun Mar 01:00 UTC → last Sun Oct 01:00 UTC */
+    var es=Date.UTC(y,2,_nthSundayUTC(y,2,5),1,0,0);
+    var ee=Date.UTC(y,9,_nthSundayUTC(y,9,5),1,0,0);
+    on=utcMs>=es&&utcMs<ee;
+  }else if(zone.dst==='au'){                                        /* southern: 1st Sun Oct → 1st Sun Apr (wraps year) */
+    var as=Date.UTC(y,9,_nthSundayUTC(y,9,1),2,0,0)-std*3600000;
+    var ae=Date.UTC(y,3,_nthSundayUTC(y,3,1),3,0,0)-(std+1)*3600000;
+    on=utcMs>=as||utcMs<ae;
+  }
+  return std+(on?1:0);
+}
+function _clockZoneById(id){for(var i=0;i<CLOCK_ZONES.length;i++){if(CLOCK_ZONES[i].id===id)return CLOCK_ZONES[i];}return null;}
+function _clockOffsetForZone(id){
+  var z=_clockZoneById(id);if(!z||!z.id)return 0;
+  /* clockOffset makes new Date(Date.now()+off).getHours() read the zone's wall clock */
+  return Math.round(_zoneOffsetHours(z,Date.now())*3600000+new Date().getTimezoneOffset()*60000);
+}
+function _applyClockZone(){
+  /* Re-derive S.clockOffset from the saved zone (DST-correct). Boot + on-pick. */
+  try{if(typeof S!=='undefined'&&S.clockZone)S.clockOffset=_clockOffsetForZone(S.clockZone);}catch(_){}
+}
+/* Recompute at boot so a saved zone (e.g. New York) tracks DST automatically.
+   Runs here — after the CLOCK_ZONES const is initialised and S is loaded (line
+   ~1611) — because CLOCK_ZONES is in its temporal dead zone earlier in boot. */
+try{_applyClockZone();}catch(_){}
 /* LOCAL calendar day-key (YYYY-MM-DD) for streaks/habits/daily-goal. Uses the
    device's LOCAL date parts, NOT toISOString() (which is UTC) — so a habit
    marked done at 8pm in New York records under the correct local day instead of
@@ -39950,9 +40020,49 @@ settings:()=>{
   const _offsetStatus=txt('p','Current offset: '+_offsetDesc,{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'8px'}});
   cTime.appendChild(_offsetStatus);
 
+  /* Live clock readout — the header shows only the DATE now, so without this a
+     "+1 Hour" / zone change looked like it did nothing. Shows the adjusted time. */
+  const _liveClock=txt('div','',{style:{fontFamily:'monospace',fontSize:'27px',fontWeight:'900',letterSpacing:'1px',textAlign:'center',padding:'4px 0 0',color:'var(--fg)'}});
+  const _liveSub=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',textAlign:'center',marginBottom:'10px'}});
+  cTime.appendChild(_liveClock);cTime.appendChild(_liveSub);
+  const _DOW=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function _p2(n){return (n<10?'0':'')+n;}
+  function _tickLive(){
+    try{
+      const d=NOW();
+      const v=_p2(d.getHours())+':'+_p2(d.getMinutes())+':'+_p2(d.getSeconds());
+      if(_liveClock.textContent!==v)_liveClock.textContent=v;
+      const z=S.clockZone?_clockZoneById(S.clockZone):null;
+      const sub=_DOW[d.getDay()]+', '+d.getDate()+' '+_MON[d.getMonth()]+(z?('  ·  '+z.label.split(' — ')[0]):'');
+      if(_liveSub.textContent!==sub)_liveSub.textContent=sub;
+    }catch(_){}
+  }
+  _tickLive();
+  const _liveIv=setInterval(()=>{if(!document.body.contains(_liveClock)){clearInterval(_liveIv);return;}if(!document.hidden)_tickLive();},1000);
+
+  /* Time-zone picker — set a city and the clock tracks it, DST handled automatically. */
+  const _tzWrap=el('div',{style:{marginBottom:'12px'}});
+  _tzWrap.appendChild(txt('label','Time zone',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.5px',color:'var(--muted)',display:'block',marginBottom:'4px'}}));
+  const _tzSel=el('select',{style:{width:'100%'}});
+  CLOCK_ZONES.forEach(z=>{const o=el('option',{value:z.id});o.textContent=z.label;if((S.clockZone||'')===z.id)o.selected=true;_tzSel.appendChild(o);});
+  _tzSel.onchange=()=>{
+    S.clockZone=_tzSel.value;
+    S.clockOffset=S.clockZone?_clockOffsetForZone(S.clockZone):0;
+    save();_tickLive();
+    _offsetStatus.textContent='Current offset: '+(S.clockOffset===0?'No adjustment':((S.clockOffset>0?'+':'-')+Math.round(Math.abs(S.clockOffset)/60000)+'min'));
+    const z=_clockZoneById(S.clockZone);
+    toast(z&&z.id?('Clock set to '+z.label.split(' — ')[0]+' (DST auto)'):'Using device time');
+  };
+  _tzWrap.appendChild(_tzSel);
+  _tzWrap.appendChild(txt('div','Daylight-saving / standard time switches automatically for the chosen zone.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'4px',lineHeight:'1.4'}}));
+  cTime.appendChild(_tzWrap);
+
   function _applyTimeOffset(deltaMs){
+    /* a manual nudge overrides any zone selection (so it isn't wiped at next boot) */
+    S.clockZone='';try{_tzSel.value='';}catch(_){}
     S.clockOffset=(S.clockOffset||0)+deltaMs;
-    save();
+    save();try{_tickLive();}catch(_){}
     const ms=S.clockOffset;
     const sign=ms>=0?'+':'-';
     const abs=Math.abs(ms);
@@ -39973,7 +40083,7 @@ settings:()=>{
   const _btnMinus=txt('button','-1 Hour',{className:'btn'});
   _btnMinus.onclick=()=>_applyTimeOffset(-3600000);
   const _btnReset=txt('button','Reset',{className:'btn small danger'});
-  _btnReset.onclick=()=>{S.clockOffset=0;save();_offsetStatus.textContent='Current offset: No adjustment';toast('Clock reset to system time');};
+  _btnReset.onclick=()=>{S.clockOffset=0;S.clockZone='';try{_tzSel.value='';}catch(_){}save();_offsetStatus.textContent='Current offset: No adjustment';try{_tickLive();}catch(_){}toast('Clock reset to system time');};
   _quickRow.append(_btnPlus,_btnMinus,_btnReset);
   cTime.appendChild(_quickRow);
 
