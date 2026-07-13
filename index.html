@@ -2898,7 +2898,12 @@ function _khTrackDeletions(){
    snapshot, so items deleted before the session's first save() are NOT
    tombstoned — and the cloud-merge resurrects them on the next sync. That was
    the "delete all my calendar events, press Sync, they all come back" bug. */
-try{if(typeof S!=='undefined'&&S&&!window._khPrevIds)_khTrackDeletions();}catch(_){}
+/* Deferred off the synchronous boot path (setTimeout 0, after first paint): on a
+   big account this loop over every note/book/journal/event to snapshot ids added
+   tens of ms to the boot freeze. It only has to run before the session's first
+   save()/delete — 0ms is comfortably before any UI deletion — and save() also
+   seeds it itself, so this is just the belt-and-suspenders pre-seed. */
+try{if(typeof S!=='undefined'&&S&&!window._khPrevIds)setTimeout(function(){try{if(!window._khPrevIds)_khTrackDeletions();}catch(_){}},0);}catch(_){}
 /* Reclaim localStorage space when a write genuinely won't fit. The biggest
    easy win is `kh_offline_cred`, which caches whole encrypted state blobs for
    recent accounts (each ~the size of the main blob) — drop all but the most
@@ -10338,15 +10343,27 @@ function _compStr(json){
 }
 function _decompStr(s){
   if(!s)return s;
-  let out=s;
-  /* Walk in reverse so longer tokens (substituted first) are restored
-     before shorter ones could collide. */
-  for(let i=_COMP_DICT.length-1;i>=0;i--){
-    const mk='\x01'+String.fromCharCode(i);
-    if(out.indexOf(mk)<0)continue;
-    out=out.split(mk).join(_COMP_DICT[i]);
+  s=String(s);
+  /* Fast O(n) SINGLE pass (was ~90 full-string split/join passes — a multi-MB
+     multi-second freeze at boot on a big account). Markers are unambiguous: a
+     marker is 0x01 followed by the dictionary-index char, and JSON.stringify
+     escapes any real 0x01 in the data as , so a raw 0x01 only ever starts
+     a marker. Restoration order is irrelevant (dict tokens contain no 0x01), so
+     one scan is byte-identical to the old reverse split/join. */
+  if(s.indexOf('\x01')<0)return s;
+  const out=[];const n=s.length;let last=0;
+  for(let i=0;i<n;i++){
+    if(s.charCodeAt(i)===1&&i+1<n){
+      const idx=s.charCodeAt(i+1);
+      if(idx<_COMP_DICT.length){
+        if(i>last)out.push(s.slice(last,i));
+        out.push(_COMP_DICT[idx]);
+        i++;last=i+1;                 /* skip the index char */
+      }
+    }
   }
-  return out;
+  if(last<n)out.push(s.slice(last));
+  return out.join('');
 }
 
 /* ── Master document helpers (single-item architecture) ────────────────
@@ -10541,26 +10558,32 @@ function _jsInflate(gz){
       while(bcnt<n){if(p>=inEnd)throw new Error('eos');bbuf|=inp[p++]<<bcnt;bcnt+=8;}
       const v=bbuf&((1<<n)-1);bbuf>>>=n;bcnt-=n;return v;
     }
-    /* Build a Huffman decode table from a list of code lengths */
+    /* Build a CANONICAL-Huffman decode table (integer arrays only) — was a
+       plain-object keyed by the string `len+':'+code`, rebuilt per block and
+       hash-looked-up once PER BIT per symbol: the dominant constant-factor cost
+       of the boot freeze. `counts[l]` = #codes of length l; `symbols[]` = the
+       symbols sorted by (length, then symbol index), exactly the canonical
+       assignment the old `codes[i]=next[len]++` produced — so decode is
+       byte-identical. */
     function buildTree(lens){
-      const max=Math.max.apply(null,lens);if(!max)return null;
-      const blCount=new Uint32Array(max+1);
-      for(let i=0;i<lens.length;i++)if(lens[i])blCount[lens[i]]++;
-      const next=new Uint32Array(max+2);let code=0;
-      for(let b=1;b<=max;b++){code=(code+blCount[b-1])<<1;next[b]=code;}
-      const codes=new Int32Array(lens.length);
-      for(let i=0;i<lens.length;i++)if(lens[i])codes[i]=next[lens[i]]++;
-      /* Return decoder using table lookup */
-      const tbl={};
-      for(let i=0;i<lens.length;i++)if(lens[i])tbl[lens[i]+':'+codes[i]]=i;
-      return{tbl:tbl,max:max};
+      let max=0;for(let i=0;i<lens.length;i++)if(lens[i]>max)max=lens[i];
+      if(!max)return null;
+      const counts=new Uint16Array(max+1),symbols=new Uint16Array(lens.length);
+      for(let i=0;i<lens.length;i++)if(lens[i])counts[lens[i]]++;
+      const offs=new Uint32Array(max+2);let s=0;
+      for(let l=1;l<=max;l++){offs[l]=s;s+=counts[l];}
+      for(let i=0;i<lens.length;i++)if(lens[i])symbols[offs[lens[i]]++]=i;
+      return{counts:counts,symbols:symbols,max:max};
     }
     function decodeSym(t){
-      let code=0;
+      /* Standard canonical decode (puff/tinf): accumulate the code MSB-first and
+         at each length test whether it falls in that length's contiguous range. */
+      let code=0,first=0,index=0;
       for(let len=1;len<=t.max;len++){
-        code=(code<<1)|bits(1);
-        const sym=t.tbl[len+':'+code];
-        if(sym!==undefined)return sym;
+        code|=bits(1);
+        const count=t.counts[len];
+        if(code-first<count)return t.symbols[index+(code-first)];
+        index+=count;first=(first+count)<<1;code<<=1;
       }
       throw new Error('huffman decode');
     }
@@ -10588,8 +10611,15 @@ function _jsInflate(gz){
       return FIXED_DIST=buildTree(lens);
     }
 
-    const out=[];let opos=0;
-    function emit(b){out.push(b);opos++;}
+    /* Output buffer: PREALLOCATE a Uint8Array from the gzip ISIZE trailer (the
+       last 4 bytes = exact uncompressed length mod 2^32, previously ignored) and
+       write by index — was `out.push(b)` a byte at a time into a plain JS Array
+       (millions of pushes + a full final Uint8Array copy). Back-refs read
+       out[start+k] directly. The grow path is a safety net for a malformed
+       ISIZE; for our < few-MB blobs the preallocation is exact and never grows. */
+    const isize=((inp[inp.length-4]|(inp[inp.length-3]<<8)|(inp[inp.length-2]<<16)|(inp[inp.length-1]<<24))>>>0);
+    let out=new Uint8Array(isize>0?isize:65536);let opos=0;
+    function emit(b){if(opos>=out.length){const _n=new Uint8Array(out.length*2);_n.set(out);out=_n;}out[opos++]=b;}
 
     let bfinal=0;
     do{
@@ -10641,7 +10671,7 @@ function _jsInflate(gz){
         }
       }
     }while(!bfinal);
-    return new Uint8Array(out);
+    return opos===out.length?out:out.subarray(0,opos);
   }catch(e){return null;}
 }
 window._jsInflate=_jsInflate;
