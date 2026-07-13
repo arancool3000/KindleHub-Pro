@@ -1579,7 +1579,7 @@ function defaultState(){
     focusLog:[],rssFeeds:[],rssCache:{},rssSaved:[],rssRead:{},mindJournal:[],mdJournals:[],smLat:51.5,smLon:-0.1,smCity:'London',
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
-    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,tutorialSeen:false,feedbackUrl:'',
+    navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],cpMenuDisabled:false,
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
@@ -9337,84 +9337,262 @@ async function _khGlobalEditClear(){
 window._khApplyGlobalEdit=_khApplyGlobalEdit;window._khGlobalEditGet=_khGlobalEditGet;window._khGlobalEditPublish=_khGlobalEditPublish;window._khGlobalEditClear=_khGlobalEditClear;
 /* Admin-only editor overlay: describe a change, let Gemini draft the CSS/JS,
    preview it on THIS device, then publish it to everyone. */
+/* ── Site Editor verification + polish tools ──────────────────────────────
+   Admin site-edits are eval'd on EVERY client, so before publishing we run a
+   battery of checks. (Apply-time eval is ALSO deferred + try/caught, so even a
+   bad edit can't brick boot — verification is the belt on top of those braces
+   AND it makes sure the edit actually WORKS on old Kindle Silk.) */
+function _khSiteScanSilk(code){
+  /* The Kindle-Silk-hostile operators — mirrors _khSilkScan + the minify deploy
+     gate EXACTLY (engine-independent: catches these even when the admin's own
+     browser is modern and would happily run them), PLUS numeric separators the
+     regex gate misses. Leading [)\]\w$] guard avoids string/regex false hits. */
+  if(!code)return [];
+  var C=String(code),hits=[];
+  var P=[
+    [/[)\]\w$]\?\?=/,'nullish assignment (??=)'],
+    [/[)\]\w$]\?\?(?!=)/,'nullish coalescing (??)'],
+    [/[)\]\w$]\?\.\s*[A-Za-z_$([]/,'optional chaining (?.)'],
+    [/(?:^|[^A-Za-z0-9_$])catch\s*\{/,'parameterless catch (needs an error variable)'],
+    [/[)\]\w$]\s*\|\|=/,'logical-OR assignment'],
+    [/[)\]\w$]\s*&&=/,'logical-AND assignment'],
+    [/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators (1_000)']
+  ];
+  P.forEach(function(p){if(p[0].test(C))hits.push(p[1]);});
+  return hits;
+}
+function _khSiteAutofix(code){ return String(code).replace(/([^A-Za-z0-9_$])catch\s*\{/g,'$1catch(_e){'); }
+/* Auth/crypto/credential internals that must NEVER be in a site edit — HARD
+   block (no legit reason; a hijacked edit touching these = catastrophic). This
+   is narrower than _khPatchDenyRE on purpose: an admin CAN legitimately use
+   fetch/localStorage/etc. in a real site tweak, so those are WARN, not BLOCK. */
+var _khSiteBlockRE=/_ADMIN_HASHES|\bADMIN_HASHES\b|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|SUPABASE_ANON_KEY|service_role|document\.cookie|\bkh_users\b/;
+function _khVerifySiteEdit(payload){
+  /* Returns {ok, blocking:[str], warnings:[str], silk:[str], risk:[str], compileErr} */
+  var out={ok:true,blocking:[],warnings:[],silk:[],risk:[],compileErr:''};
+  var css=String((payload&&payload.css)||''),js=String((payload&&payload.js)||''),banner=String((payload&&payload.banner)||'');
+  if(css.length>60000)out.blocking.push('CSS is too large (max 60,000 chars).');
+  if(js.length>60000)out.blocking.push('JavaScript is too large (max 60,000 chars).');
+  if(banner.length>300)out.warnings.push('Banner is over 300 chars — it will be trimmed.');
+  if(js){
+    out.silk=_khSiteScanSilk(js);
+    out.silk.forEach(function(s){out.blocking.push('Kindle-incompatible JS syntax: '+s);});
+    try{ new Function(js); }catch(se){ out.compileErr=String((se&&se.message)||se); out.blocking.push('JavaScript syntax error: '+out.compileErr); }
+    if(_khSiteBlockRE.test(js))out.blocking.push('JavaScript references protected auth/encryption internals — not allowed.');
+    try{ if(typeof _khAppRiskFlags==='function')out.risk=_khAppRiskFlags(js)||[]; }catch(_){}
+    out.risk.forEach(function(r){out.warnings.push('JS '+r);});
+  }
+  if(css){
+    if(/position\s*:\s*sticky/i.test(css))out.warnings.push('CSS uses position:sticky (ignored on old Kindle Silk).');
+    if(/aspect-ratio\s*:/i.test(css))out.warnings.push('CSS uses aspect-ratio (ignored on old Kindle Silk).');
+    if(/@import\b/i.test(css))out.warnings.push('CSS @import is blocked by the page security policy — inline the styles instead.');
+  }
+  out.ok=out.blocking.length===0;
+  return out;
+}
+/* Iterative AI polish — re-runs the model up to maxPasses times, feeding each
+   round's remaining blocking issues back in, accepting a rewrite ONLY if it has
+   strictly fewer blocking issues (mirrors the app-builder repair guard + the
+   _khReviewApp model/backoff shape). onProgress(text) reports each pass. */
+async function _khPolishSiteEditJs(js,onProgress,maxPasses){
+  maxPasses=maxPasses||4;
+  var cur=_khSiteAutofix(String(js||''));
+  var v=_khVerifySiteEdit({js:cur});
+  var pass=0;
+  while(!v.ok && pass<maxPasses){
+    pass++;
+    if(onProgress)onProgress('Polishing — pass '+pass+' of '+maxPasses+', fixing '+v.blocking.length+' issue'+(v.blocking.length===1?'':'s')+'…');
+    var issues=v.blocking.join('; ');
+    var sys='You are fixing JavaScript so it runs on an OLD Kindle Silk WebKit browser. Detected problems: '+issues+'. Rewrite to FIX EXACTLY these and change NOTHING else — keep identical behaviour. Rules: replace optional chaining with an explicit and-guard such as (a && a.b); replace nullish coalescing with a not-null ternary such as (a != null ? a : b); expand every logical-assignment operator to its long form; give every catch block an error parameter, for example catch(e); write all numbers without digit-separator underscores; use no ES2020-or-newer operator; fix any syntax error; never touch login, auth, or encryption. Return ONLY the raw corrected JavaScript — no markdown, no commentary.';
+    var out=null;
+    try{ out=await khiCall(sys+'\n\nCODE:\n'+cur,{temperature:0,maxTokens:1600}); }catch(_){ out=null; }
+    if(!out){ if(onProgress)onProgress('Pass '+pass+' — AI unavailable, retrying…'); await new Promise(function(r){setTimeout(r,1200*pass);}); continue; }
+    var cand=_khSiteAutofix(String(out).replace(/```[a-z]*\n?|```/g,'').trim());
+    var cv=_khVerifySiteEdit({js:cand});
+    if(cv.blocking.length<v.blocking.length){ cur=cand; v=cv; }
+    else if(onProgress){ onProgress('Pass '+pass+' didn\'t improve it — trying a different fix…'); }
+  }
+  return {js:cur,verify:v,passes:pass};
+}
+/* Saved-edits history (device/account state) — every publish is recorded so the
+   admin can view past edits and re-publish / revert. Newest first, capped 25. */
+function _khSiteEditHistoryAdd(payload){
+  try{
+    if(!Array.isArray(S.siteEdits))S.siteEdits=[];
+    S.siteEdits.unshift({css:String((payload&&payload.css)||''),js:String((payload&&payload.js)||''),banner:String((payload&&payload.banner)||''),note:String((payload&&payload.note)||''),ts:(typeof NOW==='function'?NOW().getTime():Date.now())});
+    if(S.siteEdits.length>25)S.siteEdits.length=25;
+    save();
+  }catch(_){}
+}
+window._khSiteScanSilk=_khSiteScanSilk;window._khVerifySiteEdit=_khVerifySiteEdit;window._khPolishSiteEditJs=_khPolishSiteEditJs;window._khSiteEditHistoryAdd=_khSiteEditHistoryAdd;
 async function _khOpenSiteEditor(){
   if(!(window._isAdminCached===true)){if(typeof toast==='function')toast('Admins only.');return;}
   const cur=_khGlobalEditGet()||{css:'',js:'',banner:''};
-  const ov=el('div',{style:{position:'fixed',inset:'0',left:'0',top:'0',right:'0',bottom:'0',width:'100%',height:'100%',background:'rgba(0,0,0,0.55)',zIndex:'600050',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'14px',boxSizing:'border-box',overflowY:'auto'}});
-  const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'560px',width:'100%',borderRadius:'12px',padding:'16px',boxShadow:'var(--shadow-md)',fontFamily:'var(--ui-font)',display:'flex',flexDirection:'column',gap:'10px',margin:'auto'}});
-  card.appendChild(txt('div','Live Site Editor',{style:{fontSize:'16px',fontWeight:'800'}}));
-  card.appendChild(txt('div','Change the site for EVERYONE from here — no laptop, no redeploy. Describe what you want and let AI draft it, or edit directly. Preview on this device first, then Publish.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
-
-  /* Mode segment */
+  const store={css:cur.css||'',banner:cur.banner||'',js:cur.js||''};
   let mode='css';
-  const seg=el('div',{className:'card-row',style:{gap:'6px'}});
-  const modes=[['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']];
-  const segBtns={};
-  modes.forEach(([k,lbl])=>{const b=txt('button',lbl,{className:'btn small'+(k==='css'?' primary':'')});b.onclick=()=>{mode=k;Object.keys(segBtns).forEach(x=>segBtns[x].classList.toggle('primary',x===k));_syncBox();};segBtns[k]=b;seg.appendChild(b);});
-  card.appendChild(seg);
+  const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',width:'100%',height:'100%',background:'rgba(0,0,0,0.55)',zIndex:'600050',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'14px',boxSizing:'border-box',overflowY:'auto'}});
+  const card=el('div',{style:{background:'var(--card)',color:'var(--fg)',maxWidth:'600px',width:'100%',borderRadius:'12px',padding:'16px',boxShadow:'var(--shadow-md)',fontFamily:'var(--ui-font)',display:'flex',flexDirection:'column',gap:'9px',margin:'auto'}});
+  card.appendChild(txt('div','Website Editor',{style:{fontSize:'17px',fontWeight:'900'}}));
+  card.appendChild(txt('div','Admin only. Change the LIVE site for everyone — no laptop, no redeploy. Every edit is checked for Kindle safety and auto-polished before you can publish, so a bad edit can\'t break the site.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5'}}));
 
-  /* AI drafting */
-  const descIn=el('textarea',{style:{width:'100%',minHeight:'54px',boxSizing:'border-box'},placeholder:'Describe the change… e.g. "make all buttons rounded and navy", "add a banner saying maintenance at 9pm", "hide the Games tab for everyone"'});
-  card.appendChild(descIn);
+  /* Top tabs: Edit | Saved edits */
+  let tab='edit';
+  const tabRow=el('div',{className:'card-row',style:{gap:'6px'}});
+  const tabBtns={};
+  [['edit','Edit'],['saved','Saved edits']].forEach(function(t){const b=txt('button',t[1],{className:'btn small'+(t[0]==='edit'?' primary':'')});b.onclick=function(){tab=t[0];_showTab();};tabBtns[t[0]]=b;tabRow.appendChild(b);});
+  card.appendChild(tabRow);
+  const editWrap=el('div',{});const savedWrap=el('div',{style:{display:'none'}});
+  card.appendChild(editWrap);card.appendChild(savedWrap);
+
+  /* ── EDIT tab ── */
+  const seg=el('div',{className:'card-row',style:{gap:'6px'}});
+  const segBtns={};
+  [['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']].forEach(function(m){const b=txt('button',m[1],{className:'btn small'+(m[0]==='css'?' primary':'')});b.onclick=function(){mode=m[0];Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x===mode);});_syncBox();_verify();};segBtns[m[0]]=b;seg.appendChild(b);});
+  editWrap.appendChild(seg);
+  const descIn=el('textarea',{style:{width:'100%',minHeight:'50px',boxSizing:'border-box'},placeholder:'Describe the change and let AI draft it…'});
+  editWrap.appendChild(descIn);
   const aiRow=el('div',{className:'card-row'});
   const aiBtn=txt('button','Draft with AI',{className:'btn small primary'});
   const aiStatus=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
-  aiRow.append(aiBtn,aiStatus);card.appendChild(aiRow);
-
-  /* The editable payload box (per mode) */
-  const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)'}});
+  aiRow.append(aiBtn,aiStatus);editWrap.appendChild(aiRow);
+  const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'2px'}});
   const box=el('textarea',{style:{width:'100%',minHeight:'120px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
-  card.appendChild(boxLbl);card.appendChild(box);
-  const jsWarn=txt('div','⚠ Advanced JavaScript runs on every user\'s device with full page access. Only publish code you understand. Each user can disable admin scripts in their Settings.',{style:{fontSize:'10px',color:'var(--danger)',lineHeight:'1.45',display:'none'}});
-  card.appendChild(jsWarn);
-  const store={css:cur.css||'',banner:cur.banner||'',js:cur.js||''};
+  editWrap.appendChild(boxLbl);editWrap.appendChild(box);
+  const jsWarn=txt('div','Advanced JavaScript runs on every user\'s device with full page access. Only publish code you understand — each user can also disable admin scripts in their Settings.',{style:{fontSize:'10px',color:'var(--danger)',lineHeight:'1.45',display:'none'}});
+  editWrap.appendChild(jsWarn);
+  /* Verification report */
+  const reportHost=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'8px 10px',background:'var(--highlight)',minHeight:'20px'}});
+  editWrap.appendChild(reportHost);
+  const statusEl=txt('div','',{style:{fontSize:'11px',color:'var(--muted)',minHeight:'15px'}});
+  editWrap.appendChild(statusEl);
+
   function _syncBox(){
     box.value=store[mode]||'';
-    boxLbl.textContent=mode==='css'?'CSS applied to every client':mode==='banner'?'Banner text (site-wide notice)':'JavaScript eval\'d on every client';
-    box.style.minHeight=mode==='banner'?'54px':'120px';
+    boxLbl.textContent=mode==='css'?'CSS — injected on every client':mode==='banner'?'Banner text — a site-wide notice bar':'JavaScript — runs once on every client';
+    box.style.minHeight=mode==='banner'?'50px':'120px';
     jsWarn.style.display=mode==='js'?'block':'none';
-    descIn.placeholder=mode==='js'?'Describe the behaviour… e.g. "log a hello to the console", "add a floating help button"':mode==='banner'?'Describe the notice… e.g. "maintenance tonight at 9pm UK time"':'Describe the look… e.g. "make all primary buttons navy and rounded"';
+    descIn.placeholder=mode==='js'?'Describe the behaviour… e.g. "add a floating Help button that scrolls to the top"':mode==='banner'?'Describe the notice… e.g. "maintenance tonight at 9pm UK time"':'Describe the look… e.g. "make all primary buttons navy and rounded"';
   }
-  box.oninput=()=>{store[mode]=box.value;};
-  _syncBox();
+  function _renderReport(v){
+    reportHost.innerHTML='';
+    if(!v){reportHost.appendChild(txt('div','Edit or draft something, then Verify.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
+    if(v.ok){reportHost.appendChild(txt('div',v.warnings.length?'Checks passed (with warnings) — safe to publish.':'✓ All checks passed — safe to publish.',{style:{fontSize:'12px',fontWeight:'800',color:'var(--success)'}}));}
+    if(v.blocking.length){
+      reportHost.appendChild(txt('div','MUST FIX before publishing:',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',margin:'2px 0'}}));
+      v.blocking.forEach(function(b){reportHost.appendChild(txt('div','• '+b,{style:{fontSize:'11px',color:'var(--danger)',lineHeight:'1.4'}}));});
+    }
+    if(v.warnings.length){
+      reportHost.appendChild(txt('div','Warnings (publishing still allowed):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'4px 0 2px'}}));
+      v.warnings.forEach(function(w){reportHost.appendChild(txt('div','• '+w,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));});
+    }
+  }
+  let _lastV=null;
+  function _verify(){ _lastV=_khVerifySiteEdit(store); _renderReport(_lastV); pubBtn.disabled=!_lastV.ok; return _lastV; }
+  box.oninput=function(){store[mode]=box.value;khDebounce(_verify,300)();};
 
-  aiBtn.onclick=async()=>{
+  aiBtn.onclick=async function(){
     const d=(descIn.value||'').trim();if(!d){if(typeof toast==='function')toast('Describe the change first.');return;}
     if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
     aiStatus.textContent='Thinking…';aiBtn.disabled=true;
     try{
       let sys;
-      if(mode==='css')sys='You write a SINGLE block of raw CSS (no <style> tag, no markdown, no explanation) that will be injected into a Kindle e-reader web app to restyle it site-wide. The app uses CSS variables like --accent, --fg, --bg, --card, and classes like .btn, .btn.primary, nav .tab, .card. OLD Kindle Silk WebKit: do NOT use CSS variables in calc(), aspect-ratio, position:sticky, or gap in flex. Output ONLY CSS.';
+      if(mode==='css')sys='You write a SINGLE block of raw CSS (no <style> tag, no markdown, no explanation) injected into a Kindle e-reader web app to restyle it site-wide. It uses CSS variables --accent --fg --bg --card and classes .btn .btn.primary "nav .tab" .card. OLD Kindle Silk WebKit: do NOT use variables in calc(), aspect-ratio, position:sticky, flex gap, or @import. Output ONLY CSS.';
       else if(mode==='banner')sys='You write a SHORT (max ~120 chars) plain-text site-wide banner notice. Output ONLY the text, no quotes, no markdown.';
-      else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app, with full page access. OLD Kindle Silk WebKit safe ES5/ES2015 ONLY: do NOT use optional chaining, nullish coalescing, logical-assignment, numeric separators, or a parameterless catch — write catch(e). Keep it small and defensive (wrap risky parts in try/catch). Output ONLY JavaScript.';
-      const out=await khiCall(sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1200});
+      else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app with full page access. OLD Kindle Silk WebKit ES5/ES2015 ONLY: NO optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter (catch(e)). Never touch login/auth/encryption. Keep it small and wrap risky parts in try/catch. Output ONLY JavaScript.';
+      let out=await khiCall(sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400});
       let clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
-      store[mode]=clean;box.value=clean;aiStatus.textContent='Drafted — review it below.';
+      store[mode]=clean;box.value=clean;
+      /* Auto-polish drafted JS immediately so the admin starts from safe code. */
+      if(mode==='js'&&clean){aiStatus.textContent='Checking for Kindle safety…';const r=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=r.js;box.value=r.js;}
+      aiStatus.textContent='Drafted — review it below.';_verify();
     }catch(e){aiStatus.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
     aiBtn.disabled=false;
   };
 
-  /* Actions */
-  const actRow=el('div',{className:'card-row',style:{marginTop:'4px'}});
-  const previewBtn=txt('button','Preview here',{className:'btn small'});
-  previewBtn.onclick=()=>{_khApplyGlobalEdit({css:store.css,banner:store.banner,js:'',ts:'preview'});if(typeof toast==='function')toast('Previewing on this device (CSS/banner). Not published yet.');};
-  const pubBtn=txt('button','Publish to everyone',{className:'btn small primary'});
-  pubBtn.onclick=async()=>{
-    const hasJs=!!(store.js||'').trim();
-    const warn=hasJs?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
-    if(!window.confirm('Publish this change to ALL users now?'+warn))return;
-    pubBtn.disabled=true;pubBtn.textContent='Publishing…';
-    const ok=await _khGlobalEditPublish({css:store.css,banner:store.banner,js:store.js,note:(descIn.value||'').slice(0,120)});
-    pubBtn.disabled=false;pubBtn.textContent='Publish to everyone';
-    if(ok){if(typeof toast==='function')toast('Published to everyone.');ov.remove();}
-    else if(typeof toast==='function')toast('Publish failed — check your admin sign-in / connection.');
-  };
-  const clearBtn=txt('button','Remove global edit',{className:'btn small danger'});
-  clearBtn.onclick=async()=>{if(!window.confirm('Remove the global edit for everyone?'))return;const ok=await _khGlobalEditClear();if(typeof toast==='function')toast(ok?'Global edit removed.':'Failed — check connection.');if(ok)ov.remove();};
-  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=()=>ov.remove();
-  actRow.append(previewBtn,pubBtn,clearBtn,closeBtn);card.appendChild(actRow);
+  /* Shared publish flow: verify → auto-polish JS → confirm → publish → history. */
+  async function _doPublish(payload){
+    const p={css:String(payload.css||''),banner:String(payload.banner||''),js:String(payload.js||''),note:String(payload.note||'').slice(0,120)};
+    statusEl.textContent='Verifying…';
+    let v=_khVerifySiteEdit(p);
+    if(p.js&&!v.ok){
+      const r=await _khPolishSiteEditJs(p.js,function(t){statusEl.textContent=t;});
+      p.js=r.js;v=r.verify;store.js=p.js;if(mode==='js')box.value=p.js;
+    }
+    _lastV=v;_renderReport(v);pubBtn.disabled=!v.ok;
+    if(!v.ok){statusEl.textContent='';if(typeof toast==='function')toast('Still has issues that could break the site — fix the red items first.',5000);return false;}
+    const jtxt=p.js?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
+    const wtxt=v.warnings.length?('\n\nWarnings:\n• '+v.warnings.join('\n• ')):'';
+    if(!window.confirm('Publish this to ALL users now?'+jtxt+wtxt)){statusEl.textContent='';return false;}
+    statusEl.textContent='Publishing…';
+    const ok=await _khGlobalEditPublish(p);
+    if(ok){_khSiteEditHistoryAdd(p);statusEl.textContent='';if(typeof toast==='function')toast('Published to everyone.',4000);ov.remove();return true;}
+    statusEl.textContent='';if(typeof toast==='function')toast('Publish failed — check your admin sign-in / connection.',5000);return false;
+  }
 
-  ov.appendChild(card);ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
+  /* Tool buttons */
+  const toolRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
+  const verifyBtn=txt('button','Verify & polish',{className:'btn small'});
+  verifyBtn.onclick=async function(){
+    let v=_verify();
+    if(mode==='js'&&store.js&&!v.ok){
+      verifyBtn.disabled=true;
+      const r=await _khPolishSiteEditJs(store.js,function(t){statusEl.textContent=t;});
+      store.js=r.js;box.value=r.js;v=r.verify;_lastV=v;_renderReport(v);pubBtn.disabled=!v.ok;
+      statusEl.textContent=v.ok?'Polished — now Kindle-safe.':'Couldn\'t fully auto-fix — see the red items.';
+      verifyBtn.disabled=false;
+    } else { statusEl.textContent=v.ok?'Looks good.':'See the items above.'; }
+  };
+  const previewBtn=txt('button','Preview here',{className:'btn small'});
+  previewBtn.onclick=function(){_khApplyGlobalEdit({css:store.css,banner:store.banner,js:'',ts:'preview'});if(typeof toast==='function')toast('Previewing CSS + banner on THIS device only. Not published.',3500);};
+  const testJsBtn=txt('button','Test JS on my device',{className:'btn small'});
+  testJsBtn.onclick=function(){
+    if(!(store.js||'').trim()){if(typeof toast==='function')toast('No JavaScript to test.');return;}
+    const v=_verify();if(!v.ok){if(typeof toast==='function')toast('Fix the red items first (Verify & polish).',4000);return;}
+    try{(0,eval)(String(store.js));statusEl.textContent='JS ran on this device with no error.';if(typeof toast==='function')toast('Ran cleanly on this device.',3000);}
+    catch(e){statusEl.textContent='JS threw on this device: '+((e&&e.message)||e);if(typeof toast==='function')toast('It threw: '+((e&&e.message)||e),6000);}
+  };
+  toolRow.append(verifyBtn,previewBtn,testJsBtn);editWrap.appendChild(toolRow);
+
+  /* Publish / remove */
+  const actRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
+  const pubBtn=txt('button','Publish to everyone',{className:'btn small primary'});
+  pubBtn.onclick=function(){_doPublish({css:store.css,banner:store.banner,js:store.js,note:(descIn.value||'').slice(0,120)});};
+  const clearBtn=txt('button','Remove live edit',{className:'btn small danger'});
+  clearBtn.onclick=async function(){if(!window.confirm('Remove the live edit for everyone?'))return;const ok=await _khGlobalEditClear();if(typeof toast==='function')toast(ok?'Live edit removed for everyone.':'Failed — check connection.');if(ok)ov.remove();};
+  const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=function(){ov.remove();};
+  actRow.append(pubBtn,clearBtn,closeBtn);editWrap.appendChild(actRow);
+
+  /* ── SAVED tab ── */
+  function _renderSaved(){
+    savedWrap.innerHTML='';
+    const arr=Array.isArray(S.siteEdits)?S.siteEdits:[];
+    const live=_khGlobalEditGet();
+    if(live&&(live.css||live.js||live.banner)){
+      savedWrap.appendChild(txt('div','● A live edit is currently published'+(live.note?(' — "'+live.note+'"'):''),{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700',marginBottom:'8px'}}));
+    }
+    if(!arr.length){savedWrap.appendChild(txt('div','No saved edits yet. When you publish, the edit is saved here so you can view, re-publish or revert to it later.',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 0'}}));return;}
+    arr.forEach(function(h){
+      const c=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'10px',marginBottom:'8px'}});
+      const tiers=[];if(h.css)tiers.push('CSS');if(h.banner)tiers.push('Banner');if(h.js)tiers.push('JS');
+      c.appendChild(txt('div',h.note||'(no description)',{style:{fontWeight:'700',fontSize:'12px'}}));
+      c.appendChild(txt('div',(tiers.join(' · ')||'empty')+' · '+new Date(h.ts).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'6px'}}));
+      const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
+      const viewB=txt('button','View / edit',{className:'btn small'});
+      viewB.onclick=function(){store.css=h.css||'';store.banner=h.banner||'';store.js=h.js||'';descIn.value=h.note||'';tab='edit';_showTab();_syncBox();_verify();};
+      const repubB=txt('button','Re-publish',{className:'btn small primary'});
+      repubB.onclick=function(){_doPublish({css:h.css,banner:h.banner,js:h.js,note:h.note});};
+      row.append(viewB,repubB);c.appendChild(row);savedWrap.appendChild(c);
+    });
+  }
+  function _showTab(){
+    editWrap.style.display=tab==='edit'?'block':'none';
+    savedWrap.style.display=tab==='saved'?'block':'none';
+    Object.keys(tabBtns).forEach(function(x){tabBtns[x].classList.toggle('primary',x===tab);});
+    if(tab==='saved')_renderSaved();
+  }
+
+  _syncBox();_verify();
+  ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
   (document.getElementById('rotateRoot')||document.body).appendChild(ov);
 }
 window._khOpenSiteEditor=_khOpenSiteEditor;
@@ -35305,8 +35483,30 @@ chat:()=>{
   const mainPanel=el('div',{style:{flex:'1',display:'flex',flexDirection:'column',overflow:'hidden',minWidth:'0'}});
   const chatPanel=el('div',{id:'chatPanel',style:{flex:'1',display:'flex',flexDirection:'column',overflow:'hidden',minHeight:'0'}});
 
+  /* Admin-only Website Editor entry — lives here in the Assistant tab (not the
+     admin panel). Shown only to a resolved admin; if the tier resolves after
+     the view was built, a kh-tier-changed listener mounts it in. */
+  function _mountWebsiteEditorCard(){
+    if(window._isAdminCached!==true)return;
+    if(document.getElementById('kh-website-editor-card'))return;
+    const weCard=el('div',{id:'kh-website-editor-card',style:{margin:'8px',padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',background:'var(--highlight)',flexShrink:'0'}});
+    weCard.appendChild(txt('div','Website Editor',{style:{fontWeight:'800',fontSize:'12px',marginBottom:'2px'}}));
+    const _le=(typeof _khGlobalEditGet==='function')?_khGlobalEditGet():null;
+    weCard.appendChild(txt('div',(_le&&(_le.css||_le.js||_le.banner))?('A live edit is published'+(_le.note?(' — "'+_le.note+'"'):'')+'. Edit or manage it here.'):'Edit the live site for everyone — CSS, a banner, or advanced JS, with AI help. Verified + auto-polished so you can\'t break it.',{style:{fontSize:'10.5px',color:'var(--muted)',lineHeight:'1.45',marginBottom:'6px'}}));
+    const weBtn=txt('button','Open Website Editor',{className:'btn small primary'});
+    weBtn.onclick=function(){try{_khOpenSiteEditor();}catch(e){if(typeof toast==='function')toast('Editor error: '+((e&&e.message)||e));}};
+    weCard.appendChild(weBtn);
+    chatPanel.insertBefore(weCard,chatPanel.firstChild);
+  }
   const log=el('div',{id:'chatLog',className:'chat-log',style:{flex:'1',minHeight:'0'}});
   chatPanel.appendChild(log);
+  try{_mountWebsiteEditorCard();}catch(_){}
+  /* If admin wasn't resolved yet at build time, mount when the tier resolves. */
+  if(window._isAdminCached!==true){
+    var _weTierFn=function(){try{if(document.getElementById('view-chat')&&window._isAdminCached===true)_mountWebsiteEditorCard();}catch(_){}if(!document.getElementById('view-chat'))window.removeEventListener('kh-tier-changed',_weTierFn);};
+    try{window.addEventListener('kh-tier-changed',_weTierFn);}catch(_){}
+    try{if(typeof _checkAdmin==='function')_checkAdmin().then(function(){try{if(document.getElementById('view-chat'))_mountWebsiteEditorCard();}catch(_){}});}catch(_){}
+  }
 
   const inp=el('div',{style:{display:'flex',gap:'5px',padding:'7px 8px',borderTop:'var(--thin)',alignItems:'center',flexShrink:'0'}});
   const histBtn=txt('button','Menu',{id:'histToggleBtn'});
@@ -42403,18 +42603,8 @@ feedback:()=>{
     function buildLocalInsightsCard(){
       const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginBottom:'12px',boxShadow:'var(--shadow)'}});
       c.appendChild(txt('div','LOCAL INSIGHTS · NO BANDWIDTH',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'10px'}}));
-      /* Live Site Editor — change the site for every user from any device (incl. Kindle). */
-      const _seRow=el('div',{style:{marginBottom:'12px',paddingBottom:'12px',borderBottom:'var(--thin)'}});
-      _seRow.appendChild(txt('div','LIVE SITE EDITOR',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'0.7px',color:'var(--muted)',marginBottom:'4px'}}));
-      _seRow.appendChild(txt('div','Edit the live site for everyone — CSS, a banner, or advanced JS — with AI help. No laptop, no redeploy.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'6px'}}));
-      const _seBtn=txt('button','Open Site Editor',{className:'btn small primary'});
-      _seBtn.onclick=()=>{try{_khOpenSiteEditor();}catch(e){if(typeof toast==='function')toast('Editor error: '+((e&&e.message)||e));}};
-      _seRow.appendChild(_seBtn);
-      const _curEdit=(typeof _khGlobalEditGet==='function')?_khGlobalEditGet():null;
-      if(_curEdit&&(_curEdit.css||_curEdit.js||_curEdit.banner)){
-        _seRow.appendChild(txt('div','● A global edit is currently live'+(_curEdit.note?(' — "'+_curEdit.note+'"'):''),{style:{fontSize:'10px',color:'var(--accent)',marginTop:'6px',fontWeight:'700'}}));
-      }
-      c.appendChild(_seRow);
+      /* (The Website Editor moved OUT of the admin panel — it now lives in the
+         Assistant tab, per the admin's request.) */
       /* Device storage breakdown */
       let total=0;const sizes=[];
       try{
