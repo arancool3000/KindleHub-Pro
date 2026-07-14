@@ -244,22 +244,36 @@ main{display:block;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;backg
    cross-axis margin is absorbed by alignment. Applies ONLY on no-gap engines, so
    modern screens keep real gap and never double-space. Attribute selector covers
    the ~283 inline `gap:` uses; the class rules tune the common containers. */
-/* margin-top is split top+bottom (not top-only): a top-only margin makes a
-   non-first child's MARGIN BOX taller than the first child's, and in a
-   single-line row (the common case — most rows never wrap) align-items:center
-   centers each item's margin box independently, so the first child (no extra
-   margin) sits centered a few px LOWER while children 2+ (taller margin box,
-   already "pre-centered" by their own margin) sit a few px HIGHER — same
-   height, different vertical position. On e-ink's hard pixel edges that reads
-   as "the first button/option is bigger than the rest" — real-device-only,
-   since this whole branch only exists on engines that fail the flex-gap probe
-   (never headless Chromium, which always supports gap). Symmetric top+bottom
-   keeps each child vertically self-centered so first vs. rest align exactly,
-   while the wrapped-line spacing total is unchanged (top+bottom still sums
-   to the original value). */
-html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px;margin-top:3px;margin-bottom:3px}
-html.kh-no-flexgap .card-row > * + *{margin-left:8px;margin-top:3px;margin-bottom:3px}
-html.kh-no-flexgap .header-controls > * + *{margin-left:5px;margin-top:0}
+/* THE FIRST-CHILD-OUTLIER FIX. The earlier approach put the gap margin on the
+   SECOND-onward children only (`* + *`). That works for the MAIN axis, but the
+   same rule also set a CROSS-axis margin (top+bottom on a row) — and under the
+   default `align-items:stretch`, a cross-axis margin SHRINKS a flex child's
+   border box. So children 2+ ended up ~6px shorter (rows) / narrower (columns)
+   while the first child — with no margin — kept full size. Measured on a forced
+   no-flexgap engine: an inline `gap:` row rendered heights [40,34,34] and the
+   first child sat 3px higher. That IS the "first button/option/panel is taller
+   and a bit higher than the rest" report.
+   Fix: put the CROSS-axis margin on EVERY child (so all shrink equally = no
+   outlier), and the MAIN-axis gap only BETWEEN children (`* + *`, so there's no
+   outer offset). Rows are the default; columns swap the axes (handled below).
+   Verified real-device-only (headless Chromium always has real gap). */
+/* Rows (default direction): uniform vertical margin on all → equal height; the
+   horizontal gap sits between children only. */
+html.kh-no-flexgap [style*="gap:"] > *{margin-top:3px;margin-bottom:3px}
+html.kh-no-flexgap [style*="gap:"] > * + *{margin-left:6px}
+html.kh-no-flexgap .card-row > *{margin-top:3px;margin-bottom:3px}
+html.kh-no-flexgap .card-row > * + *{margin-left:8px}
+/* Columns swap the axes: a horizontal margin would shrink stretched children
+   (first child wider), so give column children NO horizontal margin and put the
+   vertical gap only BETWEEN them. Matches inline flex-direction:column with
+   either colon spacing. Declared AFTER the row rules so it wins on ties. */
+html.kh-no-flexgap [style*="direction:column"] > *,
+html.kh-no-flexgap [style*="direction: column"] > *{margin-left:0;margin-right:0;margin-top:0;margin-bottom:0}
+html.kh-no-flexgap [style*="direction:column"] > * + *,
+html.kh-no-flexgap [style*="direction: column"] > * + *{margin-top:6px}
+/* Header controls: horizontal only, no vertical margin (fixed-height row). */
+html.kh-no-flexgap .header-controls > *{margin-top:0;margin-bottom:0}
+html.kh-no-flexgap .header-controls > * + *{margin-left:5px}
 html.kh-no-flexgap nav .tab + .tab{margin-left:2px}
 /* ── CSS Grid fallback (old Kindle Silk) ── Only the game boards rely on
    Grid for their columns; when the boot probe flags html.kh-no-grid, lay the
