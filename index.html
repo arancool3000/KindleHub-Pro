@@ -1865,8 +1865,17 @@ const _PERIODIC_SYNC_MS=60000;  /* background pull every 60s (was 30s) — chat 
    note) no longer re-hashes megabytes of side-car data on every sync tick —
    the main "gets slower the more data you have" cost. */
 let _fpS=null,_fpLs=null;
-function _invalidateFp(){_fpS=null;_fpLs=null;}      /* S or LS changed — full */
+var _fpLsKeys={};                                    /* per-LS-key hash cache: key -> "len:hash" */
+function _invalidateFp(){_fpS=null;_fpLs=null;_fpLsKeys={};}   /* full — S and ALL LS (bulk/unknown change) */
 function _invalidateFpState(){_fpS=null;}            /* a plain save: only S changed, keep the cached LS hash */
+/* ONE side-car localStorage blob changed: drop just that key's cached hash (and
+   the combined LS cache), so the next sync fingerprint re-hashes ONLY that blob
+   instead of every backed-up blob — turning the "re-hash all LS on any edit" cost
+   (the LS-heavy Sheets/Slides "slower the more data you have" case) into O(the one
+   changed blob). Deliberately does NOT clear _fpS: a side-car write never mutates
+   the in-memory S, so the old code's full invalidate was needlessly re-hashing S
+   too on every feature-blob write. */
+function _invalidateFpKey(k){ if(k)delete _fpLsKeys[k]; _fpLs=null; }
 function _fpStatePart(){
   if(_fpS!==null)return _fpS;
   try{
@@ -1878,18 +1887,32 @@ function _fpStatePart(){
 }
 function _fpLsPart(){
   if(_fpLs!==null)return _fpLs;
-  let lh=0,ll=0;
+  let totalLen=0,combo=0;
   try{
     const ls=(typeof _gatherLocalStorage==='function')?_gatherLocalStorage():null;
     if(ls){
-      const ks=Object.keys(ls).sort();
+      const ks=Object.keys(ls).sort();const seen={};
       for(let i=0;i<ks.length;i++){
-        const v=String(ls[ks[i]]||'');ll+=v.length;
-        for(let j=0;j<v.length;j++)lh=(lh*31+v.charCodeAt(j))|0;
+        const k=ks[i];seen[k]=1;
+        /* Reuse the cached per-blob hash unless this blob was invalidated by a
+           write; only the changed blob pays the O(bytes) char hash. */
+        let pk=_fpLsKeys[k];
+        if(pk===undefined){
+          const v=String(ls[k]||'');let h=0;
+          for(let j=0;j<v.length;j++)h=(h*31+v.charCodeAt(j))|0;
+          pk=v.length+':'+(h>>>0).toString(36);_fpLsKeys[k]=pk;
+        }
+        totalLen+=(parseInt(pk,10)||0);
+        /* Fold the per-blob hash (not its bytes) into the combined fingerprint —
+           O(#keys), not O(#bytes). Changes iff any blob's hash changes. */
+        const s=k+'\x01'+pk;for(let j=0;j<s.length;j++)combo=(combo*31+s.charCodeAt(j))|0;
       }
+      /* Drop cache entries for blobs that no longer exist (deleted keys). */
+      const ck=Object.keys(_fpLsKeys);
+      if(ck.length>ks.length)for(let c=0;c<ck.length;c++)if(!seen[ck[c]])delete _fpLsKeys[ck[c]];
     }
   }catch(_){}
-  _fpLs=ll+':'+(lh>>>0).toString(36);
+  _fpLs=totalLen+':'+(combo>>>0).toString(36);
   return _fpLs;
 }
 function _stateFingerprint(){
@@ -1951,8 +1974,10 @@ function scheduleCloudSync(force=false){
        so a write must NOT schedule a cloud push or invalidate the fingerprint. */
     if(k==='kh_boot'||/^kh_mc_/.test(k))return;
     if(!(/^kh_/i.test(k)||/^kindlehub_/i.test(k)))return;
-    /* A per-feature blob changed → the synced fingerprint is now stale. */
-    if(typeof _invalidateFp==='function')_invalidateFp();
+    /* A per-feature blob changed → invalidate ONLY that blob's cached hash (and
+       the combined LS fingerprint), not S and not every other blob. */
+    if(typeof _invalidateFpKey==='function')_invalidateFpKey(k);
+    else if(typeof _invalidateFp==='function')_invalidateFp();
     _syncing=true;
     try{if(typeof scheduleCloudSync==='function')scheduleCloudSync(false);}
     catch(_){}
