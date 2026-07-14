@@ -1228,7 +1228,10 @@ body.launcher-ui .view{padding-bottom:80px;}
     var body=document.body,html=document.documentElement;
     if(hints.u==='simple')body.classList.add('simple-ui');
     else if(hints.u==='launcher')body.classList.add('launcher-ui');
-    if(hints.sm)body.classList.add('simple-mode');
+    /* Simple Mode is now a PURE SPEED switch — it applies ONLY the kh-lite perf
+       layer below (via hints.sm), never the old B&W "simple-mode" skin, so the
+       user's theme/look is unchanged. (The skin lives on as the separate "Retro"
+       UI mode.) */
     if(hints.t==='dark'){body.classList.add('dark');body.setAttribute('data-theme','dark');html.setAttribute('data-theme','dark');html.style.colorScheme='dark';}
     else if(hints.t==='sepia'){body.classList.add('sepia');body.setAttribute('data-theme','sepia');html.setAttribute('data-theme','sepia');}
     /* ── LITE MODE (perf) ── apply BEFORE first paint so a low-mem device
@@ -1841,7 +1844,7 @@ let _syncTimer=null;
 let _periodicTimer=null;
 let _stateDirty=false;          /* true while local state differs from last cloud sync */
 let _lastSyncedHash='';         /* fingerprint of last successfully synced state */
-const _CLOUD_DEBOUNCE_MS=20000; /* 20s after the LAST edit before upload — coalesces bursts of edits into one upload (was 10s; doubling halves active-editing egress) */
+const _CLOUD_DEBOUNCE_MS=10000; /* 10s after the LAST edit before upload — the user wants changes to reach the cloud fast; a flush-on-background (see visibilitychange) also pushes pending edits the moment the app is closed/backgrounded, so nothing is stranded locally for days */
 const _PERIODIC_SYNC_MS=60000;  /* background pull every 60s (was 30s) — chat has its own realtime socket, so 60s cross-device latency is invisible and idle egress halves */
 
 /* Quick non-cryptographic fingerprint so we can tell "did anything change?"
@@ -2813,7 +2816,17 @@ function _hasOpenOverlay(){
    Also flush any queued offline edits the moment we come back online. */
 if(typeof window!=='undefined'){
   document.addEventListener('visibilitychange',()=>{
-    if(!document.hidden&&S.authToken&&S.syncEnabled&&navigator.onLine)_maybePullFromCloud();
+    if(document.hidden){
+      /* FLUSH pending edits the instant the app is backgrounded/closed — the 10s
+         debounce may not have fired yet and beforeunload is unreliable on Kindle
+         Silk. This is the core fix for "I change things and they never reach the
+         cloud / I redo them for days". force=true pushes even while hidden. */
+      if(S.authToken&&S.syncEnabled&&_stateDirty&&navigator.onLine!==false){try{scheduleCloudSync(true);}catch(_){}}
+    } else if(S.authToken&&S.syncEnabled&&navigator.onLine)_maybePullFromCloud();
+  });
+  /* pagehide is the most reliable "leaving" signal on mobile/e-ink WebViews. */
+  window.addEventListener('pagehide',()=>{
+    if(S.authToken&&S.syncEnabled&&_stateDirty&&navigator.onLine!==false){try{scheduleCloudSync(true);}catch(_){}}
   });
   window.addEventListener('focus',()=>{if(S.authToken&&S.syncEnabled&&navigator.onLine)_maybePullFromCloud();});
   /* Reconnect: drain whatever sync queue built up while offline. */
@@ -4070,13 +4083,13 @@ function notifyMsg(name,text,ms,msgId,groupCode){
     }catch(_){}
   };
   function _badge(){if(!badge)return;if(_unread>0){badge.style.display='flex';badge.textContent=_unread>9?'9+':String(_unread);}else{badge.style.display='none';}}
-  /* The thin bottom handle is the ONLY visible way to open notifications, so it
-     must stay reachable. It used to hide itself after the first open (teach-then-
-     hide) — which meant that once you closed the tray it never came back until a
-     brand-new notification arrived, i.e. no way to reopen it. Now it stays
-     visible; the badge conveys unread count. (Was the "it goes and does not come
-     back" bug.) */
-  function _showHandle(){if(handle)handle.style.display='flex';}
+  /* The thin bottom handle shows ONLY when there are notifications — an empty
+     tray hides the handle so it never covers the footer with nothing to show.
+     It reappears the moment a new notification arrives (_khPushNotif calls this),
+     and stays while any notification is in the list; clearing them hides it
+     again. (Earlier it was pinned always-visible, which covered the footer even
+     with zero notifications — the user's complaint.) */
+  function _showHandle(){if(!handle)return;var has=!!(window._khNotifs&&window._khNotifs.length);handle.style.display=has?'flex':'none';}
   function _list(){
     if(!listEl)return;listEl.innerHTML='';
     var a=window._khNotifs||[];
@@ -5359,8 +5372,7 @@ function launchKindleDesktop(){
   function setSimpleMode(on){
     on=!!on;
     S.simpleMode=on;
-    document.body.classList.toggle('simple-mode',on);
-    /* Simple Mode carries the lite perf layer with it (one button does both). */
+    /* Simple Mode = the kh-lite perf layer ONLY (no B&W skin) — keep the look. */
     try{if(typeof applyLiteMode==='function')applyLiteMode();}catch(_){}
     try{
       if(on){
@@ -5380,8 +5392,8 @@ function launchKindleDesktop(){
   const ccTileSpecs=[
     {kind:'toggle',label:'Simple',svg:SVG_SIMPLE,
       get:()=>!!S.simpleMode,
-      /* Simple Mode = the B&W e-ink skin + the full speed/lite layer in one. */
-      set:on=>{setSimpleMode(on);toast(on?'Simple Mode on — B&W + fastest rendering':'Simple Mode off',1700);}},
+      /* Simple Mode = pure SPEED (kh-lite perf layer) — keeps the current look. */
+      set:on=>{setSimpleMode(on);toast(on?'Simple Mode on — faster rendering (look unchanged)':'Simple Mode off',1700);}},
     {kind:'toggle',label:'Dark Mode',svg:SVG_DARK,
       get:()=>!!osState.darkMode,
       set:on=>{osState.darkMode=on;document.body.classList.toggle('dark',on);persistOS();}},
@@ -7055,16 +7067,16 @@ try{
 applyLiteMode();
 /* Simple Mode (e-ink skin) is independent of the UI mode above — re-assert it
    on full load in case the pre-paint boot script was skipped. The Control
-   Center "Simple" tile is what toggles S.simpleMode at runtime. */
-if(S.simpleMode)document.body.classList.add('simple-mode');
+   Center "Simple" tile is what toggles S.simpleMode at runtime.
+   Simple Mode no longer applies the B&W "simple-mode" skin — it is now a pure
+   speed switch (the kh-lite perf layer, applied via applyLiteMode above). */
 /* Global Simple Mode setter — callable from any settings page. Sets state +
    body class + persists; if the KindleOS launcher is live it delegates to its
    own setSimpleMode (window._kdSetSimpleMode) so the wallpaper flattens too. */
 window.khSetSimpleMode=function(on){
   on=!!on;
   S.simpleMode=on;
-  document.body.classList.toggle('simple-mode',on);
-  /* Apply the bundled lite perf layer with it. */
+  /* Simple Mode = the kh-lite perf layer ONLY (no B&W skin) — keep the look. */
   try{if(typeof applyLiteMode==='function')applyLiteMode();}catch(_){}
   try{if(typeof save==='function')save();}catch(e){}
   /* If the launcher is open right now, also flatten/restore its wallpaper live. */
@@ -11711,6 +11723,82 @@ function _parseItemIds(text){
       setTimeout(function(){if(b.parentNode)b.remove();},13000);
     }catch(_){}
   };
+
+  /* ── Auto-reported errors on their OWN lean page ──────────────────────────
+     Opening the admin Feedback tab used to auto-fetch up to 50 cloud errors and
+     render them as heavy cards → it crashed low-memory Kindles. The error list
+     now lives on this separate overlay: session errors show instantly (no
+     network); cloud errors are OPT-IN (a button, capped, timeout-guarded). CLEAR
+     stamps a PERSISTED watermark so everything present at clear time stays hidden
+     even if the backend DELETE is refused — fixing "they keep coming back after I
+     delete them". */
+  function _khErrClearedAt(){try{return localStorage.getItem('kh_err_cleared_at')||'';}catch(_){return '';}}
+  function _khErrAfterCut(d){var cut=_khErrClearedAt();if(!cut)return true;try{return String(d||'')>cut;}catch(_){return true;}}
+  window._khErrAfterCut=_khErrAfterCut;
+  function _khOpenErrorLog(){
+    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',width:'100%',height:'100%',background:'var(--bg)',color:'var(--fg)',zIndex:'600060',display:'flex',flexDirection:'column',boxSizing:'border-box',overflow:'hidden'}});
+    var bar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'10px 12px',borderBottom:'var(--thin)',flexShrink:'0'}});
+    var back=txt('button','← Back',{className:'btn small'});back.onclick=function(){ov.remove();};
+    bar.appendChild(back);
+    bar.appendChild(txt('div','Error Log',{style:{fontWeight:'800',fontSize:'14px',flex:'1'}}));
+    var clr=txt('button','Clear all',{className:'btn small danger'});bar.appendChild(clr);
+    ov.appendChild(bar);
+    var body=el('div',{style:{flex:'1',overflowY:'auto',padding:'12px',minHeight:'0'}});
+    ov.appendChild(body);
+    var isAdm=window._isAdminCached===true;
+    var cloudLoaded=null;
+    function _copy(t){try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){toast('Copied');});}else{var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast('Copied');}}catch(_){toast('Copy failed');}}
+    function lean(e){
+      var full=e.fullText||e.text||e.msg||'';
+      var msg=(e.msg||full||'').toString();
+      var c=el('div',{style:{background:'var(--highlight)',borderRadius:'8px',padding:'9px 10px',marginBottom:'8px',borderLeft:'3px solid var(--danger)'}});
+      c.appendChild(txt('div',msg.slice(0,220),{style:{fontSize:'11px',lineHeight:'1.4',whiteSpace:'pre-wrap',wordBreak:'break-word'}}));
+      var meta=[];if(e.where)meta.push(e.where+(e.line&&e.line!=='?'?(':'+e.line):''));if(e.date)meta.push(new Date(e.date).toLocaleString());
+      if(meta.length)c.appendChild(txt('div',meta.join(' · '),{style:{fontSize:'9.5px',color:'var(--muted)',marginTop:'3px'}}));
+      var row=el('div',{style:{display:'flex',gap:'6px',marginTop:'6px',flexWrap:'wrap'}});
+      var cp=txt('button','Copy',{className:'btn small'});cp.onclick=function(){_copy(full);};row.appendChild(cp);
+      if(typeof window._openSelfFixModal==='function'){var fx=txt('button','AI fix',{className:'btn small'});fx.onclick=function(){window._openSelfFixModal({id:e.id,msg:msg,line:e.line||'',stack:e.stack||'',fullText:full});};row.appendChild(fx);}
+      c.appendChild(row);return c;
+    }
+    function _loadCloud(){
+      if(typeof _sbActive!=='function'||!_sbActive()){cloudLoaded=[];return Promise.resolve();}
+      var pr=_sbSelect('kh_errors','select=id,text,date&order=date.desc&limit=20');
+      var to=new Promise(function(res){setTimeout(function(){res(null);},9000);});
+      return Promise.race([pr,to]).then(function(rows){
+        cloudLoaded=Array.isArray(rows)?rows.map(function(r){return {id:r.id,text:r.text,date:r.date};}).filter(function(e){return _khErrAfterCut(e.date);}):[];
+      });
+    }
+    function render(){
+      body.innerHTML='';
+      var sess=(window._khAutoErrors||[]).filter(function(e){return _khErrAfterCut(e.date);});
+      body.appendChild(txt('div','THIS SESSION ('+sess.length+')',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.6px',color:'var(--muted)',margin:'0 0 6px'}}));
+      if(!sess.length)body.appendChild(txt('div','No errors this session. ✓',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'10px'}}));
+      else sess.slice(-15).reverse().forEach(function(e){body.appendChild(lean(e));});
+      if(isAdm){
+        body.appendChild(txt('div','ALL DEVICES (CLOUD)',{style:{fontSize:'10px',fontWeight:'800',letterSpacing:'.6px',color:'var(--muted)',margin:'14px 0 6px'}}));
+        if(cloudLoaded===null){
+          var ld=txt('button','Load cloud errors',{className:'btn small'});
+          ld.onclick=function(){ld.disabled=true;ld.textContent='Loading…';_loadCloud().then(render).catch(function(){cloudLoaded=[];render();});};
+          body.appendChild(ld);
+          body.appendChild(txt('div','Off by default so this page opens instantly and never hangs on Wi‑Fi.',{style:{fontSize:'9.5px',color:'var(--muted)',marginTop:'4px'}}));
+        } else if(!cloudLoaded.length){
+          body.appendChild(txt('div','No cloud errors.',{style:{fontSize:'11px',color:'var(--muted)'}}));
+        } else cloudLoaded.slice(0,15).forEach(function(e){body.appendChild(lean(e));});
+      }
+    }
+    clr.onclick=async function(){
+      if(!(await kindleConfirm('Clear the error log? Everything shown here is hidden for good on this device (and deleted from the cloud if possible). New errors still appear.')))return;
+      clr.disabled=true;clr.textContent='Clearing…';
+      try{localStorage.setItem('kh_err_cleared_at',new Date().toISOString());}catch(_){}
+      try{if(window._khAutoErrors)window._khAutoErrors.length=0;}catch(_){}
+      try{localStorage.removeItem('kh_err_queue');}catch(_){}
+      if(isAdm&&typeof _sbActive==='function'&&_sbActive()){try{await _sbDelete('kh_errors','date=gte.2000-01-01');}catch(_){}}
+      cloudLoaded=[];clr.disabled=false;clr.textContent='Clear all';toast('Error log cleared.');render();
+    };
+    render();
+    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  }
+  window._khOpenErrorLog=_khOpenErrorLog;
 
   window.onerror=function(message,source,lineno,colno,error){
     reportError(message,source,lineno,colno,error,'error');
@@ -40531,15 +40619,15 @@ settings:()=>{
      and KindleOS panels), mirroring the Control Center "Simple" tile. ── */
   const smRow=el('div',{id:'simpleModeRow',style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'10px',padding:'11px 13px',background:'var(--card)',border:'var(--thin)',borderRadius:'10px',marginBottom:'14px',boxShadow:'var(--shadow)'}});
   const smInfo=el('div',{style:{minWidth:'0'}});
-  smInfo.appendChild(txt('div','Simple Mode',{style:{fontSize:'13px',fontWeight:'800'}}));
-  smInfo.appendChild(txt('div','One switch for the fastest, calmest e-ink experience: high-contrast B&W, greyscale icons, and ALL speed optimizations — no shadows, blur, animations or wallpaper. Best for older Kindles. (Lite mode is now built into this.)',{style:{fontSize:'10.5px',color:'var(--muted)',lineHeight:'1.45',marginTop:'2px'}}));
+  smInfo.appendChild(txt('div','Simple Mode (Faster)',{style:{fontSize:'13px',fontWeight:'800'}}));
+  smInfo.appendChild(txt('div','Pure SPEED — strips shadows, blur, animations and other repaint-heavy effects that lag on e-ink. It does NOT change how the app looks: your theme and colours stay exactly the same. Best for older Kindles. (Want a different look? Use the Retro UI mode.)',{style:{fontSize:'10.5px',color:'var(--muted)',lineHeight:'1.45',marginTop:'2px'}}));
   const smBtn=txt('button',S.simpleMode?'On':'Off',{className:'btn small'+(S.simpleMode?' primary':''),style:{flexShrink:'0',minWidth:'58px'}});
   smBtn.onclick=()=>{
     const on=!S.simpleMode;
     if(typeof window.khSetSimpleMode==='function')window.khSetSimpleMode(on);
-    else{S.simpleMode=on;document.body.classList.toggle('simple-mode',on);save();}
+    else{S.simpleMode=on;try{if(typeof applyLiteMode==='function')applyLiteMode();}catch(_){}save();}
     smBtn.textContent=on?'On':'Off';smBtn.classList.toggle('primary',on);
-    toast(on?'Simple Mode on — e-ink optimised':'Simple Mode off',1600);
+    toast(on?'Simple Mode on — faster (look unchanged)':'Simple Mode off',1600);
   };
   smRow.appendChild(smInfo);smRow.appendChild(smBtn);
   v.appendChild(smRow);
@@ -43252,8 +43340,10 @@ feedback:()=>{
          reference them breaks — they're just no longer rendered in the panel.
          Cloudflare gateways + the capacity guard live on in buildLocalInsightsCard. */
       errPanel.appendChild(buildLocalFixesCard());
-      if(_isAdm)errPanel.appendChild(await buildVisitsCard());
-      if(_isAdm)errPanel.appendChild(buildLocalInsightsCard());
+      /* Defensive: buildVisitsCard makes network calls; a slow/failed fetch on
+         Kindle Wi‑Fi must not throw out of renderErrPanel and blank the panel. */
+      if(_isAdm){try{errPanel.appendChild(await buildVisitsCard());}catch(_){}}
+      if(_isAdm){try{errPanel.appendChild(buildLocalInsightsCard());}catch(_){}}
       const errHdr=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}});
       errHdr.appendChild(txt('h2','Auto-Reported Errors',{style:{margin:'0',color:'var(--danger)',flex:'1'}}));
       /* "Unhide all resolved" — undo for the dismissed list */
@@ -43264,6 +43354,23 @@ feedback:()=>{
         errHdr.appendChild(unhideBtn);
       }
       errPanel.appendChild(errHdr);
+      /* The error LIST moved to its OWN lean page (window._khOpenErrorLog).
+         Rendering it inline here auto-fetched up to 50 cloud errors and built
+         heavy per-error cards, which crashed low-memory Kindles when opening this
+         panel. Show a light summary + a button to the separate page, then STOP —
+         the old heavy rendering below is now unreachable. */
+      if(typeof window._khOpenErrorLog==='function'){
+        var _afterCut=function(e){return (typeof window._khErrAfterCut!=='function')||window._khErrAfterCut(e.date);};
+        var _sessN=(window._khAutoErrors||[]).filter(_afterCut).length;
+        var elCard=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',boxShadow:'var(--shadow)'}});
+        elCard.appendChild(txt('div',_sessN?(_sessN+' error'+(_sessN===1?'':'s')+' recorded this session'):'No errors recorded this session.',{style:{fontSize:'12px',marginBottom:'8px',fontWeight:'700'}}));
+        var openB=txt('button','Open Error Log →',{className:'btn small primary'});
+        openB.onclick=function(){window._khOpenErrorLog();};
+        elCard.appendChild(openB);
+        elCard.appendChild(txt('div','Errors open on their own page so this panel loads instantly and never crashes. Cloud errors are fetched only when you tap "Load cloud errors" there, and Clear hides them for good even if the backend delete is refused.',{style:{fontSize:'10px',color:'var(--muted)',marginTop:'8px',lineHeight:'1.45'}}));
+        errPanel.appendChild(elCard);
+        return;
+      }
       /* Session errors — filtered against the resolved set */
       const sessionErrs=(window._khAutoErrors||[]).filter(function(e){
         return !(_resolvedSet.has(e.id)||_resolvedSet.has(e.msg+'@'+e.line));
@@ -57954,7 +58061,13 @@ messages:()=>{
       const cleaned=S.msgGroups.filter(g=>g&&g.code&&!_tombs.has(g.code));
       if(cleaned.length!==S.msgGroups.length){S.msgGroups=cleaned;try{save();}catch(_){}}
     }
-    const userGroups=(S.msgGroups||[]).filter(g=>g.code!==KH_GLOBAL_GROUP_CODE&&!_tombs.has(g.code));
+    /* Hide INTERNAL plumbing rooms from the visible chat list — they are not
+       chats the user joined and made the list look flooded ("too many chat
+       groups!"): inbox rooms use the 800000###### code, game/party lobbies use
+       900000######. Real chats + DMs use other 12-digit codes, so this only
+       strips the machinery, never a real conversation. */
+    function _isPlumbingCode(c){c=String(c||'');return c.indexOf('800000')===0||c.indexOf('900000')===0;}
+    const userGroups=(S.msgGroups||[]).filter(g=>g&&g.code&&g.code!==KH_GLOBAL_GROUP_CODE&&!_tombs.has(g.code)&&!_isPlumbingCode(g.code));
     const groups=[globalEntry,...userGroups.slice().reverse()];
 
     groups.forEach(g=>{
