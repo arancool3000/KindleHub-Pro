@@ -1914,7 +1914,7 @@ function scheduleCloudSync(force=false){
        quota / triggering retries when the request will fail anyway.
        The _stateDirty flag stays true so the next online tick (or
        a manual Sync Now) will eventually push the queued edits. */
-    if(!navigator.onLine)return;
+    if(navigator.onLine===false)return;
     _doCloudSync(force);
   },force?0:_CLOUD_DEBOUNCE_MS);
 }
@@ -1965,7 +1965,7 @@ function scheduleCloudSync(force=false){
 })();
 async function _doCloudSync(force){
   if(!S.authToken||!S.syncEnabled)return;
-  if(!navigator.onLine)return;/* offline → no upload (saves quota & avoids errors) */
+  if(navigator.onLine===false)return;/* offline → no upload (saves quota & avoids errors) */
   /* ── EGRESS short-circuit ──
      If nothing that would be uploaded has changed since our last successful
      push (same fingerprint), skip the ENTIRE pull+push round-trip. Remote
@@ -1987,6 +1987,11 @@ async function _doCloudSync(force){
     /* Temporarily clear _stateDirty so _maybePullFromCloud doesn't
        early-out — we want the merge even though we have local edits. */
     const wasDirty=_stateDirty;_stateDirty=false;
+    /* Force this pre-push pull PAST the 25s bursty-event throttle: the push is a
+       one-way upload, so skipping the merge here (because a focus/visibility pull
+       happened to run in the last 25s) would clobber a concurrent edit made on
+       another device. The throttle still coalesces the standalone focus pulls. */
+    try{window._khLastPullAt=0;}catch(_){}
     await _maybePullFromCloud();
     /* Re-mark dirty if either we were dirty before, OR mergeCloudState
        (called inside pull) flagged anything via save(). */
@@ -2206,7 +2211,7 @@ function _khAddFriendPicker(onDone){
   card.appendChild(results);
   const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=()=>ov.remove();card.appendChild(closeBtn);
   ov.appendChild(card);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
   try{inp.focus();}catch(_){}
   let _t=null;
   inp.addEventListener('input',()=>{
@@ -2255,7 +2260,7 @@ function _khMessageUserPicker(onDone){
   card.appendChild(closeBtn);
   ov.appendChild(card);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
   try{inp.focus();}catch(_){}
   async function _request(u){
     try{
@@ -2481,7 +2486,7 @@ function _khOpenImageViewer(dataUrl){
     var cl=txt('button','Close',{className:'btn small'});cl.onclick=function(){ov.remove();};
     bar.appendChild(cl);ov.appendChild(im);ov.appendChild(bar);
     ov.onclick=function(e){if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }catch(e){}
 }
 window._khImgCode=_khImgCode;window._khImgParse=_khImgParse;window._khIsImgMsg=_khIsImgMsg;
@@ -2546,7 +2551,7 @@ async function _khAskAboutUser(question,opts){
   const out=el('div',{style:{fontSize:'13px',lineHeight:'1.6',whiteSpace:'pre-wrap',minHeight:'40px'}});
   out.textContent='Gathering data…'; card.appendChild(out);
   const cl=txt('button','Close',{className:'btn small'}); cl.onclick=()=>ov.remove(); card.appendChild(cl);
-  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; _overlayHost().appendChild(ov);
   try{
     const ctx=await _khGatherUserContext(question,opts.targetName);
     if(!ctx){ out.textContent='No user matched that question. Try including their exact username.'; return; }
@@ -2574,7 +2579,7 @@ function _khAskUserDialog(prefillName){
   ask.onclick=()=>{const q=(qIn.value||'').trim();if(!q){if(typeof toast==='function')toast('Type a question.');return;}ov.remove();_khAskAboutUser(q,{targetName:(nameIn.value||'').trim()});};
   cl.onclick=()=>ov.remove();
   row.append(ask,cl); card.appendChild(row);
-  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  ov.appendChild(card); ov.onclick=e=>{if(e.target===ov)ov.remove();}; _overlayHost().appendChild(ov);
   try{qIn.focus();}catch(_){}
 }
 window._khAskAboutUser=_khAskAboutUser;window._khAskUserDialog=_khAskUserDialog;window._khGatherUserContext=_khGatherUserContext;
@@ -2617,7 +2622,7 @@ function _startMessageNotifier(){
     /* Skip while user IS on the messages tab (their existing chat
        subscription handles those updates with its own notifyMsg call). */
     if(typeof currentView!=='undefined'&&currentView==='messages')return;
-    if(!navigator.onLine)return;/* offline — don't burn a failing fetch */
+    if(navigator.onLine===false)return;/* offline — don't burn a failing fetch */
     if(typeof _khStoreInstalled==='function'&&!_khStoreInstalled('messages'))return;/* Messages app removed → don't poll or notify (also saves requests) */
     if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park chat notifier polling during a CF limit */
     if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
@@ -2699,7 +2704,7 @@ function _startMessageNotifier(){
 let _lastPulledAt='';
 async function _maybePullFromCloud(){
   if(!S.authToken||!S.syncEnabled)return;
-  if(!navigator.onLine)return;/* offline → no point querying */
+  if(navigator.onLine===false)return;/* offline → no point querying */
   /* Throttle bursty focus/visibility/online events so we don't hammer the
      server (and burn egress) — at most one pull attempt per ~25s. */
   if(window._khLastPullAt&&Date.now()-window._khLastPullAt<25000)return;
@@ -2853,7 +2858,12 @@ if(typeof window!=='undefined'){
     if(e.key!=='kindlehub_v5')return;
     if(!e.newValue)return;
     try{
-      const other=JSON.parse(e.newValue);
+      /* A heavy account stores a COMPRESSED KHZ2:/KHZ1: blob (see _persistCompressed),
+         so a bare JSON.parse threw and the cross-tab merge silently never ran for
+         exactly the accounts it's meant to protect. Decode first (same path as boot). */
+      const raw=(typeof _khUnpackStored==='function')?_khUnpackStored(e.newValue):e.newValue;
+      if(raw==null)return;
+      const other=JSON.parse(raw);
       if(!other||typeof other!=='object')return;
       mergeCloudState(other,{skipSave:true,noLsBackup:true,preferLocal:true});
     }catch(_){}
@@ -2946,7 +2956,7 @@ function _isQuotaError(e){
    ages out. Deletions are detected centrally by diffing the id-lists against
    the previous snapshot on each save, so no per-delete-site wiring is needed.
    Re-adding an id clears its tombstone (a deletion you took back). */
-var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories'];
+var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories','publishedApps'];
 function _khItemKey(item){
   if(!item||typeof item!=='object')return null;
   var id=item.id||item.uid;
@@ -3183,6 +3193,11 @@ try{_applyClockZone();}catch(_){}
    rolling to tomorrow's UTC date and breaking the streak. Defaults to NOW() so
    it stays clock-offset aware. Pass a Date or ms timestamp to key another day. */
 function _localDayKey(t){var d=(t==null)?NOW():((t instanceof Date)?t:new Date(t));var y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate();return y+'-'+(m<10?'0':'')+m+'-'+(day<10?'0':'')+day;}
+/* The single place every modal/overlay must mount into: #rotateRoot when
+   landscape mode has rotated the UI, else <body>. Was hand-repeated ~64× — a
+   copy that's easy to forget on a new overlay, which then mounts on body and
+   sits sideways in landscape. One named helper makes the invariant obvious. */
+function _overlayHost(){return document.getElementById('rotateRoot')||document.body;}
 
 function isPro(){return true;}
 function showProModal(reason,onSuccess){if(onSuccess)onSuccess();}
@@ -3360,7 +3375,7 @@ function _khOpenLauncher(){
   const closeBtn=txt('button','Close',{className:'btn small'});closeBtn.onclick=function(){ov.remove();};
   box.appendChild(closeBtn);
   ov.appendChild(box);ov.onclick=function(e){if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
   try{inp.focus();}catch(_){}
 }
 window._khOpenLauncher=_khOpenLauncher;
@@ -4482,7 +4497,7 @@ function launchKindleDesktop(){
     list.style.cssText='max-height:54vh;overflow-y:auto;';
     box.appendChild(inp);box.appendChild(list);ov.appendChild(box);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     function render(){
       const q=inp.value.trim().toLowerCase();
       const apps=allApps().filter(a=>{const n=String(a.label||a.name||a.id||'').toLowerCase();return !q||n.indexOf(q)>=0;});
@@ -5502,7 +5517,7 @@ function launchKindleDesktop(){
     row.appendChild(cancel);row.appendChild(ok);
     box.appendChild(h);box.appendChild(ta);box.appendChild(row);
     ov.appendChild(box);
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     setTimeout(()=>ta.focus(),60);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   });
@@ -5957,7 +5972,7 @@ function launchKindleDesktop(){
     }
     card.appendChild(ttl);card.appendChild(hint);card.appendChild(ta);card.appendChild(btnRow);
     ov.appendChild(card);ov.onclick=function(ev){if(ev.target===ov)closeBtn.onclick();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   function renderInstalled(){
     stInstalledList.innerHTML='';
@@ -6027,7 +6042,7 @@ function launchKindleDesktop(){
           ov.remove();
           toast('"'+app.label+'" updated!');
         };
-        (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+        _overlayHost().appendChild(ov);
       };
       const shareBtn=document.createElement('button');shareBtn.textContent='Share';shareBtn.className='btn small';
       shareBtn.onclick=()=>_khAppShareDialog('export',app);
@@ -6369,7 +6384,7 @@ Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in
       document.head.appendChild(st);
     }
     ov.appendChild(swipeHint);
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
 
     /* Tag elements so selectors find them */
     if(typeof ccGrid!=='undefined')ccGrid.classList.add('kd-tour-cc-grid');
@@ -6553,7 +6568,7 @@ function kindlePrompt(message,defaultVal,cb){
   box.appendChild(lbl);box.appendChild(inp);box.appendChild(row);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)done(null);};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>{inp.focus();inp.select();},80);
+  _overlayHost().appendChild(ov);setTimeout(()=>{inp.focus();inp.select();},80);
 }
 function kindleConfirm(message,cb){
   if(typeof cb!=='function')return new Promise(res=>kindleConfirm(message,res));
@@ -6572,7 +6587,7 @@ function kindleConfirm(message,cb){
   ov.onclick=e=>{if(e.target===ov)_done(false);};
   row.appendChild(cancelB);row.appendChild(okB);
   box.appendChild(lbl);box.appendChild(row);
-  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
+  ov.appendChild(box);_overlayHost().appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
 }
 /* Global Kindle-safe alert(). A single OK button; resolves/each callback
    fires when dismissed. Title is optional. */
@@ -6589,7 +6604,7 @@ function kindleAlertGlobal(message,cb){
   okB.onclick=done;
   ov.onclick=e=>{if(e.target===ov)done();};
   row.appendChild(okB);box.appendChild(lbl);box.appendChild(row);
-  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
+  ov.appendChild(box);_overlayHost().appendChild(ov);document.addEventListener('keydown',_esc,true);setTimeout(()=>okB.focus(),80);
 }
 /* Override the native blocking dialogs so ANY stray call anywhere in the
    app (including ones we didn't hand-convert) routes through the e-ink-safe
@@ -8795,7 +8810,7 @@ function _khMaybeShowStoreNotice(){
     var open=txt('button','Open App Store',{className:'btn small primary'});open.onclick=function(){try{localStorage.setItem('kh_appstore_seen','1');}catch(_){}ov.remove();try{showView('appstore');}catch(_){}};
     row.append(later,open);box.appendChild(row);
     ov.appendChild(box);ov.onclick=function(e){if(e.target===ov){try{localStorage.setItem('kh_appstore_seen','1');}catch(_){}ov.remove();}};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }catch(_){}
 }
 /* Parse an approve/decline verdict from a model reply (JSON preferred). */
@@ -8924,7 +8939,7 @@ function _khOpenPublishedApp(app){
     bar.appendChild(back);
     bar.appendChild(txt('div',(typeof _censorText==='function'?_censorText(app.name):app.name)||'App',{style:{fontSize:'12px',fontWeight:'700',color:'var(--muted)',flex:'1',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
     ov.appendChild(bar);
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     var _safe=(typeof _khWrapAppSecure==='function')?_khWrapAppSecure(app.html):String(app.html);
     try{fr.srcdoc=_safe;}catch(_){try{var d=fr.contentWindow.document;d.open();d.write(_safe);d.close();}catch(__){}}
   }catch(_){}
@@ -9370,7 +9385,7 @@ function _khMaybeShowWarningModal(anns){
     };
     box.appendChild(ack);
     ov.appendChild(box);
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }catch(_){}
 }
 let _capState=null; /* {locked,until,message,at} | null = unknown */
@@ -10069,7 +10084,7 @@ async function _khOpenSiteEditor(){
 
   _syncBox();_verify();
   ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
 }
 window._khOpenSiteEditor=_khOpenSiteEditor;
 /* Keep the admin-only Website Editor entry card in sync with the CURRENT admin
@@ -10518,7 +10533,7 @@ async function _openAnnouncementComments(a,card){
     box.appendChild(close);
   }
   ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
 }
 
 /* ── Visit log (anonymous, once-per-device-per-day) ──────────────────
@@ -10798,7 +10813,7 @@ function _presenceIdentity(){
   return {user_id:dev,display_name:'Guest'};
 }
 async function _pingPresence(){
-  if(typeof _sbActive!=='function'||!_sbActive()||!navigator.onLine)return;
+  if(typeof _sbActive!=='function'||!_sbActive()||navigator.onLine===false)return;
   if(typeof _khCfBlocked==='function'&&_khCfBlocked(true))return;/* park the heartbeat write during a CF limit */
   try{
     const id=_presenceIdentity();
@@ -11004,6 +11019,18 @@ function _u8ToB64(u8){
   return btoa(s);
 }
 function _b64ToU8(b64){return Uint8Array.from(atob(b64),c=>c.charCodeAt(0));}
+/* Decode a stored kindlehub_v5 blob (KHZ2 dict+gzip / KHZ1 gzip / plain JSON) back
+   to its JSON string — the same logic the boot loader inlines, made reusable so
+   the cross-tab storage handler can decode a heavy account's compressed blob
+   instead of throwing on JSON.parse. Returns the JSON string, or null on failure. */
+function _khUnpackStored(r){
+  if(typeof r!=='string')return r;
+  try{
+    if(r.slice(0,5)==='KHZ2:'){var b2=_jsInflate(_b64ToU8(r.slice(5)));if(!b2)return null;return _decompStr(new TextDecoder().decode(b2));}
+    if(r.slice(0,5)==='KHZ1:'){var b1=_jsInflate(_b64ToU8(r.slice(5)));if(!b1)return null;return new TextDecoder().decode(b1);}
+  }catch(_){return null;}
+  return r;
+}
 
 /* ── Gzip helpers via the WHATWG CompressionStream API ──
    Native gzip is widely available now (Chrome 80+, Safari 16.4+, Firefox
@@ -11615,7 +11642,7 @@ function _parseItemIds(text){
         localStorage.setItem('kh_err_queue',JSON.stringify(trimmed));
       }catch(_){}
     }
-    if(!navigator.onLine){_enqueueLocalReport();return;}
+    if(navigator.onLine===false){_enqueueLocalReport();return;}
     /* Don't POST error reports while the backend is at its free-tier limit —
        that just adds to the flood we're being limited for (and the report would
        503 anyway). Stash locally; the drainer retries when the window clears. */
@@ -11663,7 +11690,7 @@ function _parseItemIds(text){
      previously and re-tries them. Called on every successful report
      upload, and once at boot when the page first comes online. */
   async function _khDrainErrorQueue(){
-    if(!navigator.onLine)return;
+    if(navigator.onLine===false)return;
     if(typeof _sbActive!=='function'||!_sbActive())return;
     let q;
     try{q=JSON.parse(localStorage.getItem('kh_err_queue')||'[]');}catch(_){return;}
@@ -11796,7 +11823,7 @@ function _parseItemIds(text){
       cloudLoaded=[];clr.disabled=false;clr.textContent='Clear all';toast('Error log cleared.');render();
     };
     render();
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   window._khOpenErrorLog=_khOpenErrorLog;
 
@@ -12233,9 +12260,13 @@ async function _packState(jsonStr){
         }
       }catch(_){}
     }
-    /* KHZ1 = gzip only — fallback + a size comparison (occasionally wins on tiny
-       states where the dictionary's tokens add overhead). */
-    try{
+    /* KHZ1 = gzip only — fallback + a size comparison. It ONLY ever wins on tiny
+       states (the dictionary's tokens add overhead there); for any substantial
+       state KHZ2 always wins, so a second full gzip + inflate-verify there is pure
+       wasted CPU/GC on every save — the dominant "slower the more data you have"
+       cost. Compute it only when the state is small OR KHZ2 didn't produce a win
+       (so the fallback still protects large states if KHZ2 ever fails). */
+    if(jsonStr.length<20000||best===jsonStr)try{
       const gz=await _gzipBytes(jsonStr);
       if(gz&&gz.length){
         const back=_jsInflate(gz);
@@ -12251,9 +12282,22 @@ async function _packState(jsonStr){
 /* After a save writes plain JSON (the safe, immediate form), gzip it in the
    background and swap the stored blob for the smaller compressed one — only
    if nothing newer was written in between. */
+var _lastCompressAt=0;
 function _upgradeStoredCompression(jsonStr){
   try{
     if(typeof _packState!=='function')return;
+    /* The raw JSON is ALREADY stored and valid; the packed form is only a SPACE
+       optimization. Packing the whole blob (gzip + inflate-verify) on every
+       ~1.2s debounced save was the biggest CPU/GC cost that grew with data.
+       (a) Small states fit raw with huge localStorage headroom → nothing to gain,
+       skip. (b) Otherwise throttle to ~once/15s so a burst of edits packs once,
+       not on every keystroke. A genuine out-of-space raw write still triggers the
+       immediate _persistCompressed path in _persistState, so quota is never at
+       risk from this throttle. */
+    if(jsonStr.length<80000)return;
+    var _now=Date.now();
+    if(_now-_lastCompressAt<15000)return;
+    _lastCompressAt=_now;
     _packState(jsonStr).then(packed=>{
       try{
         if(packed!==jsonStr&&localStorage.getItem(SK)===jsonStr){
@@ -12994,7 +13038,7 @@ function _khShowRecoveryModal(key,opts){
   var ack=txt('button',opts.ackLabel||'I have saved it',{className:'btn small',style:{width:'100%',marginTop:'8px'}});
   ack.onclick=function(){ov.remove();if(opts.onClose)try{opts.onClose();}catch(_){}};
   box.appendChild(ack);
-  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  ov.appendChild(box);_overlayHost().appendChild(ov);
 }
 function _khCopyFallback(text,btn){try{var ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();var ok=false;try{ok=document.execCommand('copy');}catch(_){}ta.remove();if(btn)btn.textContent=ok?'Copied ✓':'Copy failed — select the code above';}catch(_){}}
 window._khShowRecoveryModal=_khShowRecoveryModal;
@@ -13031,7 +13075,7 @@ function _khForgotPasswordDialog(prefillUser){
     }else{status.textContent=(res&&res.error)||'Recovery failed.';}
   };
   row.append(cancel,go);box.appendChild(row);
-  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  ov.appendChild(box);_overlayHost().appendChild(ov);
   setTimeout(function(){try{userIn.focus();}catch(_){}},60);
 }
 window._khForgotPasswordDialog=_khForgotPasswordDialog;
@@ -13048,7 +13092,7 @@ async function authLogout(){
 let _syncInFlight=false,_syncQueued=false;
 async function syncToCloud(){
   if(!S.authToken||!S.syncEnabled)return;
-  if(!navigator.onLine)return;/* offline guard — never burn the quota retrying */
+  if(navigator.onLine===false)return;/* offline guard — never burn the quota retrying */
   /* Serialize syncs. Each upload gzips + AES-encrypts the WHOLE state (incl. the
      side-car) — a real memory spike on Kindle Silk's ~256 MB WebView. Periodic
      sync + the delete/compress/close handlers could fire these CONCURRENTLY,
@@ -13903,7 +13947,10 @@ function mergeCloudState(cloudState,opts){
     /* Lists where each item has a stable id — merge by id so offline
        additions on Device A aren't clobbered when Device B's stale
        cloud copy comes down. */
-    if(key==='notes'||key==='books'||key==='flashDecks'||key==='mdJournals'||key==='calEvents'||key==='advStories'){
+    if(key==='notes'||key==='books'||key==='flashDecks'||key==='mdJournals'||key==='calEvents'||key==='advStories'||key==='publishedApps'){
+      /* publishedApps (the App Store) is an array of {id,…} — merging by id (with
+         tombstones, now that it's in _KH_TRACKED_LISTS) means a published/downloaded
+         app added on one device isn't wiped when a stale cloud copy pulls down. */
       if(!S[key])S[key]=[];
       if(!cloudState[key])return;
       const merged=[];const seen=new Set();
@@ -15751,7 +15798,7 @@ function _khOpenMultitask(){
   const close=txt('button','Close',{className:'btn small',style:{marginTop:'12px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  ov.appendChild(box);_overlayHost().appendChild(ov);
 }
 window.enterSplit=enterSplit;window.exitSplit=exitSplit;window._khOpenMultitask=_khOpenMultitask;
 
@@ -15919,7 +15966,7 @@ function _showGameHelp(g){
   box.appendChild(txt('div',(h&&h.how)||'Tap to play — figure it out as you go. Have fun!',{style:{fontSize:'13px',lineHeight:'1.7',whiteSpace:'pre-wrap'}}));
   const close=txt('button','Got it',{className:'btn small primary',style:{marginTop:'14px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
 }
 /* Shared leaderboard modal — used by every game via the immersive ★ button.
    Shows the player's best (local) + the global top scores (with avatars). */
@@ -15936,7 +15983,7 @@ function _gameScores(game){
   box.appendChild(listWrap);
   const close=txt('button','Close',{className:'btn small primary',style:{marginTop:'14px'}});close.onclick=()=>ov.remove();
   box.appendChild(close);ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
   (async()=>{
     let rows=[];try{if(typeof _khFetchScores==='function')rows=await _khFetchScores(game,10);}catch(_){}
     listWrap.innerHTML='';
@@ -16544,7 +16591,7 @@ const Hanoi=(function(){
     const again=txt('button','Play again',{className:'btn small primary'});again.onclick=()=>{ov.remove();build(disks);};row.appendChild(again);
     if(disks<7){const more=txt('button','Harder (+1 disk)',{className:'btn small'});more.onclick=()=>{ov.remove();build(disks+1);};row.appendChild(more);}
     const back=txt('button','Back',{className:'btn small'});back.onclick=()=>{ov.remove();if(typeof exitImmersive==='function')exitImmersive();};row.appendChild(back);
-    box.appendChild(row);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    box.appendChild(row);ov.appendChild(box);_overlayHost().appendChild(ov);
   }
   function start(){enterImmersive('Tower of Hanoi','');const ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;build(3);}
   function stop(){selPeg=-1;}
@@ -16706,7 +16753,7 @@ const CrazyEights=(function(){
     box.appendChild(txt('h3','Choose a colour',{style:{margin:'0 0 12px',fontFamily:'var(--title-font)'}}));
     const row=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}});
     COLOURS.forEach(c=>{const b=txt('button',CNAME[c],{className:'btn',style:{background:CHEX[c],color:'#fff',border:'2px solid var(--fg)',minWidth:'92px',fontWeight:'800'}});b.onclick=()=>{ov.remove();cb(c);};row.appendChild(b);});
-    box.appendChild(row);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    box.appendChild(row);ov.appendChild(box);_overlayHost().appendChild(ov);
   }
   function pickColour(idx){chooseColour(c=>playFromYou(idx,c));}
   function cardEl(card,faceUp,onClick){
@@ -18450,7 +18497,7 @@ window.KH_MP.openParty=function(opts){
   async function doJoin(short){try{var s=await KH_MP.joinRoom(short,gameName);_code=s.code;_short=s.short;_isHost=false;roomView();}catch(e){if(typeof toast==='function')toast('Could not join party');}}
   menu();
   ov.appendChild(box);ov.onclick=function(e){if(e.target===ov)closeAll();};
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
 };
 
 /* ── Reusable multiplayer lobby ────────────────────────────────────────
@@ -18718,7 +18765,7 @@ window.KH_MP.openLobby=function(opts){
   box.appendChild(codeSec);
   ov.appendChild(box);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
   setTimeout(()=>sInp.focus(),80);
 };
 function _lobbyEsc(s){return String(s||'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -19715,7 +19762,7 @@ const Chess=(()=>{
       const closeB=txt('button','Close',{className:'btn small primary',style:'align-self:flex-end;'});
       closeB.onclick=()=>ov.remove();
       box.appendChild(closeB);
-      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      ov.appendChild(box);_overlayHost().appendChild(ov);
       setTimeout(()=>{ta.focus();ta.select();},40);
     }
     if(navigator.clipboard&&navigator.clipboard.writeText){
@@ -20261,7 +20308,7 @@ const Chess=(()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     },200);
   }
 
@@ -22926,7 +22973,7 @@ function khTeleprompter(){
   var ta=document.createElement('textarea');
   ta.style.cssText='width:100%;height:100%;box-sizing:border-box;background:#111;color:#fff;border:none;padding:16px;font-size:16px;line-height:1.5;font-family:inherit;resize:none;display:none;';
   ta.value=text;body.appendChild(ta);
-  ov.appendChild(bar);ov.appendChild(body);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  ov.appendChild(bar);ov.appendChild(body);_overlayHost().appendChild(ov);
   function stopScroll(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='Play';}
   function tick(){if(!playing||editing)return;pos+=speed;inner.style.transform='translateY('+(-pos)+'px)';if(pos>inner.offsetHeight+body.offsetHeight){pos=0;}}
   playBtn.onclick=function(){if(editing)return;playing=!playing;if(playing){playBtn.textContent='Pause';if(!timer)timer=setInterval(function(){if(!document.hidden)tick();},50);}else{playBtn.textContent='Play';}};
@@ -27662,7 +27709,7 @@ function _initFlightSim(){
         '<p style="margin:0 0 4px;color:var(--muted);font-size:12px;"><b>Tip:</b> the Cessna 172 is the most forgiving — start there. Buttons that stay lit are <b>held</b>; tap again to release.</p>';
       const cl=document.createElement('button');cl.className='btn small primary';cl.textContent='Got it';cl.style.marginTop='10px';cl.onclick=()=>ov.remove();
       box.appendChild(cl);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      ov.appendChild(box);_overlayHost().appendChild(ov);
     };
     immersiveContent.appendChild(helpBtn);
 
@@ -30910,7 +30957,7 @@ document.addEventListener('click',e=>{
     _ov.onclick=e2=>{if(e2.target===_ov)_ov.remove();};
     _btnRow.append(_cancelB,_testB);
     _box.append(_h,_hint,_pickWrap,_btnRow);
-    _ov.appendChild(_box);(document.getElementById('rotateRoot')||document.body).appendChild(_ov);
+    _ov.appendChild(_box);_overlayHost().appendChild(_ov);
   }
 });
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.activeElement&&document.activeElement.id==='chatIn')sendChat();});
@@ -33197,7 +33244,7 @@ home:()=>{
       };
       closeBtn.onclick=_close;
       ov.addEventListener('click',e=>{if(e.target===ov)_close();});
-      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      ov.appendChild(box);_overlayHost().appendChild(ov);
     }
     v.appendChild(wrap);
     return v;
@@ -37522,7 +37569,7 @@ chat:()=>{
         try{
           r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+modelId+':generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         }catch(fetchErr){
-          if(!navigator.onLine){
+          if(navigator.onLine===false){
             hbLogMsg('sys','You are offline — connect to Wi-Fi and try again. (No request was sent, so your API key is fine.)');
             toast('Offline — connect to Wi-Fi');
           } else {
@@ -37562,7 +37609,7 @@ chat:()=>{
         try{
           r=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://kindlehub.app','X-Title':'KindleHub'},body:JSON.stringify(body)});
         }catch(fetchErr){
-          if(!navigator.onLine){
+          if(navigator.onLine===false){
             hbLogMsg('sys','You are offline — connect to Wi-Fi and try again. (No request was sent, so your API key is fine.)');
             toast('Offline — connect to Wi-Fi');
           } else {
@@ -38635,7 +38682,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
     wxOut.appendChild(radarCard);
 
     radarBtn.onclick=()=>{
-      if(!navigator.onLine){toast('Radar requires internet');return;}
+      if(navigator.onLine===false){toast('Radar requires internet');return;}
       radarBtn.textContent='Loading...';radarBtn.disabled=true;
       radarWrap.innerHTML='<div style="color:var(--muted);font-size:11px;padding:12px;text-align:center;">Fetching radar data...</div>';
 
@@ -41340,7 +41387,7 @@ settings:()=>{
       if(_isRegMode){_setRegMode(false);return;}
       const em=_accEmail.value.trim();const pw=_accPw.value;
       if(!em||!pw)return toast('Enter username and password.');
-      if(!navigator.onLine)return toast('Sign-in requires internet.');
+      if(navigator.onLine===false)return toast('Sign-in requires internet.');
       _loginBtn.disabled=true;_loginBtn.textContent='Signing in...';
       try{
         const res=await authLogin(em,pw);
@@ -41366,7 +41413,7 @@ settings:()=>{
       if(typeof _badUsername==='function'&&_badUsername(em))return toast('That username isn\'t allowed — please choose another.',3500);
       if(pw!==pw2)return toast('Passwords do not match.');
       if(pw.length<6)return toast('Password must be at least 6 characters.');
-      if(!navigator.onLine)return toast('Registration requires internet.');
+      if(navigator.onLine===false)return toast('Registration requires internet.');
       _regBtn.disabled=true;_regBtn.textContent='Registering...';
       try{
         const res=await authRegister(em,pw);
@@ -41394,7 +41441,7 @@ settings:()=>{
   function _buildSignedInBtns(){
     const _syncNowBtn=txt('button','Sync Now ⟳',{className:'btn primary'});
     _syncNowBtn.onclick=async()=>{
-      if(!navigator.onLine)return toast('Sync requires internet.');
+      if(navigator.onLine===false)return toast('Sync requires internet.');
       _syncNowBtn.disabled=true;_syncNowBtn.textContent='Pulling…';
       /* When the R2 state gateway is on, the backend-specific inline diagnostics
          below don't apply. Route through the standard R2-aware pull+push so a
@@ -41833,7 +41880,7 @@ settings:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>{ov.remove();};
     row.append(cp,cl);box.appendChild(row);
     ov.appendChild(box);ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   };
   proxRow.append(proxSave,proxTest,proxHelp);
   cProxy.appendChild(proxStatus);
@@ -43158,7 +43205,7 @@ feedback:()=>{
 
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
     window._openSelfFixModal=_openSelfFixModal;
 
@@ -43625,7 +43672,7 @@ feedback:()=>{
 
   const listEl=el('div');
   const refreshBtn=txt('button','Refresh',{className:'btn small',style:{marginBottom:'10px'}});
-  refreshBtn.onclick=()=>{if(!navigator.onLine)return toast('Requires internet.');loadData();};
+  refreshBtn.onclick=()=>{if(navigator.onLine===false)return toast('Requires internet.');loadData();};
   boardSection.appendChild(refreshBtn);
   boardSection.appendChild(listEl);
 
@@ -43958,7 +44005,7 @@ feedback:()=>{
     btnRow.append(close,post);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
 
   async function loadData(){
@@ -43987,7 +44034,7 @@ feedback:()=>{
   submitBtn.onclick=async()=>{
     const text=ta.value.trim();if(!text)return toast('Please write something first.');
     if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('! Heads up: flagged language will be hidden (blacked out) for others.',3000);
-    if(!navigator.onLine)return toast('Submitting requires internet.');
+    if(navigator.onLine===false)return toast('Submitting requires internet.');
     submitBtn.disabled=true;setStatus('Submitting...');
     try{
       const existing=await fbRead(activeType);
@@ -44002,7 +44049,7 @@ feedback:()=>{
 
   function setVoteState(id,state){const vd=getVoted();if(state)vd[id]=state;else delete vd[id];try{localStorage.setItem('kh_voted',JSON.stringify(vd));}catch(_){}}
   async function doVote(id,dir){
-    if(!navigator.onLine)return toast('Voting requires internet.');
+    if(navigator.onLine===false)return toast('Voting requires internet.');
     dir=(dir===-1)?-1:1;
     const voted=getVoted();const prev=(voted[id]===true)?'up':voted[id];/* migrate legacy true → up */
     /* One vote per device, switchable. Tapping your current direction
@@ -44194,7 +44241,7 @@ feedback:()=>{
       botMsgs.push({role:'user',text:q});
       const provKey=provSel.value==='openrouter'?S.openrouterKey:S.geminiKey;
       if(!provKey){addBubble('bot','I can\'t answer without an API key. Open Settings → AI Provider and add a '+provSel.value+' key (free at '+(provSel.value==='openrouter'?'openrouter.ai':'aistudio.google.com')+'), then come back.');return;}
-      if(!navigator.onLine){addBubble('bot','Looks like you\'re offline. Try again once your internet is back.');return;}
+      if(navigator.onLine===false){addBubble('bot','Looks like you\'re offline. Try again once your internet is back.');return;}
       const bub=addBubble('bot','…',true);
       try{
         /* Build a support-only system prompt that grounds the model in
@@ -44687,7 +44734,7 @@ discover:()=>{
       row.appendChild(del);box.appendChild(row);
     });
     ov.appendChild(box);ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   function _savedViewBtn(tag){const b=txt('button','Saved',{className:'btn small'});b.onclick=function(){_viewSavedDiscover(tag,_DISCOVER_LABELS[tag]||'items');};return b;}
 
@@ -45593,7 +45640,7 @@ starmap:()=>{
 
     refreshTabs();renderTab();
     ov.appendChild(modal);
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   }
   guideBtn.onclick=openSkyGuide;
@@ -48711,7 +48758,9 @@ gazette:()=>{
     {label:'NASA',url:'https://www.nasa.gov/rss/dyn/breaking_news.rss'},
   ];
 
-  function _gzToday(){const d=new Date(NOW());return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  /* Same local YYYY-MM-DD as the global _localDayKey() (clock-offset aware).
+     Reuse it — and drop the ES2017 padStart, which old Kindle Silk may lack. */
+  function _gzToday(){return _localDayKey();}
   function _gzDateLabel(){try{return new Date(NOW()).toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'});}catch(_){return _gzToday();}}
   function _gzLoad(){try{const o=JSON.parse(localStorage.getItem('kh_gazette')||'null');return o&&typeof o==='object'?o:{};}catch(_){return {};}}
   function _gzSave(o){try{localStorage.setItem('kh_gazette',JSON.stringify(o));}catch(_){}}
@@ -50252,7 +50301,7 @@ sleeplog:()=>{
             const closeB=document.createElement('button');closeB.textContent='Close';closeB.className='btn';
             closeB.onclick=()=>ov.remove();
             ov.onclick=e=>{if(e.target===ov)ov.remove();};
-            box.append(lbl,closeB);ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+            box.append(lbl,closeB);ov.appendChild(box);_overlayHost().appendChild(ov);
           };
           row.appendChild(dBtn);
         }
@@ -50365,7 +50414,7 @@ sports:()=>{
     else{const g=el('div',{style:{display:'grid',gridTemplateColumns:'1fr auto',gap:'4px 12px',marginTop:'8px'}});pairs.forEach(function(p){g.appendChild(txt('div',p[0],{style:{fontSize:'12px',color:'var(--muted)'}}));g.appendChild(txt('div',String(p[1]),{style:{fontSize:'13px',fontWeight:'800',textAlign:'right',fontVariantNumeric:'tabular-nums'}}));});box.appendChild(g);}
     const cls=txt('button','Close',{className:'btn small primary',style:{marginTop:'12px',width:'100%'}});cls.onclick=()=>ov.remove();box.appendChild(cls);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    ov.appendChild(box);_overlayHost().appendChild(ov);
   }
   function _playerRow(name,pos,pairs){
     const b=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',padding:'7px 4px',borderBottom:'1px dashed var(--muted)',cursor:'pointer'}});
@@ -50531,7 +50580,7 @@ imagesearch:()=>{
     const cls=txt('button','Close',{className:'btn small primary'});cls.onclick=()=>ov.remove();row.appendChild(cls);
     ov.appendChild(row);
     ov.onclick=(e)=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   /* Turn a fetch failure into an HONEST, specific message — not a blanket
      "bad Wi‑Fi". An HTTP status means the service answered (rate limit / down /
@@ -51175,7 +51224,7 @@ appstore:()=>{
     sh.appendChild(row);
     sh.appendChild(txt('div',(a.shared?'Community app — downloads to your device and runs in a locked sandbox.':(a.pub?'Community app — runs in a locked sandbox.':'Built into KindleHub — free, works offline.')),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'10px'}}));
     ov.appendChild(sh);
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
 
   /* Share a published app as a KHAPP1 code (peer-to-peer install, no store). */
@@ -51193,7 +51242,7 @@ appstore:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=function(){ov.remove();};
     rowS.append(cp,cl);card.appendChild(rowS);
     ov.appendChild(card);ov.onclick=function(e){if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   /* Import a KHAPP1 code someone shared → installs to your apps. Mirrors the
      KindleOS importer, incl. the Kindle keyboard-off fix so native paste works. */
@@ -51224,7 +51273,7 @@ appstore:()=>{
     const clI=txt('button','Close',{className:'btn small'});clI.onclick=function(){_restore();ov.remove();};
     rowI.append(inst,clI);card.appendChild(rowI);
     ov.appendChild(card);ov.onclick=function(e){if(e.target===ov){_restore();ov.remove();}};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   function renderDiscover(){
     const sb=el('input',{type:'text',placeholder:'Search apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
@@ -52593,7 +52642,7 @@ stocks:()=>{
     const actRow=el('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}});
     const refreshBtn=txt('button','Refresh Price',{className:'btn primary small'});
     refreshBtn.onclick=async()=>{
-      if(!navigator.onLine){toast('Offline');return;}
+      if(navigator.onLine===false){toast('Offline');return;}
       refreshBtn.textContent='...';refreshBtn.disabled=true;
       const fresh=await fetchPrice(ticker);
       if(fresh){
@@ -52624,7 +52673,7 @@ stocks:()=>{
     topRow.appendChild(txt('h2','Portfolio',{style:{fontFamily:'var(--title-font)',fontSize:'16px',margin:'0'}}));
     const btnGroup=el('div',{style:{display:'flex',gap:'6px'}});
     const refreshAllBtn=txt('button','Refresh All',{className:'btn small primary'});
-    refreshAllBtn.onclick=()=>{if(!navigator.onLine){toast('Offline');return;}fetchAll(true);};
+    refreshAllBtn.onclick=()=>{if(navigator.onLine===false){toast('Offline');return;}fetchAll(true);};
     btnGroup.appendChild(refreshAllBtn);
     topRow.appendChild(btnGroup);
     v.appendChild(topRow);
@@ -52682,7 +52731,7 @@ stocks:()=>{
     if(activeTab==='movers'){renderMovers();return;}
 
     /* Offline banner */
-    if(!navigator.onLine){
+    if(navigator.onLine===false){
       v.appendChild(txt('div','Offline — showing cached prices',{style:{background:'var(--highlight)',border:'var(--thin)',borderRadius:'8px',padding:'8px 12px',fontSize:'12px',color:'var(--muted)',marginBottom:'10px'}}));
     }
 
@@ -53400,7 +53449,7 @@ mail:()=>{
       };
       btns.append(cancel,send);box.appendChild(btns);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      ov.appendChild(box);_overlayHost().appendChild(ov);
       setTimeout(()=>{(toPre?subjPre?bodyIn:subjIn:toIn).focus();},60);
     }
     khCard.appendChild(bar);
@@ -53595,7 +53644,7 @@ screenshot:()=>{
     const cl=txt('button','Close',{className:'btn small'});cl.onclick=()=>ov.remove();
     bar.append(dl,cl);
     ov.append(im,bar);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
   }
   function busy(on){capPrev.disabled=on;capApp.disabled=on;}
   capApp.onclick=()=>{
@@ -55233,7 +55282,7 @@ function buildUI(){
     btnRow.appendChild(cancelBtn);btnRow.appendChild(goBtn);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>inp.focus(),80);
+    _overlayHost().appendChild(ov);setTimeout(()=>inp.focus(),80);
   };
   topBar.appendChild(aiSlideBtn);
 
@@ -55595,7 +55644,7 @@ function buildDeckList(){
     btnRow.appendChild(cancelBtn);btnRow.appendChild(goBtn);
     box.appendChild(btnRow);
     ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);setTimeout(()=>topicInp.focus(),80);
+    _overlayHost().appendChild(ov);setTimeout(()=>topicInp.focus(),80);
   };
   newBtnsRow.appendChild(aiDeckBtn);
 
@@ -57051,7 +57100,7 @@ calendar:()=>{
     if(delBtn)btnRow.insertBefore(delBtn,cancelBtn);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     titleInp.focus();
   }
 
@@ -57429,7 +57478,7 @@ calendar:()=>{
         setStatus('You\'re not signed in. Sign in from Settings → Account first.','err');
         return;
       }
-      if(!navigator.onLine){setStatus('Pull requires internet.','err');return;}
+      if(navigator.onLine===false){setStatus('Pull requires internet.','err');return;}
       cloudPullBtn.disabled=true;cloudPullBtn.textContent='Pulling…';
       const beforeCount=Array.isArray(S.calEvents)?S.calEvents.length:0;
       let cloudCount=-1,err='';
@@ -57524,7 +57573,7 @@ calendar:()=>{
       if(!body){
         const proxies=[
           ['allorigins','https://api.allorigins.win/raw?url='+encodeURIComponent(u)],
-          ['corsproxy.io','https://corsproxy.io/?'+encodeURIComponent(u)],
+          ['corsproxy.io','https://corsproxy.io/?url='+encodeURIComponent(u)],
           ['codetabs','https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u)],
           ['thingproxy','https://thingproxy.freeboard.io/fetch/'+u],
         ];
@@ -57601,7 +57650,7 @@ calendar:()=>{
     box.appendChild(body);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     setTimeout(()=>{try{urlInp.focus();}catch(_){}},80);
   }
 
@@ -57695,7 +57744,7 @@ calendar:()=>{
     btnRow.append(cancB,okB);box.appendChild(btnRow);
     ov.appendChild(box);
     ov.onclick=e=>{if(e.target===ov)ov.remove();};
-    (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    _overlayHost().appendChild(ov);
     setTimeout(()=>{try{dateInp.focus();}catch(_){}},40);
     /* Enter on any field submits */
     [dateInp,yrInp,moSel,dyInp].forEach(inp=>{
@@ -57816,6 +57865,11 @@ calendar:()=>{
 ═══════════════════════════════════════════════════════════════════ */
 Object.assign(BUILDERS,{
 messages:()=>{
+  /* messages is in ALWAYS_REBUILD, so leaving a chat via the BOTTOM NAV (not the
+     in-chat Back button) orphaned the previous chat's realtime WebSocket + 25s
+     heartbeat — they were only torn down by Back/cleanup(). Tear down any prior
+     chat's socket/poll here, at the top of every rebuild, so they can't stack. */
+  try{if(window._khChatCleanup){window._khChatCleanup();window._khChatCleanup=null;}}catch(_){}
   const v=el('section',{id:'view-messages',className:'view'});
   v.style.cssText='padding:0;display:flex;flex-direction:column;height:100%;overflow:hidden;';
 
@@ -58579,7 +58633,7 @@ messages:()=>{
       };
       row.append(canc,mk);box.appendChild(row);
       ov.onclick=function(e){if(e.target===ov)ov.remove();};
-      ov.appendChild(box);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      ov.appendChild(box);_overlayHost().appendChild(ov);
       setTimeout(function(){try{qi.focus();}catch(_){}},60);
     }
     /* Pick + send a photo from the device. Downscaled hard so it fits the
@@ -58646,7 +58700,7 @@ messages:()=>{
       const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=function(){ov.remove();};
       sheet.appendChild(cl);
       ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
     /* Pick a built-in sticker (instant, no API, e-ink-safe). */
     function _khOpenStickerPicker(){
@@ -58665,7 +58719,7 @@ messages:()=>{
       const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=function(){ov.remove();};
       sheet.appendChild(cl);
       ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
     function _khOpenAppShareMenu(){
       const apps=(typeof osState!=='undefined'&&osState&&Array.isArray(osState.customApps))?osState.customApps:[];
@@ -58716,7 +58770,7 @@ messages:()=>{
       const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'10px'}});cl.onclick=function(){ov.remove();};
       sheet.appendChild(cl);
       ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
     attachBtn.onclick=_khOpenAppShareMenu;
     comp.append(attachBtn,emojiBtn,txtArea,sendBtn);
@@ -58812,7 +58866,7 @@ messages:()=>{
       ov.appendChild(box);
       ov.addEventListener('click',e=>{if(e.target===ov){_editing=null;ov.remove();}});
       document.addEventListener('keydown',function _esc(e){if(e.key==='Escape'){_editing=null;ov.remove();document.removeEventListener('keydown',_esc);}});
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
       setTimeout(()=>{inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);},40);
     }
 
@@ -59095,7 +59149,7 @@ messages:()=>{
       const cls=txt('button','Close',{className:'btn primary small'});cls.onclick=()=>ov.remove();
       box.appendChild(cls);
       ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
 
     /* ── Local report ledger ──
@@ -59184,7 +59238,7 @@ messages:()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
 
     /* ── Report a USERNAME ──────────────────────────────────────────────
@@ -59267,7 +59321,7 @@ messages:()=>{
       box.appendChild(btnRow);
       ov.appendChild(box);
       ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
     }
     window._khReportUsername=_openUsernameReportModal;
 
@@ -59319,7 +59373,7 @@ messages:()=>{
       }
       box.appendChild(btnBar);
       ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
-      (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+      _overlayHost().appendChild(ov);
 
       /* Build profile rows */
       const uid=msg.userId||'';
@@ -60087,6 +60141,12 @@ messages:()=>{
       if(_rtChannel){clearInterval(_rtChannel);_rtChannel=null;}
       if(_ws){try{_ws.close();}catch(e){}_ws=null;}
     }
+    /* Register this chat's teardown at MODULE level so leaving via the bottom nav
+       (which never calls the in-chat Back button, and so never ran cleanup()) can
+       still stop the realtime WebSocket + its 25s heartbeat. Without this, each
+       nav-away+re-enter stacked another live socket/timer → the documented Silk
+       slowdown/crash. The Messages view calls this at the top of every rebuild. */
+    try{window._khChatCleanup=function(){try{cleanup();}catch(_){}try{stopPoll();}catch(_){}};}catch(_){}
 
     /* Initial load + subscribe */
     loadMessages().then(count=>{_lastMsgCount=count;});
@@ -62869,7 +62929,7 @@ window._showWelcome=function(){
   inner.append(stepHeading,dotRow,stepSub,contentWrap,btnRow);
   btnRow.append(skipBtn,nextBtn);
   ov.appendChild(inner);
-  (document.getElementById('rotateRoot')||document.body).appendChild(ov);
+  _overlayHost().appendChild(ov);
   render();
 };
 
@@ -63407,7 +63467,7 @@ window._showWelcome=function(){
     const shut=()=>{if(ov.parentNode)ov.parentNode.removeChild(ov);};
     close.onclick=shut;
     ov.onclick=function(ev){if(ev.target===ov)shut();};
-    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);(document.getElementById('rotateRoot')||document.body).appendChild(ov);
+    card.appendChild(q);card.appendChild(body);card.appendChild(askRow);card.appendChild(close);ov.appendChild(card);_overlayHost().appendChild(ov);
     let _busy=false;
     async function ask(userQ){
       if(_busy)return;_busy=true;askBtn.disabled=true;
