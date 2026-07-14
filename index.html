@@ -1987,6 +1987,11 @@ async function _doCloudSync(force){
     /* Temporarily clear _stateDirty so _maybePullFromCloud doesn't
        early-out — we want the merge even though we have local edits. */
     const wasDirty=_stateDirty;_stateDirty=false;
+    /* Force this pre-push pull PAST the 25s bursty-event throttle: the push is a
+       one-way upload, so skipping the merge here (because a focus/visibility pull
+       happened to run in the last 25s) would clobber a concurrent edit made on
+       another device. The throttle still coalesces the standalone focus pulls. */
+    try{window._khLastPullAt=0;}catch(_){}
     await _maybePullFromCloud();
     /* Re-mark dirty if either we were dirty before, OR mergeCloudState
        (called inside pull) flagged anything via save(). */
@@ -2853,7 +2858,12 @@ if(typeof window!=='undefined'){
     if(e.key!=='kindlehub_v5')return;
     if(!e.newValue)return;
     try{
-      const other=JSON.parse(e.newValue);
+      /* A heavy account stores a COMPRESSED KHZ2:/KHZ1: blob (see _persistCompressed),
+         so a bare JSON.parse threw and the cross-tab merge silently never ran for
+         exactly the accounts it's meant to protect. Decode first (same path as boot). */
+      const raw=(typeof _khUnpackStored==='function')?_khUnpackStored(e.newValue):e.newValue;
+      if(raw==null)return;
+      const other=JSON.parse(raw);
       if(!other||typeof other!=='object')return;
       mergeCloudState(other,{skipSave:true,noLsBackup:true,preferLocal:true});
     }catch(_){}
@@ -2946,7 +2956,7 @@ function _isQuotaError(e){
    ages out. Deletions are detected centrally by diffing the id-lists against
    the previous snapshot on each save, so no per-delete-site wiring is needed.
    Re-adding an id clears its tombstone (a deletion you took back). */
-var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories'];
+var _KH_TRACKED_LISTS=['notes','books','flashDecks','mdJournals','calEvents','advStories','publishedApps'];
 function _khItemKey(item){
   if(!item||typeof item!=='object')return null;
   var id=item.id||item.uid;
@@ -11009,6 +11019,18 @@ function _u8ToB64(u8){
   return btoa(s);
 }
 function _b64ToU8(b64){return Uint8Array.from(atob(b64),c=>c.charCodeAt(0));}
+/* Decode a stored kindlehub_v5 blob (KHZ2 dict+gzip / KHZ1 gzip / plain JSON) back
+   to its JSON string — the same logic the boot loader inlines, made reusable so
+   the cross-tab storage handler can decode a heavy account's compressed blob
+   instead of throwing on JSON.parse. Returns the JSON string, or null on failure. */
+function _khUnpackStored(r){
+  if(typeof r!=='string')return r;
+  try{
+    if(r.slice(0,5)==='KHZ2:'){var b2=_jsInflate(_b64ToU8(r.slice(5)));if(!b2)return null;return _decompStr(new TextDecoder().decode(b2));}
+    if(r.slice(0,5)==='KHZ1:'){var b1=_jsInflate(_b64ToU8(r.slice(5)));if(!b1)return null;return new TextDecoder().decode(b1);}
+  }catch(_){return null;}
+  return r;
+}
 
 /* ── Gzip helpers via the WHATWG CompressionStream API ──
    Native gzip is widely available now (Chrome 80+, Safari 16.4+, Firefox
@@ -13925,7 +13947,10 @@ function mergeCloudState(cloudState,opts){
     /* Lists where each item has a stable id — merge by id so offline
        additions on Device A aren't clobbered when Device B's stale
        cloud copy comes down. */
-    if(key==='notes'||key==='books'||key==='flashDecks'||key==='mdJournals'||key==='calEvents'||key==='advStories'){
+    if(key==='notes'||key==='books'||key==='flashDecks'||key==='mdJournals'||key==='calEvents'||key==='advStories'||key==='publishedApps'){
+      /* publishedApps (the App Store) is an array of {id,…} — merging by id (with
+         tombstones, now that it's in _KH_TRACKED_LISTS) means a published/downloaded
+         app added on one device isn't wiped when a stale cloud copy pulls down. */
       if(!S[key])S[key]=[];
       if(!cloudState[key])return;
       const merged=[];const seen=new Set();
@@ -57840,6 +57865,11 @@ calendar:()=>{
 ═══════════════════════════════════════════════════════════════════ */
 Object.assign(BUILDERS,{
 messages:()=>{
+  /* messages is in ALWAYS_REBUILD, so leaving a chat via the BOTTOM NAV (not the
+     in-chat Back button) orphaned the previous chat's realtime WebSocket + 25s
+     heartbeat — they were only torn down by Back/cleanup(). Tear down any prior
+     chat's socket/poll here, at the top of every rebuild, so they can't stack. */
+  try{if(window._khChatCleanup){window._khChatCleanup();window._khChatCleanup=null;}}catch(_){}
   const v=el('section',{id:'view-messages',className:'view'});
   v.style.cssText='padding:0;display:flex;flex-direction:column;height:100%;overflow:hidden;';
 
@@ -60111,6 +60141,12 @@ messages:()=>{
       if(_rtChannel){clearInterval(_rtChannel);_rtChannel=null;}
       if(_ws){try{_ws.close();}catch(e){}_ws=null;}
     }
+    /* Register this chat's teardown at MODULE level so leaving via the bottom nav
+       (which never calls the in-chat Back button, and so never ran cleanup()) can
+       still stop the realtime WebSocket + its 25s heartbeat. Without this, each
+       nav-away+re-enter stacked another live socket/timer → the documented Silk
+       slowdown/crash. The Messages view calls this at the top of every rebuild. */
+    try{window._khChatCleanup=function(){try{cleanup();}catch(_){}try{stopPoll();}catch(_){}};}catch(_){}
 
     /* Initial load + subscribe */
     loadMessages().then(count=>{_lastMsgCount=count;});
