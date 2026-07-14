@@ -271,6 +271,25 @@ html.kh-no-flexgap [style*="direction:column"] > *,
 html.kh-no-flexgap [style*="direction: column"] > *{margin-left:0;margin-right:0;margin-top:0;margin-bottom:0}
 html.kh-no-flexgap [style*="direction:column"] > * + *,
 html.kh-no-flexgap [style*="direction: column"] > * + *{margin-top:6px}
+/* ── Reset rules (declared AFTER the fallback so they win on ties) ──
+   The fallback keys off the substring "gap:" in the inline style, which ALSO
+   matches things that are NOT flex rows. Undo it where it's wrong: */
+/* (a) Inline CSS GRID: grid `gap` predates flex `gap`, so on the very engines
+   that fail the flex-gap probe (Kindle Silk) grid gap still WORKS — the fallback
+   margins then double-space AND make the first cell wider (day-stats widget,
+   Cipher key square, stats grids). Grids need no fallback: zero it. */
+html.kh-no-flexgap [style*="display:grid"] > *,
+html.kh-no-flexgap [style*="display: grid"] > *{margin-left:0;margin-right:0;margin-top:0;margin-bottom:0}
+/* (b) Explicit ZERO gap (flush layouts, e.g. the onboarding steps) — never
+   inject the between-children margin. */
+html.kh-no-flexgap [style*="gap:0"] > * + *,
+html.kh-no-flexgap [style*="gap: 0"] > * + *{margin-top:0;margin-left:0}
+/* (c) .card is a flex COLUMN via its CLASS (not inline), so a card carrying an
+   inline `gap:` wrongly got the row fallback's horizontal margin on children 2+
+   (first child rendered wider). Zero the horizontal margin; the column's between-
+   children spacing still comes from the uniform vertical margin. Only children
+   2+ are touched, so a card title-bar (first child) keeps its own margins. */
+html.kh-no-flexgap .card > * + *{margin-left:0;margin-right:0}
 /* Header controls: horizontal only, no vertical margin (fixed-height row). */
 html.kh-no-flexgap .header-controls > *{margin-top:0;margin-bottom:0}
 html.kh-no-flexgap .header-controls > * + *{margin-left:5px}
