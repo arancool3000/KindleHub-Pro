@@ -9293,6 +9293,20 @@ async function _announceRpc(fn,body){
     return false;
   }catch(e){toast('Network error posting announcement.',4000);return false;}
 }
+/* Caller for the atomic non-admin RPCs (kh_add_comment / kh_vote_feedback).
+   Returns the parsed JSON body ({ok,comment}/{ok,votes}) or null on failure.
+   Sends the admin token when present so admins bypass the server rate-limit. */
+async function _khRpcCall(fn,body){
+  try{
+    if(typeof _sbBase!=='function')return null;
+    var hdrs=Object.assign(_sbHeaders(),{'Content-Type':'application/json'});
+    if(window._adminToken)hdrs['X-KH-Admin']=window._adminToken;
+    var r=await fetch(_sbBase()+'/rest/v1/rpc/'+fn,{method:'POST',headers:hdrs,body:JSON.stringify(body||{})});
+    if(!r.ok)return null;
+    try{return await r.json();}catch(_){return {ok:true};}
+  }catch(_){return null;}
+}
+window._khRpcCall=_khRpcCall;
 /* ── Capacity Guard (emergency lockdown) ──────────────────────────────
    Lets the admin CLOSE new sign-ins/registrations when the project is near
    its hosting quota, with a user-facing "back on <date>" message — so the
@@ -10496,33 +10510,22 @@ async function _openAnnouncementComments(a,card){
       if(typeof _hasProfanity==='function'&&_hasProfanity(text))toast('! Heads up: flagged language will be hidden for others.',3000);
       post.disabled=true;post.textContent='Posting…';
       const author=S.email?S.email.split('@')[0]:(S.user||'Anon');
-      const entry={id:'c_'+Date.now().toString(36),text:text.slice(0,500),author:String(author).slice(0,40),date:new Date().toISOString()};
       try{
-        /* Re-read just this row so a concurrent commenter isn't clobbered,
-           then append + cap the thread to the newest 60. */
-        const rows=await _sbSelect('kh_announcements','id=eq.'+encodeURIComponent(a.id)+'&select=comments');
-        const server=Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].comments)?rows[0].comments:[];
-        server.push(entry);
-        const capped=server.slice(-60);
-        /* NO admin token — the worker limits a non-admin PATCH of
-           kh_announcements to the `comments` column, so text/active/targets
-           can't be touched from here. */
-        await _sbUpdate('kh_announcements','id=eq.'+encodeURIComponent(a.id),{comments:capped});
-        cur=capped;a.comments=capped;
-        inp.value='';
-        refreshList();
-        try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
-      }catch(e){
-        /* Handle GRACEFULLY (no console.error — that was being auto-reported as a
-           crash). On Supabase the RLS policy refuses a client PATCH of
-           kh_announcements ("update not allowed", 403); announcement comments
-           need the Cloudflare D1 backend, which limits the PATCH to the comments
-           column. On D1 this works; on plain Supabase it's simply not enabled. */
-        var _cm=String((e&&e.message)||e);
-        if(/403|not allowed|permission|denied/i.test(_cm))toast('Comments aren\'t enabled on this server yet — the admin needs the latest (Cloudflare) backend.',6500);
-        else if(typeof _isMissingColumnError==='function'&&_isMissingColumnError(e,'comments'))toast('Comments need a backend update (comments column missing).',6000);
-        else toast('Comment failed — try again in a moment.',5000);
-      }
+        /* Append ATOMICALLY via the server RPC — no read-modify-write, so a
+           concurrent comment can't be lost and the thread can't be wiped/forged.
+           The server sanitizes + returns the stored comment. */
+        var res=(typeof _khRpcCall==='function')?await _khRpcCall('kh_add_comment',{p_table:'kh_announcements',p_id:a.id,p_comment:{text:text.slice(0,500),author:String(author).slice(0,40)}}):null;
+        if(res&&res.ok&&res.comment){
+          if(!Array.isArray(cur))cur=[];
+          cur.push(res.comment);if(cur.length>60)cur=cur.slice(-60);
+          a.comments=cur;
+          inp.value='';
+          refreshList();
+          try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
+        } else {
+          toast('Comments aren\'t enabled on this server yet — the admin needs the latest (Cloudflare) backend.',6500);
+        }
+      }catch(e){ toast('Comment failed — try again in a moment.',5000); }
       post.disabled=false;post.textContent='Post comment';
     };
     btnRow.append(close,post);
@@ -42337,15 +42340,14 @@ feedback:()=>{
       try{
         const existing=await _sbSelect('kh_feedback','type=eq.'+encodeURIComponent(type)+'&select=id,votes');
         const existingMap={};(existing||[]).forEach(r=>{existingMap[r.id]=r.votes||0;});
-        const toInsert=[];const toUpdate=[];
+        const toInsert=[];
         items.forEach(it=>{
           if(!(it.id in existingMap))toInsert.push({id:it.id,type:it.type,text:it.text,votes:it.votes||0,date:it.date||new Date().toISOString(),author:it.author||''});
-          else if(existingMap[it.id]!==(it.votes||0))toUpdate.push(it);
         });
         if(toInsert.length){await _sbInsert('kh_feedback',toInsert);}
-        for(const it of toUpdate){
-          await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(it.id),{votes:it.votes||0});
-        }
+        /* Vote COUNTS are no longer PATCHed here (non-admin PATCH of votes is now
+           blocked server-side) — they're applied atomically by doVote via the
+           kh_vote_feedback RPC, which can't lost-update or be inflated. */
         return;
       }catch(e){console.warn('SB feedback write failed',e);}
     }
@@ -43766,27 +43768,19 @@ feedback:()=>{
   async function _addComment(id,text){
     if(!text||!text.trim())return false;
     const author=S.email?S.email.split('@')[0]:(S.user||'Anon');
-    const entry={id:'c_'+Date.now().toString(36),text:text.trim().slice(0,500),author:author.slice(0,40),date:new Date().toISOString()};
     if(!_sbActive()){toast('Commenting requires internet');return false;}
     try{
-      /* Re-read just this row so we don't clobber comments from other
-         users that arrived while this user was typing. */
-      const rows=await _sbSelect('kh_feedback','id=eq.'+encodeURIComponent(id)+'&select=comments');
-      const cur=Array.isArray(rows)&&rows[0]&&Array.isArray(rows[0].comments)?rows[0].comments:[];
-      cur.push(entry);
-      await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(id),{comments:cur});
-      const it=items.find(x=>x.id===id);if(it)it.comments=cur;
-      return true;
-    }catch(e){
-      console.error('[Comment failed]',e);
-      if(_isMissingColumnError(e,'comments')){
-        toast('Run the schema SQL (comments column missing on kh_feedback)',6000);
-      } else {
-        /* Show the real error so the user can diagnose. */
-        toast('Comment failed: '+String(e&&e.message||e).slice(0,160),7000);
+      /* Atomic server-side append (kh_add_comment) — no read-modify-write, so a
+         concurrent comment can't be lost and the thread can't be replaced. */
+      var res=(typeof _khRpcCall==='function')?await _khRpcCall('kh_add_comment',{p_table:'kh_feedback',p_id:id,p_comment:{text:text.trim().slice(0,500),author:author.slice(0,40)}}):null;
+      if(res&&res.ok&&res.comment){
+        const it=items.find(x=>x.id===id);
+        if(it){if(!Array.isArray(it.comments))it.comments=[];it.comments.push(res.comment);if(it.comments.length>60)it.comments=it.comments.slice(-60);}
+        return true;
       }
+      toast('Commenting needs the latest (Cloudflare) backend.',6000);
       return false;
-    }
+    }catch(e){ toast('Comment failed — try again in a moment.',5000); return false; }
   }
 
   function renderItems(){
@@ -44059,11 +44053,15 @@ feedback:()=>{
     else       { if(prev==='down'){delta=1;next=undefined;} else if(prev==='up'){delta=-2;next='down';} else {delta=-1;next='down';} }
     setStatus('Saving vote...');
     try{
+      /* Atomic server-side delta (kh_vote_feedback) — no read-modify-write, so a
+         concurrent vote can't clobber this one; the delta is clamped server-side. */
+      var res=(typeof _khRpcCall==='function')?await _khRpcCall('kh_vote_feedback',{p_id:id,p_delta:delta}):null;
+      if(!(res&&res.ok)){setStatus('Voting needs the latest (Cloudflare) backend.',true);return;}
+      setVoteState(id,next);
       const existing=await fbRead(activeType);
       const item=existing.find(i=>i.id===id);
-      if(item)item.votes=(item.votes||0)+delta;
-      await fbWrite(activeType,existing);
-      setVoteState(id,next);items=existing.filter(i=>i&&i.id&&i.text);
+      if(item)item.votes=(typeof res.votes==='number')?res.votes:((item.votes||0)+delta);
+      items=existing.filter(i=>i&&i.id&&i.text);
       renderItems();setStatus('Vote saved!');setTimeout(()=>setStatus(''),1500);
     }catch(e){setStatus('Vote failed — check internet connection.',true);}
   }

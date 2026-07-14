@@ -376,8 +376,12 @@ async function selectByPk(DB, table, pkVals){
 }
 
 /* ── RPCs (ported from the SECURITY DEFINER functions) ───────────────────── */
-async function handleRpc(fn, body, DB, env){
+async function handleRpc(fn, body, DB, env, request){
   body = body||{};
+  /* Some RPCs (kh_add_comment / kh_vote_feedback) read the admin token from the
+     X-KH-Admin header to bypass the per-id rate limit; guard for a missing
+     request (older callers / tests) so header reads never throw. */
+  request = request || { headers:{ get:function(){return '';} } };
   if(fn==='kh_store_download'){
     /* Atomic download counter for a shared-store app (drives the ranking).
        Open to anyone — it only ever increments a public counter by 1. */
@@ -461,6 +465,49 @@ async function handleRpc(fn, body, DB, env){
     if(list.length===0) delete cur[key]; else cur[key]=list;
     await DB.prepare('UPDATE kh_messages SET reactions=? WHERE id=?').bind(JSON.stringify(cur), String(body.p_msg_id||'')).run();
     return json(null,204,env);
+  }
+  /* Atomic comment append. Non-admins comment through THIS RPC instead of a
+     full-column PATCH of `comments`, which was a read-modify-write: two comments
+     in the same second lost-updated (last write wins), and a crafted request
+     could send comments=[] (wipe the thread) or a forged-author array. Here the
+     server sanitizes the ONE comment and appends it in a SINGLE UPDATE via
+     json_insert(…,'$[#]',…) — no client array, no race, nothing to wipe. */
+  if(fn==='kh_add_comment'){
+    const table = body.p_table==='kh_feedback' ? 'kh_feedback' : (body.p_table==='kh_announcements' ? 'kh_announcements' : '');
+    if(!table) return err('invalid table',400,env);
+    const id = String(body.p_id||''); if(!id) return err('missing id',400,env);
+    const c = body.p_comment; if(!c || typeof c!=='object') return err('invalid comment',400,env);
+    const text = String(c.text||'').slice(0,500); if(!text.replace(/\s/g,'')) return err('empty comment',400,env);
+    const comment = { id:String(c.id||('c_'+Date.now().toString(36))).slice(0,40), author:String(c.author||'Anon').slice(0,40), text:text, date:nowIso() };
+    if(!(await isAdmin(request.headers.get('x-kh-admin')||''))){
+      if(!await checkRate(DB,'cmt:'+id.slice(0,40),12,60)) return err('Commenting too fast — try again shortly.',429,env);
+    }
+    const upd = await DB.prepare("UPDATE "+QUOTE(table)+" SET comments = json_insert(CASE WHEN json_valid(COALESCE(comments,'[]')) THEN COALESCE(comments,'[]') ELSE '[]' END, '$[#]', json(?)) WHERE id=?").bind(JSON.stringify(comment), id).run();
+    if(!upd || !upd.meta || !upd.meta.changes) return err('not found',404,env);
+    /* Trim to the newest 60 (drop oldest while over) so a thread can't grow without bound. */
+    try{
+      let row = await DB.prepare("SELECT json_array_length(comments) n FROM "+QUOTE(table)+" WHERE id=?").bind(id).first();
+      let n=(row&&row.n)||0, guard=0;
+      while(n>60 && guard++<400){ await DB.prepare("UPDATE "+QUOTE(table)+" SET comments=json_remove(comments,'$[0]') WHERE id=?").bind(id).run(); n--; }
+    }catch(_){}
+    return json({ok:true,comment:comment},200,env);
+  }
+  /* Atomic vote — votes = MAX(0, votes + delta) in ONE UPDATE, so a concurrent
+     vote can't be lost by a client sending a stale absolute count. The delta is
+     CLAMPED to the only legit toggle values {-2,-1,1,2} (up/down, switch, or
+     un-vote), so a client can't inflate a count; per-device single-vote is still
+     enforced client-side (kh_voted). */
+  if(fn==='kh_vote_feedback'){
+    const id = String(body.p_id||''); if(!id) return err('missing id',400,env);
+    let delta = parseInt(body.p_delta,10); if(isNaN(delta)) delta=1;
+    if(delta>2) delta=2; if(delta<-2) delta=-2; if(delta===0) delta=1;
+    if(!(await isAdmin(request.headers.get('x-kh-admin')||''))){
+      if(!await checkRate(DB,'vote:'+id.slice(0,40),20,60)) return err('Voting too fast.',429,env);
+    }
+    const upd = await DB.prepare("UPDATE kh_feedback SET votes=MAX(0,COALESCE(votes,0)+?) WHERE id=?").bind(delta,id).run();
+    if(!upd || !upd.meta || !upd.meta.changes) return err('not found',404,env);
+    const row = await DB.prepare("SELECT votes FROM kh_feedback WHERE id=?").bind(id).first();
+    return json({ok:true,votes:(row&&row.votes)||0},200,env);
   }
   return err('unknown function: '+fn, 404, env);
 }
@@ -700,15 +747,14 @@ async function handlePatch(table, url, request, env, DB){
      `comments` is a discussion array, not a moderation signal, so allowing it is
      safe and restores commenting on your own bug report. Verified admins (the
      x-kh-admin token) may patch any column. */
-  if(table==='kh_feedback' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
-    keys = keys.filter(k=>k==='votes'||k==='comments');
-  }
-  /* kh_announcements: a non-admin may ONLY append to `comments` (the public
-     discussion thread on an announcement). text/active/targets/created_at stay
-     admin-only (posted/deleted via the security-definer RPCs), so a user can't
-     edit, deactivate or hijack an announcement — just comment on it. */
-  if(table==='kh_announcements' && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
-    keys = keys.filter(k=>k==='comments');
+  /* Non-admins get NO direct PATCH of kh_feedback / kh_announcements. Commenting
+     and upvoting now go through the atomic kh_add_comment / kh_vote_feedback RPCs
+     (server-side append/increment). The old allowance let a non-admin PATCH the
+     whole `comments` array — a read-modify-write that lost-updated concurrent
+     comments AND let a crafted request wipe the thread (comments=[]) or forge
+     authors. Verified admins (x-kh-admin) may still patch any column. */
+  if((table==='kh_feedback' || table==='kh_announcements') && !(await isAdmin(request.headers.get('x-kh-admin')||''))){
+    keys = [];
   }
   if(!keys.length) return err('no valid columns to update',400,env);
   const setSql = keys.map(k=>QUOTE(k)+'=?').join(',');
@@ -1369,7 +1415,7 @@ export default {
       if(isRpc){
         if(request.method!=='POST') return err('rpc requires POST',405,env);
         let body={}; try{ body = await request.json(); }catch(_){ body={}; }
-        return await handleRpc(name, body, DB, env);
+        return await handleRpc(name, body, DB, env, request);
       }
       if(!COLUMNS[name]) return err('unknown table: '+name, 404, env);
       switch(request.method){
