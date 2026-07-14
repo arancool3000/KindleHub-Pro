@@ -9784,8 +9784,8 @@ async function _khOpenSiteEditor(){
       tmplRow.appendChild(chip);
     });
   }
-  const descIn=el('textarea',{maxlength:'600',style:{width:'100%',minHeight:'50px',boxSizing:'border-box'},placeholder:'Describe the change and let AI draft it…'});
-  editWrap.appendChild(descIn);if(typeof _khCharCount==='function')_khCharCount(descIn,600);
+  const descIn=el('textarea',{style:{width:'100%',minHeight:'50px',boxSizing:'border-box'},placeholder:'Describe the change and let AI draft it…'});
+  editWrap.appendChild(descIn);
   const aiRow=el('div',{className:'card-row',style:{flexWrap:'wrap',alignItems:'center'}});
   const aiBtn=txt('button','Draft with AI',{className:'btn small primary'});
   const aiStatus=txt('span','',{style:{fontSize:'11px',color:'var(--muted)'}});
@@ -9795,12 +9795,12 @@ async function _khOpenSiteEditor(){
   /* Refine — iterate on the CURRENT code ("make it darker", "also round corners")
      without starting over. Feeds the existing code + instruction back to 3.5-flash. */
   const refineRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
-  const refineIn=el('input',{maxlength:'300',placeholder:'Refine the current draft… e.g. "make it bigger"',style:{flex:'1',fontSize:'11px'}});
+  const refineIn=el('input',{placeholder:'Refine the current draft… e.g. "make it bigger"',style:{flex:'1',fontSize:'11px'}});
   const refineBtn=txt('button','Refine',{className:'btn small'});
-  refineRow.append(refineIn,refineBtn);editWrap.appendChild(refineRow);if(typeof _khCharCount==='function')_khCharCount(refineIn,300);
+  refineRow.append(refineIn,refineBtn);editWrap.appendChild(refineRow);
   const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'2px'}});
-  const box=el('textarea',{maxlength:'60000',style:{width:'100%',minHeight:'150px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
-  editWrap.appendChild(boxLbl);editWrap.appendChild(box);if(typeof _khCharCount==='function')_khCharCount(box,60000);
+  const box=el('textarea',{style:{width:'100%',minHeight:'150px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
+  editWrap.appendChild(boxLbl);editWrap.appendChild(box);
   /* Undo + Explain — an undo stack of prior box states, and a plain-English
      summary of what the current code does before you publish. */
   const metaRow=el('div',{className:'card-row',style:{marginTop:'2px',alignItems:'center'}});
@@ -43809,8 +43809,10 @@ feedback:()=>{
     }
     refreshList();
     box.appendChild(listBox);
-    const inp=el('textarea',{rows:2,maxlength:'500',placeholder:'Write a comment...',style:{width:'100%',fontSize:'12px',marginBottom:'8px',resize:'vertical'}});
+    const inp=el('textarea',{rows:2,placeholder:'Write a comment...',style:{width:'100%',fontSize:'12px',marginBottom:'8px',resize:'vertical'}});
     box.appendChild(inp);
+    /* Display-only counter (this comment truncates to 500 on send) — NOT a hard
+       maxlength, so typing is never blocked. */
     if(typeof _khCharCount==='function')_khCharCount(inp,500);
     const btnRow=el('div',{style:{display:'flex',gap:'6px',justifyContent:'flex-end'}});
     const close=txt('button','Close',{className:'btn small'});close.onclick=()=>ov.remove();
