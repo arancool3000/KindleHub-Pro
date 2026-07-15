@@ -3723,7 +3723,7 @@ window.khCaptureScreen=function(target,name){
         window.html2canvas(elx,{backgroundColor:bg,useCORS:true,logging:false,scale:Math.min(2,window.devicePixelRatio||1)}).then(function(canvas){
           var url=null;try{url=canvas.toDataURL('image/png');}catch(_){url=null;}
           if(url){
-            window._khShots.unshift({name:name||('Screenshot · '+new Date().toLocaleString()),url:url,at:Date.now()});
+            window._khShots.unshift({name:name||('Screenshot · '+NOW().toLocaleString()),url:url,at:Date.now()});
             if(window._khShots.length>30)window._khShots.length=30;
           }
           resolve(url);
@@ -9828,6 +9828,102 @@ function _khSiteEditHistoryAdd(payload){
   }catch(_){}
 }
 window._khSiteScanSilk=_khSiteScanSilk;window._khVerifySiteEdit=_khVerifySiteEdit;window._khPolishSiteEditJs=_khPolishSiteEditJs;window._khSiteEditHistoryAdd=_khSiteEditHistoryAdd;
+/* ── Impact analysis (on-device, no AI) ───────────────────────────────────
+   A quick, deterministic "this edit will affect:" summary shown before
+   publish so the admin sees SCOPE at a glance. CSS: a light regex scan of
+   the selector text before each `{` (skips @media/@supports/@keyframes/
+   @font-face/@page preludes, strips pseudo-classes/attribute selectors so
+   the list reads as plain class/id/tag names). JS: reuses _khAppRiskFlags
+   for risky calls + a rough count of referenced external names (declared
+   locals/params and property-access tails are excluded so it isn't just
+   "every identifier in the file"). No lookbehind/optional-chaining/etc —
+   this code itself ships inside index.html, so it must stay ES5/ES2015 like
+   everything else here (it can run on the admin's own Kindle too). */
+function _khCssSelectors(css){
+  var out={};
+  try{
+    var body=String(css||'').replace(/\/\*[\s\S]*?\*\//g,' ');
+    var re=/([^{}]+)\{/g,m;
+    while((m=re.exec(body))){
+      var chunk=m[1];
+      if(/@(media|supports|keyframes|font-face|page)\b/i.test(chunk))continue;
+      chunk.split(',').forEach(function(sel){
+        sel=sel.trim();if(!sel)return;
+        var parts=sel.split(/\s+/);
+        var last=parts[parts.length-1]||sel;
+        last=last.replace(/::?[A-Za-z-]+(\([^)]*\))?/g,'');
+        last=last.replace(/\[[^\]]*\]/g,'');
+        last=last.trim();
+        if(last)out[last]=true;
+      });
+    }
+  }catch(_e){}
+  return Object.keys(out);
+}
+function _khCountJsGlobals(js){
+  try{
+    var body=String(js||'');
+    body=body.replace(/\/\*[\s\S]*?\*\//g,' ').replace(/\/\/.*$/gm,' ');
+    body=body.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g,' ');
+    body=body.replace(/\.[A-Za-z_$][A-Za-z0-9_$]*/g,'.');
+    var declared={};
+    var dre=/\b(?:var|let|const|function)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,dm;
+    while((dm=dre.exec(body)))declared[dm[1]]=true;
+    var pre=/function\s*[A-Za-z_$]*\s*\(([^)]*)\)/g,pm;
+    while((pm=pre.exec(body))){pm[1].split(',').forEach(function(a){a=a.replace(/[^A-Za-z0-9_$]/g,'');if(a)declared[a]=true;});}
+    var KEYWORDS={'if':1,'else':1,'for':1,'while':1,'do':1,'return':1,'function':1,'var':1,'let':1,'const':1,'new':1,'typeof':1,'instanceof':1,'in':1,'of':1,'this':1,'true':1,'false':1,'null':1,'undefined':1,'try':1,'catch':1,'finally':1,'throw':1,'switch':1,'case':1,'break':1,'continue':1,'delete':1,'void':1,'default':1};
+    var ids=body.match(/\b[A-Za-z_$][A-Za-z0-9_$]*\b/g)||[];
+    var seen={};
+    ids.forEach(function(id){ if(!KEYWORDS[id]&&!declared[id])seen[id]=true; });
+    return Object.keys(seen).length;
+  }catch(_e){ return 0; }
+}
+window._khCssSelectors=_khCssSelectors;window._khCountJsGlobals=_khCountJsGlobals;
+/* ── "Fix a live error" — gather recent client errors (session + cloud) and
+   pick the most actionable one: most FREQUENT message wins, ties broken by
+   most RECENT. Session errors come from window._khAutoErrors; cloud errors
+   (this whole editor is already admin-gated) via a timeout-tolerant
+   _sbSelect, honouring the persisted clear watermark window._khErrAfterCut
+   so a cleared error doesn't keep coming back. Never throws. */
+async function _khPickLiveError(){
+  var list=[];
+  try{
+    var sess=(window._khAutoErrors||[]);
+    for(var i=0;i<sess.length;i++){
+      var e=sess[i];if(!e)continue;
+      if(typeof window._khErrAfterCut==='function'&&!window._khErrAfterCut(e.date))continue;
+      list.push({msg:String(e.msg||'').slice(0,200),where:e.where||'',line:e.line||'',stack:e.stack||'',date:e.date||''});
+    }
+  }catch(_e){}
+  try{
+    if(typeof _sbActive==='function'&&_sbActive()&&typeof _sbSelect==='function'){
+      var rows=await Promise.race([
+        _sbSelect('kh_errors','select=text,date&order=date.desc&limit=20'),
+        new Promise(function(res){setTimeout(function(){res(null);},4000);})
+      ]);
+      if(Array.isArray(rows)){
+        for(var j=0;j<rows.length;j++){
+          var r=rows[j];if(!r)continue;
+          if(typeof window._khErrAfterCut==='function'&&!window._khErrAfterCut(r.date))continue;
+          var tx=String(r.text||'');
+          var mm=tx.match(/\[AUTO \w+\]\s*([^\n]+)/);
+          var msg=mm?mm[1]:tx.slice(0,200);
+          list.push({msg:msg.slice(0,200),where:'',line:'',stack:tx.slice(0,900),date:r.date||''});
+        }
+      }
+    }
+  }catch(_e){}
+  if(!list.length)return null;
+  var freq={};
+  list.forEach(function(e){var k=e.msg.slice(0,120);freq[k]=(freq[k]||0)+1;});
+  list.sort(function(a,b){
+    var fa=freq[a.msg.slice(0,120)]||1,fb=freq[b.msg.slice(0,120)]||1;
+    if(fb!==fa)return fb-fa;
+    return String(b.date||'')<String(a.date||'')?-1:(String(b.date||'')>String(a.date||'')?1:0);
+  });
+  return list[0];
+}
+window._khPickLiveError=_khPickLiveError;
 async function _khOpenSiteEditor(){
   if(!(window._isAdminCached===true)){if(typeof toast==='function')toast('Admins only.');return;}
   const cur=_khGlobalEditGet()||{css:'',js:'',banner:''};
@@ -9850,7 +9946,7 @@ async function _khOpenSiteEditor(){
   /* ── EDIT tab ── */
   const seg=el('div',{className:'card-row',style:{gap:'6px'}});
   const segBtns={};
-  [['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']].forEach(function(m){const b=txt('button',m[1],{className:'btn small'+(m[0]==='css'?' primary':'')});b.onclick=function(){mode=m[0];Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x===mode);});_syncBox();_verify();};segBtns[m[0]]=b;seg.appendChild(b);});
+  [['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']].forEach(function(m){const b=txt('button',m[1],{className:'btn small'+(m[0]==='css'?' primary':'')});b.onclick=function(){mode=m[0];Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x===mode);});_threadReset();_syncBox();_verify();};segBtns[m[0]]=b;seg.appendChild(b);});
   editWrap.appendChild(seg);
   /* Quick-start templates — click to prefill the description (per mode), so an
      admin who isn't sure what to type has instant, safe starting points. */
@@ -9881,8 +9977,23 @@ async function _khOpenSiteEditor(){
      without starting over. Feeds the existing code + instruction back to 3.5-flash. */
   const refineRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
   const refineIn=el('input',{placeholder:'Refine the current draft… e.g. "make it bigger"',style:{flex:'1',fontSize:'11px'}});
-  const refineBtn=txt('button','Refine',{className:'btn small'});
+  const refineBtn=txt('button','Send',{className:'btn small'});
   refineRow.append(refineIn,refineBtn);editWrap.appendChild(refineRow);
+  /* Conversational refine THREAD — a visible back-and-forth so you can iterate
+     ("make them navy" -> "also round the corners" -> "smaller") with the AI
+     always editing the CURRENT code for the active mode. */
+  const editThread=el('div',{style:{maxHeight:'110px',overflowY:'auto',border:'var(--thin)',borderRadius:'8px',padding:'6px 8px',margin:'4px 0',background:'var(--card)',fontSize:'10.5px',lineHeight:'1.4',display:'none'}});
+  editWrap.appendChild(editThread);
+  function _threadAdd(who,text){
+    try{
+      editThread.style.display='block';
+      var row=el('div',{style:{marginBottom:'4px'}});
+      row.appendChild(txt('span',(who==='you'?'You: ':'AI: '),{style:{fontWeight:'800',color:(who==='you'?'var(--fg)':'var(--accent)')}}));
+      row.appendChild(txt('span',String(text||'').slice(0,180)));
+      editThread.appendChild(row);editThread.scrollTop=editThread.scrollHeight;
+    }catch(_e){}
+  }
+  function _threadReset(){try{editThread.innerHTML='';editThread.style.display='none';}catch(_e){}}
   const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'2px'}});
   const box=el('textarea',{style:{width:'100%',minHeight:'150px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
   editWrap.appendChild(boxLbl);editWrap.appendChild(box);
@@ -9891,8 +10002,33 @@ async function _khOpenSiteEditor(){
   const metaRow=el('div',{className:'card-row',style:{marginTop:'2px',alignItems:'center'}});
   const undoBtn=txt('button','Undo',{className:'btn small',style:{opacity:'.9'}});
   const explainBtn=txt('button','Explain this',{className:'btn small',style:{opacity:'.9'}});
+  const fixErrBtn=txt('button','Fix a live error',{className:'btn small',style:{opacity:'.9'}});
   const lineInfo=txt('span','',{style:{fontSize:'9.5px',color:'var(--muted)',marginLeft:'auto'}});
-  metaRow.append(undoBtn,explainBtn,lineInfo);editWrap.appendChild(metaRow);
+  metaRow.append(undoBtn,explainBtn,fixErrBtn,lineInfo);editWrap.appendChild(metaRow);
+  /* One-tap "fix the bug users are actually hitting": pull the most recent client
+     error (this session, and — for admins — the cloud error log), switch to JS,
+     and draft a small defensive guard with Gemini 3.5 Flash, auto-polished Silk-safe. */
+  fixErrBtn.onclick=async function(){
+    fixErrBtn.disabled=true;statusEl.textContent='Finding a recent error…';
+    try{
+      /* _khPickLiveError ranks session + cloud errors by FREQUENCY (ties → most
+         recent) so we fix the bug users are actually hitting most, not just the
+         last one logged. Honours the clear-watermark; never throws. */
+      var top=await _khPickLiveError();
+      if(!top){statusEl.textContent='';if(typeof toast==='function')toast('No recent errors to fix.');fixErrBtn.disabled=false;return;}
+      var etext=String(top.stack||top.msg||'').slice(0,1200);
+      /* switch to JS mode */
+      mode='js';Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x==='js');});_syncBox();
+      _threadReset();_threadAdd('you','Fix this live error: '+String(top.msg||etext).slice(0,120));
+      statusEl.textContent='Drafting a guard for the top error…';_pushUndo();
+      var sysF='Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this runtime error on a KindleHub client. OLD Kindle Silk WebKit ES5/ES2015 ONLY: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credentials, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Output ONLY the raw JavaScript.';
+      var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysF+'\n\nERROR:\n'+etext,{temperature:0.2,maxTokens:1200,model:_KH_EDIT_MODEL});
+      var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
+      if(clean){statusEl.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){statusEl.textContent=t;});store.js=rr.js;box.value=rr.js;_threadAdd('ai','drafted a JS guard ('+store.js.length+' chars) — review, Test, then Publish.');statusEl.textContent='Drafted a guard — review it below, then Publish.';_verify();_updLineInfo();}
+      else statusEl.textContent='AI returned nothing — try again.';
+    }catch(e){statusEl.textContent='';if(typeof toast==='function')toast('Error: '+((e&&e.message)||e));}
+    fixErrBtn.disabled=false;
+  };
   var _undoStack=[];
   function _pushUndo(){try{_undoStack.push(store[mode]||'');if(_undoStack.length>20)_undoStack.shift();}catch(_e){}}
   function _updLineInfo(){var v=store[mode]||'';var ln=v?v.split('\n').length:0;lineInfo.textContent=v?(ln+' line'+(ln===1?'':'s')+' · '+v.length+' chars'):'';}
@@ -9913,13 +10049,13 @@ async function _khOpenSiteEditor(){
     var instr=(refineIn.value||'').trim();if(!instr){if(typeof toast==='function')toast('Say what to change.');return;}
     var cur=(store[mode]||'').trim();if(!cur){if(typeof toast==='function')toast('Draft something first (or just describe it above).');return;}
     if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
-    refineBtn.disabled=true;aiStatus.textContent='Refining…';_pushUndo();
+    refineBtn.disabled=true;aiStatus.textContent='Refining…';_pushUndo();_threadAdd('you',instr);
     try{
       var sysR=(mode==='css'?'You edit CSS':mode==='banner'?'You edit a short banner text':'You edit JavaScript')+' for an OLD Kindle Silk WebKit web app. Apply the requested change to the CURRENT '+(mode==='banner'?'text':'code')+' and return ONLY the full updated '+(mode==='banner'?'text':(mode==='css'?'CSS':'JavaScript'))+' — no markdown, no explanation.'+(mode==='js'?' ES5/ES2015 only: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter.':'');
       var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysR+'\n\nCHANGE: '+instr+'\n\nCURRENT:\n'+cur,{temperature:0.2,maxTokens:1600,model:_KH_EDIT_MODEL});
       var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
-      if(clean){store[mode]=clean;box.value=clean;if(mode==='js'){aiStatus.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=rr.js;box.value=rr.js;}refineIn.value='';aiStatus.textContent='Refined — review it.';_verify();_updLineInfo();}
-      else aiStatus.textContent='No change returned.';
+      if(clean){store[mode]=clean;box.value=clean;if(mode==='js'){aiStatus.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=rr.js;box.value=rr.js;}refineIn.value='';aiStatus.textContent='Updated — review it.';_threadAdd('ai','updated the '+mode+' ('+(store[mode]||'').length+' chars)');_verify();_updLineInfo();}
+      else {aiStatus.textContent='No change returned.';_threadAdd('ai','(no change returned — try rephrasing)');}
     }catch(e){aiStatus.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
     refineBtn.disabled=false;
   };
@@ -9940,6 +10076,26 @@ async function _khOpenSiteEditor(){
     refineRow.style.display=mode==='banner'?'none':'flex';
     _renderTemplates();_updLineInfo();
   }
+  /* Deterministic, on-device "this edit will affect:" scope summary (no AI).
+     Shown live in the report AND again in the publish confirm so the admin
+     sees BLAST RADIUS before pushing to every user. */
+  function _impactLines(p){
+    var lines=[];
+    try{
+      if(p&&p.css){
+        var sels=(typeof _khCssSelectors==='function')?_khCssSelectors(p.css):[];
+        if(sels.length){var shown=sels.slice(0,6).join(', ');lines.push('CSS restyles '+sels.length+' selector'+(sels.length===1?'':'s')+' ('+shown+(sels.length>6?', …':'')+')');}
+      }
+      if(p&&p.banner)lines.push('Banner: a '+String(p.banner).length+'-char notice shown site-wide');
+      if(p&&p.js){
+        var globs=(typeof _khCountJsGlobals==='function')?_khCountJsGlobals(p.js):0;
+        lines.push('JS runs on every device — references ~'+globs+' external name'+(globs===1?'':'s'));
+        var flags=(typeof _khAppRiskFlags==='function')?(_khAppRiskFlags(p.js)||[]):[];
+        if(flags.length)lines.push('JS behaviour: '+flags.slice(0,5).join('; '));
+      }
+    }catch(_e){}
+    return lines;
+  }
   function _renderReport(v){
     reportHost.innerHTML='';
     if(!v){reportHost.appendChild(txt('div','Edit or draft something, then Verify.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
@@ -9952,6 +10108,13 @@ async function _khOpenSiteEditor(){
       reportHost.appendChild(txt('div','Warnings (publishing still allowed):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'4px 0 2px'}}));
       v.warnings.forEach(function(w){reportHost.appendChild(txt('div','• '+w,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));});
     }
+    try{
+      var imp=_impactLines(store);
+      if(imp.length){
+        reportHost.appendChild(txt('div','This edit will affect:',{style:{fontSize:'10px',fontWeight:'800',color:'var(--fg)',margin:'6px 0 2px'}}));
+        imp.forEach(function(li){reportHost.appendChild(txt('div','• '+li,{style:{fontSize:'11px',color:'var(--fg)',opacity:'.85',lineHeight:'1.4'}}));});
+      }
+    }catch(_e){}
   }
   let _lastV=null;
   function _verify(){ _lastV=_khVerifySiteEdit(store); _renderReport(_lastV); pubBtn.disabled=!_lastV.ok; return _lastV; }
@@ -9988,9 +10151,11 @@ async function _khOpenSiteEditor(){
     }
     _lastV=v;_renderReport(v);pubBtn.disabled=!v.ok;
     if(!v.ok){statusEl.textContent='';if(typeof toast==='function')toast('Still has issues that could break the site — fix the red items first.',5000);return false;}
+    const impLines=_impactLines(p);
+    const itxt=impLines.length?('\n\nThis edit will affect:\n• '+impLines.join('\n• ')):'';
     const jtxt=p.js?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
     const wtxt=v.warnings.length?('\n\nWarnings:\n• '+v.warnings.join('\n• ')):'';
-    if(!(await kindleConfirm('Publish this to ALL users now?'+jtxt+wtxt))){statusEl.textContent='';return false;}
+    if(!(await kindleConfirm('Publish this to ALL users now?'+itxt+jtxt+wtxt))){statusEl.textContent='';return false;}
     statusEl.textContent='Publishing…';
     const ok=await _khGlobalEditPublish(p);
     if(ok){_khSiteEditHistoryAdd(p);statusEl.textContent='';if(typeof toast==='function')toast('Published to everyone.',4000);ov.remove();return true;}
@@ -10046,7 +10211,7 @@ async function _khOpenSiteEditor(){
       c.appendChild(txt('div',(tiers.join(' · ')||'empty')+' · '+new Date(h.ts).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'6px'}}));
       const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
       const viewB=txt('button','View / edit',{className:'btn small'});
-      viewB.onclick=function(){store.css=h.css||'';store.banner=h.banner||'';store.js=h.js||'';descIn.value=h.note||'';tab='edit';_showTab();_syncBox();_verify();};
+      viewB.onclick=function(){store.css=h.css||'';store.banner=h.banner||'';store.js=h.js||'';descIn.value=h.note||'';tab='edit';_threadReset();_showTab();_syncBox();_verify();};
       const repubB=txt('button','Re-publish',{className:'btn small primary'});
       repubB.onclick=function(){_doPublish({css:h.css,banner:h.banner,js:h.js,note:h.note});};
       row.append(viewB,repubB);c.appendChild(row);savedWrap.appendChild(c);
@@ -11951,7 +12116,7 @@ function _trimStateForCloud(stateObj){
   if(Array.isArray(t.mdJournals)&&t.mdJournals.length>40)t.mdJournals=t.mdJournals.slice(-40);
   if(Array.isArray(t.focusLog)&&t.focusLog.length>50)t.focusLog=t.focusLog.slice(-50);
   if(Array.isArray(t.sleepLog)&&t.sleepLog.length>60)t.sleepLog=t.sleepLog.slice(-60);
-  if(Array.isArray(t.savedRecipes)&&t.savedRecipes.length>50)t.savedRecipes=t.savedRecipes.slice(-50);
+  if(Array.isArray(t.savedRecipes)&&t.savedRecipes.length>50)t.savedRecipes=t.savedRecipes.slice(0,50);
   if(Array.isArray(t.savedPlaces)&&t.savedPlaces.length>40)t.savedPlaces=t.savedPlaces.slice(-40);
   if(Array.isArray(t.savedQuizzes)&&t.savedQuizzes.length>20)t.savedQuizzes=t.savedQuizzes.slice(-20);
   if(t.rssRead&&typeof t.rssRead==='object'){
@@ -28133,7 +28298,9 @@ function renderBooks(){
   let books=[...S.books];
   if(search)books=books.filter(b=>b.title.toLowerCase().includes(search.toLowerCase())||(b.author&&b.author.toLowerCase().includes(search.toLowerCase())));
   if(statusF!=='all')books=books.filter(b=>(b.status||'to-read')===statusF);
-  if(sortV==='added')books.reverse();
+  /* S.books is unshift-ordered (newest at index 0), so the default
+     spread already lists newest-first — reversing here inverted it. */
+  if(sortV==='added'){}
   else if(sortV==='rating')books.sort((a,b2)=>(b2.rating||0)-(a.rating||0));
   else if(sortV==='az')books.sort((a,b2)=>a.title.localeCompare(b2.title));
   else if(sortV==='status'){const ord={'reading':0,'to-read':1,'finished':2};books.sort((a,b2)=>(ord[a.status||'to-read']||0)-(ord[b2.status||'to-read']||0));}
@@ -30640,14 +30807,18 @@ function addBotMsg(t,isTemp){
     wrap.appendChild(btnRow);
   }
 
-  /* "Reply" — quote this AI message in your next prompt. */
-  if(!isTemp&&displayText){
+  /* "Reply" — quote this AI message in your next prompt. Shown even when
+     displayText starts empty (the streaming bubble created by sendChat() is
+     filled in AFTER this runs) — the click handler reads the bubble's LIVE
+     text at click time instead of the stale value captured here, so Reply
+     still works once streaming has finished. */
+  if(!isTemp){
     const act=document.createElement('div');
     act.style.cssText='display:flex;gap:6px;margin:1px 0 2px 4px;';
     const rb=document.createElement('button');
     rb.textContent='Reply';rb.className='btn small';
     rb.style.cssText='font-size:10px;padding:3px 9px;min-height:28px;opacity:.7;';
-    rb.onclick=function(){_setAiReply(displayText,'AI');};
+    rb.onclick=function(){var _live=wrap.querySelector('.msg');_setAiReply(_live?_live.textContent:displayText,'AI');};
     act.appendChild(rb);
     wrap.appendChild(act);
   }
@@ -31005,7 +31176,7 @@ ON_SHOW.draw=()=>{
   const ds=window._dState;
 
   const ctx=canvas.getContext('2d');
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle=document.body.classList.contains('dark')?'#1a1a1a':'#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
 
   function redrawAll(){
     ctx.fillStyle=document.body.classList.contains('dark')?'#1a1a1a':'#fff';
@@ -31039,6 +31210,9 @@ ON_SHOW.draw=()=>{
       ctx.font=`${stroke.size*5}px Georgia,serif`;
       ctx.fillStyle=stroke.color||'#000';
       ctx.fillText(stroke.text,stroke.pts[0].x,stroke.pts[0].y);
+    }else if(stroke.pts.length===1){
+      const p0=stroke.pts[0];
+      ctx.beginPath();ctx.arc(p0.x,p0.y,(stroke.size||3)/2,0,Math.PI*2);ctx.fill();
     }else{
       ctx.beginPath();ctx.moveTo(stroke.pts[0].x,stroke.pts[0].y);
       for(let i=1;i<stroke.pts.length;i++)ctx.lineTo(stroke.pts[i].x,stroke.pts[i].y);
@@ -31695,7 +31869,7 @@ function render(){
         resEl.textContent='...';resEl.style.color='#ccc';
       }
     }catch(e){resEl.textContent='...';resEl.style.color='#ccc';}
-  }else{resEl.textContent=fmt(C.ans);resEl.style.color='#000';}
+  }else{resEl.textContent=fmt(C.ans);resEl.style.color='';}
 }
 function renderHist(){
   histEl.innerHTML='';
@@ -31703,7 +31877,7 @@ function renderHist(){
     const row=el('div',{className:'calc-hist-row'});
     row.appendChild(txt('span',h.e,{className:'calc-hist-e'}));
     row.appendChild(txt('span','= '+fmt(h.v),{className:'calc-hist-r'}));
-    row.onclick=()=>{C.ans=h.v;C.expr='';resEl.textContent=fmt(h.v);resEl.style.color='#000';};
+    row.onclick=()=>{C.ans=h.v;C.expr='';resEl.textContent=fmt(h.v);resEl.style.color='';};
     row.style.cursor='pointer';
     histEl.appendChild(row);
   });
@@ -31716,10 +31890,10 @@ function execCalc(){
     if(typeof v!=='number')throw new Error('Not a number');
     C.hist.push({e:C.expr,v});if(C.hist.length>50)C.hist.shift();
     C.ans=v;C.expr='';
-    resEl.style.color='#000';resEl.textContent=fmt(v);exprEl.textContent='';renderHist();
+    resEl.style.color='';resEl.textContent=fmt(v);exprEl.textContent='';renderHist();
   }catch(e){
     resEl.textContent='Error';resEl.style.color='#c00';
-    setTimeout(()=>{resEl.textContent=fmt(C.ans);resEl.style.color='#000';},1200);
+    setTimeout(()=>{resEl.textContent=fmt(C.ans);resEl.style.color='';},1200);
   }
 }
 
@@ -32088,8 +32262,8 @@ buildCalcKeys();
 render();
 (function(){
   function onKey(e){
-    const calcView=document.getElementById('view-calc');
-    if(!calcView||calcView.style.display==='none')return;
+    if(!document.body.contains(container)){document.removeEventListener('keydown',onKey);return;}
+    if(container.style.display==='none')return;
     if(C.mode!=='calc')return;
     const k=e.key;
     if(k>='0'&&k<='9'){C.expr+=k;render();e.preventDefault();}
@@ -33355,7 +33529,7 @@ home:()=>{
       const catHdr=txt('div',cat,{style:{gridColumn:'1/-1',fontSize:'9px',fontWeight:'900',textTransform:'uppercase',letterSpacing:'1.5px',color:'var(--muted)',paddingTop:'10px',paddingBottom:'2px',paddingLeft:'4px'}});
       appGrid.appendChild(catHdr);
       catApps.forEach(app=>{
-        const isLast=lastGame&&app.view===lastGame;
+        const isLast=lastGame&&app.view==='games';
         const icon=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',cursor:'pointer',padding:'12px 4px 8px',borderRadius:'14px',border:isLast?'2px solid var(--fg)':'var(--thin)',background:isLast?'var(--highlight)':'var(--card)',boxShadow:'var(--shadow)',position:'relative',transition:'none'}});
         if(isLast){const dot=txt('div','▶',{style:{position:'absolute',top:'4px',right:'6px',fontSize:'8px',color:'var(--muted)'}});icon.appendChild(dot);}
         icon.appendChild(txt('div',app.icon,{style:{fontSize:'18px',fontWeight:'900',fontFamily:'monospace',lineHeight:'1',textAlign:'center',color:'var(--fg)',letterSpacing:'-1px'}}));
@@ -33692,7 +33866,8 @@ home:()=>{
     const cdNameInp=el('input',{placeholder:'Event name...',style:{marginBottom:'4px',fontSize:'12px'}});
     const cdDateInp=el('input',{type:'datetime-local',style:{marginBottom:'4px',fontSize:'12px'}});
     const dflt=new Date(NOW().getTime()+7*86400000);
-    cdDateInp.value=dflt.toISOString().slice(0,16);
+    const _cdPad=n=>String(n).padStart(2,'0');
+    cdDateInp.value=dflt.getFullYear()+'-'+_cdPad(dflt.getMonth()+1)+'-'+_cdPad(dflt.getDate())+'T'+_cdPad(dflt.getHours())+':'+_cdPad(dflt.getMinutes());
     const cdSaveBtn=txt('button','Save',{className:'btn small primary'});
     cdSaveBtn.onclick=()=>{
       const name=cdNameInp.value.trim()||'Event';
@@ -34115,7 +34290,7 @@ games:()=>{
     c.appendChild(tdBiomeSel);
     c.appendChild(txt('p','8 towers, 8 enemy types, 40 waves. Defend your castle.',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'4px'}}));
     const tdBtn=txt('button','Defend!',{className:'btn primary',style:{marginTop:'6px'}});
-    tdBtn.onclick=()=>{const bi=parseInt(tdBiomeSel.value)||0;_initTowerDef();TowerDef.start(bi);};
+    tdBtn.onclick=()=>launchGame('towerdef');
     c.appendChild(tdBtn);
   }));
   rowSim.appendChild(gc('Artillery Duel',null,c=>{
@@ -34158,10 +34333,12 @@ games:()=>{
     });
   })();
 
-  /* Wire up data-game buttons */
-  v.querySelectorAll('[data-game]').forEach(b=>{
-    b.onclick=()=>launchGame(b.getAttribute('data-game'));
-  });
+  /* data-game buttons are already handled by the global click delegate near
+     launchGame() (document.addEventListener('click',...) that does
+     _gt.closest('[data-game]')). Wiring b.onclick here too made every Play
+     tap call launchGame() TWICE (once via this handler, once via the
+     delegate bubbling to document) — double S.lastPlay saves and a double
+     game-start race. Removed; the global delegate alone is sufficient. */
   /* Play Online buttons — open the generic KH_MP lobby and route the
      connected session into the game-specific startOnline() handler. */
   v.querySelectorAll('[data-online-game]').forEach(b=>{
@@ -35027,7 +35204,7 @@ dictionary:()=>{
   const resultDiv=el('div',{id:'dictResult'});
   const wordOfDay=el('div',{id:'dictWOD'});
   const words=Object.keys(DICT);
-  const todayIdx=Math.floor(Date.now()/86400000)%words.length;
+  const todayIdx=Math.floor(NOW().getTime()/86400000)%words.length;
   const wod=words[todayIdx];
   wordOfDay.innerHTML='';
   const wodCard=el('div',{style:{border:'var(--thin)',borderRadius:'6px',padding:'12px',marginBottom:'10px',background:'var(--card)'}});
@@ -35078,12 +35255,12 @@ dictionary:()=>{
     /* ── Favorite ★ — save the word to a personal list for later
        review. Persists in S.savedWords. Tap the star to toggle. */
     if(!S.savedWords)S.savedWords=[];
-    const isFav=S.savedWords.some(w=>w.word===word);
+    const isFav=S.savedWords.some(w=>w.word.toLowerCase()===word.toLowerCase());
     const favBtn=el('button',{style:'background:none;border:none;font-size:20px;cursor:pointer;color:'+(isFav?'#f0a000':'var(--muted)')+';padding:0 4px;margin-left:auto;line-height:1;'});
     favBtn.textContent=isFav?'★':'☆';
     favBtn.title=isFav?'Remove from saved words':'Save this word';
     favBtn.onclick=()=>{
-      const i=S.savedWords.findIndex(w=>w.word===word);
+      const i=S.savedWords.findIndex(w=>w.word.toLowerCase()===word.toLowerCase());
       if(i>=0){S.savedWords.splice(i,1);favBtn.textContent='☆';favBtn.style.color='var(--muted)';toast('Removed "'+word+'" from saved.');}
       else{
         const defText=(data&&data[0]&&data[0].meanings&&data[0].meanings[0]&&data[0].meanings[0].definitions&&data[0].meanings[0].definitions[0]&&data[0].meanings[0].definitions[0].definition)||DICT[word.toLowerCase()]||'';
@@ -35092,6 +35269,7 @@ dictionary:()=>{
         favBtn.textContent='★';favBtn.style.color='#f0a000';toast('Saved "'+word+'".');
       }
       saveNow();
+      savedToggle.textContent='★ '+S.savedWords.length+' saved words';
     };
     headRow.appendChild(favBtn);
     card3.appendChild(headRow);
@@ -35795,8 +35973,9 @@ maps:()=>{
   });
   document.addEventListener('mousemove',e=>{
     if(!drag)return;
-    const dx=e.clientX-drag.x,dy=e.clientY-drag.y,scale=360/Math.pow(2,mapState.zoom)/TW;
-    mapState.lon=drag.lon-dx*scale;mapState.lat=drag.lat+dy*scale*(180/360)*1.5;renderMap();
+    const dx=e.clientX-drag.x,dy=e.clientY-drag.y,z=mapState.zoom;
+    const fTX0=lonToFracX(drag.lon,z),fTY0=latToFracY(drag.lat,z);
+    mapState.lon=fracXToLon(fTX0-dx/TW,z);mapState.lat=fracYToLat(fTY0-dy/TW,z);renderMap();
   });
   document.addEventListener('mouseup',()=>{drag=null;});
 
@@ -35817,8 +35996,9 @@ maps:()=>{
   mapWrap.addEventListener('touchmove',e=>{
     e.preventDefault();hasMoved=true;
     if(!touchDrag||e.touches.length!==1)return;
-    const dx=e.touches[0].clientX-touchDrag.x,dy=e.touches[0].clientY-touchDrag.y,scale=360/Math.pow(2,mapState.zoom)/TW;
-    mapState.lon=touchDrag.lon-dx*scale;mapState.lat=touchDrag.lat+dy*scale*(180/360)*1.5;renderMap();
+    const dx=e.touches[0].clientX-touchDrag.x,dy=e.touches[0].clientY-touchDrag.y,z=mapState.zoom;
+    const fTX0=lonToFracX(touchDrag.lon,z),fTY0=latToFracY(touchDrag.lat,z);
+    mapState.lon=fracXToLon(fTX0-dx/TW,z);mapState.lat=fracYToLat(fTY0-dy/TW,z);renderMap();
   },{passive:false});
   mapWrap.addEventListener('touchend',()=>{touchDrag=null;});
   let lastPinch=0,pinchZoomed=false;
@@ -37101,6 +37281,7 @@ chat:()=>{
     }
   });
   let hbMode='chat';
+  let hbPrevMode='chat';
   let hbFSOverlay=null;
   function hbOpenFullPreview(){
     if(hbFSOverlay)return;
@@ -37129,7 +37310,7 @@ chat:()=>{
     if(!hbFSOverlay)return;
     hbFSOverlay.remove();hbFSOverlay=null;
     hbTabPrev.classList.remove('on');
-    hbSetMode(hbMode);
+    hbSetMode(hbPrevMode);
   }
 
   function hbSetMode(mode){
@@ -37156,7 +37337,7 @@ chat:()=>{
   }
   hbTabSplit.onclick=(e)=>{ e.stopPropagation(); hbCloseFullPreview(); hbSetMode('chat'); };
   hbTabCode.onclick =(e)=>{ e.stopPropagation(); hbCloseFullPreview(); hbSetMode('code'); };
-  hbTabPrev.onclick =(e)=>{ e.stopPropagation(); hbMode='preview'; hbOpenFullPreview(); };
+  hbTabPrev.onclick =(e)=>{ e.stopPropagation(); hbPrevMode=hbMode; hbMode='preview'; hbOpenFullPreview(); };
   function hbRunNow(){
     let html=hbEd.value;
     const interceptor=`<script>(function(){document.addEventListener('click',function(e){var a=e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href')||'';if(h.startsWith('#')||/^(https?:|mailto:|tel:)/.test(h)||!h)return;e.preventDefault();e.stopPropagation();var toast=document.createElement('div');toast.textContent='\u{1F4C4} Multi-page link \u201C'+h+'\u201D \u2014 works when deployed; preview shows one page only';toast.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:9px 18px;border-radius:6px;font-size:13px;z-index:99999;font-family:sans-serif;max-width:90vw;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none;';document.body.appendChild(toast);setTimeout(function(){toast.remove();},3500);},true);})();<\/script>`;
@@ -38335,7 +38516,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
   v.appendChild(header);
 
   let _lastWxData=null,_lastWxLocName=null,_lastAqData=null;
-  function reRenderWeather(){if(_lastWxData)wxRender(_lastWxData,_lastWxLocName,_lastAqData);}
+  function reRenderWeather(){if(_lastWxData)wxRender(_lastWxData,_lastWxLocName,_lastAqData,false);}
 
   const wxOut=el('div',{id:'wxOutFull'});
   v.appendChild(wxOut);
@@ -38646,9 +38827,11 @@ body.sepia #view-weather{--muted:#4a3a26;}
       else if(t<28)recs.push({icon:'[sun]',text:'Light, breathable clothing — warm day'});
       else recs.push({icon:'[hot]',text:'Very hot — stay hydrated, light colours'});
 
-      // Wind chill modifier
-      const wc2=t-feels;
-      if(wc2>4)recs.push({icon:'[wind]',text:'Feels '+Math.abs(Math.round(wc2))+unitLabel()+' colder due to wind — layer up'});
+      // Wind chill modifier — compare in Celsius (t and apparent_temperature
+      // are always Celsius); toUnit() adds Fahrenheit's +32 offset, which is
+      // wrong for a temperature DELTA, so convert only the display value.
+      const wc2=t-cur.apparent_temperature;
+      if(wc2>4)recs.push({icon:'[wind]',text:'Feels '+Math.abs(Math.round(isF?wc2*9/5:wc2))+unitLabel()+' colder due to wind — layer up'});
 
       // Rain
       if([51,53,55,61,63,65,80,81,82,95,96,99].includes(wc)||rain>2)
@@ -38662,6 +38845,7 @@ body.sepia #view-weather{--muted:#4a3a26;}
       wCard.appendChild(txt('h2','What to Wear',{style:'font-size:13px;margin-bottom:8px;'}));
       recs.forEach(r=>{
         const row=el('div',{style:'display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:var(--thin);'});
+        row.appendChild(txt('span',r.icon,{style:'font-size:11px;color:var(--muted);flex-shrink:0;'}));
         row.appendChild(txt('span',r.text,{style:'font-size:12px;line-height:1.5;'}));
         wCard.appendChild(row);
       });
@@ -39290,7 +39474,7 @@ tools:()=>{
     tableContent.appendChild(table);
   }
 
-  swapBtn.onclick=()=>{const f=fromSel.value,t=toSel.value,v=fromInp.value;fromSel.value=t;toSel.value=f;const res=parseFloat(v);if(!isNaN(res)){const r=doConv(res,t,f,activeCat);fromInp.value=fmtResult(r);}updateResult();};
+  swapBtn.onclick=()=>{const f=fromSel.value,t=toSel.value,v=fromInp.value;fromSel.value=t;toSel.value=f;const res=parseFloat(v);if(!isNaN(res)){const r=doConv(res,f,t,activeCat);fromInp.value=fmtResult(r);}updateResult();};
   fromInp.addEventListener('input',updateResult);
   fromSel.addEventListener('change',updateResult);
   toSel.addEventListener('change',updateResult);
@@ -39359,13 +39543,32 @@ tools:()=>{
   g.appendChild(pom);
   const ana=el('div',{className:'card'});
   ana.appendChild(txt('h2','Word Tools'));
-  ana.appendChild(el('input',{id:'anaIn',placeholder:'Enter a word or phrase...'}));
+  const anaIn=el('input',{id:'anaIn',placeholder:'Enter a word or phrase...'});
+  ana.appendChild(anaIn);
   const anr=el('div',{className:'card-row',style:{marginTop:'6px',flexWrap:'wrap'}});
+  const anaBtns={};
   ['randWord|Random','scrambleBtn|Scramble','reverseBtn|Reverse','upperBtn|UPPER','lowerBtn|lower','copyWord|Copy','palindromeBtn|Palindrome?'].forEach(pair=>{
-    const[id,label]=pair.split('|');anr.appendChild(txt('button',label,{className:'btn small',id}));
+    const[id,label]=pair.split('|');const b=txt('button',label,{className:'btn small',id});anaBtns[id]=b;anr.appendChild(b);
   });
   ana.appendChild(anr);
-  ana.appendChild(el('input',{id:'anaOut',readOnly:true,placeholder:'Result',style:{marginTop:'6px'}}));
+  const anaOut=el('input',{id:'anaOut',readOnly:true,placeholder:'Result',style:{marginTop:'6px'}});
+  ana.appendChild(anaOut);
+  anaBtns.randWord.onclick=()=>{anaIn.value=randWord(5+Math.floor(Math.random()*4));anaOut.value='';};
+  anaBtns.scrambleBtn.onclick=()=>{
+    const w=anaIn.value.trim();if(!w)return toast('Enter a word first');
+    const arr=w.split('');for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));const tmp=arr[i];arr[i]=arr[j];arr[j]=tmp;}
+    anaOut.value=arr.join('');
+  };
+  anaBtns.reverseBtn.onclick=()=>{const w=anaIn.value.trim();if(!w)return toast('Enter a word first');anaOut.value=w.split('').reverse().join('');};
+  anaBtns.upperBtn.onclick=()=>{const w=anaIn.value.trim();if(!w)return toast('Enter a word first');anaOut.value=w.toUpperCase();};
+  anaBtns.lowerBtn.onclick=()=>{const w=anaIn.value.trim();if(!w)return toast('Enter a word first');anaOut.value=w.toLowerCase();};
+  anaBtns.copyWord.onclick=()=>{const w=anaOut.value||anaIn.value;if(!w)return toast('Nothing to copy');try{navigator.clipboard.writeText(w).then(()=>toast('Copied!'));}catch(e){toast('Copy failed');}};
+  anaBtns.palindromeBtn.onclick=()=>{
+    const w=anaIn.value.trim();if(!w)return toast('Enter a word first');
+    const clean=w.toLowerCase().replace(/[^a-z0-9]/g,'');
+    const isPal=clean===clean.split('').reverse().join('');
+    anaOut.value=isPal?'Yes, "'+w+'" is a palindrome!':'No, "'+w+'" is not a palindrome.';
+  };
   g.appendChild(ana);
   const wotdCard=el('div',{className:'card',style:{gridColumn:'1/-1'}});
   wotdCard.appendChild(txt('h2','Word of the Day'));
@@ -39819,12 +40022,15 @@ reading:()=>{
   flCard.appendChild(flChips);
   const flResults=el('div',{});
   flCard.appendChild(flResults);
+  let _flSeq=0;
   function runFreeLib(query){
     query=(query||'').trim();
     if(!query){flResults.innerHTML='';return;}
     flResults.innerHTML='';
     flResults.appendChild(txt('div','Searching…',{style:{color:'var(--muted)',fontSize:'12px',padding:'6px 0'}}));
+    const _seq=++_flSeq;
     (window.khGutenSearch?window.khGutenSearch(query):Promise.resolve([])).then(list=>{
+      if(_seq!==_flSeq)return;
       flResults.innerHTML='';
       const eng=list.filter(b=>!b.lang||b.lang==='en');
       const show=(eng.length?eng:list).slice(0,12);
@@ -39852,6 +40058,7 @@ reading:()=>{
         flResults.appendChild(row);
       });
     }).catch(()=>{
+      if(_seq!==_flSeq)return;
       flResults.innerHTML='';
       flResults.appendChild(txt('div','Search failed — the network or proxy may be unavailable. Please try again.',{style:{color:'var(--danger)',fontSize:'12px',padding:'6px 0'}}));
     });
@@ -40325,6 +40532,13 @@ breathe:()=>{
       if(guidedTimer)clearInterval(guidedTimer);
       guidedTimer=setInterval(()=>{
         if(document.hidden)return;/* pause guided session while screen is off */
+        /* Self-stop when the Guided tab has left the DOM (view evicted from
+           _khTrimViewCache or the user navigated away) — every other view's
+           timers guard against this exact leak class via a DOM-connection
+           check; this one was missing it, so a running session ticked
+           forever in the background after the view was recycled. */
+        const gsEl=document.getElementById('gsText');
+        if(!gsEl||!gsEl.isConnected){stopGuidedSession();return;}
         guidedElapsed+=0.5;
         const pf=document.getElementById('gsProgFill');
         if(pf)pf.style.width=Math.min(guidedElapsed/STEP_DURATION*100,100)+'%';
@@ -40459,6 +40673,12 @@ breathe:()=>{
         mfTimerRunning=true;startBtn.textContent='Pause';
         S.lastTimerLabel=timerLabel.value.trim();save();
         mfTimerInterval=setInterval(()=>{
+          /* Self-stop when the Timer tab has left the DOM (view evicted from
+             _khTrimViewCache or the user navigated away) — same leak class
+             every other view's timers guard against via a DOM-connection
+             check (see startBreath's `!lbl.isConnected` check above). */
+          const faceEl=document.getElementById('mfTimerFace');
+          if(!faceEl||!faceEl.isConnected){clearInterval(mfTimerInterval);mfTimerInterval=null;mfTimerRunning=false;return;}
           mfTimerVal--;elapsedSecs++;
           if(mfTimerVal<=0){
             clearInterval(mfTimerInterval);mfTimerInterval=null;mfTimerRunning=false;
@@ -41075,8 +41295,8 @@ settings:()=>{
   locSel.appendChild(_customOpt);
 
   const _customPanel2=el('div',{id:'sLocCustom',style:{display:'none',gap:'6px',flexDirection:'column'}});
-  const _latInp=el('input',{placeholder:'Latitude (e.g. 51.5)',type:'number',step:'0.01',value:S.smLat||51.5});
-  const _lonInp=el('input',{placeholder:'Longitude (e.g. -0.1)',type:'number',step:'0.01',value:S.smLon||-0.1});
+  const _latInp=el('input',{placeholder:'Latitude (e.g. 51.5)',type:'number',step:'0.01',value:(typeof S.smLat==='number'?S.smLat:51.5)});
+  const _lonInp=el('input',{placeholder:'Longitude (e.g. -0.1)',type:'number',step:'0.01',value:(typeof S.smLon==='number'?S.smLon:-0.1)});
   const _cNameInp=el('input',{placeholder:'Location name (e.g. My Town)',value:(S.smCity&&!LOCATION_CITIES.find(x=>x.n===S.smCity))?S.smCity:''});
   _customPanel2.appendChild(_latInp);_customPanel2.appendChild(_lonInp);_customPanel2.appendChild(_cNameInp);
 
@@ -41933,7 +42153,7 @@ settings:()=>{
   _sGSect.appendChild(kInp);wrapEye(kInp);
   const kSave=txt('button','Save Gemini Key',{className:'btn',style:{marginTop:'6px'}});
   kSave.onclick=()=>{
-    S.geminiKey=kInp.value.trim();S.aiProvider='gemini';save();
+    S.geminiKey=kInp.value.trim();if(S.geminiKey)S.aiProvider='gemini';save();
     _sSG.classList.add('primary');_sSO.classList.remove('primary');
     /* Push immediately so the new key reaches the cloud before the user
        wanders to another device. scheduleCloudSync(true) bypasses the
@@ -41952,7 +42172,7 @@ settings:()=>{
   _sORSect.appendChild(orInp);wrapEye(orInp);
   const orSave=txt('button','Save OpenRouter Key',{className:'btn',style:{marginTop:'6px'}});
   orSave.onclick=()=>{
-    S.openrouterKey=orInp.value.trim();S.aiProvider='openrouter';save();
+    S.openrouterKey=orInp.value.trim();if(S.openrouterKey)S.aiProvider='openrouter';save();
     _sSO.classList.add('primary');_sSG.classList.remove('primary');
     const synced=(S.authToken&&S.syncEnabled&&navigator.onLine&&typeof scheduleCloudSync==='function');
     if(synced)try{scheduleCloudSync(true);}catch(_){}
@@ -42168,6 +42388,7 @@ settings:()=>{
     khiProvRow.style.display=S.khIntelligence?'block':'none';
     khiModelRow.style.display=S.khIntelligence?'block':'none';
     khiKeyStatus.style.display=S.khIntelligence?'block':'none';
+    khiFeatureList.style.display=S.khIntelligence?'block':'none';
     updateKhiStatus();
     toast(S.khIntelligence?'✦ KindleHub Intelligence enabled':'KHI disabled');
   };
@@ -44399,8 +44620,8 @@ feedback:()=>{
     });
   }
 
-  tSug.onclick=()=>{activeType='suggestion';tSug.classList.add('primary');tBug.classList.remove('primary');if(tErr)tErr.classList.remove('primary');tMan.classList.remove('primary');boardSection.style.display='';if(errPanel)errPanel.style.display='none';manualPanel.style.display='none';formTitle.textContent='Submit a Feature Suggestion';ta.placeholder='What would you like added or improved?';if(navigator.onLine)loadData();else renderItems();};
-  tBug.onclick=()=>{activeType='bug';tBug.classList.add('primary');tSug.classList.remove('primary');if(tErr)tErr.classList.remove('primary');tMan.classList.remove('primary');boardSection.style.display='';if(errPanel)errPanel.style.display='none';manualPanel.style.display='none';formTitle.textContent='Submit a Bug Report';ta.placeholder='What went wrong? What did you expect?';if(navigator.onLine)loadData();else renderItems();};
+  tSug.onclick=()=>{activeType='suggestion';tSug.classList.add('primary');tBug.classList.remove('primary');if(tErr)tErr.classList.remove('primary');tMan.classList.remove('primary');boardSection.style.display='';if(errPanel)errPanel.style.display='none';manualPanel.style.display='none';formTitle.textContent='Submit a Feature Suggestion';ta.placeholder='What would you like added or improved?';if(navigator.onLine!==false)loadData();else renderItems();};
+  tBug.onclick=()=>{activeType='bug';tBug.classList.add('primary');tSug.classList.remove('primary');if(tErr)tErr.classList.remove('primary');tMan.classList.remove('primary');boardSection.style.display='';if(errPanel)errPanel.style.display='none';manualPanel.style.display='none';formTitle.textContent='Submit a Bug Report';ta.placeholder='What went wrong? What did you expect?';if(navigator.onLine!==false)loadData();else renderItems();};
   tMan.onclick=()=>{
     activeType='__manual__';
     tMan.classList.add('primary');tSug.classList.remove('primary');tBug.classList.remove('primary');if(tErr)tErr.classList.remove('primary');
@@ -44409,7 +44630,7 @@ feedback:()=>{
     manualPanel.style.display='block';
   };
 
-  if(navigator.onLine){
+  if(navigator.onLine!==false){
     /* Probe the kh_feedback schema FIRST so we know whether to show
        Mark Done / Ignore / Comment buttons. Cheap (HEAD + select=col
        on a single row) and only fires once per view open. Without
@@ -44522,11 +44743,10 @@ mdjournal:()=>{
       const iso=date.toISOString();
       const title=today;
       const text='**Prompt:** '+prompt+'\n\n';
-      S.mdJournals.unshift({id:Date.now(),title,text,created:iso,updated:iso});
+      S.mdJournals.unshift({id:Date.now(),title,body:text,created:iso,updated:iso});
       save();
       currentIdx=0;
-      showEditor(0);
-      if(typeof ed!=='undefined'){ed.value=text;ed.focus();}
+      openEntry(0);
       toast('Prompt loaded — start writing!');
     }
   });
@@ -45212,11 +45432,16 @@ starmap:()=>{
     {name:'Ursids',      peak:[12,22],rate:10,  radRA:14.5,  radDec:76},
   ];
   function getActiveShower(){
-    const n=NOW(),m=n.getMonth()+1,d=n.getDate();
-    return METEOR_SHOWERS.find(s=>{
-      const dm=Math.abs((s.peak[0]-m)*30+(s.peak[1]-d));
-      return dm<=5;
-    })||null;
+    const n=NOW(),y=n.getFullYear();
+    const nowMs=new Date(y,n.getMonth(),n.getDate()).getTime();
+    for(let i=0;i<METEOR_SHOWERS.length;i++){
+      const s=METEOR_SHOWERS[i];
+      const peakMs=new Date(y,s.peak[0]-1,s.peak[1]).getTime();
+      let dm=Math.abs(nowMs-peakMs)/86400000;
+      dm=Math.min(dm,365-dm);
+      if(dm<=5)return s;
+    }
+    return null;
   }
 
   /* Active meteor shower badge */
@@ -46328,7 +46553,7 @@ starmap:()=>{
     ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
 
     // Atmosphere glow effect
-    if(tAtmo.dataset.on==='1'&&!tLight.dataset.on==='1'){
+    if(tAtmo.dataset.on==='1'&&tLight.dataset.on!=='1'){
       const atmo=ctx.createRadialGradient(W/2,H,0,W/2,H,Math.min(W,H)*0.8);
       atmo.addColorStop(0,'rgba(30,60,120,0.18)');
       atmo.addColorStop(1,'rgba(0,0,0,0)');
@@ -46615,7 +46840,7 @@ starmap:()=>{
         if(tNames.dataset.on==='1'&&dso[3]){
           ctx.fillStyle=col;ctx.font='8px var(--ui-font)';
           ctx.textAlign='left';ctx.textBaseline='middle';
-          ctx.fillText(dso[3].split(' ')[0]+' '+dso[3].split(' ')[1],p.x+7,p.y);
+          {const _dp=dso[3].split(' ');ctx.fillText(_dp[1]?_dp[0]+' '+_dp[1]:_dp[0],p.x+7,p.y);}
         }
         ctx.restore();
       });
@@ -47281,11 +47506,11 @@ sheets:()=>{
     const key=r+','+c;
     if(visiting.has(key))return{err:'CYCLE'};
     visiting.add(key);
-    const out=_evalFormula(raw.slice(1),visiting);
+    const out=_evalFormula(raw.slice(1),visiting,r,c);
     visiting.delete(key);
     return out;
   }
-  function _evalFormula(expr,visiting){
+  function _evalFormula(expr,visiting,cellR,cellC){
     try{
       let s=String(expr);
       /* String literals — preserve as JS strings so CONCAT etc. work.
@@ -47374,7 +47599,7 @@ sheets:()=>{
       const _MID=(x,start,n)=>String(x==null?'':x).substr(num(start)-1,num(n));
       const _ISNUMBER=x=>typeof x==='number'&&!isNaN(x);
       const _ISBLANK=x=>x===''||x==null;
-      const _ROW=()=>activeR+1,_COL=()=>activeC+1;
+      const _ROW=()=>(cellR!=null?cellR:activeR)+1,_COL=()=>(cellC!=null?cellC:activeC)+1;
       const _NOW=()=>new Date().toISOString().slice(0,19).replace('T',' ');
       const _TODAY=()=>_localDayKey();
       const _RAND=()=>Math.random();
@@ -47694,7 +47919,7 @@ sheets:()=>{
     else if(e.key==='Tab'){e.preventDefault();_selectCell(activeR,e.shiftKey?activeC-1:activeC+1);}
     else if(e.key==='Enter'){e.preventDefault();_selectCell(activeR+1,activeC);}
     else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();pushHistory();s.data[activeR][activeC]='';_saveWB();renderGridValuesOnly();fInp.value='';}
-    else if(e.key.length===1&&!e.altKey){
+    else if(e.key.length===1&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
       /* Type-to-edit: start editing the current cell */
       e.preventDefault();
       pushHistory();
@@ -47891,6 +48116,7 @@ cipher:()=>{
     function decode(){
       try{
         const bytes=inp.value.trim().split(/\s+/);
+        if(!bytes.length||bytes.some(b=>!/^[01]{1,8}$/.test(b)))throw new Error('bad binary');
         out.textContent=bytes.map(b=>String.fromCharCode(parseInt(b,2))).join('');
       }catch(e){out.textContent='Invalid binary input';}
     }
@@ -48022,7 +48248,6 @@ cipher:()=>{
     }
     keyIn.addEventListener('input',updateGrid);updateGrid();
     wrap.appendChild(gridLabel);wrap.appendChild(grid);
-    wrap.appendChild(out);
     return wrap;
   }
 
@@ -48157,8 +48382,9 @@ translate:()=>{
   });
 
   async function doTranslate(){
+    if(transBtn.disabled)return;
     const text=ta.value.trim();if(!text){toast('Enter text to translate');return;}
-    const src=srcSel.value==='auto'?'en':srcSel.value;
+    const src=srcSel.value==='auto'?'autodetect':srcSel.value;
     const tgt=tgtSel.value;
     status.textContent='Translating...';
     transBtn.disabled=true;
@@ -48184,7 +48410,7 @@ translate:()=>{
     const sv=srcSel.value,tv=tgtSel.value;
     const cur=result.textContent;
     if(cur&&cur!=='Translation will appear here.'){ta.value=cur;result.textContent='...';}
-    srcSel.value=tv;tgtSel.value=sv;
+    srcSel.value=tv;tgtSel.value=(sv==='auto')?'en':sv;
   };
   clearBtn.onclick=()=>{ta.value='';result.textContent='Translation will appear here.';status.textContent='';};
 
@@ -48512,7 +48738,7 @@ rss:()=>{
         } else {
           if(!S.rssSaved)S.rssSaved=[];
           /* capture the best body text available at save time */
-          const bodyEl=document.querySelector('.rss-article-body');
+          const bodyEl=card.querySelector('.rss-article-body');
           const liveBody=bodyEl?bodyEl.textContent:'';
           const storedBody=liveBody.length>100?liveBody:(item.content||item.description||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
           S.rssSaved.unshift({id,title:item.title,source:item.feedLabel,link:item.link,date:item.pubDate,desc:rawDesc,body:storedBody.slice(0,8000),saved:new Date().toISOString()});
@@ -48612,7 +48838,7 @@ rss:()=>{
       b.onclick=()=>{
         if(S.rssFeeds.find(f=>f.url===p.url)){
           S.rssFeeds.splice(S.rssFeeds.findIndex(f=>f.url===p.url),1);
-          delete S.rssCache[p.url];save();b.classList.remove('added');renderFeedTabs();
+          delete S.rssCache[p.url];save();b.classList.remove('added');renderFeedTabs();renderContent();
           return;
         }
         S.rssFeeds.push({url:p.url,label:p.label});save();b.classList.add('added');renderFeedTabs();fetchFeed(p.url,null);
@@ -49017,6 +49243,7 @@ science:()=>{
     convResult.textContent=+result.toFixed(6)+' '+t;
   }
   convCat.onchange=rebuildConvUnits;convFrom.onchange=doQConv;convTo.onchange=doQConv;convInp.oninput=doQConv;
+  rebuildConvUnits();
   uconv.appendChild(convCat);uconv.appendChild(convRow);uconv.appendChild(convInp);uconv.appendChild(convResult);
   grid.appendChild(uconv);
 
@@ -49063,7 +49290,7 @@ science:()=>{
   starCard.appendChild(txt('h2','Star Map'));
   starCard.appendChild(txt('p','Live sky map for your location. 70+ named stars, constellation lines, planets, Milky Way, ISS tracking. Supports 3D and light modes.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5'}}));
   const starBtn=txt('button','Open Star Map',{className:'btn primary small',style:{marginTop:'4px',width:'100%'}});
-  starBtn.onclick=()=>{const t=document.querySelector('nav .tab[data-view="starmap"]');if(t)t.click();};
+  starBtn.onclick=()=>{const t=document.querySelector('nav .tab[data-view="starmap"]');if(t){t.style.display='';t.click();}};
   starCard.appendChild(starBtn);
   grid.appendChild(starCard);
 
@@ -49158,7 +49385,7 @@ notes:()=>{
     const text=ta.value.trim();
     if(!text)return toast('Note is empty.');
     const tags=[...text.matchAll(/#(\w+)/g)].map(m=>m[1]);
-    S.notes.unshift({id:Date.now(),text,tags,date:new Date().toISOString(),pinned:pinNew});
+    S.notes.unshift({id:Date.now(),text,tags,date:NOW().toISOString(),pinned:pinNew});
     saveNow();ta.value='';wordCountEl.textContent='';pinNew=false;pinToggle.classList.remove('primary');pinToggle.textContent='Pin';
     toast('Note saved.');renderList();
   };
@@ -49275,7 +49502,7 @@ notes:()=>{
       const bulkBar=el('div',{style:{display:'flex',gap:'6px',alignItems:'center',padding:'8px 10px',background:'var(--highlight)',borderRadius:'8px',marginBottom:'8px',flexWrap:'wrap',position:'sticky',top:'0',zIndex:'5'}});
       bulkBar.appendChild(txt('span',_bulkSet.size+' selected',{style:{fontSize:'11px',fontWeight:'700',color:'var(--muted)'}}));
       const selAll=txt('button','Select all visible',{className:'btn small'});
-      selAll.onclick=()=>{notes.forEach(n=>_bulkSet.add(n.id));renderList();};
+      selAll.onclick=()=>{notes.slice(0,_notesShown).forEach(n=>_bulkSet.add(n.id));renderList();};
       bulkBar.appendChild(selAll);
       const selNone=txt('button','Clear',{className:'btn small'});
       selNone.onclick=()=>{_bulkSet.clear();renderList();};
@@ -49392,7 +49619,7 @@ notes:()=>{
           if(!newText)return toast('Note cannot be empty.');
           S.notes[realIdx].text=newText;
           S.notes[realIdx].tags=[...newText.matchAll(/#(\w+)/g)].map(m=>m[1]);
-          S.notes[realIdx].date=new Date().toISOString();
+          S.notes[realIdx].date=NOW().toISOString();
           saveNow();renderList();toast('Note updated.');
         };
         const cancelEd=txt('button','Cancel',{className:'btn small',style:{marginTop:'4px',marginLeft:'6px'}});
@@ -49451,9 +49678,11 @@ kanban:()=>{
     });
     const colSel=el('select',{style:{width:'auto',minWidth:'90px',padding:'8px 10px',fontSize:'13px',height:'42px',boxSizing:'border-box'}});
     [['todo','To Do'],['doing','Doing'],['done','Done']].forEach(([v,l])=>colSel.appendChild(Object.assign(document.createElement('option'),{value:v,textContent:l})));
+    colSel.value=render._lastCol||'todo';
     const addBtn=txt('button','Add',{className:'btn primary',style:{padding:'0 22px',fontSize:'14px',fontWeight:'800',height:'42px',minWidth:'72px'}});
     addBtn.onclick=()=>{
       const t=inp.value.trim();if(!t){toast('Enter a task');inp.focus();return;}
+      render._lastCol=colSel.value;
       kb[colSel.value].push({id:Date.now(),text:t,created:new Date().toISOString()});
       saveKanban(kb);inp.value='';render();
       /* Keep focus on the input so the user can keep adding tasks quickly */
@@ -49476,7 +49705,7 @@ kanban:()=>{
         const cls=txt('button','×',{style:{position:'absolute',top:'4px',right:'6px',background:'none',border:'none',cursor:'pointer',fontSize:'12px',color:'var(--muted)'}});
         cls.onclick=()=>box.remove();
         box.appendChild(cls);
-        hdr.insertAdjacentElement('afterend',box);
+        if(hdr.isConnected)hdr.insertAdjacentElement('afterend',box);else if(v.isConnected)v.insertBefore(box,v.firstChild);
       });
       hdr.appendChild(prioBtn);
     }
@@ -49834,8 +50063,8 @@ periodic:()=>{
     const facts=[
       ['Atomic number',String(elem.n)],
       ['Atomic weight',elem.w+' u'],
-      ['Melting point',elem.m+'C'],
-      ['Boiling point',elem.b+'C'],
+      ['Melting point',elem.m==='N/A'?'N/A':elem.m+'C'],
+      ['Boiling point',elem.b==='N/A'?'N/A':elem.b+'C'],
       ['Discovered',elem.disc],
       ['Main uses',elem.use],
       ['Fun fact',elem.fun],
@@ -49990,7 +50219,7 @@ formulas:()=>{
     searchRow.appendChild(search);
     if(query){
       const clearBtn=txt('button','Clear',{className:'btn small'});
-      clearBtn.onclick=()=>{query='';activeTab=0;render();};
+      clearBtn.onclick=()=>{query='';activeTab=-1;activeFormula=null;render();};
       searchRow.appendChild(clearBtn);
     }
     v.appendChild(searchRow);
@@ -50084,7 +50313,7 @@ formulas:()=>{
 /* ─── SLEEP JOURNAL ──────────────────────────────────── */
 sleeplog:()=>{
   const v=el('section',{id:'view-sleeplog',className:'view'});
-  function loadLogs(){try{const d=localStorage.getItem('kh_sleep');return d?JSON.parse(d):[];}catch(e){return[];}}
+  function loadLogs(){try{const d=localStorage.getItem('kh_sleep');const arr=d?JSON.parse(d):[];arr.sort(function(a,b){return (b.date||'').localeCompare(a.date||'')||((b.logged||'').localeCompare(a.logged||''));});return arr;}catch(e){return[];}}
   function saveLogs(logs){try{localStorage.setItem('kh_sleep',JSON.stringify(logs));}catch(e){}}
   /* Sleep goal: target hours per night. User-configurable, default 8.
      Used to compute sleep score and weekly sleep-debt. */
@@ -50205,7 +50434,8 @@ sleeplog:()=>{
          you\'re over-rested vs goal. */
       const debtMin=week.reduce((s,l)=>s+Math.max(0,goalMin-l.duration),0);
       const surplusMin=week.reduce((s,l)=>s+Math.max(0,l.duration-goalMin),0);
-      const debtH=Math.floor(debtMin/60),debtM=debtMin%60;
+      const netMin=debtMin-surplusMin;
+      const debtH=Math.floor(Math.abs(netMin)/60),debtM=Math.abs(netMin)%60;
 
       /* Bedtime consistency: standard deviation of bedtime across the
          week. Lower = more consistent. */
@@ -50238,7 +50468,7 @@ sleeplog:()=>{
       const stats=[
         ['Avg sleep duration',hrs+'h '+mins2+'m'],
         ['Avg quality',avgQ.toFixed(1)+'/10'],
-        ['Sleep debt (vs goal)',debtMin?('-'+debtH+'h '+debtM+'m'):(surplusMin?('+'+Math.floor(surplusMin/60)+'h '+(surplusMin%60)+'m surplus'):'on target')],
+        ['Sleep debt (vs goal)',netMin>0?('-'+debtH+'h '+debtM+'m'):(netMin<0?('+'+debtH+'h '+debtM+'m surplus'):'on target')],
         ['Bedtime consistency',bedStdDev?(consistencyLabel+' (±'+Math.round(bedStdDev)+' min)'):'—'],
         ['Recommended bedtime',recBed!=null?_formatBedtime(recBed):'—'],
         ['Nights logged this week',String(week.length)],
@@ -50499,6 +50729,7 @@ sports:()=>{
     /* boxscore.players[]: {team, statistics:[{names, athletes:[{athlete, stats}]}]} */
     if(!players||!players.length)return null;
     const wrap=el('div',{style:{marginTop:'10px'}});
+    var anyAthletes=false;
     players.forEach(function(tp){
       const tn=(tp.team&&(tp.team.displayName||tp.team.name||tp.team.abbreviation))||'Team';
       wrap.appendChild(txt('div',tn,{style:{fontSize:'13px',fontWeight:'800',marginTop:'8px',borderTop:'var(--thin)',paddingTop:'6px'}}));
@@ -50506,6 +50737,7 @@ sports:()=>{
       const names=grp.names||grp.labels||[];
       const aths=grp.athletes||[];
       if(!aths.length){wrap.appendChild(txt('div','No player stats posted yet.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
+      anyAthletes=true;
       aths.forEach(function(a){
         const ath=a.athlete||{};const nm=ath.displayName||ath.shortName||'Player';
         const pos=(ath.position&&(ath.position.abbreviation))||'';
@@ -50513,7 +50745,7 @@ sports:()=>{
         wrap.appendChild(_playerRow(nm,pos,pairs));
       });
     });
-    return wrap;
+    return anyAthletes?wrap:null;
   }
   function _leadersBlock(leaders){
     if(!leaders||!leaders.length)return null;
@@ -50680,20 +50912,25 @@ imagesearch:()=>{
   }
   async function run(q,page){
     if(_busy)return;
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to the internet to search images.';return;}
     _q=q;_page=page||1;
     const oldMore=v.querySelector('.imgMore');if(oldMore)oldMore.remove();
     if(_page===1)grid.innerHTML='';
-    if(typeof navigator!=='undefined'&&navigator.onLine===false){status.textContent='You’re offline — connect to the internet to search images.';return;}
     _busy=true;status.textContent=_page===1?'Searching…':'Loading more…';
     let items=null,err=null,note='';
     /* 1) Wikimedia Commons — real, keyless, reliable. */
     try{ items=await _srcWikimedia(q,_page); }catch(e){ err=e; }
     /* 2) Openverse (+ CORS proxies) — openly-licensed catalogue as a backup. */
     if(!items||!items.length){ try{ const ov=await _srcOpenverse(q,_page); if(ov&&ov.length){items=ov;err=null;} }catch(e){ if(!err)err=e; } }
-    /* 3) Picsum (the Slides source) — ALWAYS loads, so no dead 403 screen. */
-    if(!items||!items.length){ items=_srcPicsum(q,_page); note='Live image search is unavailable right now — showing sample images.'; }
-    if(!items||!items.length){ status.textContent=_imgErrMsg(err); _busy=false; return; }
+    /* 3) Picsum (the Slides source) — ALWAYS loads, so no dead 403 screen. Only
+       used on the FIRST page: on a later 'Load more' page, injecting unrelated
+       fake photos would silently pollute the real results already on screen,
+       and an empty later page usually just means the real search ran out of
+       matches — not that the service is down. */
+    if((!items||!items.length)&&_page===1){ items=_srcPicsum(q,_page); note='Live image search is unavailable right now — showing sample images.'; }
+    if(!items||!items.length){ status.textContent=_page===1?_imgErrMsg(err):'No more results.'; _busy=false; return; }
     status.textContent=note||'Tap an image to view it larger.';
+    try{
     items.forEach(function(im){
       const thumb=im.thumbnail||im.url;if(!thumb)return;
       const cell=el('div',{style:{height:'96px',overflow:'hidden',borderRadius:'6px',background:'var(--card)',border:'var(--thin)',cursor:'pointer'}});
@@ -50714,7 +50951,7 @@ imagesearch:()=>{
       more.onclick=function(){run(_q,_page+1);};
       v.appendChild(more);
     }
-    _busy=false;
+    }finally{ _busy=false; }
   }
   btn.onclick=()=>{const q=inp.value.trim();if(q)run(q,1);else{status.textContent='Type something to search for.';}};
   inp.addEventListener('keydown',(e)=>{if(e.key==='Enter'){const q=inp.value.trim();if(q)run(q,1);}});
@@ -51402,7 +51639,7 @@ appstore:()=>{
         catNames.forEach(function(c){
           if(c==='All')return;
           let n=0;
-          if(c==='Community')n=pub.length;else allFirst.forEach(function(a){if(a.cat===c)n++;});
+          if(c==='Community')n=(window._khStoreCache&&Array.isArray(window._khStoreCache.apps)?window._khStoreCache.apps.length:pub.length);else allFirst.forEach(function(a){if(a.cat===c)n++;});
           const cell=el('div',{style:{display:'flex',alignItems:'center',gap:'9px',border:'var(--thin)',borderRadius:'12px',padding:'9px 10px',background:'var(--card)',boxShadow:'0 1px 3px rgba(0,0,0,.12)',cursor:'pointer'}});
           cell.appendChild(_catTile(c,30));
           const t=el('div',{style:{flex:'1',minWidth:'0'}});
@@ -51474,7 +51711,7 @@ appstore:()=>{
                          :function(){bt.disabled=true;bt.textContent='…';_khDownloadStoreApp(a,function(){paint();});};
           act.appendChild(bt);
           const desc='Community app'+(a.model?(' · reviewed by '+a.model):'')+' · '+dl+(dl===1?' download':' downloads');
-          commGrid.appendChild(appCard({name:a.name,cat:(a.cat||'Fun'),by:(dl+(dl===1?' dl':' dls')),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},paint);}}));
+          commGrid.appendChild(appCard({name:a.name,cat:(a.cat||'Fun'),by:(a.author||'user'),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},paint);}}));
         });
       });
       if(front)host.appendChild(txt('div',(allFirst.length)+' built-in apps · community apps download free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
@@ -51695,11 +51932,16 @@ qrgen:()=>{
           setTimeout(()=>{
             const u=v.querySelector('input');if(!u)return;
             if(entry.type==='wifi'){
-              const m=/WIFI:T:([^;]*);S:([^;]*);P:([^;]*);H:(true|false);;/.exec(entry.data)||[];
+              const m=/^WIFI:T:((?:\\.|[^;\\])*);S:((?:\\.|[^;\\])*);P:((?:\\.|[^;\\])*);H:(true|false);;$/.exec(entry.data)||[];
+              function unesc(s){return(s||'').replace(/\\(.)/g,'$1');}
               const ssidI=v.querySelectorAll('input')[0];
               const passI=v.querySelectorAll('input')[1];
-              if(ssidI)ssidI.value=m[2]||'';
-              if(passI)passI.value=m[3]||'';
+              if(ssidI)ssidI.value=unesc(m[2]);
+              if(passI)passI.value=unesc(m[3]);
+              const encBtn=v.querySelector('button[data-enc="'+(m[1]||'WPA')+'"]');
+              if(encBtn)encBtn.click();
+              const hidCb=v.querySelector('input[type="checkbox"]');
+              if(hidCb)hidCb.checked=(m[4]==='true');
             }else{
               u.value=entry.data;
             }
@@ -51743,7 +51985,7 @@ qrgen:()=>{
       currentName=(nameInp&&nameInp.value||'').trim();
       saveBtn.disabled=false;saveBtn.style.opacity='';
       const qrUrl='https://api.qrserver.com/v1/create-qr-code/?size='+qrSize+'x'+qrSize+'&data='+encodeURIComponent(text);
-      const img=new Image();img.crossOrigin='anonymous';
+      const img=new Image();
       img.onload=()=>{
         canvas.width=qrSize;canvas.height=qrSize;
         const ctx=canvas.getContext('2d');
@@ -51836,7 +52078,7 @@ files:()=>{
     ]},
     {name:'Cache',hint:'Disposable — safe to delete to free space',keys:[
       ['kh_weather_cache','Last fetched weather'],
-    ]},
+    ],matchPrefix:'kh_mc_'},
     /* Catch-all "Other" populated dynamically below */
     {name:'Messages',hint:'Last-seen markers + per-message edit secrets',matchPrefix:'kh_msg_'},
     {name:'Other',hint:'Anything not categorised elsewhere',catchAll:true},
@@ -52030,18 +52272,25 @@ files:()=>{
            on first paint. The "Show all" button + the search box
            reveal the rest on demand. */
         const rows=await _sbSelectAll('kh_messages','user_id=eq.'+encodeURIComponent(S.userId||'')+'&select=id,group_code,ts,text&order=ts.desc');
-        return(rows||[]).map(r=>({
-          title:'In group '+String(r.group_code||'').slice(-6),
-          sub:new Date(r.ts).toLocaleString()+'  ·  '+(typeof r.text==='string'?r.text.slice(0,60):'(encrypted)'),
-          deletable:true,
-          onDelete:async()=>{
-            try{
-              const sec=typeof _getMsgSecret==='function'?_getMsgSecret(r.id):null;
-              if(!sec){toast('Can\'t delete — owner secret missing (sent from another device?)');return false;}
-              await _sbDelete('kh_messages','id=eq.'+encodeURIComponent(r.id),sec);
-              toast('Message deleted');return true;
-            }catch(e){toast('Delete failed: '+e.message);return false;}
-          }
+        return await Promise.all((rows||[]).map(async r=>{
+          let preview='(encrypted)';
+          try{
+            const dec=typeof _msgDecrypt==='function'?await _msgDecrypt(r.group_code,r.text):r.text;
+            if(typeof dec==='string')preview=dec.slice(0,60);
+          }catch(e){}
+          return{
+            title:'In group '+String(r.group_code||'').slice(-6),
+            sub:new Date(r.ts).toLocaleString()+'  ·  '+preview,
+            deletable:true,
+            onDelete:async()=>{
+              try{
+                const sec=typeof _getMsgSecret==='function'?_getMsgSecret(r.id):null;
+                if(!sec){toast('Can\'t delete — owner secret missing (sent from another device?)');return false;}
+                await _sbDelete('kh_messages','id=eq.'+encodeURIComponent(r.id),sec);
+                toast('Message deleted');return true;
+              }catch(e){toast('Delete failed: '+e.message);return false;}
+            }
+          };
         }));
       }catch(e){return[];}
     },{searchable:true,defaultLimit:8,searchPlaceholder:'Search your messages…'});
@@ -52767,7 +53016,7 @@ stocks:()=>{
       const t=addInp.value.trim().toUpperCase();if(!t)return;
       if(watchlist.includes(t)){toast(t+' already in watchlist');return;}
       watchlist.push(t);saveWatchlist(watchlist);addInp.value='';
-      if(navigator.onLine)fetchOne(t,true);else renderMain();
+      if(navigator.onLine!==false)fetchOne(t,true);else renderMain();
     };
     addInp.addEventListener('keydown',e=>{if(e.key==='Enter')addBtn.click();});
     addRow.appendChild(addInp);addRow.appendChild(addBtn);
@@ -52916,7 +53165,7 @@ stocks:()=>{
         const chip=txt('button',inList?('[ '+ticker+' ]'):ticker,{className:'btn small',style:{fontFamily:'monospace',fontSize:'12px',fontWeight:'700',background:inList?'var(--highlight)':'var(--card)',opacity:inList?'0.6':'1'}});
         chip.onclick=()=>{
           if(inList){watchlist=watchlist.filter(t=>t!==ticker);saveWatchlist(watchlist);renderBrowse_inner();}
-          else{watchlist.push(ticker);saveWatchlist(watchlist);if(navigator.onLine)fetchOne(ticker,false);renderBrowse_inner();}
+          else{watchlist.push(ticker);saveWatchlist(watchlist);if(navigator.onLine!==false)fetchOne(ticker,false);renderBrowse_inner();}
         };
         chips.appendChild(chip);
       });
@@ -53032,14 +53281,14 @@ stocks:()=>{
   }
 
   renderMain();
-  if(navigator.onLine)fetchAll(false);
+  if(navigator.onLine!==false)fetchAll(false);
   return v;
 },
 
 /* ─── WIKIPEDIA ───────────────────────────────────────── */
 wikipedia:()=>{
   const v=el('section',{id:'view-wikipedia',className:'view'});
-  let article=null;
+  let article=null,loadSeq=0;
   function render(){
     v.innerHTML='';
     if(article){renderArticle();return;}
@@ -53096,11 +53345,14 @@ wikipedia:()=>{
     srchInp.addEventListener('keydown',e=>{if(e.key==='Enter')srchBtn.click();});
   }
   async function loadArticle(title){
+    const seq=++loadSeq;
     article={title:'Loading...',extract:'Please wait...'};renderArticle();
     try{
       const url=`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
       const r=await fetch(url);
-      article=await r.json();
+      const data=await r.json();
+      if(seq!==loadSeq)return;
+      article=data;
       /* Disambiguation pages return a tiny extract like "Regulus may refer
          to:" with no useful content. Fetch the actual disambig link list
          from the parse API so the user can click through to the meaning
@@ -53123,7 +53375,7 @@ wikipedia:()=>{
   function renderArticle(){
     v.innerHTML='';
     const topBar=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px',alignItems:'center'}});
-    topBar.appendChild(Object.assign(txt('button','← Search',{className:'btn small'}),{onclick:()=>{article=null;render();}}));
+    topBar.appendChild(Object.assign(txt('button','← Search',{className:'btn small'}),{onclick:()=>{loadSeq++;article=null;render();}}));
     v.appendChild(topBar);
     const aCard=el('div',{style:{background:'var(--card)',border:'var(--thin)',borderRadius:'10px',padding:'14px',boxShadow:'var(--shadow)'}});
     aCard.appendChild(txt('h2',article.title||'',{style:{fontFamily:'var(--title-font)',fontSize:'18px',fontWeight:'900',marginBottom:'6px'}}));
@@ -53296,7 +53548,7 @@ mail:()=>{
         row.appendChild(line1);
         /* One-line body preview under the subject (closed rows only) */
         if(openId!==m.id){
-          const prev=(m.body||'').replace(/\s+/g,' ').trim().slice(0,90);
+          const prev=_censorText((m.body||'').replace(/\s+/g,' ').trim().slice(0,90));
           if(prev)row.appendChild(txt('div',prev,{style:{fontSize:'11px',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:'2px',paddingLeft:'32px'}}));
         }
         if(openId===m.id){
@@ -53306,7 +53558,7 @@ mail:()=>{
           hdrBox.appendChild(txt('div','To: '+_addrLbl(m.to)+'   ·   '+fmtTs(m.ts)));
           row.appendChild(hdrBox);
           const body=el('div',{style:{margin:'0 0 8px',padding:'10px',background:'var(--highlight)',borderRadius:'0 0 8px 8px',fontSize:'13px',lineHeight:'1.65',whiteSpace:'pre-wrap',wordBreak:'break-word'}});
-          body.textContent=m.body||'(empty)';
+          body.textContent=_censorText(m.body||'(empty)');
           row.appendChild(body);
           /* Your replies to this mail, shown inline so the inbox holds the whole
              conversation (the user asked: a reply should also appear in the inbox
@@ -53384,8 +53636,10 @@ mail:()=>{
         row.onclick=()=>{
           openId=openId===m.id?null:m.id;
           if(folder!=='sent'&&!(st()[m.id]||{}).read){setMailFlag(m.id,{read:true});}
-          try{if(m.ts&&m.ts>(localStorage.getItem('kh_mail_lastseen')||''))localStorage.setItem('kh_mail_lastseen',m.ts);}catch(_){}
-          const tab=document.querySelector('nav .tab[data-view="mail"]');if(tab)tab.classList.remove('has-unread');
+          if(folder!=='sent'){
+            try{if(m.ts&&m.ts>(localStorage.getItem('kh_mail_lastseen')||''))localStorage.setItem('kh_mail_lastseen',m.ts);}catch(_){}
+            const tab=document.querySelector('nav .tab[data-view="mail"]');if(tab)tab.classList.remove('has-unread');
+          }
           renderList();
         };
         listEl.appendChild(row);
@@ -53698,6 +53952,7 @@ screenshot:()=>{
     },550);
   };
   renderShots();
+  ON_SHOW['screenshot']=renderShots;
   return v;
 },
 
@@ -53891,7 +54146,8 @@ cookbook:()=>{
         results.innerHTML='';
         const seenIds=new Set();
         const explainBar=el('div',{style:{gridColumn:'1/-1',padding:'8px 12px',background:'var(--highlight)',borderRadius:'8px',fontSize:'11px',color:'var(--muted)',marginBottom:'4px',lineHeight:'1.5'}});
-        explainBar.innerHTML='<b style="color:var(--fg)">Searched for:</b> '+terms.map(t=>'<span style="font-family:monospace;font-weight:700;padding:1px 6px;background:var(--card);border-radius:8px;margin-right:4px;color:var(--fg)">'+t+'</span>').join('');
+        explainBar.appendChild(txt('b','Searched for: ',{style:{color:'var(--fg)'}}));
+        terms.forEach(t=>{explainBar.appendChild(txt('span',t,{style:{fontFamily:'monospace',fontWeight:'700',padding:'1px 6px',background:'var(--card)',borderRadius:'8px',marginRight:'4px',color:'var(--fg)'}}));});
         results.appendChild(explainBar);
         let totalAdded=0;
         for(const term of terms){
@@ -55089,7 +55345,13 @@ function canvasCoord(e){
 function hitElem(slide,x,y){
   if(!slide)return -1;
   const elems=slide.elements||[];
-  for(let i=elems.length-1;i>=0;i--){
+  // Hit-test in the SAME visual stacking order things are drawn in —
+  // renderSlideToCtx sorts by zIndex, but Bring to Front / Send to Back
+  // (bringFront/sendBack) only ever change an element's zIndex, never its
+  // array position, so raw reverse-array-order can diverge from what's
+  // actually on top and taps would hit the element visually UNDERNEATH.
+  const order=elems.map((e2,i)=>i).sort((a,b)=>(elems[b].zIndex||0)-(elems[a].zIndex||0));
+  for(const i of order){
     const e2=elems[i];
     const h=e2.h||60;
     if(x>=e2.x-6&&x<=e2.x+e2.w+6&&y>=e2.y-6&&y<=e2.y+h+6)return i;
@@ -56456,8 +56718,15 @@ function buildEditor(){
   // Double click to edit text (mouse / desktop)
   canvas.addEventListener('dblclick',e=>{_handleDoubleTap(e);});
 
-  // Keyboard
-  document.addEventListener('keydown',function kbSlides(e){
+  // Keyboard — only ever keep ONE listener alive. buildEditor() re-runs on
+  // every deck switch, theme change, and PDF/PPTX/AI import while still on
+  // the Slides view, so a fresh closure used to be added every time and
+  // never removed (the self-check below only fires once #view-slides itself
+  // is gone) — undo/redo/delete/arrow-nudge/duplicate all ended up firing
+  // multiple times per keypress. Same guard pattern as the presentation
+  // resize/keydown handlers further down this file.
+  if(window._khSlidesKey)document.removeEventListener('keydown',window._khSlidesKey);
+  window._khSlidesKey=function kbSlides(e){
     if(!document.querySelector('#view-slides'))return document.removeEventListener('keydown',kbSlides);
     if(e.key==='z'&&(e.ctrlKey||e.metaKey)&&!e.shiftKey){undoSlides();e.preventDefault();}
     if((e.key==='y'&&(e.ctrlKey||e.metaKey))||(e.key==='z'&&(e.ctrlKey||e.metaKey)&&e.shiftKey)){redoSlides();e.preventDefault();}
@@ -56482,7 +56751,8 @@ function buildEditor(){
       if(copy.type==='image'&&copy.src){const img=new Image();img.onload=()=>{copy._img=img;repaint();};img.src=copy.src;}
       slide.elements.push(copy);selectedElemIdx=slide.elements.length-1;saveDecks();repaint();renderProps();e.preventDefault();
     }
-  });
+  };
+  document.addEventListener('keydown',window._khSlidesKey);
 
   updateSlideList();renderProps();repaint();
   // Load notes for current slide
@@ -56866,6 +57136,17 @@ function startPresent(){
     if(e.key==='ArrowLeft'||e.key==='ArrowUp'||e.key==='PageUp'){if(presentSlide>0){presentSlide--;drawPresSlide(true);}e.preventDefault();}
     if(e.key==='Escape'){exitBtn2.click();}
   }
+  /* Present mode can be entered multiple times per session, and presOverlay/
+     presCanvas/presCtx are shared module-level vars (reassigned on every
+     startPresent() call) — so a leftover presKey from a PRIOR run's overlay
+     doesn't self-remove until it happens to fire again, and when it does its
+     `document.body.contains(presOverlay)` check sees the NEWEST overlay (the
+     one currently on screen), passes, and goes on to redraw its own stale
+     presentSlide index onto the shared presCanvas — an arrow-key press can
+     visibly jump to/overwrite with the wrong slide. Guard exactly like the
+     resize handler right above: keep only one listener alive at a time. */
+  if(window._khPresKey)document.removeEventListener('keydown',window._khPresKey);
+  window._khPresKey=presKey;
   document.addEventListener('keydown',presKey);
   sizePresCanvas();
 }
@@ -56937,7 +57218,9 @@ calendar:()=>{
         if(aKey!==bKey)return aKey-bKey;
         /* Tiebreaker: start time. Empty time strings sort first
            (all-day or untimed events lead the day). */
-        return ((a.time||'')>(b.time||''))?1:-1;
+        const at=a.time||'',bt=b.time||'';
+        if(at===bt)return 0;
+        return (at>bt)?1:-1;
       });
   }
 
@@ -56997,7 +57280,7 @@ calendar:()=>{
       if(!m)return null;
       return{year:+m[1],month:+m[2]-1,day:+m[3]};
     }
-    const startYmd=ymdStr(y,m,d);
+    const startYmd=ev?ymdStr(ev.year,ev.month,ev.day):ymdStr(y,m,d);
     /* For existing events read end fields if present, fall back to start. */
     const endYmd=ev&&ev.endYear!=null?ymdStr(ev.endYear,ev.endMonth,ev.endDay):startYmd;
 
@@ -57243,15 +57526,13 @@ calendar:()=>{
   /* ── Full rebuild ── */
   function rebuildCalendar(){
     monthLabel.textContent=MONTHS[curMonth]+' '+curYear;
-    buildGrid();
-    if(selectedDay&&selectedDay.y===curYear&&selectedDay.m===curMonth){
-      renderDayDetail(selectedDay.y,selectedDay.m,selectedDay.d);
-    } else {
+    if(!(selectedDay&&selectedDay.y===curYear&&selectedDay.m===curMonth)){
       // Default: show today or first of month
       const d=(curYear===now.getFullYear()&&curMonth===now.getMonth())?now.getDate():1;
       selectedDay={y:curYear,m:curMonth,d};
-      renderDayDetail(curYear,curMonth,d);
     }
+    buildGrid();
+    renderDayDetail(selectedDay.y,selectedDay.m,selectedDay.d);
   }
 
   /* ── ICS (Google / Outlook / Apple Calendar) import ──
@@ -58201,7 +58482,16 @@ messages:()=>{
   async function confirmLeave(g){
     if(!await kindleConfirm('Leave the group "'+_censorText(g.name)+'"? You can rejoin with the code later.'))return;
     S.msgGroups=(S.msgGroups||[]).filter(x=>x.code!==g.code);
+    /* Tombstone the code so a later cloud pull (from before this device's
+       push lands, or from another device that still has the group) can't
+       silently re-add it — same protection the in-chat Leave button uses. */
+    if(!Array.isArray(S.leftGroups))S.leftGroups=[];
+    if(S.leftGroups.indexOf(g.code)<0){
+      S.leftGroups.push(g.code);
+      if(S.leftGroups.length>200)S.leftGroups=S.leftGroups.slice(-200);
+    }
     save();
+    try{if(typeof scheduleCloudSync==='function')scheduleCloudSync(true);}catch(_){}
     toast('Left group.');
     render();
   }
@@ -58887,8 +59177,10 @@ messages:()=>{
       };
       btnRow.append(cancB,saveB);box.appendChild(btnRow);
       ov.appendChild(box);
-      ov.addEventListener('click',e=>{if(e.target===ov){_editing=null;ov.remove();}});
-      document.addEventListener('keydown',function _esc(e){if(e.key==='Escape'){_editing=null;ov.remove();document.removeEventListener('keydown',_esc);}});
+      function _esc(e){if(e.key==='Escape'){_editing=null;ov.remove();document.removeEventListener('keydown',_esc);}}
+      cancB.addEventListener('click',()=>document.removeEventListener('keydown',_esc));
+      ov.addEventListener('click',e=>{if(e.target===ov){_editing=null;ov.remove();document.removeEventListener('keydown',_esc);}});
+      document.addEventListener('keydown',_esc);
       _overlayHost().appendChild(ov);
       setTimeout(()=>{inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);},40);
     }
@@ -59128,6 +59420,7 @@ messages:()=>{
           try{
             await _groupToggleReaction(g.code,m.id,k);
             /* Optimistic local update — re-render after the next poll */
+            if(!m.reactions)m.reactions={};
             const list=(m.reactions[k]||[]).slice();
             const i=list.indexOf(myId);
             if(i>=0)list.splice(i,1);else list.push(myId);
@@ -61619,6 +61912,7 @@ BUILDERS.browser=()=>{
     if(t.hist[t.hi]!==url){t.hist.push(url);t.hi=t.hist.length-1;}
     t.url=url;t.title=hostOf(url);
     urlInp.value=url;
+    _proxyIdx=0;
     save();renderTabs();setNavButtons();
     loadFrame(url);
   }
@@ -61635,7 +61929,9 @@ BUILDERS.browser=()=>{
   function closeTab(i){
     B.tabs.splice(i,1);
     if(!B.tabs.length)B.tabs.push({url:'',title:'New Tab',hist:[],hi:-1});
+    if(i<B.active)B.active--;
     if(B.active>=B.tabs.length)B.active=B.tabs.length-1;
+    if(B.active<0)B.active=0;
     save();paint();
   }
 
@@ -61700,13 +61996,20 @@ BUILDERS.games=()=>{
     v.querySelectorAll('[style*="grid-template-columns"]').forEach(d=>{d.style.alignItems='stretch';});
     v.querySelectorAll('.card').forEach(card=>{
       const pb=card.querySelector('[data-game]')||card.querySelector('[data-scores]');
-      if(pb&&pb.parentNode===card&&!card.querySelector('.kh-scores-btn')){
+      /* Chess/TTT/Connect4/DotsBoxes/Hangman/Wordle/Memory/Mastermind put their
+         Play button inside a nested ".card-row" wrapper (alongside Play Online /
+         Resume), so pb.parentNode is that row, never the card itself — the old
+         check demanded pb.parentNode===card and silently skipped every one of
+         those cards, contradicting the "every score-game card" comment above.
+         Anchor on the row instead when the button isn't a direct child. */
+      const anchor=pb&&(pb.parentNode===card?pb:pb.closest('.card-row'));
+      if(anchor&&anchor.parentNode===card&&!card.querySelector('.kh-scores-btn')){
         const key=pb.getAttribute('data-game')||pb.getAttribute('data-scores');
         if(key){
           const sb=txt('button','★ Leaderboard',{className:'btn small kh-scores-btn',style:{width:'100%',marginTop:'4px',fontSize:'10px'}});
           sb.onclick=function(e){e.stopPropagation();if(typeof _gameScores==='function')_gameScores(key);};
-          if(pb.nextSibling)card.insertBefore(sb,pb.nextSibling);else card.appendChild(sb);
-          pb.style.marginTop='auto';/* pins Play (with the Leaderboard button below it) to the bottom */
+          if(anchor.nextSibling)card.insertBefore(sb,anchor.nextSibling);else card.appendChild(sb);
+          anchor.style.marginTop='auto';/* pins Play (with the Leaderboard button below it) to the bottom */
           return;
         }
       }
