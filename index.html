@@ -9828,6 +9828,102 @@ function _khSiteEditHistoryAdd(payload){
   }catch(_){}
 }
 window._khSiteScanSilk=_khSiteScanSilk;window._khVerifySiteEdit=_khVerifySiteEdit;window._khPolishSiteEditJs=_khPolishSiteEditJs;window._khSiteEditHistoryAdd=_khSiteEditHistoryAdd;
+/* ── Impact analysis (on-device, no AI) ───────────────────────────────────
+   A quick, deterministic "this edit will affect:" summary shown before
+   publish so the admin sees SCOPE at a glance. CSS: a light regex scan of
+   the selector text before each `{` (skips @media/@supports/@keyframes/
+   @font-face/@page preludes, strips pseudo-classes/attribute selectors so
+   the list reads as plain class/id/tag names). JS: reuses _khAppRiskFlags
+   for risky calls + a rough count of referenced external names (declared
+   locals/params and property-access tails are excluded so it isn't just
+   "every identifier in the file"). No lookbehind/optional-chaining/etc —
+   this code itself ships inside index.html, so it must stay ES5/ES2015 like
+   everything else here (it can run on the admin's own Kindle too). */
+function _khCssSelectors(css){
+  var out={};
+  try{
+    var body=String(css||'').replace(/\/\*[\s\S]*?\*\//g,' ');
+    var re=/([^{}]+)\{/g,m;
+    while((m=re.exec(body))){
+      var chunk=m[1];
+      if(/@(media|supports|keyframes|font-face|page)\b/i.test(chunk))continue;
+      chunk.split(',').forEach(function(sel){
+        sel=sel.trim();if(!sel)return;
+        var parts=sel.split(/\s+/);
+        var last=parts[parts.length-1]||sel;
+        last=last.replace(/::?[A-Za-z-]+(\([^)]*\))?/g,'');
+        last=last.replace(/\[[^\]]*\]/g,'');
+        last=last.trim();
+        if(last)out[last]=true;
+      });
+    }
+  }catch(_e){}
+  return Object.keys(out);
+}
+function _khCountJsGlobals(js){
+  try{
+    var body=String(js||'');
+    body=body.replace(/\/\*[\s\S]*?\*\//g,' ').replace(/\/\/.*$/gm,' ');
+    body=body.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g,' ');
+    body=body.replace(/\.[A-Za-z_$][A-Za-z0-9_$]*/g,'.');
+    var declared={};
+    var dre=/\b(?:var|let|const|function)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g,dm;
+    while((dm=dre.exec(body)))declared[dm[1]]=true;
+    var pre=/function\s*[A-Za-z_$]*\s*\(([^)]*)\)/g,pm;
+    while((pm=pre.exec(body))){pm[1].split(',').forEach(function(a){a=a.replace(/[^A-Za-z0-9_$]/g,'');if(a)declared[a]=true;});}
+    var KEYWORDS={'if':1,'else':1,'for':1,'while':1,'do':1,'return':1,'function':1,'var':1,'let':1,'const':1,'new':1,'typeof':1,'instanceof':1,'in':1,'of':1,'this':1,'true':1,'false':1,'null':1,'undefined':1,'try':1,'catch':1,'finally':1,'throw':1,'switch':1,'case':1,'break':1,'continue':1,'delete':1,'void':1,'default':1};
+    var ids=body.match(/\b[A-Za-z_$][A-Za-z0-9_$]*\b/g)||[];
+    var seen={};
+    ids.forEach(function(id){ if(!KEYWORDS[id]&&!declared[id])seen[id]=true; });
+    return Object.keys(seen).length;
+  }catch(_e){ return 0; }
+}
+window._khCssSelectors=_khCssSelectors;window._khCountJsGlobals=_khCountJsGlobals;
+/* ── "Fix a live error" — gather recent client errors (session + cloud) and
+   pick the most actionable one: most FREQUENT message wins, ties broken by
+   most RECENT. Session errors come from window._khAutoErrors; cloud errors
+   (this whole editor is already admin-gated) via a timeout-tolerant
+   _sbSelect, honouring the persisted clear watermark window._khErrAfterCut
+   so a cleared error doesn't keep coming back. Never throws. */
+async function _khPickLiveError(){
+  var list=[];
+  try{
+    var sess=(window._khAutoErrors||[]);
+    for(var i=0;i<sess.length;i++){
+      var e=sess[i];if(!e)continue;
+      if(typeof window._khErrAfterCut==='function'&&!window._khErrAfterCut(e.date))continue;
+      list.push({msg:String(e.msg||'').slice(0,200),where:e.where||'',line:e.line||'',stack:e.stack||'',date:e.date||''});
+    }
+  }catch(_e){}
+  try{
+    if(typeof _sbActive==='function'&&_sbActive()&&typeof _sbSelect==='function'){
+      var rows=await Promise.race([
+        _sbSelect('kh_errors','select=text,date&order=date.desc&limit=20'),
+        new Promise(function(res){setTimeout(function(){res(null);},4000);})
+      ]);
+      if(Array.isArray(rows)){
+        for(var j=0;j<rows.length;j++){
+          var r=rows[j];if(!r)continue;
+          if(typeof window._khErrAfterCut==='function'&&!window._khErrAfterCut(r.date))continue;
+          var tx=String(r.text||'');
+          var mm=tx.match(/\[AUTO \w+\]\s*([^\n]+)/);
+          var msg=mm?mm[1]:tx.slice(0,200);
+          list.push({msg:msg.slice(0,200),where:'',line:'',stack:tx.slice(0,900),date:r.date||''});
+        }
+      }
+    }
+  }catch(_e){}
+  if(!list.length)return null;
+  var freq={};
+  list.forEach(function(e){var k=e.msg.slice(0,120);freq[k]=(freq[k]||0)+1;});
+  list.sort(function(a,b){
+    var fa=freq[a.msg.slice(0,120)]||1,fb=freq[b.msg.slice(0,120)]||1;
+    if(fb!==fa)return fb-fa;
+    return String(b.date||'')<String(a.date||'')?-1:(String(b.date||'')>String(a.date||'')?1:0);
+  });
+  return list[0];
+}
+window._khPickLiveError=_khPickLiveError;
 async function _khOpenSiteEditor(){
   if(!(window._isAdminCached===true)){if(typeof toast==='function')toast('Admins only.');return;}
   const cur=_khGlobalEditGet()||{css:'',js:'',banner:''};
@@ -9850,7 +9946,7 @@ async function _khOpenSiteEditor(){
   /* ── EDIT tab ── */
   const seg=el('div',{className:'card-row',style:{gap:'6px'}});
   const segBtns={};
-  [['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']].forEach(function(m){const b=txt('button',m[1],{className:'btn small'+(m[0]==='css'?' primary':'')});b.onclick=function(){mode=m[0];Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x===mode);});_syncBox();_verify();};segBtns[m[0]]=b;seg.appendChild(b);});
+  [['css','Appearance (CSS)'],['banner','Banner'],['js','Advanced (JS)']].forEach(function(m){const b=txt('button',m[1],{className:'btn small'+(m[0]==='css'?' primary':'')});b.onclick=function(){mode=m[0];Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x===mode);});_threadReset();_syncBox();_verify();};segBtns[m[0]]=b;seg.appendChild(b);});
   editWrap.appendChild(seg);
   /* Quick-start templates — click to prefill the description (per mode), so an
      admin who isn't sure what to type has instant, safe starting points. */
@@ -9881,8 +9977,23 @@ async function _khOpenSiteEditor(){
      without starting over. Feeds the existing code + instruction back to 3.5-flash. */
   const refineRow=el('div',{className:'card-row',style:{marginTop:'2px'}});
   const refineIn=el('input',{placeholder:'Refine the current draft… e.g. "make it bigger"',style:{flex:'1',fontSize:'11px'}});
-  const refineBtn=txt('button','Refine',{className:'btn small'});
+  const refineBtn=txt('button','Send',{className:'btn small'});
   refineRow.append(refineIn,refineBtn);editWrap.appendChild(refineRow);
+  /* Conversational refine THREAD — a visible back-and-forth so you can iterate
+     ("make them navy" -> "also round the corners" -> "smaller") with the AI
+     always editing the CURRENT code for the active mode. */
+  const editThread=el('div',{style:{maxHeight:'110px',overflowY:'auto',border:'var(--thin)',borderRadius:'8px',padding:'6px 8px',margin:'4px 0',background:'var(--card)',fontSize:'10.5px',lineHeight:'1.4',display:'none'}});
+  editWrap.appendChild(editThread);
+  function _threadAdd(who,text){
+    try{
+      editThread.style.display='block';
+      var row=el('div',{style:{marginBottom:'4px'}});
+      row.appendChild(txt('span',(who==='you'?'You: ':'AI: '),{style:{fontWeight:'800',color:(who==='you'?'var(--fg)':'var(--accent)')}}));
+      row.appendChild(txt('span',String(text||'').slice(0,180)));
+      editThread.appendChild(row);editThread.scrollTop=editThread.scrollHeight;
+    }catch(_e){}
+  }
+  function _threadReset(){try{editThread.innerHTML='';editThread.style.display='none';}catch(_e){}}
   const boxLbl=txt('div','',{style:{fontSize:'10px',fontWeight:'700',textTransform:'uppercase',letterSpacing:'.5px',color:'var(--muted)',marginTop:'2px'}});
   const box=el('textarea',{style:{width:'100%',minHeight:'150px',fontFamily:'monospace',fontSize:'11px',boxSizing:'border-box'}});
   editWrap.appendChild(boxLbl);editWrap.appendChild(box);
@@ -9891,8 +10002,33 @@ async function _khOpenSiteEditor(){
   const metaRow=el('div',{className:'card-row',style:{marginTop:'2px',alignItems:'center'}});
   const undoBtn=txt('button','Undo',{className:'btn small',style:{opacity:'.9'}});
   const explainBtn=txt('button','Explain this',{className:'btn small',style:{opacity:'.9'}});
+  const fixErrBtn=txt('button','Fix a live error',{className:'btn small',style:{opacity:'.9'}});
   const lineInfo=txt('span','',{style:{fontSize:'9.5px',color:'var(--muted)',marginLeft:'auto'}});
-  metaRow.append(undoBtn,explainBtn,lineInfo);editWrap.appendChild(metaRow);
+  metaRow.append(undoBtn,explainBtn,fixErrBtn,lineInfo);editWrap.appendChild(metaRow);
+  /* One-tap "fix the bug users are actually hitting": pull the most recent client
+     error (this session, and — for admins — the cloud error log), switch to JS,
+     and draft a small defensive guard with Gemini 3.5 Flash, auto-polished Silk-safe. */
+  fixErrBtn.onclick=async function(){
+    fixErrBtn.disabled=true;statusEl.textContent='Finding a recent error…';
+    try{
+      /* _khPickLiveError ranks session + cloud errors by FREQUENCY (ties → most
+         recent) so we fix the bug users are actually hitting most, not just the
+         last one logged. Honours the clear-watermark; never throws. */
+      var top=await _khPickLiveError();
+      if(!top){statusEl.textContent='';if(typeof toast==='function')toast('No recent errors to fix.');fixErrBtn.disabled=false;return;}
+      var etext=String(top.stack||top.msg||'').slice(0,1200);
+      /* switch to JS mode */
+      mode='js';Object.keys(segBtns).forEach(function(x){segBtns[x].classList.toggle('primary',x==='js');});_syncBox();
+      _threadReset();_threadAdd('you','Fix this live error: '+String(top.msg||etext).slice(0,120));
+      statusEl.textContent='Drafting a guard for the top error…';_pushUndo();
+      var sysF='Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this runtime error on a KindleHub client. OLD Kindle Silk WebKit ES5/ES2015 ONLY: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credentials, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Output ONLY the raw JavaScript.';
+      var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysF+'\n\nERROR:\n'+etext,{temperature:0.2,maxTokens:1200,model:_KH_EDIT_MODEL});
+      var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
+      if(clean){statusEl.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){statusEl.textContent=t;});store.js=rr.js;box.value=rr.js;_threadAdd('ai','drafted a JS guard ('+store.js.length+' chars) — review, Test, then Publish.');statusEl.textContent='Drafted a guard — review it below, then Publish.';_verify();_updLineInfo();}
+      else statusEl.textContent='AI returned nothing — try again.';
+    }catch(e){statusEl.textContent='';if(typeof toast==='function')toast('Error: '+((e&&e.message)||e));}
+    fixErrBtn.disabled=false;
+  };
   var _undoStack=[];
   function _pushUndo(){try{_undoStack.push(store[mode]||'');if(_undoStack.length>20)_undoStack.shift();}catch(_e){}}
   function _updLineInfo(){var v=store[mode]||'';var ln=v?v.split('\n').length:0;lineInfo.textContent=v?(ln+' line'+(ln===1?'':'s')+' · '+v.length+' chars'):'';}
@@ -9913,13 +10049,13 @@ async function _khOpenSiteEditor(){
     var instr=(refineIn.value||'').trim();if(!instr){if(typeof toast==='function')toast('Say what to change.');return;}
     var cur=(store[mode]||'').trim();if(!cur){if(typeof toast==='function')toast('Draft something first (or just describe it above).');return;}
     if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
-    refineBtn.disabled=true;aiStatus.textContent='Refining…';_pushUndo();
+    refineBtn.disabled=true;aiStatus.textContent='Refining…';_pushUndo();_threadAdd('you',instr);
     try{
       var sysR=(mode==='css'?'You edit CSS':mode==='banner'?'You edit a short banner text':'You edit JavaScript')+' for an OLD Kindle Silk WebKit web app. Apply the requested change to the CURRENT '+(mode==='banner'?'text':'code')+' and return ONLY the full updated '+(mode==='banner'?'text':(mode==='css'?'CSS':'JavaScript'))+' — no markdown, no explanation.'+(mode==='js'?' ES5/ES2015 only: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter.':'');
       var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysR+'\n\nCHANGE: '+instr+'\n\nCURRENT:\n'+cur,{temperature:0.2,maxTokens:1600,model:_KH_EDIT_MODEL});
       var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
-      if(clean){store[mode]=clean;box.value=clean;if(mode==='js'){aiStatus.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=rr.js;box.value=rr.js;}refineIn.value='';aiStatus.textContent='Refined — review it.';_verify();_updLineInfo();}
-      else aiStatus.textContent='No change returned.';
+      if(clean){store[mode]=clean;box.value=clean;if(mode==='js'){aiStatus.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=rr.js;box.value=rr.js;}refineIn.value='';aiStatus.textContent='Updated — review it.';_threadAdd('ai','updated the '+mode+' ('+(store[mode]||'').length+' chars)');_verify();_updLineInfo();}
+      else {aiStatus.textContent='No change returned.';_threadAdd('ai','(no change returned — try rephrasing)');}
     }catch(e){aiStatus.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
     refineBtn.disabled=false;
   };
@@ -9940,6 +10076,26 @@ async function _khOpenSiteEditor(){
     refineRow.style.display=mode==='banner'?'none':'flex';
     _renderTemplates();_updLineInfo();
   }
+  /* Deterministic, on-device "this edit will affect:" scope summary (no AI).
+     Shown live in the report AND again in the publish confirm so the admin
+     sees BLAST RADIUS before pushing to every user. */
+  function _impactLines(p){
+    var lines=[];
+    try{
+      if(p&&p.css){
+        var sels=(typeof _khCssSelectors==='function')?_khCssSelectors(p.css):[];
+        if(sels.length){var shown=sels.slice(0,6).join(', ');lines.push('CSS restyles '+sels.length+' selector'+(sels.length===1?'':'s')+' ('+shown+(sels.length>6?', …':'')+')');}
+      }
+      if(p&&p.banner)lines.push('Banner: a '+String(p.banner).length+'-char notice shown site-wide');
+      if(p&&p.js){
+        var globs=(typeof _khCountJsGlobals==='function')?_khCountJsGlobals(p.js):0;
+        lines.push('JS runs on every device — references ~'+globs+' external name'+(globs===1?'':'s'));
+        var flags=(typeof _khAppRiskFlags==='function')?(_khAppRiskFlags(p.js)||[]):[];
+        if(flags.length)lines.push('JS behaviour: '+flags.slice(0,5).join('; '));
+      }
+    }catch(_e){}
+    return lines;
+  }
   function _renderReport(v){
     reportHost.innerHTML='';
     if(!v){reportHost.appendChild(txt('div','Edit or draft something, then Verify.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
@@ -9952,6 +10108,13 @@ async function _khOpenSiteEditor(){
       reportHost.appendChild(txt('div','Warnings (publishing still allowed):',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)',margin:'4px 0 2px'}}));
       v.warnings.forEach(function(w){reportHost.appendChild(txt('div','• '+w,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));});
     }
+    try{
+      var imp=_impactLines(store);
+      if(imp.length){
+        reportHost.appendChild(txt('div','This edit will affect:',{style:{fontSize:'10px',fontWeight:'800',color:'var(--fg)',margin:'6px 0 2px'}}));
+        imp.forEach(function(li){reportHost.appendChild(txt('div','• '+li,{style:{fontSize:'11px',color:'var(--fg)',opacity:'.85',lineHeight:'1.4'}}));});
+      }
+    }catch(_e){}
   }
   let _lastV=null;
   function _verify(){ _lastV=_khVerifySiteEdit(store); _renderReport(_lastV); pubBtn.disabled=!_lastV.ok; return _lastV; }
@@ -9988,9 +10151,11 @@ async function _khOpenSiteEditor(){
     }
     _lastV=v;_renderReport(v);pubBtn.disabled=!v.ok;
     if(!v.ok){statusEl.textContent='';if(typeof toast==='function')toast('Still has issues that could break the site — fix the red items first.',5000);return false;}
+    const impLines=_impactLines(p);
+    const itxt=impLines.length?('\n\nThis edit will affect:\n• '+impLines.join('\n• ')):'';
     const jtxt=p.js?'\n\nThis includes JavaScript that will RUN on every user\'s device.':'';
     const wtxt=v.warnings.length?('\n\nWarnings:\n• '+v.warnings.join('\n• ')):'';
-    if(!(await kindleConfirm('Publish this to ALL users now?'+jtxt+wtxt))){statusEl.textContent='';return false;}
+    if(!(await kindleConfirm('Publish this to ALL users now?'+itxt+jtxt+wtxt))){statusEl.textContent='';return false;}
     statusEl.textContent='Publishing…';
     const ok=await _khGlobalEditPublish(p);
     if(ok){_khSiteEditHistoryAdd(p);statusEl.textContent='';if(typeof toast==='function')toast('Published to everyone.',4000);ov.remove();return true;}
@@ -10046,7 +10211,7 @@ async function _khOpenSiteEditor(){
       c.appendChild(txt('div',(tiers.join(' · ')||'empty')+' · '+new Date(h.ts).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)',marginBottom:'6px'}}));
       const row=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
       const viewB=txt('button','View / edit',{className:'btn small'});
-      viewB.onclick=function(){store.css=h.css||'';store.banner=h.banner||'';store.js=h.js||'';descIn.value=h.note||'';tab='edit';_showTab();_syncBox();_verify();};
+      viewB.onclick=function(){store.css=h.css||'';store.banner=h.banner||'';store.js=h.js||'';descIn.value=h.note||'';tab='edit';_threadReset();_showTab();_syncBox();_verify();};
       const repubB=txt('button','Re-publish',{className:'btn small primary'});
       repubB.onclick=function(){_doPublish({css:h.css,banner:h.banner,js:h.js,note:h.note});};
       row.append(viewB,repubB);c.appendChild(row);savedWrap.appendChild(c);
