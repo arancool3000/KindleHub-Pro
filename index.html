@@ -51812,9 +51812,26 @@ histday:()=>{
   const kindRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
   KINDS.forEach(function(k){const b=txt('button',k[1],{className:'btn small'+(kind===k[0]?' primary':'')});b.onclick=function(){kind=k[0];load();};kindRow.appendChild(b);});
   v.appendChild(kindRow);
+  let _lastItems=[];
+  const aiRow=el('div',{style:{marginBottom:'8px'}});
+  const aiBtn=txt('button','AI: this day in brief',{className:'btn small'});
+  aiBtn.onclick=async function(){
+    if(!_lastItems.length){if(typeof toast==='function')toast('Load a day first.');return;}
+    if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
+    aiBtn.disabled=true;var old=aiBtn.textContent;aiBtn.textContent='Thinking…';
+    try{
+      var lines=_lastItems.slice(0,12).map(function(e){return (e.year||'?')+': '+String(e.text||'').slice(0,160);}).join('\n');
+      var out=await khiCall('In 3-4 warm, engaging sentences, tell the story of what makes '+dlabel.textContent+' a notable day in history. Do not just list — weave a short narrative from these '+kind+'.\n\n'+lines,{temperature:0.6,maxTokens:420});
+      if(out&&typeof kindleAlertGlobal==='function')kindleAlertGlobal(String(out));
+      else if(typeof toast==='function')toast('AI could not respond — try again.');
+    }catch(_e){if(typeof toast==='function')toast('AI error — try again.');}
+    aiBtn.disabled=false;aiBtn.textContent=old;
+  };
+  aiRow.appendChild(aiBtn);v.appendChild(aiRow);
   const host=el('div',{});v.appendChild(host);
   function _ck(){return 'kh_histday_'+kind+'_'+(d.getMonth()+1)+'_'+d.getDate();}
   function paint(items){
+    _lastItems=items||[];
     host.innerHTML='';
     if(!items||!items.length){host.appendChild(txt('div','No entries found — check your connection and try again.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));return;}
     items.slice(0,60).forEach(function(e){
@@ -51896,6 +51913,22 @@ watchq:()=>{
   const FILTS=[['todo','To watch'],['done','Watched'],['all','All']];let filt='todo';
   FILTS.forEach(function(f){const b=txt('button',f[1],{className:'btn small'+(filt===f[0]?' primary':'')});b.onclick=function(){filt=f[0];render();};filterRow.appendChild(b);});
   v.appendChild(filterRow);
+  /* KHI: suggest something to watch/read based on what's already on the list. */
+  const sugRow=el('div',{style:{marginBottom:'8px'}});
+  const sugBtn=txt('button','AI: suggest something',{className:'btn small'});
+  sugBtn.onclick=async function(){
+    if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
+    sugBtn.disabled=true;var old=sugBtn.textContent;sugBtn.textContent='Thinking…';
+    try{
+      var have=(S.watchQueue||[]).slice(0,20).map(function(x){return x.title+' ('+(x.type||'')+')';}).join(', ');
+      var prompt=have?('Based on this watch/read list — '+have+' — suggest 5 more films, shows or books this person would likely enjoy. For each give the title and a one-line reason. Keep it short.'):'Suggest 5 great, widely-loved films, shows or books to watch or read, each with a one-line reason. Keep it short.';
+      var out=await khiCall(prompt,{temperature:0.7,maxTokens:420});
+      if(out&&typeof kindleAlertGlobal==='function')kindleAlertGlobal(String(out));
+      else if(typeof toast==='function')toast('AI could not respond — try again.');
+    }catch(_e){if(typeof toast==='function')toast('AI error — try again.');}
+    sugBtn.disabled=false;sugBtn.textContent=old;
+  };
+  sugRow.appendChild(sugBtn);v.appendChild(sugRow);
   const list=el('div',{});v.appendChild(list);
   function render(){
     Array.prototype.forEach.call(filterRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',FILTS[i][0]===filt);});
