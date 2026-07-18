@@ -831,7 +831,7 @@ body.simple-ui.dark .simple-feat-title{color:#f0f0f0;}
 body.simple-ui.dark .simple-feat-sub{color:#c8c8d0;}
 body.simple-ui.dark .simple-feat-plus{background:#15151f;color:#f0f0f0;border-color:#f0f0f0;}
 body.simple-ui.dark .simple-section-hdr{border-bottom-color:#f0f0f0;}
-body.simple-ui.dark .simple-section-hdr h2{color:#f0f0f0;}
+body.simple-ui.dark .simple-section-hdr h2{color:var(--bg);}
 body.simple-ui.dark .simple-edit-btn{background:#15151f;color:#f0f0f0;border-color:#f0f0f0;box-shadow:2px 2px 0 #f0f0f0;}
 body.simple-ui.dark .simple-app-icon{color:#f0f0f0;}
 body.simple-ui.dark .simple-app-icon svg{stroke:#f0f0f0;}
@@ -879,7 +879,8 @@ body.simple-ui.sepia .simple-masthead .smh-dot{border-color:#f8efd6;}
 body.simple-ui.sepia .simple-masthead .smh-title{color:#3a2a14;}
 body.simple-ui.sepia .simple-masthead .smh-sub{color:#6b5230;}
 body.simple-ui.sepia .simple-section-hdr{border-bottom-color:#3a2a14;}
-body.simple-ui.sepia .simple-section-hdr h2,body.simple-ui.sepia .simple-app-label,body.simple-ui.sepia .simple-feat-title{color:#3a2a14;}
+body.simple-ui.sepia .simple-section-hdr h2{color:var(--bg);}
+body.simple-ui.sepia .simple-app-label,body.simple-ui.sepia .simple-feat-title{color:#3a2a14;}
 
 /* ══ RETRO++ — push the vintage-computer feel much further ═══════════════
    All e-ink-safe: hard edges, offset shadows, CSS-drawn window controls and
@@ -1431,7 +1432,6 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="slides">Slides</div>
     <div class="tab" data-view="sheets">Sheets</div>
     <div class="tab" data-view="starmap">Stars</div>
-    <div class="tab" data-view="explore">Explore</div>
     <div class="tab" data-view="animals">Animals</div>
     <div class="tab nav-essential" data-view="browser">Browser</div>
     <div class="tab" data-view="periodic" style="display:none">Elements</div>
@@ -1513,7 +1513,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     }catch(e){}
   })();
   </script>
-  <main id="mainHost"><div id="kh-initial-load" style="text-align:center;padding:70px 20px;color:#888;font-family:sans-serif;"><div style="font-size:20px;font-weight:800;color:#555;margin-bottom:8px;">KindleHub Pro</div><div style="font-size:13px;">Loading your library…</div></div></main>
+  <main id="mainHost"><div id="kh-initial-load" style="text-align:center;padding:70px 20px;color:var(--muted,#888);font-family:sans-serif;"><div style="font-size:20px;font-weight:800;color:var(--fg,#555);margin-bottom:8px;">KindleHub Pro</div><div style="font-size:13px;">Loading your library…</div></div></main>
   <footer id="appFooter" style="font-size:10px;color:var(--muted);text-align:center;padding:6px 12px;border-top:var(--thin);background:var(--card);flex-shrink:0;line-height:1.6;display:flex;align-items:center;gap:8px;justify-content:center;">
     <span id="footerAttribution" style="flex:1;min-width:0;">
     <span style="font-size:11px;font-weight:700;">Made by Aran</span> &nbsp;|&nbsp;
@@ -1666,11 +1666,11 @@ function defaultState(){
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
-    publishedApps:[],appReviewQueue:[],cpMenuDisabled:false,
+    publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
-    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],friends:[],friendRequests:[],localFixes:{},savedWords:[],
+    navOrder:[],dyslexicFont:false,savedRecipes:[],msgSecrets:{},msgHistoryCaps:{},localReactions:{},localEdits:{},leftGroups:[],chatRequests:[],friends:[],friendRequests:[],friendReqTombs:[],localFixes:{},savedWords:[],
     khIntelligence:true,khiModel:'gemini-3.1-flash-lite',khiExperimentalSeen:true,khiBriefDate:'',khiBriefText:'',
     customProxyUrl:'',ageRange:''};
 }
@@ -2109,12 +2109,22 @@ function _khOnFriendRequest(env){
     const hash=String(p.fromHash||'').slice(0,16);
     if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
     const uid=String(p.fromUserId||'');
+    const mid=String((env&&env.id)||'');
+    /* Durable per-message tombstone: once THIS specific request is resolved
+       (accepted/declined, or its friendship later removed) it must never
+       resurface — even after an unfriend clears the hash from S.friends (which
+       would make the replayed inbox message look "fresh" again) and even if a
+       stale cloud pull overwrites S.friendRequests with an older snapshot.
+       Tombstoning by message id (not hash) only silences a REPLAY of this exact
+       message — a genuinely new request later gets its own id and still comes
+       through. Fixes "I unfriend/decline and the request comes back forever". */
+    if(mid&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.indexOf(mid)>=0)return;
     if(!Array.isArray(S.friends))S.friends=[];
     if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already friends */
     if(!Array.isArray(S.friendRequests))S.friendRequests=[];
     if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid))))return;/* already pending */
     const fromName=String(p.fromName||'Someone').slice(0,40);
-    S.friendRequests.push({hash:hash,uid:uid,name:fromName,ts:Date.now()});
+    S.friendRequests.push({hash:hash,uid:uid,name:fromName,ts:Date.now(),mid:mid});
     if(S.friendRequests.length>60)S.friendRequests=S.friendRequests.slice(-60);
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     try{if(typeof _khMarkGroupUnread==='function')_khMarkGroupUnread('__requests__');}catch(_){}
@@ -2128,10 +2138,12 @@ function _khOnFriendAccept(env){
     const hash=String(p.fromHash||'').slice(0,16);
     const uid=String(p.fromUserId||'');
     if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
+    const mid=String((env&&env.id)||'');
+    if(mid&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.indexOf(mid)>=0)return;/* already resolved/unfriended — inbox replay of an old FRIEND_ACCEPT */
     if(!Array.isArray(S.friends))S.friends=[];
     if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already have them */
     const nm=String(p.fromName||'Friend').slice(0,40);
-    S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now()});
+    S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now(),mid:mid});
     if(Array.isArray(S.friendRequests))S.friendRequests=S.friendRequests.filter(r=>!(r&&(r.hash===hash||(uid&&r.uid===uid))));
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(nm):nm)+' accepted your friend request!',5000);
@@ -2144,7 +2156,7 @@ function _khAcceptFriendRequest(hash){
     const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
     const req=S.friendRequests[i];
     if(!Array.isArray(S.friends))S.friends=[];
-    if(!S.friends.find(f=>f&&f.hash===req.hash))S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now()});
+    if(!S.friends.find(f=>f&&f.hash===req.hash))S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now(),mid:req.mid||''});
     S.friendRequests.splice(i,1);
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     /* Tell the requester we accepted so they add us back. */
@@ -2156,14 +2168,24 @@ function _khDeclineFriendRequest(hash){
   try{
     if(!Array.isArray(S.friendRequests))return;
     const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
+    const req=S.friendRequests[i];
     S.friendRequests.splice(i,1);
+    if(req&&req.mid){/* don't re-prompt on inbox replay of this exact request */
+      if(!Array.isArray(S.friendReqTombs))S.friendReqTombs=[];
+      if(S.friendReqTombs.indexOf(req.mid)<0){S.friendReqTombs.push(req.mid);if(S.friendReqTombs.length>300)S.friendReqTombs=S.friendReqTombs.slice(-300);}
+    }
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
   }catch(_){}
 }
 function _khRemoveFriend(hash){
   try{
     if(!Array.isArray(S.friends))return;
+    const fr=S.friends.find(f=>f&&f.hash===hash);
     S.friends=S.friends.filter(f=>!(f&&f.hash===hash));
+    if(fr&&fr.mid){/* don't let the original request/accept message re-friend them on inbox replay */
+      if(!Array.isArray(S.friendReqTombs))S.friendReqTombs=[];
+      if(S.friendReqTombs.indexOf(fr.mid)<0){S.friendReqTombs.push(fr.mid);if(S.friendReqTombs.length>300)S.friendReqTombs=S.friendReqTombs.slice(-300);}
+    }
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
   }catch(_){}
 }
@@ -2659,10 +2681,21 @@ function _startMessageNotifier(){
     if(!groups.length)return;
     const myId=(S.userId||'');
     const myName=(S.email?S.email.split('@')[0]:(S.user||'Reader'));
-    /* Only ONE group this tick (round-robin through the list). */
+    /* Round-robin a BATCH of groups this tick (was a single group, which made
+       per-group notification latency groups.length*45s — e.g. ~160 accumulated
+       DMs/group chats meant a 2-HOUR wait for a group's turn: the reported
+       "notifications 2 hours delayed" bug). A fixed batch bounds the worst case
+       to ceil(groups.length/NOTIFY_BATCH)*45s. Each group still only costs a
+       cheap ~50-byte _groupLatestId probe (gated below) unless it genuinely has
+       something new, so this doesn't reintroduce the all-groups CPU/GC spike. */
+    const NOTIFY_BATCH=8;
     if(_notifyIdx>=groups.length)_notifyIdx=0;
-    const _oneGroup=[groups[_notifyIdx++]];
-    for(const g of _oneGroup){
+    const _batch=[];
+    for(let _b=0;_b<NOTIFY_BATCH&&_b<groups.length;_b++){
+      _batch.push(groups[_notifyIdx]);
+      _notifyIdx=(_notifyIdx+1)%groups.length;
+    }
+    for(const g of _batch){
       try{
         /* EGRESS: probe the newest message id first (~50 bytes). On a quiet
            group — the common case — it matches what we've already seen and
@@ -2700,15 +2733,26 @@ function _startMessageNotifier(){
           let muted=false;
           try{muted=localStorage.getItem('kh_mute_'+g.code)==='1';}catch(_){}
           if(!muted){
-            const latest=fresh[fresh.length-1];
-            const more=fresh.length>1?' (+'+(fresh.length-1)+' more)':'';
-            notifyMsg(
-              (latest.displayName||'Anonymous')+(g.name?' · '+g.name:'')+more,
-              latest.text||'',
-              5000,
-              latest.id,
-              g.code
-            );
+            /* The LATEST fresh message gets an ephemeral toast (collapsed so a
+               burst doesn't carpet-bomb the screen). But EVERY fresh message
+               (capped 8) now ALSO lands in the persistent Notification Center —
+               earlier messages in a burst used to be marked seen and shown
+               NOWHERE ("doesn't show all the messages" bug). */
+            const toNotify=fresh.slice(-8);
+            toNotify.forEach(function(m,i){
+              if(i===toNotify.length-1){
+                const more=fresh.length>1?' (+'+(fresh.length-1)+' more)':'';
+                notifyMsg((m.displayName||'Anonymous')+(g.name?' · '+g.name:'')+more, m.text||'', 5000, m.id, g.code);
+              } else if(typeof window._khPushNotif==='function'){
+                try{
+                  var _mb=String(m.text||'').replace(/\s+/g,' ');
+                  if(typeof _khMediaLabel==='function'){var _ml=_khMediaLabel(_mb);if(_ml)_mb=_ml;}
+                  if(typeof _censorText==='function')_mb=_censorText(_mb);
+                  var _nm=(typeof _censorText==='function'?_censorText(String(m.displayName||'Anonymous')):String(m.displayName||'Anonymous'));
+                  window._khPushNotif({icon:'chat',title:_nm.slice(0,40)+(g.name?' · '+g.name:''),body:_mb.slice(0,140),group:g.code||'',view:'messages'});
+                }catch(_e){}
+              }
+            });
           }
         }
         /* Persist the new lastSeen IMMEDIATELY so the next polling tick
@@ -3330,7 +3374,7 @@ const NAV_TABS=[
   ['feedback','Feedback'],['dictionary','Dict'],['maps','Maps'],
   ['rss','News'],['stocks','Stocks'],
   ['discover','Discover'],['translate','Translate'],['cipher','Cipher'],['mdjournal','Journal'],
-  ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['explore','Explore'],['animals','Animals'],['browser','Browser'],
+  ['notes','Notes'],['slides','Slides'],['sheets','Sheets'],['starmap','Stars'],['animals','Animals'],['browser','Browser'],
   ['periodic','Elements'],['formulas','Formulas'],['science','Science'],
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
@@ -5637,7 +5681,7 @@ function launchKindleDesktop(){
   const stBack=document.createElement('button');
   stBack.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:13px;font-weight:600;margin-left:2px;">Back</span>';
   stBack.style.cssText='background:none;border:none;color:var(--fg,#111);cursor:pointer;padding:6px 8px;border-radius:10px;display:flex;align-items:center;min-height:44px;font-family:inherit;';
-  stBack.onclick=()=>{kdStore.style.display='none';};
+  stBack.onclick=()=>{_stStopPreview();kdStore.style.display='none';};
   const stTitle=document.createElement('div');stTitle.textContent='AI App Builder';
   stTitle.style.cssText='color:var(--fg,#111);font-size:17px;font-weight:700;flex:1;text-align:center;';
   /* Settings gear */
@@ -5903,6 +5947,15 @@ function launchKindleDesktop(){
   stPreview.className='card';
   stPreview.style.cssText+='display:none;flex-direction:column;gap:10px;';
   stBody.appendChild(stPreview);
+  /* PERF FIX: an AI-built preview can contain its OWN setInterval/RAF (countdown,
+     clock, game — the first placeholder example is literally a countdown). The
+     sandboxed iframe keeps that loop running after you leave this screen, because
+     display:none on an ancestor does NOT stop an iframe's JS. On single-process
+     Kindle Silk that leaked loop shares the main thread with your next keystrokes,
+     so every tick steals time and re-flashes the e-ink screen = the "AI builder is
+     laggy" report. Removing the iframe from the DOM discards its browsing context
+     and kills its timers — same discipline as exitImmersive's game-stop. */
+  function _stStopPreview(){try{stPreview.style.display='none';stPreview.innerHTML='';}catch(_e){}}
 
   /* Installed apps — with an Import control so a shared/downloaded app code
      installs straight onto the home screen. */
@@ -6027,7 +6080,7 @@ function launchKindleDesktop(){
       const actRow=document.createElement('div');
       actRow.style.cssText='display:flex;gap:6px;flex-wrap:wrap;';
       const launchBtn=document.createElement('button');launchBtn.textContent='Launch';launchBtn.className='btn small primary';
-      launchBtn.onclick=()=>{kdStore.style.display='none';openApp(app);};
+      launchBtn.onclick=()=>{_stStopPreview();kdStore.style.display='none';openApp(app);};
       const editBtn=document.createElement('button');editBtn.textContent='Edit HTML';editBtn.className='btn small';
       editBtn.onclick=()=>{
         /* Show full-screen HTML editor overlay */
@@ -6620,8 +6673,11 @@ function kindleAlertGlobal(message,cb){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999999;display:flex;align-items:center;justify-content:center;box-sizing:border-box;';
   const box=document.createElement('div');
-  box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,360px);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-md);';
-  const lbl=document.createElement('div');lbl.textContent=message;lbl.style.cssText='font-size:13px;line-height:1.5;font-family:var(--body-font);color:var(--fg);white-space:pre-wrap;';
+  box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,360px);max-height:85vh;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-md);box-sizing:border-box;';
+  /* Long messages (e.g. the Website Editor "Explain this" output) must SCROLL
+     inside the box, not overflow a vertically-centred dialog and get clipped
+     top+bottom off-screen — that was the "explanation is cut off" bug. */
+  const lbl=document.createElement('div');lbl.textContent=message;lbl.style.cssText='font-size:13px;line-height:1.5;font-family:var(--body-font);color:var(--fg);white-space:pre-wrap;overflow-y:auto;flex:1 1 auto;min-height:0;';
   const row=document.createElement('div');row.style.cssText='display:flex;justify-content:flex-end;';
   const okB=document.createElement('button');okB.textContent='OK';okB.className='btn primary';
   const done=()=>{try{document.removeEventListener('keydown',_esc,true);}catch(_){}ov.remove();if(typeof cb==='function')cb();};
@@ -8650,7 +8706,6 @@ window.KH_ICONS.animals='<circle cx="12" cy="15" r="3.6"/><circle cx="6.5" cy="9
 window.KH_ICONS.unitconv='<path d="M4 7h13"/><path d="M14 4l3 3-3 3"/><path d="M20 17H7"/><path d="M10 14l-3 3 3 3"/>';
 window.KH_ICONS.tipcalc='<circle cx="12" cy="12" r="9"/><line x1="8.5" y1="15.5" x2="15.5" y2="8.5"/><circle cx="9.2" cy="9.2" r="1.3"/><circle cx="14.8" cy="14.8" r="1.3"/>';
 window.KH_ICONS.appstore='<path d="M8 21L12 6l4 15"/><line x1="9.2" y1="16" x2="14.8" y2="16"/>';
-window.KH_ICONS.explore=window.KH_ICONS.discover;
 /* Wikipedia + Formulas used <text> with fill:currentColor — invisible on the
    white-stroke store tiles (currentColor there isn't white). Replace with pure
    STROKE icons that render in both the retro home and the coloured store tile. */
@@ -8775,7 +8830,6 @@ var _KH_PAGE_DESC={
   worldclock:'Clocks for cities around the world.',
   wheel:'A spinner and random picker.',
   discover:'Discover new things to read and do.',
-  explore:'Look things up — animals, stars, science and more.',
   mail:'Your KindleHub inbox.',
   rss:'News headlines and the Kindle Gazette.',
   pet:'Adopt and raise a virtual pet.',
@@ -8884,9 +8938,14 @@ function _khWrapAppSecure(html){
 async function _khReviewApp(name,html){
   var flags=_khAppRiskFlags(html);
   var prompt='You are the automated reviewer for the KindleHub App Store. Decide whether to APPROVE or DECLINE the submitted web app. You may ONLY approve or decline — you cannot edit it. It runs in a locked sandbox (no access to the user\'s data; a strict CSP blocks all network calls and external form posts), so judge INTENT: DECLINE if it is malicious, phishes for passwords or credentials, tries to exfiltrate data or break out of its frame, is empty/broken, or is offensive or adult; otherwise APPROVE. Reply with STRICT JSON only, no prose: {"verdict":"approve","reason":"..."} or {"verdict":"decline","reason":"..."}.\n\nAPP NAME: '+String(name).slice(0,80)+'\nAUTOMATED STATIC SCAN (over the FULL code): '+(flags.length?flags.join('; '):'no risky patterns detected')+'\n\nAPP CODE (first 12000 chars):\n'+String(html).slice(0,12000);
+  /* Model chain: 'auto' (default) = strongest-first with automatic switch to the
+     next model on any rate-limit/failure; a specific pick (S.appReviewModel) is
+     tried FIRST, then the rest as fallback so a busy model never dead-ends. */
+  var chain=APP_REVIEW_MODELS.slice();
+  try{var _pref=S.appReviewModel;if(_pref&&_pref!=='auto'&&APP_REVIEW_MODELS.indexOf(_pref)>=0){chain=[_pref].concat(APP_REVIEW_MODELS.filter(function(m){return m!==_pref;}));}}catch(_e){}
   var anyModelTried=false;
-  for(var i=0;i<APP_REVIEW_MODELS.length;i++){
-    var model=APP_REVIEW_MODELS[i];
+  for(var i=0;i<chain.length;i++){
+    var model=chain[i];
     for(var attempt=1;attempt<=3;attempt++){
       anyModelTried=true;
       var out=null;
@@ -8927,7 +8986,7 @@ async function _khPublishApp(opts,onProgress,onDone){
   if(res&&res.verdict==='approve'){
     if(!Array.isArray(S.publishedApps))S.publishedApps=[];
     var by=(typeof displayNameGlobal==='function')?displayNameGlobal():(S.profileName||(S.email?String(S.email).split('@')[0]:'You'));
-    var app={id:'pub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:name,html:html,cat:cat,isGame:isGame,by:String(by).slice(0,40),at:Date.now(),model:res.model,mine:true};
+    var app={id:'pub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:name,html:html,cat:cat,isGame:isGame,by:String(by).slice(0,40),at:Date.now(),model:res.model,mine:true,secret:(typeof _khRandSecret==='function'?_khRandSecret():'')};
     S.publishedApps.unshift(app);
     if(S.publishedApps.length>60)S.publishedApps.length=60;
     try{save();}catch(_){}
@@ -8996,8 +9055,10 @@ async function _khProcessReviewQueue(force){
       S.appReviewQueue=(Array.isArray(S.appReviewQueue)?S.appReviewQueue:[]).filter(function(x){return x.id!==item.id;});
       if(res&&res.verdict==='approve'){
         if(!Array.isArray(S.publishedApps))S.publishedApps=[];
-        S.publishedApps.unshift({id:'pub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:item.name,html:item.html,cat:item.cat,isGame:item.isGame,by:String(item.by||S.profileName||'You').slice(0,40),at:Date.now(),model:res.model,mine:true});
+        var _qapp={id:'pub_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:item.name,html:item.html,cat:item.cat,isGame:item.isGame,by:String(item.by||S.profileName||'You').slice(0,40),at:Date.now(),model:res.model,mine:true,secret:(typeof _khRandSecret==='function'?_khRandSecret():'')};
+        S.publishedApps.unshift(_qapp);
         if(S.publishedApps.length>60)S.publishedApps.length=60;
+        try{ if(typeof _khShareToStore==='function')await _khShareToStore(_qapp); }catch(_e){}
         if(typeof toast==='function')toast('"'+item.name+'" was approved by '+(res.model||'AI')+' and is now published.',6000);
       }else if(res&&res.verdict==='decline'){
         if(typeof toast==='function')toast('"'+item.name+'" was declined in review: '+(res.reason||'did not pass.'),6000);
@@ -9014,17 +9075,46 @@ window._khReviewApp=_khReviewApp;window._khPublishApp=_khPublishApp;window._khOp
    Apps anyone publishes go to a shared backend table (kh_store_apps) so EVERY
    user can browse + download them — a real store, not a device-only list. All
    client-AI-reviewed before publish and run sandboxed + CSP-locked on open. */
+/* Per-app owner secret: gates deleting your OWN app from the shared store
+   (the worker checks owner_secret on DELETE). Stored WITH the app in
+   S.publishedApps so it syncs across the author's devices. */
+function _khRandSecret(){
+  var s='';try{if(window.crypto&&crypto.getRandomValues){var a=new Uint8Array(20);crypto.getRandomValues(a);for(var i=0;i<a.length;i++)s+=('0'+a[i].toString(16)).slice(-2);}}catch(_e){}
+  while(s.length<40)s+=Math.floor(Math.random()*16).toString(16);
+  return s.slice(0,40);
+}
+/* Local tombstone of store-app ids the user has removed. Deleted apps vanish
+   from the Community list IMMEDIATELY (even before the cloud row is gone, and
+   even for legacy rows with no owner_secret that only an admin can purge).
+   Synced in S so a device that still holds the cloud copy also hides it. */
+function _khStoreHide(id){ try{ if(!Array.isArray(S.storeHidden))S.storeHidden=[]; id=String(id||''); if(id&&S.storeHidden.indexOf(id)<0){ S.storeHidden.unshift(id); if(S.storeHidden.length>300)S.storeHidden.length=300; } }catch(_e){} }
+function _khStoreIsHidden(id){ try{ return Array.isArray(S.storeHidden)&&S.storeHidden.indexOf(String(id||''))>=0; }catch(_e){ return false; } }
+/* Remove the author's OWN app from the shared store (owner_secret-gated) — the
+   fix for "apps I deleted stay published". Admin token (auto-sent by _sbDelete)
+   also lets the creator purge ANY store app. Best-effort; also drops the row
+   from the in-memory cache so the list updates without a refetch. */
+async function _khUnshareFromStore(app){
+  try{
+    if(!app||!app.id)return false;
+    if(window._khStoreCache&&Array.isArray(window._khStoreCache.apps))window._khStoreCache.apps=window._khStoreCache.apps.filter(function(x){return x.id!==app.id;});
+    if(typeof _sbActive!=='function'||!_sbActive())return false;
+    await _sbDelete('kh_store_apps','id=eq.'+encodeURIComponent(app.id),app.secret||'');
+    return true;
+  }catch(_e){ return false; }
+}
 async function _khShareToStore(app){
   if(!app||typeof _sbActive!=='function'||!_sbActive())return false;
   try{
     await _sbInsert('kh_store_apps',{
       id:app.id, name:String(app.name||'App').slice(0,60), html:String(app.html||''),
       cat:String(app.cat||'Fun').slice(0,24), author:String(app.by||'user').slice(0,40),
-      model:String(app.model||''), created_at:new Date(NOW()).toISOString(), downloads:0
+      model:String(app.model||''), created_at:new Date(NOW()).toISOString(), downloads:0,
+      owner_secret:String(app.secret||'')
     });
     return true;
   }catch(_){ return false; }
 }
+window._khUnshareFromStore=_khUnshareFromStore;window._khStoreHide=_khStoreHide;window._khStoreIsHidden=_khStoreIsHidden;window._khRandSecret=_khRandSecret;
 /* Fetch the shared catalogue, ranked most-downloaded first. Cached ~2 min in
    memory (session only) so re-opening the store is instant and cheap. */
 window._khStoreCache=window._khStoreCache||{at:0,apps:[]};
@@ -9033,8 +9123,8 @@ async function _khFetchStoreApps(force){
   var c=window._khStoreCache;
   if(!force && c.apps.length && (NOW()-c.at)<120000)return c.apps;
   try{
-    var rows=await _sbSelect('kh_store_apps','select=id,name,cat,author,model,created_at,downloads&order=downloads.desc,created_at.desc&limit=60');
-    if(Array.isArray(rows)){ window._khStoreCache={at:NOW(),apps:rows}; return rows; }
+    var rows=await _sbSelect('kh_store_apps','select=id,name,cat,author,model,created_at,downloads&order=downloads.desc,created_at.desc&limit=90');
+    if(Array.isArray(rows)){ rows=rows.filter(function(a){return a&&!_khStoreIsHidden(a.id);}); window._khStoreCache={at:NOW(),apps:rows}; return rows; }
   }catch(_){}
   return c.apps||[];
 }
@@ -9537,6 +9627,24 @@ const _KH_EDIT_CONTEXT='ABOUT KINDLEHUB (edit with this knowledge):\n'
 /* The site editor ALWAYS generates + repairs code with Gemini 3.5 Flash (works
    on the admin's own key or the shared proxy — 3.5-flash is in both chains). */
 var _KH_EDIT_MODEL='gemini-3.5-flash';
+/* Editor AI with rate-limit AUTO-SWITCH: try the admin's own key (Gemini 3.5
+   Flash) first; if that fails or is rate-limited (khiCall returns null), fall
+   back automatically to the always-on PUBLIC shared key so editing never dead-
+   ends on a Gemini free-tier limit. No key at all → khiCall already uses shared,
+   so the fallback is skipped (it'd be the same path). */
+async function _khEditAI(prompt,opts){
+  opts=opts||{};
+  var hasKey=(typeof S!=='undefined')&&!!(S.geminiKey||S.openrouterKey||S.anthropicKey||S.openaiKey);
+  var out=null;
+  try{ out=await khiCall(prompt,Object.assign({},opts,{model:_KH_EDIT_MODEL})); }catch(_e){ out=null; }
+  if(out)return out;
+  if(hasKey){
+    try{ if(typeof toast==='function')toast('System AI busy — switching to the public AI…',2500); }catch(_e){}
+    try{ out=await khiCall(prompt,Object.assign({},opts,{provider:'shared',model:_KH_EDIT_MODEL})); }catch(_e){ out=null; }
+  }
+  return out;
+}
+window._khEditAI=_khEditAI;
 const _EDIT_TAG='[[KH_EDIT]]';
 let _editState=null;
 function _khGlobalEditGet(){if(_editState)return _editState;try{var r=localStorage.getItem('kh_gedit');if(r)_editState=JSON.parse(r);}catch(_){}return _editState||null;}
@@ -9808,7 +9916,7 @@ async function _khPolishSiteEditJs(js,onProgress,maxPasses){
     var sys='You are fixing JavaScript so it runs on an OLD Kindle Silk WebKit browser. Detected problems: '+issues+'. Rewrite to FIX EXACTLY these and change NOTHING else — keep identical behaviour. Rules: replace optional chaining with an explicit and-guard such as (a && a.b); replace nullish coalescing with a not-null ternary such as (a != null ? a : b); expand every logical-assignment operator to its long form; give every catch block an error parameter, for example catch(e); write all numbers without digit-separator underscores; use no ES2020-or-newer operator; fix any syntax error; never touch login, auth, or encryption. Return ONLY the raw corrected JavaScript — no markdown, no commentary.';
     var out=null;
     /* Site-editor code is always generated/repaired by Gemini 3.5 Flash. */
-    try{ out=await khiCall(sys+'\n\nCODE:\n'+cur,{temperature:0,maxTokens:1600,model:_KH_EDIT_MODEL}); }catch(_){ out=null; }
+    try{ out=await _khEditAI(sys+'\n\nCODE:\n'+cur,{temperature:0,maxTokens:1600}); }catch(_){ out=null; }
     if(!out){ if(onProgress)onProgress('Pass '+pass+' — AI unavailable, retrying…'); await new Promise(function(r){setTimeout(r,1200*pass);}); continue; }
     var cand=_khSiteAutofix(String(out).replace(/```[a-z]*\n?|```/g,'').trim());
     var cv=_khVerifySiteEdit({js:cand});
@@ -10022,7 +10130,7 @@ async function _khOpenSiteEditor(){
       _threadReset();_threadAdd('you','Fix this live error: '+String(top.msg||etext).slice(0,120));
       statusEl.textContent='Drafting a guard for the top error…';_pushUndo();
       var sysF='Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this runtime error on a KindleHub client. OLD Kindle Silk WebKit ES5/ES2015 ONLY: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credentials, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Output ONLY the raw JavaScript.';
-      var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysF+'\n\nERROR:\n'+etext,{temperature:0.2,maxTokens:1200,model:_KH_EDIT_MODEL});
+      var out=await _khEditAI(_KH_EDIT_CONTEXT+'\n\n'+sysF+'\n\nERROR:\n'+etext,{temperature:0.2,maxTokens:1200});
       var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       if(clean){statusEl.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){statusEl.textContent=t;});store.js=rr.js;box.value=rr.js;_threadAdd('ai','drafted a JS guard ('+store.js.length+' chars) — review, Test, then Publish.');statusEl.textContent='Drafted a guard — review it below, then Publish.';_verify();_updLineInfo();}
       else statusEl.textContent='AI returned nothing — try again.';
@@ -10039,7 +10147,7 @@ async function _khOpenSiteEditor(){
     explainBtn.disabled=true;statusEl.textContent='Explaining…';
     try{
       var pr='In 2-4 short plain-English sentences, explain what this '+(mode==='css'?'CSS':mode==='banner'?'banner text':'JavaScript')+' does to a Kindle web app, and flag anything risky. Be concise. '+(mode==='css'?'CSS':mode==='banner'?'TEXT':'CODE')+':\n'+c;
-      var out=await khiCall(pr,{temperature:0.2,maxTokens:300,model:_KH_EDIT_MODEL});
+      var out=await _khEditAI(pr,{temperature:0.2,maxTokens:300});
       statusEl.textContent='';
       if(typeof kindleAlertGlobal==='function')kindleAlertGlobal(String(out||'(no explanation)'));
     }catch(e){statusEl.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
@@ -10052,7 +10160,7 @@ async function _khOpenSiteEditor(){
     refineBtn.disabled=true;aiStatus.textContent='Refining…';_pushUndo();_threadAdd('you',instr);
     try{
       var sysR=(mode==='css'?'You edit CSS':mode==='banner'?'You edit a short banner text':'You edit JavaScript')+' for an OLD Kindle Silk WebKit web app. Apply the requested change to the CURRENT '+(mode==='banner'?'text':'code')+' and return ONLY the full updated '+(mode==='banner'?'text':(mode==='css'?'CSS':'JavaScript'))+' — no markdown, no explanation.'+(mode==='js'?' ES5/ES2015 only: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter.':'');
-      var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysR+'\n\nCHANGE: '+instr+'\n\nCURRENT:\n'+cur,{temperature:0.2,maxTokens:1600,model:_KH_EDIT_MODEL});
+      var out=await _khEditAI(_KH_EDIT_CONTEXT+'\n\n'+sysR+'\n\nCHANGE: '+instr+'\n\nCURRENT:\n'+cur,{temperature:0.2,maxTokens:1600});
       var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       if(clean){store[mode]=clean;box.value=clean;if(mode==='js'){aiStatus.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=rr.js;box.value=rr.js;}refineIn.value='';aiStatus.textContent='Updated — review it.';_threadAdd('ai','updated the '+mode+' ('+(store[mode]||'').length+' chars)');_verify();_updLineInfo();}
       else {aiStatus.textContent='No change returned.';_threadAdd('ai','(no change returned — try rephrasing)');}
@@ -10130,7 +10238,7 @@ async function _khOpenSiteEditor(){
       else if(mode==='banner')sys='You write a SHORT (max ~120 chars) plain-text site-wide banner notice. Output ONLY the text, no quotes, no markdown.';
       else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app with full page access. OLD Kindle Silk WebKit ES5/ES2015 ONLY: NO optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter (catch(e)). Never touch login/auth/encryption. Keep it small and wrap risky parts in try/catch. Output ONLY JavaScript.';
       _pushUndo();
-      let out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400,model:_KH_EDIT_MODEL});
+      let out=await _khEditAI(_KH_EDIT_CONTEXT+'\n\n'+sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400});
       let clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       store[mode]=clean;box.value=clean;
       /* Auto-polish drafted JS immediately so the admin starts from safe code. */
@@ -10713,7 +10821,7 @@ async function _openAnnouncementComments(a,card){
           refreshList();
           try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
         } else {
-          toast('Comments aren\'t enabled on this server yet — the admin needs the latest (Cloudflare) backend.',6500);
+          toast('Couldn\'t post your comment right now — please try again later.',5000);
         }
       }catch(e){ toast('Comment failed — try again in a moment.',5000); }
       post.disabled=false;post.textContent='Post comment';
@@ -11734,7 +11842,7 @@ function _parseItemIds(text){
        hiccups, PostgREST "no valid columns" (a backend-version mismatch shown to
        the user already), and our own "Failed to upload bug report" message. */
     var _emsg=String(message||'')+' '+String((errorObj&&errorObj.message)||'');
-    if(/Failed to upload bug report|CF_IP|CF_DAILY|CF_WRITE|rate-limit|daily-limit|write-limit|Too many requests|reached its daily free-tier|Write permission denied|Permission denied|no valid columns to update|NetworkError|Failed to fetch|Load failed|networkerror|ERR_NETWORK|The operation is insecure|AbortError|signal is aborted|The user aborted|HTTP 429|HTTP 503/i.test(_emsg))return;
+    if(/Failed to upload bug report|CF_IP|CF_DAILY|CF_WRITE|rate-limit|daily-limit|write-limit|Too many requests|reached its daily free-tier|Write permission denied|Permission denied|no valid columns to update|NetworkError|Failed to fetch|Load failed|networkerror|ERR_NETWORK|The operation is insecure|AbortError|signal is aborted|The user aborted|HTTP 429|HTTP 503|sendBeacon|CORS-safelisted|ResizeObserver loop/i.test(_emsg))return;
     /* Ignore errors from THIRD-PARTY scripts we don't ship — chiefly the
        Cloudflare Web Analytics beacon (served as .../beacon.min.js/v<hash>),
        whose modern JS (optional chaining) old Kindle Silk can't parse, throwing
@@ -13987,7 +14095,7 @@ async function _groupToggleReaction(code,msgId,key){
   save();
   if(!window._reactedLocalToastShown){
     window._reactedLocalToastShown=true;
-    toast('Reaction saved on this device only. Server-side reactions need the kh_set_reaction function — run the schema SQL on your backend, then run "notify pgrst, \'reload schema\';" once to fix.',7000);
+    toast('Reaction saved on this device.',3000);
   }
 }
 
@@ -14108,6 +14216,17 @@ function mergeCloudState(cloudState,opts){
     if(key==='leftGroups'){
       const union=new Set([...localTombs,...cloudTombs]);
       S.leftGroups=[...union].slice(-200);
+      return;
+    }
+    /* friendReqTombs: same union-merge as leftGroups (capped 300). Tombstones
+       RESOLVED friend-request message ids (declined/unfriended) so a replayed
+       inbox message never re-prompts. Without this special case it would fall
+       into the generic REPLACE branch below — reopening the very stale-cloud-pull
+       race the tombstone exists to close. */
+    if(key==='friendReqTombs'){
+      const _lft=Array.isArray(S.friendReqTombs)?S.friendReqTombs:[];
+      const _cft=Array.isArray(cloudState.friendReqTombs)?cloudState.friendReqTombs:[];
+      S.friendReqTombs=[...new Set([..._lft,..._cft])].slice(-300);
       return;
     }
     /* deletedItems tombstones: union local + cloud, newest timestamp wins,
@@ -16145,7 +16264,8 @@ const GAME_HELP={
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
-  set:{name:'Set',how:'Find a "Set": 3 cards where EACH of the four features — count (1/2/3), colour (R/G/P), shape (diamond/oval/triangle) and shading (solid/light/outline) — is either ALL THE SAME or ALL DIFFERENT across the three cards. Tap 3 cards to claim: right = +1, wrong = -1. There is always at least one set on the table. First to 6 (or most when the deck runs out) wins. Colours also carry a letter (R/G/P) so it works on a black-and-white Kindle. Modes: vs AI, 2 Players (tap P1/P2 to buzz in), or Play Online.'},
+  set:{name:'Set',how:'Find a "Set": 3 cards where EACH of the four features — count (1/2/3), colour (R/G/P), shape (diamond/oval/triangle) and shading (solid/light/outline) — is either ALL THE SAME or ALL DIFFERENT across the three cards. Tap 3 cards to claim: right = +1, wrong = -1. There is always at least one set on the table. First to 6 (or most when the deck runs out) wins. Colours also carry a letter (R/G/P) so it works on a black-and-white Kindle. Modes: Practice (solo, relaxed, no penalty, with a Hint button), vs AI, 2 Players (tap P1/P2 to buzz in), or Play Online.'},
+  arena:{name:'Arena Clash',how:'A top-down brawl against three bots. TAP anywhere in the arena to send your fighter there — it AUTO-FIRES at the nearest enemy, so you only steer (one-handed, no aiming). Use the grey blocks as cover and grab the green health packs. Knock out an enemy for a KO; first to 5 KOs wins, or the most KOs when the 2-minute timer runs out. Knocked-out fighters respawn after a moment.'},
   farm:{name:'Farm',how:'A cosy turn-based farming sim. Pick a seed from the shop (Wheat is cheapest), tap an empty plot to plant it (costs coins), then tap "Next day" to grow every crop one day. When a crop is READY, tap it to harvest and sell it for coins — then buy pricier seeds (carrots, berries, pumpkins) that sell for more. Grow your coin pile as high as you can. Your farm saves automatically, so you can come back any time; "New farm" starts over.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table with three modes — 1 Player (practice: clear the table in as few shots as you can), 2 Players (pass-and-play on one device, taking turns) and Play Online (Ultra — match a friend on another device). Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot; the further you drag, the harder the hit. In 2-player/online, sink a ball to shoot again; miss or scratch and it passes to your opponent. Pot your balls, then the black 8-ball LAST to win — sinking the 8 early (or with a scratch) loses.'},
@@ -16240,7 +16360,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,SetGame,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,SetGame,Arena,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -17234,6 +17354,7 @@ function _doLaunch(g){
     case 'trivia': Trivia.start();break;
     case 'farm': Farm.start();break;
     case 'set': SetGame.start();break;
+    case 'arena': Arena.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -22666,6 +22787,7 @@ const SetGame=(()=>{
     var box=el('div',{style:{maxWidth:'340px',margin:'14px auto'}});
     box.appendChild(txt('h2','Set',{style:{textAlign:'center',margin:'0 0 4px'}}));
     box.appendChild(txt('p','Find a Set of 3 cards where each feature — count, colour, shape and shading — is either ALL SAME or ALL DIFFERENT across the three. Tap 3 cards to claim it.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 12px',lineHeight:'1.5',textAlign:'center'}}));
+    box.appendChild(mk('Practice (solo)','Just you — find as many sets as you can. No timer, no opponent, no penalty for a miss.',function(){begin('practice');}));
     box.appendChild(mk('vs AI','Race a computer — choose Easy, Medium or Hard.',function(){showAiMenu();}));
     box.appendChild(mk('2 Players','On this device — buzz in, then you have 7s to claim.',function(){begin('local2');}));
     box.appendChild(mk('Play Online (Ultra)','Race a friend on another device — shared board.',function(){
@@ -22727,7 +22849,12 @@ const SetGame=(()=>{
     if(game.mode==='online'){var ids=[b[s[0]].id,b[s[1]].id,b[s[2]].id];if(game.isHost)hostClaim(ids,0);else netSend({t:'CL',ids:ids,by:game.myIndex});game.sel=[];render();return;}
     var who=(game.mode==='local2')?game.claimer:0;
     stopBuzz();game.buzzDeadline=0;
-    if(isSet(b[s[0]],b[s[1]],b[s[2]])){var si=s.slice().sort(function(a,c){return c-a;});si.forEach(function(i){b.splice(i,1);});replenish();game.scores[who]++;game.msg=(game.mode==='ai')?'Set! +1':((who===0?'Player 1':'Player 2')+' got it! +1');}
+    if(isSet(b[s[0]],b[s[1]],b[s[2]])){var si=s.slice().sort(function(a,c){return c-a;});si.forEach(function(i){b.splice(i,1);});replenish();game.scores[who]++;game.msg=(game.mode==='ai'||game.mode==='practice')?'Set! +1':((who===0?'Player 1':'Player 2')+' got it! +1');}
+    else if(game.mode==='practice'){
+      /* Practice is relaxed — no penalty, just try again. */
+      game.msg='Not a set — try again';game.lockUntil=Date.now()+500;
+      setTimeout(function(){if(game&&!game.over&&game.msg==='Not a set — try again'){game.msg='';render();}},700);
+    }
     else{
       game.scores[who]=Math.max(0,game.scores[who]-1);game.msg='Not a set — -1';
       /* fair play: a brief lock after a wrong claim so you can't brute-force by
@@ -22740,7 +22867,7 @@ const SetGame=(()=>{
   function endCheck(){
     var ended=false;
     if(_noMore())ended=true;
-    if(Math.max(game.scores[0],game.scores[1])>=TARGET)ended=true;
+    if(game.mode!=='practice'&&Math.max(game.scores[0],game.scores[1])>=TARGET)ended=true;
     if(ended){game.over=true;stopAi();game.winner=(game.scores[0]===game.scores[1])?-1:(game.scores[0]>game.scores[1]?0:1);
       var mine=game.scores[0]||0;if(mine>_best()){if(!S.games)S.games={};if(!S.games.set)S.games.set={};S.games.set.best=mine;try{save();}catch(_){}}
       if(typeof _khSubmitScore==='function'){try{_khSubmitScore('set',mine);}catch(_){}}}
@@ -22787,6 +22914,7 @@ const SetGame=(()=>{
     var hud=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',flexWrap:'wrap'}});
     if(game.mode==='ai')hud.appendChild(txt('div','You '+game.scores[0]+' — '+game.scores[1]+' AI ('+((DIFF[game.diff]||DIFF.medium).name)+')',{style:{fontWeight:'800',fontSize:'14px'}}));
     else if(game.mode==='local2')hud.appendChild(txt('div','P1 '+game.scores[0]+' — '+game.scores[1]+' P2',{style:{fontWeight:'800',fontSize:'14px'}}));
+    else if(game.mode==='practice')hud.appendChild(txt('div','Sets found: '+game.scores[0]+(_best()?('  ·  best '+_best()):''),{style:{fontWeight:'800',fontSize:'14px'}}));
     else hud.appendChild(txt('div','You '+game.scores[game.myIndex]+' — '+game.scores[1-game.myIndex]+' '+game.oppName,{style:{fontWeight:'800',fontSize:'13px'}}));
     hud.appendChild(txt('div','Deck '+((game.mode==='online'&&!game.isHost)?(game._dl||0):game.deck.length),{style:{fontSize:'11px',color:'var(--muted)',marginLeft:'auto'}}));
     wrap.appendChild(hud);
@@ -22794,6 +22922,13 @@ const SetGame=(()=>{
       var buzz=el('div',{style:{display:'flex',gap:'8px',marginBottom:'6px'}});
       [['P1',0],['P2',1]].forEach(function(pr){var bb=txt('button','Buzz '+pr[0],{className:'btn small'+(game.claimer===pr[1]?' primary':''),style:{flex:'1'}});bb.onclick=function(){if(game.claimer==null)startBuzz(pr[1],pr[0]);};buzz.appendChild(bb);});
       wrap.appendChild(buzz);
+    }
+    if(game.mode==='practice'&&!game.over){
+      var hintRow=el('div',{style:{display:'flex',gap:'8px',marginBottom:'6px'}});
+      var hb=txt('button','Hint',{className:'btn small',style:{flex:'1'}});
+      hb.onclick=function(){var f=findSet(game.board);if(f){game.sel=[f[0]];game.msg='Hint: one card of a set is now selected.';render();}else{game.msg='No set here — dealing more cards…';replenish();render();}};
+      hintRow.appendChild(hb);
+      wrap.appendChild(hintRow);
     }
     if(game.msg)wrap.appendChild(txt('div',game.msg,{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px'}}));
     var grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}});
@@ -22806,13 +22941,140 @@ const SetGame=(()=>{
       grid.appendChild(cell);
     });
     wrap.appendChild(grid);
-    if(game.over){var res=(game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!')));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
+    if(game.over){var res=(game.mode==='practice')?('No more sets — you found '+game.scores[0]+'!'):((game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!'))));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
     var ctr=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',justifyContent:'center'}});
     var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){stopAi();stopBuzz();stopNet();showMenu();};ctr.appendChild(ng);/* clear pending AI/buzz timers first — else a stale timer fires on the menu and replaces it with a self-playing board */
     wrap.appendChild(ctr);
     immersiveContent.appendChild(wrap);
   }
   return {start:start,stop:stop,isSet:isSet,findSet:findSet,decode:decode};
+})();
+
+/* ── Arena Clash ── a simple top-down arena brawler vs bots. You + 3 fighters
+   in a walled arena; TAP where you want to move (your fighter walks there) and
+   it AUTO-FIRES at the nearest enemy (one-handed, no aiming — e-ink friendly).
+   Knock out enemies to score KOs; first to the target (or most when time runs
+   out) wins. Deliberately its own thing — flat fills, ~20fps, cover blocks and
+   health packs. Not a clone of any specific game. */
+const Arena=(()=>{
+  const W=300,H=300,PR=11,SPD=2.0,BSPD=1.6,PROJ=4.2,FIRE_MS=560,BFIRE_MS=900,HP0=100,DMG=20,RANGE=170,WIN_KO=5,ROUND_S=120,TICK=50;
+  const OBST=[[128,60,44,26],[60,150,30,40],[210,150,30,40],[128,214,44,26]];
+  const FIGHTERS=[{c:'#1f6feb',l:'You',bot:false},{c:'#d1361a',l:'A',bot:true},{c:'#178a17',l:'B',bot:true},{c:'#7a2fb0',l:'C',bot:true}];
+  let game=null,timer=null,cv=null,ctx=null;
+  function _best(){return (S.games&&S.games.arena&&S.games.arena.best)||0;}
+  /* NOW() returns a DATE, so use .getTime() for millisecond arithmetic (Date +
+     number would string-concatenate and give NaN in the timer). */
+  function _now(){return (typeof NOW==='function'?NOW().getTime():Date.now());}
+  function inObst(x,y,pad){pad=pad||0;for(var i=0;i<OBST.length;i++){var o=OBST[i];if(x>o[0]-pad&&x<o[0]+o[2]+pad&&y>o[1]-pad&&y<o[1]+o[3]+pad)return true;}return false;}
+  function openSpot(){var x,y,g=0;do{x=20+Math.random()*(W-40);y=20+Math.random()*(H-40);g++;}while(inObst(x,y,PR+4)&&g<40);return {x:x,y:y};}
+  function mkFighter(i){var s=openSpot();return {i:i,x:s.x,y:s.y,tx:s.x,ty:s.y,hp:HP0,alive:true,resp:0,ko:0,fire:0,retgt:0,c:FIGHTERS[i].c,l:FIGHTERS[i].l,bot:FIGHTERS[i].bot};}
+  function dist(a,b){var dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
+  function nearestEnemy(f){var best=null,bd=1e9;for(var i=0;i<game.F.length;i++){var g=game.F[i];if(g===f||!g.alive)continue;var d=dist(f,g);if(d<bd){bd=d;best=g;}}return best;}
+  function start(){if(timer){clearInterval(timer);timer=null;}enterImmersive('Arena Clash','');var ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;showMenu();}
+  function showMenu(){
+    immersiveContent.innerHTML='';
+    var box=el('div',{style:{maxWidth:'340px',margin:'14px auto',textAlign:'center'}});
+    box.appendChild(txt('h2','Arena Clash',{style:{margin:'0 0 4px'}}));
+    box.appendChild(txt('p','TAP the arena to move your fighter — it auto-fires at the nearest enemy. Knock out '+WIN_KO+' to win (or have the most KOs when the timer runs out). Grab the green health packs.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 12px',lineHeight:'1.5'}}));
+    var pb=txt('button','Start match',{className:'btn primary'});pb.onclick=function(){begin();};box.appendChild(pb);
+    box.appendChild(txt('div','Best KOs: '+_best(),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'10px'}}));
+    immersiveContent.appendChild(box);
+  }
+  function begin(){
+    if(timer){clearInterval(timer);timer=null;}
+    game={F:[mkFighter(0),mkFighter(1),mkFighter(2),mkFighter(3)],proj:[],packs:[],over:false,winner:-1,end:_now()+ROUND_S*1000,nextPack:_now()+6000};
+    immersiveContent.innerHTML='';
+    var wrap=el('div',{style:{maxWidth:'340px',margin:'0 auto',padding:'4px'}});
+    var hud=el('div',{id:'arHud',style:{display:'flex',justifyContent:'space-between',fontWeight:'800',fontSize:'13px',marginBottom:'4px'}});
+    wrap.appendChild(hud);
+    cv=el('canvas',{width:W,height:H,style:{width:'100%',maxWidth:'340px',border:'var(--thin)',borderRadius:'10px',display:'block',background:'#e9e9ee',touchAction:'none'}});
+    wrap.appendChild(cv);
+    ctx=cv.getContext('2d');
+    var msg=el('div',{id:'arMsg',style:{textAlign:'center',fontWeight:'900',fontSize:'16px',minHeight:'20px',margin:'6px 0'}});
+    wrap.appendChild(msg);
+    var ctr=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center'}});
+    var ng=txt('button','New match',{className:'btn small'});ng.onclick=function(){begin();};ctr.appendChild(ng);
+    wrap.appendChild(ctr);
+    immersiveContent.appendChild(wrap);
+    function moveTo(ev){
+      if(!game||game.over)return;var me=game.F[0];if(!me.alive)return;
+      var r=cv.getBoundingClientRect();var t=(ev.touches&&ev.touches[0])||ev;
+      var x=(t.clientX-r.left)*(W/r.width),y=(t.clientY-r.top)*(H/r.height);
+      me.tx=Math.max(PR,Math.min(W-PR,x));me.ty=Math.max(PR,Math.min(H-PR,y));
+    }
+    cv.onclick=moveTo;cv.addEventListener('touchstart',function(e){e.preventDefault();moveTo(e);},{passive:false});
+    timer=setInterval(tick,TICK);
+    draw();
+  }
+  function stepFighter(f){
+    if(!f.alive)return;
+    var dx=f.tx-f.x,dy=f.ty-f.y,d=Math.sqrt(dx*dx+dy*dy),sp=f.bot?BSPD:SPD;
+    if(d>1){var nx=f.x+dx/d*Math.min(sp,d),ny=f.y+dy/d*Math.min(sp,d);if(!inObst(nx,ny,PR)){f.x=nx;f.y=ny;}else if(!inObst(nx,f.y,PR)){f.x=nx;}else if(!inObst(f.x,ny,PR)){f.y=ny;}else{f.tx=f.x;f.ty=f.y;}}
+    f.x=Math.max(PR,Math.min(W-PR,f.x));f.y=Math.max(PR,Math.min(H-PR,f.y));
+  }
+  function botThink(f,now){
+    if(now<f.retgt)return;
+    f.retgt=now+700+Math.random()*700;
+    var e=nearestEnemy(f);if(!e)return;
+    var ang=Math.atan2(e.y-f.y,e.x-f.x)+(Math.random()-0.5)*1.1;var want=70+Math.random()*40;
+    f.tx=Math.max(PR,Math.min(W-PR,e.x-Math.cos(ang)*want));
+    f.ty=Math.max(PR,Math.min(H-PR,e.y-Math.sin(ang)*want));
+  }
+  function autoFire(f,now){
+    var gap=f.bot?BFIRE_MS:FIRE_MS;if(now-f.fire<gap)return;
+    var e=nearestEnemy(f);if(!e||dist(f,e)>RANGE)return;
+    f.fire=now;var a=Math.atan2(e.y-f.y,e.x-f.x);
+    game.proj.push({x:f.x,y:f.y,vx:Math.cos(a)*PROJ,vy:Math.sin(a)*PROJ,o:f.i,life:90});
+  }
+  function killOf(idx){for(var i=0;i<game.F.length;i++)if(game.F[i].i===idx)return game.F[i];return null;}
+  function tick(){
+    if(!game||game.over)return;var now=_now();
+    for(var i=0;i<game.F.length;i++){var f=game.F[i];
+      if(!f.alive){if(now>=f.resp){var s=openSpot();f.x=s.x;f.y=s.y;f.tx=s.x;f.ty=s.y;f.hp=HP0;f.alive=true;}continue;}
+      if(f.bot){botThink(f,now);}
+      stepFighter(f);autoFire(f,now);
+    }
+    /* health packs */
+    if(now>=game.nextPack&&game.packs.length<2){var s=openSpot();game.packs.push({x:s.x,y:s.y});game.nextPack=now+9000;}
+    for(var p=game.packs.length-1;p>=0;p--){var pk=game.packs[p];for(var q=0;q<game.F.length;q++){var g=game.F[q];if(g.alive&&dist(g,pk)<PR+7){g.hp=Math.min(HP0,g.hp+45);game.packs.splice(p,1);break;}}}
+    /* projectiles */
+    for(var j=game.proj.length-1;j>=0;j--){var pr=game.proj[j];pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
+      if(pr.life<=0||pr.x<0||pr.x>W||pr.y<0||pr.y>H||inObst(pr.x,pr.y,0)){game.proj.splice(j,1);continue;}
+      for(var k=0;k<game.F.length;k++){var t=game.F[k];if(!t.alive||t.i===pr.o)continue;
+        if(dist(pr,t)<PR+2){t.hp-=DMG;game.proj.splice(j,1);
+          if(t.hp<=0){t.alive=false;t.resp=now+1500;var kf=killOf(pr.o);if(kf){kf.ko++;if(kf.ko>=WIN_KO){finish();}}}
+          break;}
+      }
+    }
+    if(!game.over&&now>=game.end)finish();
+    draw();
+  }
+  function finish(){
+    game.over=true;if(timer){clearInterval(timer);timer=null;}
+    var best=-1,wi=-1,tie=false;for(var i=0;i<game.F.length;i++){if(game.F[i].ko>best){best=game.F[i].ko;wi=i;tie=false;}else if(game.F[i].ko===best){tie=true;}}
+    game.winner=tie?-1:wi;
+    var mine=game.F[0].ko;if(mine>_best()){if(!S.games)S.games={};if(!S.games.arena)S.games.arena={};S.games.arena.best=mine;try{save();}catch(_){}}
+    if(typeof _khSubmitScore==='function'){try{_khSubmitScore('arena',mine);}catch(_){}}
+    var m=document.getElementById('arMsg');if(m)m.textContent=(game.winner===0)?('You win! '+mine+' KOs'):(game.winner<0?'Draw!':(FIGHTERS[game.winner].l+' wins'));
+    draw();
+  }
+  function draw(){
+    if(!ctx||!game)return;
+    ctx.fillStyle='#e9e9ee';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#c3c3cc';for(var i=0;i<OBST.length;i++){var o=OBST[i];ctx.fillRect(o[0],o[1],o[2],o[3]);}
+    ctx.fillStyle='#178a17';for(var p=0;p<game.packs.length;p++){var pk=game.packs[p];ctx.fillRect(pk.x-6,pk.y-2,12,4);ctx.fillRect(pk.x-2,pk.y-6,4,12);}
+    ctx.fillStyle='#222';for(var j=0;j<game.proj.length;j++){var pr=game.proj[j];ctx.beginPath();ctx.arc(pr.x,pr.y,2.5,0,6.3);ctx.fill();}
+    for(var k=0;k<game.F.length;k++){var f=game.F[k];if(!f.alive)continue;
+      ctx.fillStyle=f.c;ctx.beginPath();ctx.arc(f.x,f.y,PR,0,6.3);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(f.l.slice(0,1),f.x,f.y);
+      /* hp bar */
+      ctx.fillStyle='#0004';ctx.fillRect(f.x-PR,f.y-PR-6,PR*2,3);ctx.fillStyle=(f.i===0?'#1f6feb':'#d1361a');ctx.fillRect(f.x-PR,f.y-PR-6,PR*2*Math.max(0,f.hp)/HP0,3);
+    }
+    var hud=document.getElementById('arHud');
+    if(hud){var secs=Math.max(0,Math.ceil((game.end-_now())/1000));hud.innerHTML='<span>You: '+game.F[0].ko+' KO'+(game.F[0].ko===1?'':'s')+'</span><span>A '+game.F[1].ko+' · B '+game.F[2].ko+' · C '+game.F[3].ko+'</span><span>'+secs+'s</span>';}
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;cv=null;ctx=null;}
+  return {start:start,stop:stop};
 })();
 
 const EightBall=(()=>{
@@ -23078,7 +23340,31 @@ const Trivia=(()=>{
     ['Which gas makes up most of Earth’s atmosphere?','Nitrogen','Oxygen','Carbon dioxide','Argon'],
     ['What is the square root of 144?','12','14','11','24'],
     ['Which artist is famous for the sunflowers paintings?','Van Gogh','Monet','Dali','Rembrandt'],
-    ['What is the fastest land animal?','Cheetah','Lion','Horse','Greyhound']
+    ['What is the fastest land animal?','Cheetah','Lion','Horse','Greyhound'],
+    ['Which planet is closest to the Sun?','Mercury','Venus','Mars','Earth'],
+    ['What is the chemical symbol for water?','H2O','CO2','O2','NaCl'],
+    ['How many bones are in the adult human body?','206','201','256','300'],
+    ['Which country gifted the Statue of Liberty to the USA?','France','Britain','Spain','Italy'],
+    ['What is the largest desert on Earth?','Antarctic','Sahara','Gobi','Arabian'],
+    ['Who developed the theory of general relativity?','Einstein','Newton','Galileo','Bohr'],
+    ['What is the smallest country in the world?','Vatican City','Monaco','Malta','Nauru'],
+    ['Which sea creature has three hearts?','Octopus','Shark','Dolphin','Whale'],
+    ['What is the national flower of Japan?','Cherry blossom','Rose','Tulip','Lotus'],
+    ['How many strings does a standard guitar have?','Six','Four','Five','Seven'],
+    ['Which element has the atomic number 1?','Hydrogen','Helium','Oxygen','Carbon'],
+    ['In which country would you find the Colosseum?','Italy','Greece','Spain','France'],
+    ['What is the study of weather called?','Meteorology','Geology','Astronomy','Biology'],
+    ['Which animal is known as the King of the Jungle?','Lion','Tiger','Elephant','Gorilla'],
+    ['What is the longest bone in the human body?','Femur','Tibia','Humerus','Spine'],
+    ['Which sport uses a shuttlecock?','Badminton','Tennis','Squash','Cricket'],
+    ['What is the capital of Canada?','Ottawa','Toronto','Vancouver','Montreal'],
+    ['How many minutes are in a full day?','1440','1200','2400','960'],
+    ['Which planet is famous for its rings?','Saturn','Mars','Venus','Neptune'],
+    ['What do bees collect from flowers?','Nectar','Water','Pollen dust','Sap'],
+    ['Which is the only continent with no permanent human residents?','Antarctica','Australia','Africa','Asia'],
+    ['What is the hardest working muscle in the body?','Heart','Biceps','Jaw','Calf'],
+    ['Which instrument has 88 keys?','Piano','Organ','Harp','Xylophone'],
+    ['What is the largest internal organ in the human body?','Liver','Heart','Lungs','Stomach']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.trivia&&S.games.trivia.best)||0;}
@@ -29722,7 +30008,7 @@ const BOOK_RECS={
   history:['Sapiens — Harari','The Guns of August — Tuchman']
 };
 const GAME_MAP=[
-  {keys:['hangman','hang man'],g:'hangman'},{keys:['set','set game','set cards','find sets'],g:'set'},{keys:['wordle','word guess'],g:'wordle'},
+  {keys:['hangman','hang man'],g:'hangman'},{keys:['set','set game','set cards','find sets'],g:'set'},{keys:['arena','arena clash','brawl','brawler','pvp'],g:'arena'},{keys:['wordle','word guess'],g:'wordle'},
   {keys:['tic tac','tictactoe','noughts','crosses','ttt','tic-tac'],g:'ttt'},
   {keys:['chess','chess game'],g:'chess'},
   {keys:['connect 4','connect four','connect4','four in a row'],g:'connect4'},
@@ -34241,6 +34527,11 @@ games:()=>{
     c.appendChild(txt('p','Best: '+(S.games&&S.games.crossyroad&&S.games.crossyroad.best||0)+'m',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'crossyroad',style:{marginTop:'6px',width:'100%'}}));
   }));
+  rowArc.appendChild(gc('Arena Clash',null,c=>{
+    c.appendChild(txt('p','Top-down brawl vs 3 bots — tap to move, it auto-fires at the nearest enemy. Grab health packs, use cover, first to 5 KOs wins.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.arena&&S.games.arena.best||0)+' KOs',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'arena',style:{marginTop:'6px',width:'100%'}}));
+  }));
   rowArc.appendChild(gc('8-Ball',null,c=>{
     c.appendChild(txt('p','Top-down pool — 1 player, 2-player pass-and-play, or online (Ultra). Drag back from the cue ball and release to shoot.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
     c.appendChild(txt('p','Best sunk: '+(S.games&&S.games.eightball&&S.games.eightball.best||0),{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
@@ -38141,7 +38432,7 @@ chat:()=>{
             try{
               const outline=await callAI([{role:'user',text:'Create a book outline about "'+topic+'" with exactly '+numChapters+' chapters. Respond ONLY with JSON: {"title":"...","author":"KindleHub AI","chapters":[{"title":"...","summary":"1-2 sentence summary"}]}'}]);
               let parsed;
-              try{const clean=outline.replace(/```json|```/g,'').trim();parsed=JSON.parse(clean);}catch(e){toast('Could not parse outline');genBookBtn.disabled=false;genBookBtn.textContent='AI: Write Book';return;}
+              try{const clean=String(outline||'').replace(/```json|```/g,'').trim();if(!clean)throw new Error('empty');parsed=JSON.parse(clean);}catch(e){toast('Could not parse outline');genBookBtn.disabled=false;genBookBtn.textContent='AI: Write Book';return;}
               if(parsed.title)bk.title=parsed.title;
               if(parsed.author)bk.author=parsed.author;
               for(let ci=0;ci<(parsed.chapters||[]).length;ci++){
@@ -38149,7 +38440,7 @@ chat:()=>{
                 const art=bmNewArticle(ch.title);
                 genBookBtn.textContent='Writing ch '+(ci+1)+'/'+parsed.chapters.length+'...';
                 const body=await callAI([{role:'user',text:'Write a full chapter for a book about "'+topic+'". Chapter title: "'+ch.title+'". Summary: '+ch.summary+'. Write 3-5 paragraphs of engaging prose. No markdown headers, just clean paragraphs separated by blank lines.'}]);
-                art.body=body.trim();
+                art.body=String(body||'').trim();
                 bk.articles.push(art);
               }
               bmActiveArticleIdx=0;
@@ -41487,12 +41778,19 @@ settings:()=>{
   /* ── Admin-pushed scripts opt-out ── */
   const cGjs=el('div',{className:'card'});
   cGjs.appendChild(txt('h2','Admin Updates'));
-  cGjs.appendChild(txt('p','KindleHub lets the site owner push live appearance and feature updates to everyone. Appearance/banner updates always apply; you can block the optional advanced ones that run scripts.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
-  const _gjsRow=el('label',{style:{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}});
-  const _gjsChk=el('input',{type:'checkbox'});_gjsChk.checked=!!S.blockGlobalJs;
-  _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
-  _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device'));
+  cGjs.appendChild(txt('p','KindleHub lets the site owner push live appearance and feature updates to everyone. Appearance and banner updates always apply; you can block the optional advanced ones that run scripts.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  /* Live status so it's obvious updates are ON by default (block OFF). */
+  const _gjsStatus=txt('div','',{style:{fontSize:'12px',fontWeight:'800',marginBottom:'8px'}});
+  function _syncGjsStatus(){var on=!S.blockGlobalJs;_gjsStatus.textContent=on?'Live updates: ON (this device receives updates)':'Live updates: scripts BLOCKED on this device';_gjsStatus.style.color=on?'var(--success)':'var(--danger)';}
+  cGjs.appendChild(_gjsStatus);
+  /* flex row: checkbox stays put, the label wraps cleanly to fill the column
+     (was squished one word per line in the narrow two-column settings grid). */
+  const _gjsRow=el('label',{style:{display:'flex',alignItems:'flex-start',gap:'8px',cursor:'pointer',fontSize:'13px'}});
+  const _gjsChk=el('input',{type:'checkbox',style:{flexShrink:'0',marginTop:'2px'}});_gjsChk.checked=!!S.blockGlobalJs;
+  _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();_syncGjsStatus();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
+  _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device',{style:{flex:'1',minWidth:'0',lineHeight:'1.4'}}));
   cGjs.appendChild(_gjsRow);
+  _syncGjsStatus();
   g.appendChild(cGjs);
   });
   _defer(()=>{
@@ -44024,7 +44322,7 @@ feedback:()=>{
         if(it){if(!Array.isArray(it.comments))it.comments=[];it.comments.push(res.comment);if(it.comments.length>60)it.comments=it.comments.slice(-60);}
         return true;
       }
-      toast('Commenting needs the latest (Cloudflare) backend.',6000);
+      toast('Couldn\'t post your comment right now — please try again later.',5000);
       return false;
     }catch(e){ toast('Comment failed — try again in a moment.',5000); return false; }
   }
@@ -44302,7 +44600,17 @@ feedback:()=>{
       /* Atomic server-side delta (kh_vote_feedback) — no read-modify-write, so a
          concurrent vote can't clobber this one; the delta is clamped server-side. */
       var res=(typeof _khRpcCall==='function')?await _khRpcCall('kh_vote_feedback',{p_id:id,p_delta:delta}):null;
-      if(!(res&&res.ok)){setStatus('Voting needs the latest (Cloudflare) backend.',true);return;}
+      if(!(res&&res.ok)){
+        /* Older backend without the atomic vote RPC: fall back to a direct
+           update so voting still works everywhere. The current backend uses the
+           clamped RPC, so this path never runs there. */
+        try{
+          var _cur0=(items||[]).filter(function(i){return i&&i.id===id;})[0];
+          var _nv=Math.max(0,((_cur0&&_cur0.votes)||0)+delta);
+          if(typeof _sbUpdate==='function'){var _u=await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(id),{votes:_nv});if(Array.isArray(_u)?_u.length>0:!!_u)res={ok:true,votes:_nv};}
+        }catch(_e){}
+        if(!(res&&res.ok)){setStatus('Couldn\'t save your vote right now — please try again in a moment.',true);return;}
+      }
       setVoteState(id,next);
       const existing=await fbRead(activeType);
       const item=existing.find(i=>i.id===id);
@@ -47410,6 +47718,7 @@ sheets:()=>{
       '#view-sheets table.sh-grid td{padding:0;border:1px solid var(--thin-c,rgba(0,0,0,0.18));min-width:64px;max-width:160px;background:var(--card);}'+
       '#view-sheets table.sh-grid td.sh-selected{outline:2.5px solid var(--fg);outline-offset:-2px;background:var(--highlight);}'+
       '#view-sheets table.sh-grid td.sh-match{background:#fff7c4 !important;}'+
+      '#view-sheets table.sh-grid td.sh-match .sh-disp,#view-sheets table.sh-grid td.sh-match input{color:#111 !important;}'+
       '#view-sheets table.sh-grid td input{width:100%;padding:5px 6px;border:none;background:transparent;font-family:monospace;font-size:12px;color:var(--fg);outline:none;text-align:right;min-height:26px;}'+
       '#view-sheets table.sh-grid td .sh-disp{display:block;padding:5px 6px;min-height:26px;text-align:right;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:cell;font-family:monospace;font-size:12px;}'+
       '#view-sheets table.sh-grid td .sh-disp.sh-err{color:var(--danger);font-style:italic;}'+
@@ -49973,7 +50282,7 @@ periodic:()=>{
   // Legend
   const legend=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'8px'}});
   Object.entries(CAT_NAMES).forEach(([k,name])=>{
-    const item=el('div',{style:{display:'flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'#333',fontFamily:'var(--ui-font)'}});
+    const item=el('div',{style:{display:'flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'var(--fg)',fontFamily:'var(--ui-font)'}});
     const dot=el('div',{style:{width:'10px',height:'10px',background:CAT_COLORS[k]||'#eee',border:'1px solid rgba(0,0,0,0.2)',borderRadius:'1px',flexShrink:'0'}});
     item.appendChild(dot);item.appendChild(document.createTextNode(name));
     legend.appendChild(item);
@@ -50026,11 +50335,11 @@ periodic:()=>{
     });
     // Lanthanide gap label row 6 col 3
     const laGap=el('div',{style:{gridRow:6,gridColumn:3,background:'#f0b0f066',border:'1px dashed #ccc',borderRadius:'2px',display:'flex',alignItems:'center',justifyContent:'center'}});
-    laGap.appendChild(txt('div','57-71',{style:{fontSize:'5px',color:'#888',fontFamily:'monospace'}}));
+    laGap.appendChild(txt('div','57-71',{style:{fontSize:'5px',color:'var(--fg)',fontFamily:'monospace'}}));
     ptGrid.appendChild(laGap);
     // Actinide gap label row 7 col 3
     const acGap=el('div',{style:{gridRow:7,gridColumn:3,background:'#f0a0c066',border:'1px dashed #ccc',borderRadius:'2px',display:'flex',alignItems:'center',justifyContent:'center'}});
-    acGap.appendChild(txt('div','89-103',{style:{fontSize:'5px',color:'#888',fontFamily:'monospace'}}));
+    acGap.appendChild(txt('div','89-103',{style:{fontSize:'5px',color:'var(--fg)',fontFamily:'monospace'}}));
     ptGrid.appendChild(acGap);
     // Lanthanide series label (row 8)
     const laLabel=el('div',{style:{gridRow:8,gridColumn:1,display:'flex',alignItems:'center',justifyContent:'center'}});
@@ -51204,33 +51513,6 @@ animals:()=>{
   draw();
   return v;
 },
-explore:()=>{
-  /* Explore — a hub that groups the "look things up" apps (Stars, Animals,
-     Science, Wikipedia, Weather, Elements) in one place. */
-  const v=el('section',{id:'view-explore',className:'view'});
-  v.appendChild(txt('h2','Explore',{style:{fontFamily:'var(--title-font)',fontSize:'18px',margin:'0 0 2px'}}));
-  v.appendChild(txt('div','Look things up — the sky, the animal kingdom, science and more.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'12px',lineHeight:'1.5'}}));
-  const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:'10px'}});
-  const ITEMS=[
-    {view:'animals',label:'Animals',sub:'Zoo field guide — stats, photos & facts'},
-    {view:'starmap',label:'Stars',sub:'Live sky map — search stars, planets & satellites'},
-    {view:'science',label:'Science',sub:'Facts, glossary & experiments'},
-    {view:'wikipedia',label:'Wikipedia',sub:'Search the free encyclopedia'},
-    {view:'weather',label:'Weather',sub:'Forecast for your area'},
-    {view:'periodic',label:'Elements',sub:'The periodic table'},
-    {view:'imagesearch',label:'Images',sub:'Search free photos'},
-    {view:'sports',label:'Sports',sub:'Scores, past & upcoming games'}
-  ];
-  ITEMS.forEach(function(it){
-    const card=el('div',{style:{border:'var(--thin)',borderRadius:'12px',padding:'14px',background:'var(--card)',cursor:'pointer',minHeight:'78px',display:'flex',flexDirection:'column',gap:'3px'}});
-    card.appendChild(txt('div',it.label,{style:{fontSize:'15px',fontWeight:'800'}}));
-    card.appendChild(txt('div',it.sub,{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.4'}}));
-    card.onclick=function(){if(typeof showView==='function')showView(it.view);};
-    grid.appendChild(card);
-  });
-  v.appendChild(grid);
-  return v;
-},
 unitconv:()=>{
   /* Unit Converter — offline, pure-math, e-ink-safe. Factor units convert via a
      base unit; temperature is handled specially (offset scales). */
@@ -51358,9 +51640,9 @@ appstore:()=>{
   const body=el('div',{});
   function tabBtn(id,label){const b=txt('button',label,{className:'btn small'+(_tab===id?' primary':'')});b.onclick=function(){_tab=id;draw();};return b;}
   function draw(){
-    tabRow.innerHTML='';tabRow.append(tabBtn('discover','Discover'),tabBtn('publish','Publish'),tabBtn('mine','My Apps'));
+    tabRow.innerHTML='';tabRow.append(tabBtn('discover','Discover'),tabBtn('community','Community'),tabBtn('publish','Publish'),tabBtn('mine','My Apps'));
     body.innerHTML='';
-    if(_tab==='discover')renderDiscover();else if(_tab==='publish')renderPublish();else renderMine();
+    if(_tab==='discover')renderDiscover();else if(_tab==='community')renderCommunity();else if(_tab==='publish')renderPublish();else renderMine();
   }
   v.append(tabRow,body);
 
@@ -51388,8 +51670,10 @@ appstore:()=>{
     const top=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',overflow:'hidden'}});
     top.appendChild(_iconEl({view:opts.view,name:opts.name},44));
     const mid=el('div',{style:{flex:'1 1 auto',minWidth:'0',overflow:'hidden'}});
-    mid.appendChild(txt('div',opts.name,{style:{fontWeight:'800',fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
-    mid.appendChild(txt('div',opts.cat+(opts.by?(' · '+opts.by):''),{style:{fontSize:'10px',color:'var(--muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+    /* Name wraps to ~2 lines (was 1-line nowrap+ellipsis, which chopped longer
+       names like "Image Gen (By …)" on Kindle — image-4 cutoff bug). */
+    mid.appendChild(txt('div',opts.name,{style:{fontWeight:'800',fontSize:'14px',lineHeight:'1.2',maxHeight:'2.4em',overflow:'hidden',wordBreak:'break-word'}}));
+    mid.appendChild(txt('div',opts.cat+(opts.by?(' · '+opts.by):''),{style:{fontSize:'10px',color:'var(--muted)',lineHeight:'1.25',maxHeight:'2.5em',overflow:'hidden',wordBreak:'break-word'}}));
     top.appendChild(mid);
     if(opts.onOpenSheet){top.style.cursor='pointer';top.onclick=function(){opts.onOpenSheet();};}
     card.appendChild(top);
@@ -51666,57 +51950,95 @@ appstore:()=>{
         });
         host.appendChild(grid);
       });
-      /* Community Apps — the SHARED marketplace: apps published by anyone,
-         downloadable by everyone. Fetched async, ranked by downloads. */
-      const showComm=(_cat==='All'||_cat==='Community'||true);
-      const commHdr=secHdr('Community Apps');
-      const commHdrRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}});
-      commHdrRow.appendChild(commHdr);commHdr.style.margin='10px 0 7px';
-      const sortRow=el('div',{style:{display:'flex',gap:'4px'}});
-      [['top','Top'],['new','New']].forEach(function(s){const b=txt('button',s[1],{className:'btn small'+(_commSort===s[0]?' primary':''),style:{borderRadius:'14px'}});b.onclick=function(){_commSort=s[0];paint();};sortRow.appendChild(b);});
-      commHdrRow.appendChild(sortRow);
-      const commGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
-      const commLoad=txt('div','Loading community apps…',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 2px'}});
-      host.appendChild(commHdrRow);host.appendChild(commLoad);host.appendChild(commGrid);
-      const shownCats=Object.keys(cats).length;
-      const _paintTok=(window.__khStorePaintTok=(window.__khStorePaintTok||0)+1);
-      _khFetchStoreApps().then(function(apps){
-        if(window.__khStorePaintTok!==_paintTok)return; /* a newer paint ran — bail */
-        try{if(commLoad.parentNode)commLoad.remove();}catch(_){}
-        const list=(apps||[]).filter(function(a){
-          if(q&&String(a.name||'').toLowerCase().indexOf(q)<0&&String(a.cat||'').toLowerCase().indexOf(q)<0)return false;
-          if(_cat!=='All'&&_cat!=='Community'&&String(a.cat||'')!==_cat)return false;
-          return true;
-        });
-        if(_commSort==='new')list.sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));});
-        else list.sort(function(a,b){return (b.downloads||0)-(a.downloads||0);});
-        if(!list.length){
-          /* Nothing in the community list. If the user was SEARCHING and nothing
-             built-in matched either, that's a true "no results" — say so clearly. */
-          if(q){
-            try{commHdrRow.remove();}catch(_){}
-            if(!shownCats)host.appendChild(txt('div','No apps found for "'+q+'". Try a different word, or publish it yourself from the Publish tab.',{style:{fontSize:'12px',color:'var(--muted)',padding:'14px 8px',textAlign:'center'}}));
+      /* Community Apps — a small TEASER (top few by downloads). The FULL,
+         paginated list lives in its own Community tab, so Discover never
+         renders dozens of community cards at once (that could crash Kindle). */
+      {
+        const commHdrRow=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',flexWrap:'wrap'}});
+        const commHdr=secHdr('Community Apps');commHdr.style.margin='10px 0 7px';
+        commHdrRow.appendChild(commHdr);
+        const seeAll=txt('button','See all',{className:'btn small'});seeAll.onclick=function(){_tab='community';draw();};
+        commHdrRow.appendChild(seeAll);
+        const commGrid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
+        const commLoad=txt('div','Loading community apps…',{style:{fontSize:'12px',color:'var(--muted)',padding:'6px 2px'}});
+        host.appendChild(commHdrRow);host.appendChild(commLoad);host.appendChild(commGrid);
+        const shownCats=Object.keys(cats).length;
+        const _paintTok=(window.__khStorePaintTok=(window.__khStorePaintTok||0)+1);
+        _khFetchStoreApps().then(function(apps){
+          if(window.__khStorePaintTok!==_paintTok)return; /* a newer paint ran — bail */
+          try{if(commLoad.parentNode)commLoad.remove();}catch(_){}
+          let list=(apps||[]).filter(function(a){
+            if(q&&String(a.name||'').toLowerCase().indexOf(q)<0&&String(a.cat||'').toLowerCase().indexOf(q)<0)return false;
+            if(_cat!=='All'&&_cat!=='Community'&&String(a.cat||'')!==_cat)return false;
+            return true;
+          });
+          list.sort(function(a,b){return (b.downloads||0)-(a.downloads||0);});
+          const total=list.length;list=list.slice(0,6); /* teaser only */
+          if(!total){
+            if(q){try{commHdrRow.remove();}catch(_){}if(!shownCats)host.appendChild(txt('div','No apps found for "'+q+'". Try a different word, or publish it yourself from the Publish tab.',{style:{fontSize:'12px',color:'var(--muted)',padding:'14px 8px',textAlign:'center'}}));return;}
+            if(_cat!=='All'&&_cat!=='Community'){try{commHdrRow.remove();}catch(_){}return;}
+            commGrid.appendChild(txt('div',(typeof _sbActive==='function'&&_sbActive())?'No community apps yet — publish one from the Publish tab and it appears here for everyone.':'Community apps need a backend connection.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px'}}));
             return;
           }
-          if(_cat!=='All'&&_cat!=='Community'){try{commHdrRow.remove();}catch(_){}return;}
-          commGrid.appendChild(txt('div',(typeof _sbActive==='function'&&_sbActive())?'No community apps yet — publish one from the Publish tab and it appears here for everyone.':'Community apps need a backend connection.',{style:{fontSize:'12px',color:'var(--muted)',padding:'8px'}}));
-          return;
-        }
-        list.forEach(function(a){
-          const dled=_khStoreDownloaded(a.id);
-          const dl=(a.downloads||0);
-          const act=el('div',{style:{display:'flex',gap:'4px',flexShrink:'0'}});act.onclick=function(ev){ev.stopPropagation();};
-          const bt=txt('button',dled?'Open':'Download',{className:'btn small primary'});
-          bt.onclick=dled?function(){const lo=(S.publishedApps||[]).filter(function(x){return x.id===a.id;})[0];if(lo)_khOpenPublishedApp(lo);}
-                         :function(){bt.disabled=true;bt.textContent='…';_khDownloadStoreApp(a,function(){paint();});};
-          act.appendChild(bt);
-          const desc='Community app'+(a.model?(' · reviewed by '+a.model):'')+' · '+dl+(dl===1?' download':' downloads');
-          commGrid.appendChild(appCard({name:a.name,cat:(a.cat||'Fun'),by:(a.author||'user'),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},paint);}}));
+          list.forEach(function(a){commGrid.appendChild(_commCard(a,paint));});
+          if(total>6)commGrid.appendChild(txt('div','+ '+(total-6)+' more in the Community tab →',{style:{fontSize:'11px',color:'var(--accent)',padding:'8px 4px',cursor:'pointer'},onclick:function(){_tab='community';draw();}}));
         });
-      });
+      }
       if(front)host.appendChild(txt('div',(allFirst.length)+' built-in apps · community apps download free',{style:{fontSize:'10px',color:'var(--muted)',textAlign:'center',margin:'14px 0 4px'}}));
     }
     sb.oninput=khDebounce(paint,180);paint();
+  }
+  /* Shared community-app card (Discover teaser + Community tab). Download/Open +
+     an admin-only Remove that purges the app from the store for everyone. */
+  function _commCard(a,onAfter){
+    const dled=_khStoreDownloaded(a.id);
+    const dl=(a.downloads||0);
+    const act=el('div',{style:{display:'flex',gap:'4px',flexShrink:'0',flexWrap:'wrap'}});act.onclick=function(ev){ev.stopPropagation();};
+    const bt=txt('button',dled?'Open':'Download',{className:'btn small primary'});
+    bt.onclick=dled?function(){const lo=(S.publishedApps||[]).filter(function(x){return x.id===a.id;})[0];if(lo)_khOpenPublishedApp(lo);}
+                   :function(){bt.disabled=true;bt.textContent='…';_khDownloadStoreApp(a,function(){if(onAfter)onAfter();});};
+    act.appendChild(bt);
+    if(window._isAdminCached===true){
+      const rm=txt('button','Remove',{className:'btn small'});rm.title='Remove from the store for everyone (admin)';
+      rm.onclick=function(){const go=function(ok){if(!ok)return;rm.disabled=true;try{if(typeof _khStoreHide==='function')_khStoreHide(a.id);}catch(_){}try{if(typeof _khUnshareFromStore==='function')_khUnshareFromStore({id:a.id});}catch(_){}try{save();}catch(_){}if(onAfter)onAfter();};if(typeof kindleConfirm==='function')kindleConfirm('Remove "'+a.name+'" from the App Store for everyone?',go);else go(true);};
+      act.appendChild(rm);
+    }
+    const desc='Community app'+(a.model?(' · reviewed by '+a.model):'')+' · '+dl+(dl===1?' download':' downloads');
+    return appCard({name:a.name,cat:(a.cat||'Fun'),by:(a.author||'user'),desc:desc,action:act,onOpenSheet:function(){openSheet({name:a.name,cat:a.cat||'Fun',by:a.author||'user',desc:desc,shared:a},onAfter);}});
+  }
+  /* Community TAB — the full marketplace, PAGINATED (12 at a time + Load more) so
+     a big catalogue never renders all at once on Kindle. Own search + sort. */
+  function renderCommunity(){
+    body.appendChild(txt('div','Apps published by the KindleHub community — every one is AI-reviewed and runs in a locked sandbox. Download any to your device.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+    const sb=el('input',{type:'text',placeholder:'Search community apps…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',marginBottom:'8px'}});
+    body.appendChild(sb);
+    const PAGE=12;var _sort='top',_shown=PAGE,_all=null;
+    const sortRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+    const sortBtns={};
+    [['top','Top'],['new','New']].forEach(function(s){const b=txt('button',s[1],{className:'btn small'+(_sort===s[0]?' primary':''),style:{borderRadius:'14px'}});b.onclick=function(){_sort=s[0];Object.keys(sortBtns).forEach(function(k){sortBtns[k].classList.toggle('primary',k===_sort);});_shown=PAGE;paintPage();};sortBtns[s[0]]=b;sortRow.appendChild(b);});
+    body.appendChild(sortRow);
+    const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:'8px'}});
+    const moreWrap=el('div',{style:{textAlign:'center',margin:'12px 0 4px'}});
+    body.append(grid,moreWrap);
+    function apply(){
+      const q=(sb.value||'').trim().toLowerCase();
+      let list=(_all||[]).filter(function(a){return !q||String(a.name||'').toLowerCase().indexOf(q)>=0||String(a.cat||'').toLowerCase().indexOf(q)>=0||String(a.author||'').toLowerCase().indexOf(q)>=0;});
+      if(_sort==='new')list.sort(function(a,b){return String(b.created_at||'').localeCompare(String(a.created_at||''));});
+      else list.sort(function(a,b){return (b.downloads||0)-(a.downloads||0);});
+      return list;
+    }
+    function paintPage(){
+      grid.innerHTML='';moreWrap.innerHTML='';
+      if(_all===null){grid.appendChild(txt('div','Loading community apps…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 2px'}}));return;}
+      const list=apply();
+      if(!list.length){grid.appendChild(txt('div',(typeof _sbActive==='function'&&_sbActive())?'No community apps yet — be the first: publish one from the Publish tab.':'Community apps need a backend connection.',{style:{fontSize:'13px',color:'var(--muted)',padding:'14px 8px',textAlign:'center'}}));return;}
+      list.slice(0,_shown).forEach(function(a){grid.appendChild(_commCard(a,paintPage));});
+      if(list.length>_shown){const more=txt('button','Load more ('+(list.length-_shown)+' left)',{className:'btn'});more.onclick=function(){_shown+=PAGE;paintPage();};moreWrap.appendChild(more);}
+      else if(list.length>PAGE)moreWrap.appendChild(txt('div','That\'s all '+list.length+' apps.',{style:{fontSize:'10px',color:'var(--muted)'}}));
+    }
+    sb.oninput=khDebounce(function(){_shown=PAGE;paintPage();},200);
+    paintPage();
+    _khFetchStoreApps(true).then(function(apps){_all=(apps||[]).slice();_shown=PAGE;paintPage();});
   }
 
   function renderPublish(){
@@ -51733,22 +52055,44 @@ appstore:()=>{
     const ta=el('textarea',{placeholder:'Paste your app HTML/JS here, or use “Build with AI” below…',style:{width:'100%',minHeight:'180px',fontFamily:'monospace',fontSize:'12px',padding:'9px',boxSizing:'border-box'}});
     if(_editApp)ta.value=_editApp.html||'';
     body.appendChild(ta);
+    const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',margin:'4px 0'}});
+    /* AI builder is now CONVERSATIONAL: build once, then keep typing changes and
+       it edits your CURRENT app (was one-shot — "hope for the best on the first
+       prompt"). The button says Build when the box is empty, Update when there's
+       code to refine. */
     const aiRow=el('div',{style:{display:'flex',gap:'6px',margin:'8px 0'}});
-    const aiInp=el('input',{type:'text',placeholder:'Describe an app for AI to build…',style:{flex:'1',fontSize:'13px',padding:'8px 10px'}});
-    const aiBtn=txt('button','Build with AI',{className:'btn small'});
+    const aiInp=el('input',{type:'text',placeholder:'Describe an app — or a change (e.g. "make the button bigger")…',style:{flex:'1',fontSize:'13px',padding:'8px 10px'}});
+    const aiBtn=txt('button','Build',{className:'btn small'});
+    function _syncAiBtn(){var has=(ta.value||'').trim().length>0;if(!aiBtn.disabled)aiBtn.textContent=has?'Update':'Build';aiInp.placeholder=has?'Type a change to refine your app…':'Describe an app for AI to build…';}
+    ta.oninput=function(){_syncAiBtn();};
     aiBtn.onclick=async function(){
-      const p=(aiInp.value||'').trim();if(!p){toast('Describe the app first.');return;}
-      aiBtn.disabled=true;aiBtn.textContent='Building…';
+      const p=(aiInp.value||'').trim();if(!p){toast('Describe the app or the change first.');return;}
+      const cur=(ta.value||'').trim();
+      aiBtn.disabled=true;aiBtn.textContent='…';status.textContent=cur?'Updating your app…':'Building your app…';
       try{
-        const prompt='Build a COMPLETE, single-file HTML web app (inline CSS + JS, no external resources). It must work in an old Kindle browser: NO optional chaining, nullish coalescing, or other ES2020+ syntax. Return ONLY the raw HTML document, no markdown. App: '+p;
-        const out=await khiCall(prompt,{temperature:0.5,maxTokens:2048});
-        if(out){var code=String(out).replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'');ta.value=code;if(!nameInp.value)nameInp.value=p.slice(0,40);toast('Draft built — review it, then Publish.');}
-        else toast('AI could not build that — try rephrasing.');
-      }catch(e){toast('Build failed.');}
-      aiBtn.disabled=false;aiBtn.textContent='Build with AI';
+        var prompt=cur
+          ? 'You are editing an existing single-file HTML web app for an OLD Kindle browser (NO optional chaining, nullish coalescing, logical-assignment or other ES2020+ syntax; give every catch a parameter). Apply the requested change and return ONLY the full updated raw HTML document — no markdown, no explanation.\n\nCHANGE: '+p+'\n\nCURRENT APP:\n'+cur
+          : 'Build a COMPLETE, single-file HTML web app (inline CSS + JS, no external resources). It must work in an old Kindle browser: NO optional chaining, nullish coalescing, logical-assignment or other ES2020+ syntax; give every catch a parameter. Return ONLY the raw HTML document, no markdown. App: '+p;
+        const out=await khiCall(prompt,{temperature:cur?0.3:0.5,maxTokens:2600});
+        if(out){var code=String(out).replace(/^```[a-z]*\n?/i,'').replace(/```\s*$/,'');ta.value=code;if(!nameInp.value&&!cur)nameInp.value=p.slice(0,40);aiInp.value='';status.textContent=cur?'Updated — tap Test app to try it, then Publish.':'Draft built — tap Test app to try it, then Publish.';}
+        else status.textContent='AI could not do that — try rephrasing.';
+      }catch(e){status.textContent='Build failed — check your connection or AI key.';}
+      aiBtn.disabled=false;_syncAiBtn();
     };
     aiRow.append(aiInp,aiBtn);body.appendChild(aiRow);
-    const status=el('div',{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',margin:'4px 0'}});body.appendChild(status);
+    /* Test + reviewer-model row: try the app in a real sandbox BEFORE publishing,
+       and choose which model reviews it (Auto = best available, auto-switches). */
+    const optRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center',margin:'2px 0 8px'}});
+    const testBtn=txt('button','Test app',{className:'btn small primary'});
+    testBtn.onclick=function(){const h=(ta.value||'').trim();if(h.length<20){toast('Build or paste an app first.');return;}if(typeof _khOpenPublishedApp==='function')_khOpenPublishedApp({name:(nameInp.value||'Preview'),html:h});};
+    optRow.appendChild(testBtn);
+    optRow.appendChild(txt('span','Reviewer:',{style:{fontSize:'11px',color:'var(--muted)',fontWeight:'700',marginLeft:'4px'}}));
+    const mSel=el('select',{style:{fontSize:'12px',padding:'4px 6px'}});
+    [['auto','Auto (best available)']].concat(APP_REVIEW_MODELS.map(function(m){return [m,m];})).forEach(function(o){const op=document.createElement('option');op.value=o[0];op.textContent=o[1];if((S.appReviewModel||'auto')===o[0])op.selected=true;mSel.appendChild(op);});
+    mSel.onchange=function(){S.appReviewModel=mSel.value;try{save();}catch(_){}};
+    optRow.appendChild(mSel);
+    body.appendChild(optRow);
+    body.appendChild(status);
     const pubBtn=txt('button','Publish',{className:'btn primary',style:{width:'100%',marginTop:'4px'}});
     pubBtn.onclick=async function(){
       pubBtn.disabled=true;
@@ -51790,7 +52134,17 @@ appstore:()=>{
       const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
       const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun'};_tab='publish';draw();};
       const shareB=txt('button','Share',{className:'btn small'});shareB.onclick=function(){_shareAppCode(a);};
-      const delB=txt('button','Delete',{className:'btn small'});delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"?',function(ok){if(ok){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}});else{S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();}};
+      const delB=txt('button','Delete',{className:'btn small'});
+      function _doDelete(){
+        /* Remove locally AND from the shared store (owner_secret-gated), and
+           tombstone the id so it can't reappear in Community from a cached/
+           lingering cloud row — the fix for "apps I deleted stay published". */
+        try{ if(a.mine&&typeof _khUnshareFromStore==='function')_khUnshareFromStore(a); }catch(_){}
+        try{ if(typeof _khStoreHide==='function')_khStoreHide(a.id); }catch(_){}
+        S.publishedApps=S.publishedApps.filter(function(x){return x.id!==a.id;});
+        save();try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}draw();
+      }
+      delB.onclick=function(){if(typeof kindleConfirm==='function')kindleConfirm('Delete "'+a.name+'"? It will be removed from the App Store for everyone.',function(ok){if(ok)_doDelete();});else _doDelete();};
       act.append(openB,editB,shareB,delB);
       grid.appendChild(appCard({name:a.name,cat:a.cat||'Fun',by:(a.mine?'live in the store':('by '+(a.by||'you'))),desc:'Reviewed by '+(a.model||'AI')+'. '+(a.mine?'Anyone can find & download it from Community Apps.':'Downloaded to this device.'),action:act}));
     });
@@ -58184,6 +58538,7 @@ messages:()=>{
 
   /* ── State ── */
   let _screen='list'; // list | create | join | chat
+  let _listTab='chats'; // list screen sub-tab: chats | friends
   let _activeGroup=null; // {code,itemId,name}
   let _messages=[];
   /* Progressive chat rendering: show the newest _CHAT_PAGE messages first (fast
@@ -58281,8 +58636,9 @@ messages:()=>{
       const ctx=canvas.getContext('2d');
       // Resolve CSS variable to a real colour for canvas
       const hlColor=getComputedStyle(document.documentElement).getPropertyValue('--highlight').trim()||'#dddde1';
+      const fgColor=getComputedStyle(document.documentElement).getPropertyValue('--fg').trim()||'#333';
       ctx.fillStyle=hlColor;ctx.fillRect(0,0,180,180);
-      ctx.fillStyle='#333';ctx.font='11px sans-serif';ctx.textAlign='center';
+      ctx.fillStyle=fgColor;ctx.font='11px sans-serif';ctx.textAlign='center';
       ctx.fillText('QR unavailable.',90,85);
       ctx.fillText('Enter code manually.',90,103);
     };
@@ -58336,10 +58692,33 @@ messages:()=>{
       return;
     }
 
+    /* Chats | Friends tabs: keep Global Chat + DMs on the Chats tab and move
+       friends + all pending requests onto their own tab, so you never scroll
+       past them to reach your conversations (user request). */
+    const _pend=((Array.isArray(S.chatRequests)?S.chatRequests.length:0)+(Array.isArray(S.friendRequests)?S.friendRequests.length:0));
+    const _lTabBar=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}});
+    [['chats','Chats'],['friends','Friends'+(_pend?(' ('+_pend+')'):'')]].forEach(function(t){
+      const b=txt('button',t[1],{className:'btn small'+(_listTab===t[0]?' primary':''),style:{flex:'1'}});
+      b.onclick=function(){_listTab=t[0];render();};
+      _lTabBar.appendChild(b);
+    });
+    body.appendChild(_lTabBar);
+    const _onFriends=(_listTab==='friends');
+
     /* Pending chat requests (code-free DMs someone sent you) — Accept to join,
        Decline to dismiss. Rendered above the group list so they're seen first. */
+    /* Self-heal FIRST: a stale cloud pull can blindly overwrite S.chatRequests
+       with an older pre-decline snapshot (mergeCloudState has no by-id merge for
+       this list) — the "declined it, reload, it's back" bug. S.leftGroups IS
+       union-merged, so re-applying it here on every render reliably strips any
+       resurrected/declined request before it's shown. */
+    if(Array.isArray(S.chatRequests)&&Array.isArray(S.leftGroups)&&S.leftGroups.length){
+      const _cbToms=new Set(S.leftGroups);
+      const _cleanedReqs=S.chatRequests.filter(r=>!(r&&_cbToms.has(r.code)));
+      if(_cleanedReqs.length!==S.chatRequests.length){S.chatRequests=_cleanedReqs;try{save();}catch(_){}}
+    }
     const _reqs=Array.isArray(S.chatRequests)?S.chatRequests:[];
-    if(_reqs.length){
+    if(_onFriends&&_reqs.length){
       body.appendChild(txt('div','CHAT REQUESTS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 6px'}}));
       _reqs.slice().reverse().forEach(req=>{
         const rrow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px',border:'2px solid var(--accent)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'10px'}});
@@ -58360,8 +58739,17 @@ messages:()=>{
     /* ── Friends ── pending friend requests (Accept/Decline), the friends list
        (Message / remove), and an Add-friend search. Built on the same inbox
        handshake as chat requests. */
+    /* Self-heal: strip any pending request whose message id is tombstoned in
+       S.friendReqTombs (declined earlier, or its friend later removed) — same
+       rationale as the chat-request self-heal above; friendReqTombs IS
+       union-merged so this reliably catches a stale-cloud-pull resurrection. */
+    if(Array.isArray(S.friendRequests)&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.length){
+      const _frToms=new Set(S.friendReqTombs);
+      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&r.mid&&_frToms.has(r.mid)));
+      if(_cleanedFreq.length!==S.friendRequests.length){S.friendRequests=_cleanedFreq;try{save();}catch(_){}}
+    }
     const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
-    if(_freq.length){
+    if(_onFriends&&_freq.length){
       body.appendChild(txt('div','FRIEND REQUESTS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',margin:'2px 0 6px'}}));
       _freq.slice().reverse().forEach(req=>{
         const rrow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'11px 12px',border:'2px solid var(--accent)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'10px'}});
@@ -58378,7 +58766,7 @@ messages:()=>{
         body.appendChild(rrow);
       });
     }
-    {
+    if(_onFriends){
       const _friends=Array.isArray(S.friends)?S.friends:[];
       const fhdr=el('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',margin:'2px 0 6px'}});
       fhdr.appendChild(txt('span','FRIENDS'+(_friends.length?(' ('+_friends.length+')'):''),{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)'}}));
@@ -58404,7 +58792,13 @@ messages:()=>{
           body.appendChild(row);
         });
       }
+      /* On an empty Friends tab, hint how to get started. */
+      if(!_friends.length&&!_reqs.length&&!_freq.length){
+        body.appendChild(txt('div','Add friends by username to message them without sharing a 12-digit code. Requests you receive show up here.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginTop:'8px'}}));
+      }
     }
+    /* Friends tab ends here — the Chats tab renders Global Chat + your groups below. */
+    if(_onFriends)return;
 
     /* Always render the Global Chat at the top — every user is a member. */
     const globalEntry={code:KH_GLOBAL_GROUP_CODE,name:KH_GLOBAL_GROUP_NAME,_isGlobal:true};
@@ -62778,8 +63172,13 @@ window.CandyCrush=(()=>{
 
   function showGameOver(voluntary){
     const msg=boardEl&&boardEl.parentElement&&boardEl.parentElement.querySelector('.cc-msg');
-    const best=S.games&&S.games.candycrush&&S.games.candycrush.best||0;
+    if(!S.games)S.games={};
+    if(!S.games.candycrush)S.games.candycrush={};
+    const best=S.games.candycrush.best||0;
     const isNewBest=score>0&&score>=best;
+    if(isNewBest)S.games.candycrush.best=score;
+    if(level>(S.games.candycrush.bestLv||0))S.games.candycrush.bestLv=level;
+    if(isNewBest||level>=(S.games.candycrush.bestLv||0))save();
     if(msg){
       msg.innerHTML=(voluntary?'':'Out of moves! ')
         +'<div style="font-size:18px;font-weight:900;margin:4px 0">Score: '+score+'</div>'
@@ -63405,8 +63804,8 @@ window._showWelcome=function(){
   }catch(e){
     document.body.innerHTML='<div style="padding:30px;font-family:serif;max-width:500px;margin:0 auto">'
       +'<h2 style="margin-bottom:12px">KindleHub Pro — Recovery</h2>'
-      +'<p style="margin-bottom:16px;color:#555">The app hit a startup error. Your saved data is safe.</p>'
-      +'<p style="font-size:12px;background:#f5f5f5;padding:10px;border-radius:4px;word-break:break-all;margin-bottom:20px">'+String(e)+'</p>'
+      +'<p style="margin-bottom:16px;color:var(--muted,#555)">The app hit a startup error. Your saved data is safe.</p>'
+      +'<p style="font-size:12px;background:var(--highlight,#f5f5f5);color:var(--fg,#111);padding:10px;border-radius:4px;word-break:break-all;margin-bottom:20px">'+String(e)+'</p>'
       +'<button onclick="try{localStorage.clear();}catch(x){}location.reload();" '
       +'style="padding:10px 20px;font-size:14px;border:2px solid #000;background:#000;color:#fff;cursor:pointer;margin-right:10px">Reset &amp; Reload</button>'
       +'<button onclick="location.reload();" '
@@ -63966,7 +64365,7 @@ function buildKbd(){
   _closeBtn.setAttribute('aria-label','Close keyboard');
   _closeBtn.title='Close keyboard';
   _closeBtn.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5h20v10H2z"/><line x1="6" y1="9" x2="6.01" y2="9"/><line x1="10" y1="9" x2="10.01" y2="9"/><line x1="14" y1="9" x2="14.01" y2="9"/><line x1="18" y1="9" x2="18.01" y2="9"/><line x1="6" y1="13" x2="14" y2="13"/><polyline points="8 19 12 23 16 19"/></svg>';
-  _closeBtn.style.cssText='flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 14px;margin:4px 6px 4px 0;background:rgba(0,0,0,0.06);border:1px solid rgba(0,0,0,0.12);border-radius:8px;color:#222;cursor:pointer;font-family:inherit;min-width:44px;min-height:36px;';
+  _closeBtn.style.cssText='flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 14px;margin:4px 6px 4px 0;background:var(--highlight,#e0e0e0);border:1px solid var(--muted,#aaa);border-radius:8px;color:var(--fg,#222);cursor:pointer;font-family:inherit;min-width:44px;min-height:36px;';
   /* mousedown fires before focus changes — call hideKbd directly so the
      keyboard always disappears even when outside-tap fails. */
   function _kbdCloseHandler(e){

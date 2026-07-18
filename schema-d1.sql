@@ -144,7 +144,8 @@ CREATE TABLE IF NOT EXISTS kh_store_apps (
   author     TEXT DEFAULT '',
   model      TEXT DEFAULT '',
   created_at TEXT,
-  downloads  INTEGER DEFAULT 0
+  downloads  INTEGER DEFAULT 0,
+  owner_secret TEXT
 );
 CREATE INDEX IF NOT EXISTS kh_store_apps_rank ON kh_store_apps(downloads DESC, created_at DESC);
 
