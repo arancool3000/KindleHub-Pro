@@ -1513,7 +1513,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     }catch(e){}
   })();
   </script>
-  <main id="mainHost"><div id="kh-initial-load" style="text-align:center;padding:70px 20px;color:#888;font-family:sans-serif;"><div style="font-size:20px;font-weight:800;color:#555;margin-bottom:8px;">KindleHub Pro</div><div style="font-size:13px;">Loading your library…</div></div></main>
+  <main id="mainHost"><div id="kh-initial-load" style="text-align:center;padding:70px 20px;color:var(--muted,#888);font-family:sans-serif;"><div style="font-size:20px;font-weight:800;color:var(--fg,#555);margin-bottom:8px;">KindleHub Pro</div><div style="font-size:13px;">Loading your library…</div></div></main>
   <footer id="appFooter" style="font-size:10px;color:var(--muted);text-align:center;padding:6px 12px;border-top:var(--thin);background:var(--card);flex-shrink:0;line-height:1.6;display:flex;align-items:center;gap:8px;justify-content:center;">
     <span id="footerAttribution" style="flex:1;min-width:0;">
     <span style="font-size:11px;font-weight:700;">Made by Aran</span> &nbsp;|&nbsp;
@@ -47694,6 +47694,7 @@ sheets:()=>{
       '#view-sheets table.sh-grid td{padding:0;border:1px solid var(--thin-c,rgba(0,0,0,0.18));min-width:64px;max-width:160px;background:var(--card);}'+
       '#view-sheets table.sh-grid td.sh-selected{outline:2.5px solid var(--fg);outline-offset:-2px;background:var(--highlight);}'+
       '#view-sheets table.sh-grid td.sh-match{background:#fff7c4 !important;}'+
+      '#view-sheets table.sh-grid td.sh-match .sh-disp,#view-sheets table.sh-grid td.sh-match input{color:#111 !important;}'+
       '#view-sheets table.sh-grid td input{width:100%;padding:5px 6px;border:none;background:transparent;font-family:monospace;font-size:12px;color:var(--fg);outline:none;text-align:right;min-height:26px;}'+
       '#view-sheets table.sh-grid td .sh-disp{display:block;padding:5px 6px;min-height:26px;text-align:right;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:cell;font-family:monospace;font-size:12px;}'+
       '#view-sheets table.sh-grid td .sh-disp.sh-err{color:var(--danger);font-style:italic;}'+
@@ -50257,7 +50258,7 @@ periodic:()=>{
   // Legend
   const legend=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'8px'}});
   Object.entries(CAT_NAMES).forEach(([k,name])=>{
-    const item=el('div',{style:{display:'flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'#333',fontFamily:'var(--ui-font)'}});
+    const item=el('div',{style:{display:'flex',alignItems:'center',gap:'3px',fontSize:'9px',color:'var(--fg)',fontFamily:'var(--ui-font)'}});
     const dot=el('div',{style:{width:'10px',height:'10px',background:CAT_COLORS[k]||'#eee',border:'1px solid rgba(0,0,0,0.2)',borderRadius:'1px',flexShrink:'0'}});
     item.appendChild(dot);item.appendChild(document.createTextNode(name));
     legend.appendChild(item);
@@ -50310,11 +50311,11 @@ periodic:()=>{
     });
     // Lanthanide gap label row 6 col 3
     const laGap=el('div',{style:{gridRow:6,gridColumn:3,background:'#f0b0f066',border:'1px dashed #ccc',borderRadius:'2px',display:'flex',alignItems:'center',justifyContent:'center'}});
-    laGap.appendChild(txt('div','57-71',{style:{fontSize:'5px',color:'#888',fontFamily:'monospace'}}));
+    laGap.appendChild(txt('div','57-71',{style:{fontSize:'5px',color:'var(--fg)',fontFamily:'monospace'}}));
     ptGrid.appendChild(laGap);
     // Actinide gap label row 7 col 3
     const acGap=el('div',{style:{gridRow:7,gridColumn:3,background:'#f0a0c066',border:'1px dashed #ccc',borderRadius:'2px',display:'flex',alignItems:'center',justifyContent:'center'}});
-    acGap.appendChild(txt('div','89-103',{style:{fontSize:'5px',color:'#888',fontFamily:'monospace'}}));
+    acGap.appendChild(txt('div','89-103',{style:{fontSize:'5px',color:'var(--fg)',fontFamily:'monospace'}}));
     ptGrid.appendChild(acGap);
     // Lanthanide series label (row 8)
     const laLabel=el('div',{style:{gridRow:8,gridColumn:1,display:'flex',alignItems:'center',justifyContent:'center'}});
@@ -58611,8 +58612,9 @@ messages:()=>{
       const ctx=canvas.getContext('2d');
       // Resolve CSS variable to a real colour for canvas
       const hlColor=getComputedStyle(document.documentElement).getPropertyValue('--highlight').trim()||'#dddde1';
+      const fgColor=getComputedStyle(document.documentElement).getPropertyValue('--fg').trim()||'#333';
       ctx.fillStyle=hlColor;ctx.fillRect(0,0,180,180);
-      ctx.fillStyle='#333';ctx.font='11px sans-serif';ctx.textAlign='center';
+      ctx.fillStyle=fgColor;ctx.font='11px sans-serif';ctx.textAlign='center';
       ctx.fillText('QR unavailable.',90,85);
       ctx.fillText('Enter code manually.',90,103);
     };
@@ -63778,8 +63780,8 @@ window._showWelcome=function(){
   }catch(e){
     document.body.innerHTML='<div style="padding:30px;font-family:serif;max-width:500px;margin:0 auto">'
       +'<h2 style="margin-bottom:12px">KindleHub Pro — Recovery</h2>'
-      +'<p style="margin-bottom:16px;color:#555">The app hit a startup error. Your saved data is safe.</p>'
-      +'<p style="font-size:12px;background:#f5f5f5;padding:10px;border-radius:4px;word-break:break-all;margin-bottom:20px">'+String(e)+'</p>'
+      +'<p style="margin-bottom:16px;color:var(--muted,#555)">The app hit a startup error. Your saved data is safe.</p>'
+      +'<p style="font-size:12px;background:var(--highlight,#f5f5f5);color:var(--fg,#111);padding:10px;border-radius:4px;word-break:break-all;margin-bottom:20px">'+String(e)+'</p>'
       +'<button onclick="try{localStorage.clear();}catch(x){}location.reload();" '
       +'style="padding:10px 20px;font-size:14px;border:2px solid #000;background:#000;color:#fff;cursor:pointer;margin-right:10px">Reset &amp; Reload</button>'
       +'<button onclick="location.reload();" '
@@ -64339,7 +64341,7 @@ function buildKbd(){
   _closeBtn.setAttribute('aria-label','Close keyboard');
   _closeBtn.title='Close keyboard';
   _closeBtn.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5h20v10H2z"/><line x1="6" y1="9" x2="6.01" y2="9"/><line x1="10" y1="9" x2="10.01" y2="9"/><line x1="14" y1="9" x2="14.01" y2="9"/><line x1="18" y1="9" x2="18.01" y2="9"/><line x1="6" y1="13" x2="14" y2="13"/><polyline points="8 19 12 23 16 19"/></svg>';
-  _closeBtn.style.cssText='flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 14px;margin:4px 6px 4px 0;background:rgba(0,0,0,0.06);border:1px solid rgba(0,0,0,0.12);border-radius:8px;color:#222;cursor:pointer;font-family:inherit;min-width:44px;min-height:36px;';
+  _closeBtn.style.cssText='flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 14px;margin:4px 6px 4px 0;background:var(--highlight,#e0e0e0);border:1px solid var(--muted,#aaa);border-radius:8px;color:var(--fg,#222);cursor:pointer;font-family:inherit;min-width:44px;min-height:36px;';
   /* mousedown fires before focus changes — call hideKbd directly so the
      keyboard always disappears even when outside-tap fails. */
   function _kbdCloseHandler(e){
