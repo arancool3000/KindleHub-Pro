@@ -14212,6 +14212,9 @@ function mergeCloudState(cloudState,opts){
   const localTombs=Array.isArray(S.leftGroups)?S.leftGroups:[];
   const cloudTombs=Array.isArray(cloudState.leftGroups)?cloudState.leftGroups:[];
   const tombSet=new Set([...localTombs,...cloudTombs]);
+  /* Friend tombstones (unfriended/declined mids), computed up front so the
+     'friends' merge case below is correct regardless of key iteration order. */
+  const friendTombSet=new Set([...(Array.isArray(S.friendReqTombs)?S.friendReqTombs:[]),...(Array.isArray(cloudState.friendReqTombs)?cloudState.friendReqTombs:[])]);
   /* Deleted-item tombstones: union local + cloud so a delete on one device
      stays deleted everywhere. The id-list merge below skips any tombstoned
      item, so a pull/reload never resurrects something you deleted. */
@@ -14239,6 +14242,23 @@ function mergeCloudState(cloudState,opts){
         seen.add(g.code);merged.push(g);
       });
       S.msgGroups=merged;
+      return;
+    }
+    /* friends: same union-merge as msgGroups (by hash). Without this, S.friends
+       fell into the generic REPLACE branch below, so a friend added on one
+       device could vanish if a stale cloud pull landed before this device's own
+       debounced push caught up. */
+    if(key==='friends'){
+      if(!Array.isArray(cloudState[key])){return;}
+      const localFriends=Array.isArray(S.friends)?S.friends:[];
+      const merged=[];const seen=new Set();
+      [...(cloudState[key]||[]),...localFriends].forEach(function(fr){
+        if(!fr||!fr.hash)return;
+        if(fr.mid&&friendTombSet.has(fr.mid))return;/* unfriended/declined — keep it gone */
+        if(seen.has(fr.hash))return;
+        seen.add(fr.hash);merged.push(fr);
+      });
+      S.friends=merged;
       return;
     }
     /* leftGroups itself: union local + cloud, capped at 200. */
@@ -23134,6 +23154,7 @@ const Arena=(()=>{
     draw();
   }
   function finish(){
+    if(!game||game.over)return;
     game.over=true;if(timer){clearInterval(timer);timer=null;}
     var best=-1,wi=-1,tie=false;for(var i=0;i<game.F.length;i++){if(game.F[i].ko>best){best=game.F[i].ko;wi=i;tie=false;}else if(game.F[i].ko===best){tie=true;}}
     game.winner=tie?-1:wi;
@@ -52373,11 +52394,19 @@ appstore:()=>{
     pubBtn.onclick=async function(){
       pubBtn.disabled=true;
       const _editingId=_editApp&&_editApp.id;
+      const _editingSecret=_editApp&&_editApp.secret;
+      const _editingMine=_editApp&&_editApp.mine;
       await _khPublishApp({name:nameInp.value,html:ta.value,cat:_cat,isGame:(_cat==='Games')},
         function(msg){status.textContent=msg;},
         function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){
-          /* replace the old version once the new one is approved */
-          if(_editingId&&Array.isArray(S.publishedApps)){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==_editingId;});try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}}
+          /* replace the old version once the new one is approved — also UNSHARE
+             the stale row from the shared store (else editing just published a
+             SECOND copy and left the old, possibly-buggy one live forever). */
+          if(_editingId&&Array.isArray(S.publishedApps)){
+            if(_editingMine&&typeof _khUnshareFromStore==='function'){try{_khUnshareFromStore({id:_editingId,secret:_editingSecret||''});}catch(_){}}
+            try{if(typeof _khStoreHide==='function')_khStoreHide(_editingId);}catch(_){}
+            S.publishedApps=S.publishedApps.filter(function(x){return x.id!==_editingId;});try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}
+          }
           _editApp=null;_tab='mine';draw();
         }});
     };
@@ -52408,7 +52437,7 @@ appstore:()=>{
     mine.forEach(function(a){
       const act=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}});
       const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
-      const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun'};_tab='publish';draw();};
+      const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun',secret:a.secret||'',mine:!!a.mine};_tab='publish';draw();};
       const shareB=txt('button','Share',{className:'btn small'});shareB.onclick=function(){_shareAppCode(a);};
       const delB=txt('button','Delete',{className:'btn small'});
       function _doDelete(){
@@ -58991,9 +59020,15 @@ messages:()=>{
        this list) — the "declined it, reload, it's back" bug. S.leftGroups IS
        union-merged, so re-applying it here on every render reliably strips any
        resurrected/declined request before it's shown. */
-    if(Array.isArray(S.chatRequests)&&Array.isArray(S.leftGroups)&&S.leftGroups.length){
-      const _cbToms=new Set(S.leftGroups);
-      const _cleanedReqs=S.chatRequests.filter(r=>!(r&&_cbToms.has(r.code)));
+    if(Array.isArray(S.chatRequests)&&S.chatRequests.length){
+      const _cbToms=new Set(Array.isArray(S.leftGroups)?S.leftGroups:[]);
+      /* Also strip requests already ACCEPTED (code already a joined group) —
+         msgGroups is union-merged and never loses an accepted group, but a
+         resolved chatRequests entry has no tombstone of its own, so the same
+         stale-pull replay that resurrects a DECLINED request can resurrect an
+         ALREADY-ACCEPTED one too. */
+      const _cbJoined=new Set((Array.isArray(S.msgGroups)?S.msgGroups:[]).map(function(g){return g&&g.code;}).filter(Boolean));
+      const _cleanedReqs=S.chatRequests.filter(r=>!(r&&(_cbToms.has(r.code)||_cbJoined.has(r.code))));
       if(_cleanedReqs.length!==S.chatRequests.length){S.chatRequests=_cleanedReqs;try{save();}catch(_){}}
     }
     const _reqs=Array.isArray(S.chatRequests)?S.chatRequests:[];
@@ -59022,9 +59057,14 @@ messages:()=>{
        S.friendReqTombs (declined earlier, or its friend later removed) — same
        rationale as the chat-request self-heal above; friendReqTombs IS
        union-merged so this reliably catches a stale-cloud-pull resurrection. */
-    if(Array.isArray(S.friendRequests)&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.length){
-      const _frToms=new Set(S.friendReqTombs);
-      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&r.mid&&_frToms.has(r.mid)));
+    if(Array.isArray(S.friendRequests)&&S.friendRequests.length){
+      const _frToms=new Set(Array.isArray(S.friendReqTombs)?S.friendReqTombs:[]);
+      /* Also strip requests already ACCEPTED (hash already in S.friends) — the
+         same stale-cloud-pull replay that resurrects a DECLINED request can
+         resurrect an ALREADY-ACCEPTED one, since accepting never tombstones
+         the request id. */
+      const _frFriends=new Set((Array.isArray(S.friends)?S.friends:[]).map(function(f){return f&&f.hash;}).filter(Boolean));
+      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&((r.mid&&_frToms.has(r.mid))||_frFriends.has(r.hash))));
       if(_cleanedFreq.length!==S.friendRequests.length){S.friendRequests=_cleanedFreq;try{save();}catch(_){}}
     }
     const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
