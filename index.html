@@ -1448,6 +1448,10 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="sports">Sports</div>
     <div class="tab" data-view="unitconv" style="display:none">Unit Converter</div>
     <div class="tab" data-view="tipcalc" style="display:none">Tip Calculator</div>
+    <div class="tab" data-view="histday" style="display:none">Today in History</div>
+    <div class="tab" data-view="lifeweeks" style="display:none">Life in Weeks</div>
+    <div class="tab" data-view="chords" style="display:none">Fretboard</div>
+    <div class="tab" data-view="watchq" style="display:none">Watch Queue</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -1666,7 +1670,7 @@ function defaultState(){
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
-    publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,
+    publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,birthDate:'',watchQueue:[],
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -3379,7 +3383,7 @@ const NAV_TABS=[
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
   ['imagesearch','Images'],['sports','Sports'],
-  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator']
+  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -8798,7 +8802,11 @@ var STORE_APPS=[
   {view:'rss',       name:'News',          cat:'News & Media', desc:'RSS headlines and the Gazette.'},
   {view:'imagesearch',name:'Images',       cat:'News & Media', desc:'Search free images.'},
   {view:'sports',    name:'Sports',        cat:'News & Media', desc:'Live scores & schedules.'},
-  {view:'maps',      name:'Maps',          cat:'News & Media', desc:'Search places and routes.'}
+  {view:'maps',      name:'Maps',          cat:'News & Media', desc:'Search places and routes.'},
+  {view:'histday',   name:'Today in History',cat:'Reference',  desc:'What happened on this day through history.'},
+  {view:'lifeweeks', name:'Life in Weeks', cat:'Lifestyle',    desc:'Your life mapped as a grid of weeks.'},
+  {view:'chords',    name:'Fretboard',     cat:'Reference',    desc:'Common guitar chords with fingering.'},
+  {view:'watchq',    name:'Watch Queue',   cat:'Lifestyle',    desc:'A list of films, shows and books for later.'}
 ];
 /* Featured on the store's front page (front-of-store rotation, search-hidden). */
 var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports'];
@@ -8807,7 +8815,7 @@ var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports']
    applier only hides ones the user has never decided on, so nothing a user
    installed is ever force-hidden. teleprompter is intentionally NOT here — it's
    launched inside Tools via khTeleprompter(), not a standalone view. */
-var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc'];
+var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq'];
 /* Only these Gemini models are trusted to REVIEW apps, strongest first. */
 var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
 function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
@@ -14353,13 +14361,13 @@ let _HANGMAN_CATS=null;
 function getHangmanCats(){
   if(!_HANGMAN_CATS)_HANGMAN_CATS={
     general:[...getWB4(),...getWB5(),...getWB6()],
-    school:['PENCIL','RULER','ERASER','CHALK','PAPER','CLASS','GRADE','STUDY','LEARN','WRITE','READ','TEST','EXAM','ATLAS','GLOBE','DESK','LESSON','LIBRARY','TEACHER','STUDENT','SCHOOL','SCIENCE','HISTORY','ALGEBRA','GEOMETRY','ESSAY','REPORT','NOTEBOOK','FOLDER','BINDER','MARKER','COMPASS','BACKPACK','TEXTBOOK','HOMEWORK','SCHEDULE','ASSEMBLY','BIOLOGY','PHYSICS','ENGLISH','FICTION','GRAMMAR','DECIMAL','FRACTION','EQUATION'],
-    sport:['BALL','GOAL','TEAM','RACE','SWIM','JUMP','RUN','KICK','PASS','SCORE','GAME','COACH','COURT','FIELD','TRACK','MATCH','GYM','TENNIS','SOCCER','RUGBY','BOXING','CYCLING','ROWING','HOCKEY','SKIING','GOLF','SPRINT','RELAY','CRICKET','NETBALL','SQUASH','VOLLEYBALL','BASKETBALL','FOOTBALL','BADMINTON','ARCHERY','JAVELIN','HURDLES','TRIATHLON','MARATHON','FENCING','KAYAKING'],
-    nature:['TREE','LEAF','RAIN','SNOW','WIND','RIVER','OCEAN','BEACH','CLOUD','STORM','GRASS','FLOWER','MOUNTAIN','FOREST','VALLEY','LAKE','ISLAND','DESERT','SUNSET','THUNDER','RAINBOW','WATERFALL','MEADOW','CANYON','GLACIER','VOLCANO','ESTUARY','PLATEAU','PENINSULA','LAGOON','DUNE','TUNDRA','MARSH','SAVANNA','JUNGLE','ARCTIC','TROPICS','PEBBLE','FOSSIL','MINERAL','CRYSTAL','EROSION'],
-    food:['BREAD','APPLE','GRAPE','PASTA','SALAD','PIZZA','SOUP','CAKE','MILK','JUICE','SUGAR','SPICE','BUTTER','CHEESE','CHICKEN','COFFEE','TEA','RICE','CARROT','POTATO','TOMATO','ONION','GARLIC','PEPPER','LEMON','ORANGE','MANGO','BANANA','BISCUIT','YOGURT','SALMON','NOODLE','WAFFLE','PANCAKE','MUSTARD','KETCHUP','VINEGAR','ALMOND','WALNUT','AVOCADO','BROCCOLI','SPINACH','GINGER'],
-    animals:['LION','TIGER','BEAR','WOLF','DEER','FROG','FISH','BIRD','SNAKE','HORSE','SHEEP','GOAT','DUCK','EAGLE','SHARK','WHALE','RABBIT','PARROT','MONKEY','PENGUIN','GIRAFFE','ELEPHANT','CROCODILE','KANGAROO','CHEETAH','LEOPARD','FLAMINGO','DOLPHIN','OCTOPUS','LOBSTER','HAMSTER','OSTRICH','PEACOCK','VULTURE','HEDGEHOG','SQUIRREL'],
-    countries:['FRANCE','SPAIN','ITALY','JAPAN','CHINA','INDIA','BRAZIL','CANADA','MEXICO','RUSSIA','TURKEY','EGYPT','KENYA','GHANA','NORWAY','SWEDEN','POLAND','GREECE','ISRAEL','JORDAN','SERBIA','LATVIA','MALTA','CHILE','PERU','CUBA','IRAN','IRAQ'],
-    science:['ATOM','CELL','GENE','MASS','WAVE','FORCE','LIGHT','LASER','PROTON','NEUTRON','ELECTRON','GRAVITY','ENERGY','MATTER','PLASMA','MAGNET','CIRCUIT','VOLTAGE','CURRENT','PRESSURE','CHEMICAL','REACTION','MOLECULE','COMPOUND','ELEMENT','NUCLEUS','PHOTON','QUANTUM','VELOCITY','FRICTION','MOMENTUM','CATALYST','BACTERIA','VIRUS']
+    school:['PENCIL','RULER','ERASER','CHALK','PAPER','CLASS','GRADE','STUDY','LEARN','WRITE','READ','TEST','EXAM','ATLAS','GLOBE','DESK','LESSON','LIBRARY','TEACHER','STUDENT','SCHOOL','SCIENCE','HISTORY','ALGEBRA','GEOMETRY','ESSAY','REPORT','NOTEBOOK','FOLDER','BINDER','MARKER','COMPASS','BACKPACK','TEXTBOOK','HOMEWORK','SCHEDULE','ASSEMBLY','BIOLOGY','PHYSICS','ENGLISH','FICTION','GRAMMAR','DECIMAL','FRACTION','EQUATION','CRAYON','RECESS','HALLWAY','PRINCIPAL','CHEMISTRY','ALPHABET'],
+    sport:['BALL','GOAL','TEAM','RACE','SWIM','JUMP','RUN','KICK','PASS','SCORE','GAME','COACH','COURT','FIELD','TRACK','MATCH','GYM','TENNIS','SOCCER','RUGBY','BOXING','CYCLING','ROWING','HOCKEY','SKIING','GOLF','SPRINT','RELAY','CRICKET','NETBALL','SQUASH','VOLLEYBALL','BASKETBALL','FOOTBALL','BADMINTON','ARCHERY','JAVELIN','HURDLES','TRIATHLON','MARATHON','FENCING','KAYAKING','SKATING','SURFING','BOWLING','WRESTLING','CANOEING','SNOOKER'],
+    nature:['TREE','LEAF','RAIN','SNOW','WIND','RIVER','OCEAN','BEACH','CLOUD','STORM','GRASS','FLOWER','MOUNTAIN','FOREST','VALLEY','LAKE','ISLAND','DESERT','SUNSET','THUNDER','RAINBOW','WATERFALL','MEADOW','CANYON','GLACIER','VOLCANO','ESTUARY','PLATEAU','PENINSULA','LAGOON','DUNE','TUNDRA','MARSH','SAVANNA','JUNGLE','ARCTIC','TROPICS','PEBBLE','FOSSIL','MINERAL','CRYSTAL','EROSION','BOULDER','BREEZE','BLOSSOM','PRAIRIE','BLIZZARD','BAMBOO'],
+    food:['BREAD','APPLE','GRAPE','PASTA','SALAD','PIZZA','SOUP','CAKE','MILK','JUICE','SUGAR','SPICE','BUTTER','CHEESE','CHICKEN','COFFEE','TEA','RICE','CARROT','POTATO','TOMATO','ONION','GARLIC','PEPPER','LEMON','ORANGE','MANGO','BANANA','BISCUIT','YOGURT','SALMON','NOODLE','WAFFLE','PANCAKE','MUSTARD','KETCHUP','VINEGAR','ALMOND','WALNUT','AVOCADO','BROCCOLI','SPINACH','GINGER','PRETZEL','SANDWICH','OMELETTE','CUPCAKE','MEATBALL','LASAGNA'],
+    animals:['LION','TIGER','BEAR','WOLF','DEER','FROG','FISH','BIRD','SNAKE','HORSE','SHEEP','GOAT','DUCK','EAGLE','SHARK','WHALE','RABBIT','PARROT','MONKEY','PENGUIN','GIRAFFE','ELEPHANT','CROCODILE','KANGAROO','CHEETAH','LEOPARD','FLAMINGO','DOLPHIN','OCTOPUS','LOBSTER','HAMSTER','OSTRICH','PEACOCK','VULTURE','HEDGEHOG','SQUIRREL','BADGER','OTTER','RACCOON','PANTHER','GAZELLE','WALRUS'],
+    countries:['FRANCE','SPAIN','ITALY','JAPAN','CHINA','INDIA','BRAZIL','CANADA','MEXICO','RUSSIA','TURKEY','EGYPT','KENYA','GHANA','NORWAY','SWEDEN','POLAND','GREECE','ISRAEL','JORDAN','SERBIA','LATVIA','MALTA','CHILE','PERU','CUBA','IRAN','IRAQ','GERMANY','PORTUGAL','IRELAND','FINLAND','DENMARK','AUSTRIA','BELGIUM','ICELAND'],
+    science:['ATOM','CELL','GENE','MASS','WAVE','FORCE','LIGHT','LASER','PROTON','NEUTRON','ELECTRON','GRAVITY','ENERGY','MATTER','PLASMA','MAGNET','CIRCUIT','VOLTAGE','CURRENT','PRESSURE','CHEMICAL','REACTION','MOLECULE','COMPOUND','ELEMENT','NUCLEUS','PHOTON','QUANTUM','VELOCITY','FRICTION','MOMENTUM','CATALYST','BACTERIA','VIRUS','ENZYME','ISOTOPE','GALAXY','METEOR','VACUUM','OXYGEN']
   };
   return _HANGMAN_CATS;
 }
@@ -22341,7 +22349,27 @@ const Anagrams=(()=>{
     ['VITAMIN','A nutrient in food'],['AIRPLANE','It flies through the sky'],['COMPUTER','You are using one now'],
     ['DINOSAUR','An ancient extinct reptile'],['FIREWORK','It explodes with colour'],['HOSPITAL','Where the sick are treated'],
     ['KANGAROO','A hopping Australian marsupial'],['MOUNTAIN','A very tall landform'],['NOTEBOOK','You jot notes in it'],
-    ['SANDWICH','Filling between two slices of bread'],['UMBRELLA','It keeps rain off you']
+    ['SANDWICH','Filling between two slices of bread'],['UMBRELLA','It keeps rain off you'],
+    ['CRAYON','A wax stick for colouring'],['SPINACH','An iron-rich leafy vegetable'],
+    ['STAIRS','Steps between two floors'],['WINDMILL','A tower with spinning blades'],
+    ['SNOWMAN','Built from rolled-up snowballs'],['CAMPFIRE','You roast marshmallows over it'],
+    ['HAMMOCK','A swinging bed hung between trees'],['PRETZEL','A salty twisted baked snack'],
+    ['SEAHORSE','A tiny fish that swims upright'],['BLIZZARD','A fierce snowstorm'],
+    ['THIMBLE','Protects your finger while sewing'],['CUPCAKE','A small frosted individual cake'],
+    ['RAINCOAT','You wear it to stay dry'],['SUITCASE','You pack it for a trip'],
+    ['STAPLER','It fastens sheets of paper together'],['FIREFLY','A bug that glows in the dark'],
+    ['HEDGEHOG','A spiky little garden animal'],['PELICAN','A bird with a big throat pouch'],
+    ['TADPOLE','A baby frog with a tail'],['ORCHARD','A field of fruit trees'],
+    ['BEEHIVE','Bees live and make honey here'],['SCARECROW','It scares birds off a farm field'],
+    ['WALRUS','A tusked Arctic sea mammal'],['OSTRICH','The world’s largest flightless bird'],
+    ['CHEESE','Made from milk, often with holes'],['PANCAKE','A flat fried breakfast food'],
+    ['BALCONY','An outdoor platform on an upper floor'],['ELEVATOR','It lifts you between floors'],
+    ['KEYBOARD','You type on it'],['SCISSORS','You cut paper with these'],
+    ['BATHTUB','You wash yourself in it'],['BLENDER','It mixes and purees food'],
+    ['NECKLACE','Jewellery worn around the neck'],['BRACELET','Jewellery worn on the wrist'],
+    ['SEASHELL','Found washed up on the beach'],['STARFISH','A five-armed sea creature'],
+    ['JELLYFISH','A stinging sea creature with no bones'],['RACCOON','A masked nocturnal scavenger'],
+    ['TROPHY','You win it for first place'],['PUDDLE','A small pool of water after rain']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.anagrams&&S.games.anagrams.best)||0;}
@@ -22440,7 +22468,17 @@ const Nonogram=(()=>{
     {name:'Key',g:['11000','11111','11000','00100','00110']},
     {name:'Anchor',g:['00100','01010','00100','10101','01110']},
     {name:'Umbrella',g:['01110','11111','00100','00100','01100']},
-    {name:'Ghost',g:['01110','11111','11111','11111','10101']}
+    {name:'Ghost',g:['01110','11111','11111','11111','10101']},
+    {name:'Fish',g:['00000','00111','11111','00111','00000']},
+    {name:'Bell',g:['00100','01110','01110','11111','00100']},
+    {name:'Envelope',g:['11111','10101','11011','10001','11111']},
+    {name:'Candle',g:['00100','01110','00100','00100','01110']},
+    {name:'Hourglass',g:['11111','01110','00100','01110','11111']},
+    {name:'Crown',g:['10101','10101','11111','11111','00000']},
+    {name:'Kite',g:['00100','01110','10001','00100','00100']},
+    {name:'Lightning',g:['00110','01100','11110','00110','00100']},
+    {name:'Butterfly',g:['01010','11111','00100','11111','01010']},
+    {name:'Mushroom',g:['01110','11111','01110','00100','00100']}
   ];
   const N=5;
   let game=null,mode='fill';
@@ -23389,7 +23427,29 @@ const Trivia=(()=>{
     ['Which is the only continent with no permanent human residents?','Antarctica','Australia','Africa','Asia'],
     ['What is the hardest working muscle in the body?','Heart','Biceps','Jaw','Calf'],
     ['Which instrument has 88 keys?','Piano','Organ','Harp','Xylophone'],
-    ['What is the largest internal organ in the human body?','Liver','Heart','Lungs','Stomach']
+    ['What is the largest internal organ in the human body?','Liver','Heart','Lungs','Stomach'],
+    ['What is the capital of France?','Paris','Lyon','Marseille','Nice'],
+    ['Which planet is known for a giant storm called the Great Red Spot?','Jupiter','Saturn','Mars','Neptune'],
+    ['How many strings does a standard violin have?','Four','Six','Five','Three'],
+    ['What is the largest living bird species?','Ostrich','Eagle','Albatross','Emu'],
+    ['Who wrote Pride and Prejudice?','Jane Austen','Charlotte Bronte','Emily Dickinson','Virginia Woolf'],
+    ['What is the chemical symbol for sodium?','Na','So','Sd','S'],
+    ['Which is the smallest planet in our solar system?','Mercury','Mars','Pluto','Venus'],
+    ['How many legs does an insect have?','Six','Four','Eight','Ten'],
+    ['Which big cat is generally the largest?','Tiger','Lion','Leopard','Jaguar'],
+    ['Which is the largest country in the world by area?','Russia','Canada','China','USA'],
+    ['What is the smallest bone in the human body, found in the middle ear?','Stapes','Femur','Patella','Tibia'],
+    ['Which bird is famous as the fastest animal on Earth during its hunting dive?','Peregrine falcon','Bald eagle','Ostrich','Albatross'],
+    ['What is a group of lions called?','A pride','A pack','A herd','A flock'],
+    ['What is the process by which plants use sunlight to make food called?','Photosynthesis','Respiration','Fermentation','Digestion'],
+    ['Which planet is the hottest in our solar system?','Venus','Mercury','Mars','Jupiter'],
+    ['How many arms does the most common type of starfish have?','Five','Four','Six','Eight'],
+    ['What is the capital of Egypt?','Cairo','Alexandria','Giza','Luxor'],
+    ['Who was the first person to walk on the Moon?','Neil Armstrong','Buzz Aldrin','Yuri Gagarin','John Glenn'],
+    ['What is the largest species of shark?','Whale shark','Great white shark','Hammerhead shark','Tiger shark'],
+    ['Which metal is the best natural conductor of electricity?','Silver','Copper','Gold','Aluminium'],
+    ['How many teeth does an adult human typically have?','32','28','30','36'],
+    ['What is the capital of Germany?','Berlin','Munich','Frankfurt','Hamburg']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.trivia&&S.games.trivia.best)||0;}
@@ -30462,6 +30522,19 @@ function tryLocalCommand(raw){
       'Why did the scarecrow win an award? Because he was outstanding in his field.',
       'I used to play piano by ear. Now I use my hands.',
       'Two fish in a tank. One says "do you know how to drive this thing?"',
+      'I used to be a banker, but I lost interest.',
+      'Why don\'t skeletons fight each other? They don\'t have the guts.',
+      'I\'m on a seafood diet. I see food and I eat it.',
+      'Why did the coffee file a police report? It got mugged.',
+      'Parallel lines have so much in common. It\'s a shame they\'ll never meet.',
+      'Why did the bicycle fall over? It was two-tired.',
+      'I only know 25 letters of the alphabet. I don\'t know y.',
+      'What do you call a fish with no eyes? A fsh.',
+      'Why don\'t eggs tell jokes? They\'d crack each other up.',
+      'What do you call cheese that isn\'t yours? Nacho cheese.',
+      'What do you call a bear with no teeth? A gummy bear.',
+      'Why was six afraid of seven? Because seven eight nine.',
+      'I told a chemistry joke. There was no reaction.',
     ];
     return ''+JOKES[Math.floor(Math.random()*JOKES.length)];
   }
@@ -31353,6 +31426,17 @@ document.addEventListener('click',e=>{
       'How does a penguin build its house? Igloos it together.',
       'I tried to catch fog yesterday. Mist.',
       'Why did the scarecrow win an award? Because he was outstanding in his field.',
+      'I used to be a banker, but I lost interest.',
+      'Why don\'t skeletons fight each other? They don\'t have the guts.',
+      'Why did the coffee file a police report? It got mugged.',
+      'Parallel lines have so much in common. It\'s a shame they\'ll never meet.',
+      'Why did the bicycle fall over? It was two-tired.',
+      'I only know 25 letters of the alphabet. I don\'t know y.',
+      'What do you call a fish with no eyes? A fsh.',
+      'What do you call cheese that isn\'t yours? Nacho cheese.',
+      'What do you call a bear with no teeth? A gummy bear.',
+      'Why was six afraid of seven? Because seven eight nine.',
+      'I told a chemistry joke. There was no reaction.',
     ];
     addBotMsg(''+JOKES[Math.floor(Math.random()*JOKES.length)]);
   }
@@ -32957,8 +33041,8 @@ const WordSearch=(()=>{
     Music:{words:['SYMPHONY','SONATA','CONCERTO','CADENCE','MELODY','HARMONY','RHYTHM','TEMPO','OCTAVE','TIMBRE','TREBLE','SOPRANO','BARITONE','VIBRATO','PIZZICATO','STACCATO','LEGATO','ALLEGRO','ADAGIO','FORTISSIMO','CRESCENDO','OVERTURE','PRELUDE','FUGUE','CHORUS','COUNTERPOINT','MODULATION'],size:15},
     Technology:{words:['ALGORITHM','BANDWIDTH','COMPILER','DATABASE','ETHERNET','FIRMWARE','GATEWAY','HARDWARE','INTERFACE','JAVASCRIPT','KERNEL','LATENCY','METADATA','NETWORK','PROTOCOL','RUNTIME','SERVER','SYNTAX','TERMINAL','UNICODE','VARIABLE','WEBHOOK','PROXY','BUFFER','CACHE','BLOCKCHAIN','RECURSION','MIDDLEWARE'],size:15},
     Countries:{words:['BRAZIL','FRANCE','GERMANY','MEXICO','NIGERIA','PAKISTAN','RUSSIA','UKRAINE','VIETNAM','TURKEY','SWEDEN','NORWAY','FINLAND','DENMARK','BELGIUM','AUSTRIA','PORTUGAL','GREECE','HUNGARY','ROMANIA','CROATIA','BULGARIA','SLOVAKIA','ESTONIA','LATVIA','INDONESIA','ARGENTINA','COLOMBIA'],size:15},
-    Space:{words:['NEBULA','PULSAR','QUASAR','COMET','ASTEROID','GALAXY','SUPERNOVA','BLACKHOLE','NEUTRON','COSMOS','ECLIPSE','SOLSTICE','EQUINOX','ORBIT','GRAVITY','PHOTON','PLASMA','CORONA','AURORA','ZENITH','PERIHELION','APHELION','MAGNETAR'],size:15},
-    Psychology:{words:['COGNITION','EMPATHY','ANXIETY','TRAUMA','THERAPY','SYNAPSE','CORTEX','DOPAMINE','SEROTONIN','PHOBIA','NEURON','MEMORY','INSTINCT','EMOTION','BEHAVIOR','PERCEPTION','STIMULUS','RESPONSE','CONDITIONING','CATHARSIS'],size:15},
+    Space:{words:['NEBULA','PULSAR','QUASAR','COMET','ASTEROID','GALAXY','SUPERNOVA','BLACKHOLE','NEUTRON','COSMOS','ECLIPSE','SOLSTICE','EQUINOX','ORBIT','GRAVITY','PHOTON','PLASMA','CORONA','AURORA','ZENITH','PERIHELION','APHELION','MAGNETAR','METEOROID','EXOPLANET','TELESCOPE','SATELLITE','ATMOSPHERE','STARDUST','LIGHTYEAR','ASTRONAUT'],size:15},
+    Psychology:{words:['COGNITION','EMPATHY','ANXIETY','TRAUMA','THERAPY','SYNAPSE','CORTEX','DOPAMINE','SEROTONIN','PHOBIA','NEURON','MEMORY','INSTINCT','EMOTION','BEHAVIOR','PERCEPTION','STIMULUS','RESPONSE','CONDITIONING','CATHARSIS','AMYGDALA','PERSONALITY','MOTIVATION','ATTACHMENT','RESILIENCE','MINDFULNESS','INTROVERT','EXTROVERT'],size:15},
   };
 
   /* ── State ── */
@@ -45555,7 +45639,15 @@ discover:()=>{
       'The Eiffel Tower can grow over 15 cm taller in summer as its metal expands.',
       'A teaspoon of neutron-star material would weigh about 6 billion tonnes.',
       'Sharks have existed longer than trees have.',
-      'Sea otters hold hands while sleeping so they don’t drift apart.'
+      'Sea otters hold hands while sleeping so they don’t drift apart.',
+      'Butterflies taste with their feet.',
+      'The shortest war in recorded history lasted under 40 minutes — Britain vs Zanzibar, in 1896.',
+      'A single fluffy cumulus cloud can weigh over a million pounds despite floating in the sky.',
+      'Cows form close friendships and become stressed when separated from their best friend.',
+      'A group of flamingos is called a flamboyance.',
+      'The inventor of the Pringles can was buried in one, per his own wishes.',
+      'A group of crows is called a murder, and crows can recognise individual human faces.',
+      'Honeybees communicate the direction and distance to food using a waggle dance.'
     ];
     const d=NOW();const seed=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
     const chart=CHARTS[Math.abs(Math.floor(Math.sin(seed*31337)*10000))%CHARTS.length];
@@ -51648,6 +51740,130 @@ tipcalc:()=>{
   recompute();
   return v;
 },
+/* ── Today in History — Wikipedia "on this day" (keyless, CORS-open REST feed,
+   proxy fallback). Events / Births / Deaths, walk the date, cached per day. */
+histday:()=>{
+  const v=el('section',{id:'view-histday',className:'view'});
+  v.appendChild(txt('h2','Today in History',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','What happened on this day through the centuries.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px'}}));
+  let d=new Date(typeof NOW==='function'?NOW():Date.now());
+  let kind='events';
+  const KINDS=[['events','Events'],['births','Births'],['deaths','Deaths']];
+  const MONS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const bar=el('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'8px'}});
+  const prev=txt('button','‹ Prev',{className:'btn small'});const dlabel=txt('div','',{style:{flex:'1',textAlign:'center',fontWeight:'800',fontSize:'13px'}});const next=txt('button','Next ›',{className:'btn small'});const today=txt('button','Today',{className:'btn small'});
+  bar.append(prev,dlabel,next,today);v.appendChild(bar);
+  const kindRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  KINDS.forEach(function(k){const b=txt('button',k[1],{className:'btn small'+(kind===k[0]?' primary':'')});b.onclick=function(){kind=k[0];load();};kindRow.appendChild(b);});
+  v.appendChild(kindRow);
+  const host=el('div',{});v.appendChild(host);
+  function _ck(){return 'kh_histday_'+kind+'_'+(d.getMonth()+1)+'_'+d.getDate();}
+  function paint(items){
+    host.innerHTML='';
+    if(!items||!items.length){host.appendChild(txt('div','No entries found — check your connection and try again.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));return;}
+    items.slice(0,60).forEach(function(e){
+      const card=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px',background:'var(--card)'}});
+      card.appendChild(txt('div',String(e.year||'?'),{style:{fontWeight:'900',fontSize:'15px',color:'var(--accent)'}}));
+      card.appendChild(txt('div',String(e.text||''),{style:{fontSize:'12px',lineHeight:'1.5',marginTop:'2px'}}));
+      host.appendChild(card);
+    });
+  }
+  async function load(){
+    dlabel.textContent=MONS[d.getMonth()]+' '+d.getDate();
+    Array.prototype.forEach.call(kindRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',KINDS[i][0]===kind);});
+    host.innerHTML='';host.appendChild(txt('div','Loading…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 4px'}}));
+    const mm=('0'+(d.getMonth()+1)).slice(-2),dd=('0'+d.getDate()).slice(-2);
+    const url='https://en.wikipedia.org/api/rest_v1/feed/onthisday/'+kind+'/'+mm+'/'+dd;
+    let data=null;
+    try{const r=await fetch(url);if(r.ok)data=await r.json();}catch(_e){}
+    if(!data){try{const r2=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url));if(r2.ok)data=await r2.json();}catch(_e){}}
+    let items=[];
+    if(data&&Array.isArray(data[kind]))items=data[kind].map(function(e){return {year:e.year,text:e.text};});
+    if(items.length){try{localStorage.setItem(_ck(),JSON.stringify(items.slice(0,60)));}catch(_e){}}
+    else{try{var c=localStorage.getItem(_ck());if(c)items=JSON.parse(c);}catch(_e){}}
+    paint(items);
+  }
+  prev.onclick=function(){d=new Date(d.getTime()-86400000);load();};
+  next.onclick=function(){d=new Date(d.getTime()+86400000);load();};
+  today.onclick=function(){d=new Date(typeof NOW==='function'?NOW():Date.now());load();};
+  load();
+  return v;
+},
+/* ── Life in Weeks — a 90-year x 52-week grid drawn on canvas (one paint, e-ink
+   friendly). Filled = weeks lived. Birth date stored in S.birthDate. Offline. */
+lifeweeks:()=>{
+  const v=el('section',{id:'view-lifeweeks',className:'view'});
+  v.appendChild(txt('h2','Life in Weeks',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Every square is one week of a ~90-year life. A quiet reminder of how far you have come — and how much time is still ahead.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const YEARS=90,WPY=52;
+  const setRow=el('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'10px',flexWrap:'wrap'}});
+  setRow.appendChild(txt('span','Birth date:',{style:{fontSize:'12px',fontWeight:'700'}}));
+  const dob=el('input',{type:'date',placeholder:'YYYY-MM-DD',style:{fontSize:'13px',padding:'4px 6px'}});
+  if(S.birthDate)dob.value=S.birthDate;
+  const saveB=txt('button','Show',{className:'btn small primary'});
+  setRow.append(dob,saveB);v.appendChild(setRow);
+  const stat=txt('div','',{style:{fontSize:'13px',fontWeight:'800',marginBottom:'8px',lineHeight:'1.5'}});v.appendChild(stat);
+  const cvWrap=el('div',{style:{overflowX:'auto'}});const cv=el('canvas',{style:{display:'block',maxWidth:'100%',border:'var(--thin)',borderRadius:'8px',background:'var(--card)'}});cvWrap.appendChild(cv);v.appendChild(cvWrap);
+  function draw(){
+    const bd=(dob.value||S.birthDate||'').trim();
+    if(!bd){stat.textContent='Enter your birth date above to see your life in weeks.';cv.width=1;cv.height=1;return;}
+    const born=new Date(bd+'T00:00:00');if(isNaN(born.getTime())){stat.textContent='That date did not parse — use YYYY-MM-DD.';return;}
+    const now=(typeof NOW==='function'?NOW():new Date());
+    const lived=Math.max(0,Math.floor((now.getTime()-born.getTime())/(7*86400000)));
+    const total=YEARS*WPY,cell=6,gap=1,pad=8,cols=WPY;
+    const W=pad*2+cols*(cell+gap),H=pad*2+YEARS*(cell+gap);
+    cv.width=W;cv.height=H;
+    const ctx=cv.getContext('2d'),dark=document.body.classList.contains('dark');
+    const bg=dark?'#1a1a1a':'#ffffff',livedC=dark?'#eeeeee':'#222222',future=dark?'#3a3a3a':'#dcdcdc';
+    ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    for(var i=0;i<total;i++){var yr=Math.floor(i/cols),wk=i%cols,x=pad+wk*(cell+gap),y=pad+yr*(cell+gap);ctx.fillStyle=(i<lived)?livedC:future;ctx.fillRect(x,y,cell,cell);}
+    const pct=Math.round(lived/total*1000)/10;
+    stat.textContent='You have lived '+lived.toLocaleString()+' weeks — about '+pct+'% of a 90-year life, with '+(total-lived).toLocaleString()+' weeks ahead.';
+  }
+  saveB.onclick=function(){S.birthDate=(dob.value||'').trim();try{save();}catch(_e){}draw();};
+  draw();
+  return v;
+},
+/* ── Watch Queue — a private list of films/shows/videos to watch (and books to
+   read). Stored in S.watchQueue (synced). Offline. */
+watchq:()=>{
+  const v=el('section',{id:'view-watchq',className:'view'});
+  v.appendChild(txt('h2','Watch Queue',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','A private list of films, shows and videos to watch — and books to read. Tick things off as you go.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  if(!Array.isArray(S.watchQueue))S.watchQueue=[];
+  const addRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'6px'}});
+  const inp=el('input',{type:'text',placeholder:'Add a title…',style:{flex:'1',fontSize:'14px',padding:'8px 10px'}});
+  const typeSel=el('select',{style:{fontSize:'12px'}});['Film','Show','Video','Book','Other'].forEach(function(t){var o=document.createElement('option');o.value=t;o.textContent=t;typeSel.appendChild(o);});
+  const addB=txt('button','Add',{className:'btn small primary'});
+  addRow.append(inp,typeSel,addB);v.appendChild(addRow);
+  const filterRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const FILTS=[['todo','To watch'],['done','Watched'],['all','All']];let filt='todo';
+  FILTS.forEach(function(f){const b=txt('button',f[1],{className:'btn small'+(filt===f[0]?' primary':'')});b.onclick=function(){filt=f[0];render();};filterRow.appendChild(b);});
+  v.appendChild(filterRow);
+  const list=el('div',{});v.appendChild(list);
+  function render(){
+    Array.prototype.forEach.call(filterRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',FILTS[i][0]===filt);});
+    list.innerHTML='';
+    var items=S.watchQueue.filter(function(x){return filt==='all'||(filt==='done'?x.done:!x.done);});
+    if(!items.length){list.appendChild(txt('div',filt==='done'?'Nothing watched yet.':'Your queue is empty — add something above.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px',fontStyle:'italic'}}));return;}
+    items.forEach(function(it){
+      const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',marginBottom:'8px',background:'var(--card)'}});
+      const cb=el('input',{type:'checkbox',style:{flexShrink:'0'}});cb.checked=!!it.done;cb.onchange=function(){it.done=cb.checked;try{save();}catch(_e){}render();};
+      row.appendChild(cb);
+      const mid=el('div',{style:{flex:'1',minWidth:'0'}});
+      mid.appendChild(txt('div',it.title,{style:{fontWeight:'700',fontSize:'14px',textDecoration:it.done?'line-through':'none',opacity:it.done?'.6':'1',wordBreak:'break-word'}}));
+      mid.appendChild(txt('div',it.type||'',{style:{fontSize:'10px',color:'var(--muted)'}}));
+      row.appendChild(mid);
+      const del=txt('button','Remove',{className:'btn small'});del.onclick=function(){var i=S.watchQueue.indexOf(it);if(i>=0)S.watchQueue.splice(i,1);try{save();}catch(_e){}render();};
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function add(){var t=(inp.value||'').trim();if(!t)return;S.watchQueue.unshift({id:'w'+Date.now().toString(36),title:t.slice(0,120),type:typeSel.value,done:false,at:Date.now()});inp.value='';try{save();}catch(_e){}filt='todo';render();}
+  addB.onclick=add;inp.addEventListener('keydown',function(e){if(e.key==='Enter')add();});
+  render();
+  return v;
+},
 appstore:()=>{
   /* The App Store — Discover (install first-party + community apps) and Publish
      (build/paste an app → AI review → it lives in your device/account state). */
@@ -55137,7 +55353,7 @@ chords:()=>{
   let selChord='C';
   function render(){
     v.innerHTML='';
-    v.appendChild(txt('h2','Guitar Chords',{style:{fontFamily:'var(--title-font)',fontSize:'15px',marginBottom:'10px'}}));
+    v.appendChild(txt('h2','Fretboard',{style:{fontFamily:'var(--title-font)',fontSize:'18px',marginBottom:'10px'}}));
     // Chord selector
     const btns=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'12px'}});
     Object.keys(CHORDS).forEach(name=>{
@@ -55149,7 +55365,10 @@ chords:()=>{
     const chordArea=el('div',{id:'chord-area',style:{display:'flex',gap:'16px',alignItems:'flex-start',flexWrap:'wrap'}});
     v.appendChild(chordArea);
     function renderChord(){
-      const area=document.getElementById('chord-area');if(!area)return;
+      /* Use the in-scope chordArea ref, not getElementById — during the initial
+         build the view is still DETACHED, so getElementById('chord-area') was
+         null and the default chord diagram never drew until you tapped a button. */
+      const area=chordArea;if(!area)return;
       area.innerHTML='';
       const chord=CHORDS[selChord];if(!chord)return;
       const cw=160,ch=180;
