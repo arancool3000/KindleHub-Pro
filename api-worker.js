@@ -107,7 +107,7 @@ const COLUMNS = {
   kh_banned_usernames:['name','reason','created_at'],
   kh_visits:['device_id','day','last_seen','ua_hint','country','city'],
   kh_rate:['bucket','win_start','n'],
-  kh_store_apps:['id','name','html','cat','author','model','created_at','downloads'],
+  kh_store_apps:['id','name','html','cat','author','model','created_at','downloads','owner_secret'],
 };
 const PK = {
   kh_users:['hash'], kh_groups:['code'], kh_messages:['id'], kh_mail:['id'],
@@ -126,7 +126,7 @@ const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_fe
    codes then rename / re-own every room. */
 const UPDATE_OK = new Set(['kh_users','kh_feedback','kh_presence','kh_announcements']); // open update (kh_announcements: comments only for non-admin, gated below)
 const SECRET_UPDATE = new Set(['kh_messages']);          // owner_secret-gated update
-const SECRET_DELETE = new Set(['kh_messages','kh_mail']); // owner_secret-gated delete
+const SECRET_DELETE = new Set(['kh_messages','kh_mail','kh_store_apps']); // owner_secret-gated delete (store: an author removes their own published app)
 /* Reads that expose cross-user PLAINTEXT (not E2E-encrypted) → admin-only.
    kh_rate stores one bucket per room ('msg:'+group_code); an open read would
    leak every active room's code (= its chat decryption key), so it's gated too.
@@ -778,17 +778,23 @@ async function handlePatch(table, url, request, env, DB){
 
 /* Tables an authenticated ADMIN may delete rows from directly — moderation +
    diagnostics. (Chat/mail stay owner_secret-gated; kh_users is never here.) */
-const ADMIN_DELETE_OK = new Set(['kh_feedback','kh_errors','kh_announcements','kh_scores','kh_banned_usernames','kh_visits','kh_presence']);
+const ADMIN_DELETE_OK = new Set(['kh_feedback','kh_errors','kh_announcements','kh_scores','kh_banned_usernames','kh_visits','kh_presence','kh_store_apps']);
 async function handleDelete(table, url, request, env, DB){
   const secretGated = SECRET_DELETE.has(table);
   const adminReq = await isAdmin(request.headers.get('x-kh-admin')||'');
   const adminOk = adminReq && ADMIN_DELETE_OK.has(table);
-  /* Allowed if: owner-secret gated (chat/mail), the open kh_feedback prune path,
-     OR an authenticated admin deleting from a moderation table. Otherwise 403. */
+  /* Allowed if: owner-secret gated (chat/mail/store), the open kh_feedback prune
+     path, OR an authenticated admin deleting from a moderation/store table. */
   if(!secretGated && table!=='kh_feedback' && !adminOk) return err('delete not allowed on '+table, 403, env);
   const q = parseQuery(table, url.searchParams);
   let { sql:where, binds } = whereSql(table, q.filters);
-  if(secretGated){
+  if(adminOk){
+    /* Admin deletes by filter alone (no owner secret) — used to purge store apps
+       or moderation rows. A filter is still required below (except errors/presence)
+       so a bug can't wipe a whole table. This takes precedence over the secret
+       gate so an admin can remove rows that have no owner_secret (e.g. legacy
+       store apps published before owner_secret existed). */
+  } else if(secretGated){
     const secret = request.headers.get('x-kh-secret')||'';
     if(secret.length < 16) return err('a valid owner secret is required', 403, env);
     where += (where?' AND ':' WHERE ')+'owner_secret IS NOT NULL AND owner_secret = ?';
@@ -804,7 +810,7 @@ async function handleDelete(table, url, request, env, DB){
   }
   /* SAFETY: an admin "clear all" (no filter) is intentional for kh_errors; for
      other admin tables require a filter so a bug can't wipe a whole table. */
-  if(adminOk && !secretGated && !where && table!=='kh_errors' && table!=='kh_presence')
+  if(adminOk && !where && table!=='kh_errors' && table!=='kh_presence')
     return err('a filter is required to delete from '+table, 400, env);
   await DB.prepare('DELETE FROM '+QUOTE(table)+where).bind(...binds).run();
   return new Response(null,{status:204,headers:cors(env)});
@@ -839,7 +845,7 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS kh_daily (date TEXT PRIMARY KEY, n INTEGER DEFAULT 0, w INTEGER DEFAULT 0)",
   /* Shared App Store: apps published by any user, downloadable by everyone. */
-  "CREATE TABLE IF NOT EXISTS kh_store_apps (id TEXT PRIMARY KEY, name TEXT NOT NULL, html TEXT NOT NULL, cat TEXT DEFAULT 'Fun', author TEXT DEFAULT '', model TEXT DEFAULT '', created_at TEXT, downloads INTEGER DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS kh_store_apps (id TEXT PRIMARY KEY, name TEXT NOT NULL, html TEXT NOT NULL, cat TEXT DEFAULT 'Fun', author TEXT DEFAULT '', model TEXT DEFAULT '', created_at TEXT, downloads INTEGER DEFAULT 0, owner_secret TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_store_apps_rank ON kh_store_apps(downloads DESC, created_at DESC)",
   /* Auto-maintenance bug queue: one row per distinct bug signature, persisted so
      the daily cron RESUMES tomorrow when Gemini free quota runs out. status:
@@ -865,6 +871,8 @@ async function ensureSchema(DB){
   try{ await DB.prepare("ALTER TABLE kh_daily ADD COLUMN w INTEGER DEFAULT 0").run(); }catch(_){}
   /* Announcement comments column for DBs created before this feature. */
   try{ await DB.prepare("ALTER TABLE kh_announcements ADD COLUMN comments TEXT DEFAULT '[]'").run(); }catch(_){}
+  /* Store-app owner_secret for DBs created before authors could delete their apps. */
+  try{ await DB.prepare("ALTER TABLE kh_store_apps ADD COLUMN owner_secret TEXT").run(); }catch(_){}
   _schemaReady=true;
 }
 
