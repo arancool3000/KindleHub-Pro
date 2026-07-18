@@ -892,6 +892,13 @@ body.simple-ui{--radius:2px;}
 body.simple-ui .card,body.simple-ui .btn,body.simple-ui button.btn,
 body.simple-ui input,body.simple-ui textarea,body.simple-ui select,
 body.simple-ui .view,body.simple-ui nav .tab{border-radius:2px;}
+/* ── MORE RETRO: uppercase Courier headings, a double-rule under each page
+   title, sunken input fields and pressed-in active tabs. All static (no
+   animation), grey insets so it reads on retro light AND dark/sepia. */
+body.simple-ui h2,body.simple-ui h3{text-transform:uppercase;letter-spacing:.5px;}
+body.simple-ui .view>h2:first-child{border-bottom:3px double var(--fg);padding-bottom:4px;}
+body.simple-ui input,body.simple-ui textarea,body.simple-ui select{box-shadow:inset 2px 2px 0 rgba(128,128,128,.28);}
+body.simple-ui nav .tab.active,body.simple-ui nav .tab.current{box-shadow:inset 2px 2px 0 rgba(128,128,128,.5);}
 /* Beveled "physical" buttons — a hard inner highlight + the offset shadow reads
    like a classic raised GUI button; :active presses it in. */
 body.simple-ui .btn,body.simple-ui button.btn{box-shadow:inset 1px 1px 0 var(--bg),2px 2px 0 var(--fg);}
@@ -984,6 +991,12 @@ body.kh-lite{
   /* Flatten the token drop-shadows so cards/buttons are single fills. */
   --shadow:none;--shadow-md:none;--btn-shadow:none;
   scroll-behavior:auto!important;
+  /* applyWallpaper() sets background-attachment:fixed inline whenever a
+     wallpaper (dot-grid/ruled pattern or a photo) is chosen. Old WebKit/Silk
+     gives a fixed background no compositor layer, so it repaints the WHOLE
+     background every scroll frame — real scroll-jank on any page of text.
+     !important beats the inline style; the wallpaper still shows. */
+  background-attachment:scroll!important;
 }
 /* Kill smooth/momentum scrolling everywhere — it forces continuous repaints
    that ghost badly AND keep the compositor busy on e-ink. */
@@ -1354,7 +1367,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="header-left">
       <div class="logo"><svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true" style="flex-shrink:0"><rect width="32" height="32" rx="7" style="fill:currentColor"/><path d="M16 10.5C12 8.5 7.5 8.5 5 10.5L5 22C7.5 20 12 20 16 22Z" style="fill:var(--card,#fff)"/><path d="M16 10.5C20 8.5 24.5 8.5 27 10.5L27 22C24.5 20 20 20 16 22Z" style="fill:var(--card,#fff)"/><rect x="15.2" y="10.8" width="1.6" height="11" rx=".8" style="fill:currentColor"/><path d="M7.6 13.2C10 12.2 13 12.2 14.8 13.1" fill="none" stroke="currentColor" stroke-width=".9" opacity=".4"/><path d="M17.2 13.1C19 12.2 22 12.2 24.4 13.2" fill="none" stroke="currentColor" stroke-width=".9" opacity=".4"/></svg>KindleHub Pro</div>
       <div class="header-sub" id="flightStatusBar" style="display:none;font-family:monospace;font-size:10px;color:var(--muted)"></div>
-      <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
+      <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.2.0">v8.2.0</div>
     </div>
     <div class="header-controls">
       <div class="clock" id="sysClock"></div>
@@ -1448,6 +1461,10 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="sports">Sports</div>
     <div class="tab" data-view="unitconv" style="display:none">Unit Converter</div>
     <div class="tab" data-view="tipcalc" style="display:none">Tip Calculator</div>
+    <div class="tab" data-view="histday" style="display:none">Today in History</div>
+    <div class="tab" data-view="lifeweeks" style="display:none">Life in Weeks</div>
+    <div class="tab" data-view="chords" style="display:none">Fretboard</div>
+    <div class="tab" data-view="watchq" style="display:none">Watch Queue</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -1666,7 +1683,7 @@ function defaultState(){
     weatherPlaces:[],
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
-    publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,
+    publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,birthDate:'',watchQueue:[],
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -2762,7 +2779,7 @@ function _startMessageNotifier(){
         if(msgs.length)localStorage.setItem(lastSeenKey(g.code),msgs[msgs.length-1].id||'');
       }catch(e){}
     }
-  },45000);
+  },(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);
 }
 
 /* Heartbeat — every 45 s we check whether the local state has changed
@@ -2956,7 +2973,7 @@ function _startPeriodicSync(){
       if(fp===_lastSyncedHash)return;
     }
     _doCloudSync();
-  },_PERIODIC_SYNC_MS);
+  },(typeof _khSimpleMode==='function'&&_khSimpleMode())?_PERIODIC_SYNC_MS*2:_PERIODIC_SYNC_MS);
 }
 /* ── Background-timer suspend on hidden ───────────────────────────────
    Silk (and most mobile WebViews) keep setInterval timers FIRING while the
@@ -3379,7 +3396,7 @@ const NAV_TABS=[
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
   ['imagesearch','Images'],['sports','Sports'],
-  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator']
+  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -7144,6 +7161,14 @@ function liteModeActive(){
 function applyLiteMode(){
   document.body.classList.toggle('kh-lite',liteModeActive());
 }
+/* Cheap guard: is the fast path on right now? Reads the APPLIED class (Simple
+   Mode OR auto-detected Lite Mode on old Kindle Silk / low-memory devices) so
+   the devices that need it most get the slower timers even if the user never
+   found the toggle. Background-timer edits below use this. */
+function _khSimpleMode(){
+  try{return document.body.classList.contains('kh-lite');}catch(_e){return false;}
+}
+window._khSimpleMode=_khSimpleMode;
 /* setLiteMode(true|false|null) — null/undefined returns to auto-detect. */
 function setLiteMode(v){
   if(v===null||v===undefined)delete S.liteMode;
@@ -8798,7 +8823,11 @@ var STORE_APPS=[
   {view:'rss',       name:'News',          cat:'News & Media', desc:'RSS headlines and the Gazette.'},
   {view:'imagesearch',name:'Images',       cat:'News & Media', desc:'Search free images.'},
   {view:'sports',    name:'Sports',        cat:'News & Media', desc:'Live scores & schedules.'},
-  {view:'maps',      name:'Maps',          cat:'News & Media', desc:'Search places and routes.'}
+  {view:'maps',      name:'Maps',          cat:'News & Media', desc:'Search places and routes.'},
+  {view:'histday',   name:'Today in History',cat:'Reference',  desc:'What happened on this day through history.'},
+  {view:'lifeweeks', name:'Life in Weeks', cat:'Lifestyle',    desc:'Your life mapped as a grid of weeks.'},
+  {view:'chords',    name:'Fretboard',     cat:'Reference',    desc:'Common guitar chords with fingering.'},
+  {view:'watchq',    name:'Watch Queue',   cat:'Lifestyle',    desc:'A list of films, shows and books for later.'}
 ];
 /* Featured on the store's front page (front-of-store rotation, search-hidden). */
 var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports'];
@@ -8807,7 +8836,7 @@ var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports']
    applier only hides ones the user has never decided on, so nothing a user
    installed is ever force-hidden. teleprompter is intentionally NOT here — it's
    launched inside Tools via khTeleprompter(), not a standalone view. */
-var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc'];
+var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq'];
 /* Only these Gemini models are trusted to REVIEW apps, strongest first. */
 var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
 function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
@@ -11128,7 +11157,7 @@ function _startPresence(){
      online window is now 150s so a 70s heartbeat (even if the odd tick is
      skipped by the adaptive backoff) keeps "online" steady. Halving the
      presence write rate is the biggest permanent cut to the shared budget. */
-  _presenceTimer=setInterval(function(){ if(document.hidden)return; if(typeof _khLoadSkip==='function'&&_khLoadSkip())return; _pingPresence(); },70000);
+  _presenceTimer=setInterval(function(){ if(document.hidden)return; if(typeof _khLoadSkip==='function'&&_khLoadSkip())return; _pingPresence(); },(typeof _khSimpleMode==='function'&&_khSimpleMode())?140000:70000);
   document.addEventListener('visibilitychange',function(){ if(!document.hidden)_pingPresence(); });
 }
 
@@ -12374,7 +12403,7 @@ function _startUltraTracking(){
     const now=Date.now();let sec=Math.round((now-_ultraLastTs)/1000);_ultraLastTs=now;
     if(sec<0||sec>180)sec=0; /* guard against sleep / clock jumps */
     _khUltraTick(sec);
-  },30000);
+  },(typeof _khSimpleMode==='function'&&_khSimpleMode())?60000:30000);
   _khUltraTick(0);
 }
 function _khUltraProgress(){const u=_ultraState();return {tier:_khTier(),active:_khUltraActive(),windowDays:_ultraWindowDays().length,need:ULTRA_DAYS_NEEDED,todayMin:Math.floor((u.acc&&u.acc.d===_ultraDayStr()?u.acc.sec:0)/60),todayQualified:u.days.indexOf(_ultraDayStr())>=0,since:u.since};}
@@ -14183,6 +14212,9 @@ function mergeCloudState(cloudState,opts){
   const localTombs=Array.isArray(S.leftGroups)?S.leftGroups:[];
   const cloudTombs=Array.isArray(cloudState.leftGroups)?cloudState.leftGroups:[];
   const tombSet=new Set([...localTombs,...cloudTombs]);
+  /* Friend tombstones (unfriended/declined mids), computed up front so the
+     'friends' merge case below is correct regardless of key iteration order. */
+  const friendTombSet=new Set([...(Array.isArray(S.friendReqTombs)?S.friendReqTombs:[]),...(Array.isArray(cloudState.friendReqTombs)?cloudState.friendReqTombs:[])]);
   /* Deleted-item tombstones: union local + cloud so a delete on one device
      stays deleted everywhere. The id-list merge below skips any tombstoned
      item, so a pull/reload never resurrects something you deleted. */
@@ -14210,6 +14242,23 @@ function mergeCloudState(cloudState,opts){
         seen.add(g.code);merged.push(g);
       });
       S.msgGroups=merged;
+      return;
+    }
+    /* friends: same union-merge as msgGroups (by hash). Without this, S.friends
+       fell into the generic REPLACE branch below, so a friend added on one
+       device could vanish if a stale cloud pull landed before this device's own
+       debounced push caught up. */
+    if(key==='friends'){
+      if(!Array.isArray(cloudState[key])){return;}
+      const localFriends=Array.isArray(S.friends)?S.friends:[];
+      const merged=[];const seen=new Set();
+      [...(cloudState[key]||[]),...localFriends].forEach(function(fr){
+        if(!fr||!fr.hash)return;
+        if(fr.mid&&friendTombSet.has(fr.mid))return;/* unfriended/declined — keep it gone */
+        if(seen.has(fr.hash))return;
+        seen.add(fr.hash);merged.push(fr);
+      });
+      S.friends=merged;
       return;
     }
     /* leftGroups itself: union local + cloud, capped at 200. */
@@ -14353,13 +14402,13 @@ let _HANGMAN_CATS=null;
 function getHangmanCats(){
   if(!_HANGMAN_CATS)_HANGMAN_CATS={
     general:[...getWB4(),...getWB5(),...getWB6()],
-    school:['PENCIL','RULER','ERASER','CHALK','PAPER','CLASS','GRADE','STUDY','LEARN','WRITE','READ','TEST','EXAM','ATLAS','GLOBE','DESK','LESSON','LIBRARY','TEACHER','STUDENT','SCHOOL','SCIENCE','HISTORY','ALGEBRA','GEOMETRY','ESSAY','REPORT','NOTEBOOK','FOLDER','BINDER','MARKER','COMPASS','BACKPACK','TEXTBOOK','HOMEWORK','SCHEDULE','ASSEMBLY','BIOLOGY','PHYSICS','ENGLISH','FICTION','GRAMMAR','DECIMAL','FRACTION','EQUATION'],
-    sport:['BALL','GOAL','TEAM','RACE','SWIM','JUMP','RUN','KICK','PASS','SCORE','GAME','COACH','COURT','FIELD','TRACK','MATCH','GYM','TENNIS','SOCCER','RUGBY','BOXING','CYCLING','ROWING','HOCKEY','SKIING','GOLF','SPRINT','RELAY','CRICKET','NETBALL','SQUASH','VOLLEYBALL','BASKETBALL','FOOTBALL','BADMINTON','ARCHERY','JAVELIN','HURDLES','TRIATHLON','MARATHON','FENCING','KAYAKING'],
-    nature:['TREE','LEAF','RAIN','SNOW','WIND','RIVER','OCEAN','BEACH','CLOUD','STORM','GRASS','FLOWER','MOUNTAIN','FOREST','VALLEY','LAKE','ISLAND','DESERT','SUNSET','THUNDER','RAINBOW','WATERFALL','MEADOW','CANYON','GLACIER','VOLCANO','ESTUARY','PLATEAU','PENINSULA','LAGOON','DUNE','TUNDRA','MARSH','SAVANNA','JUNGLE','ARCTIC','TROPICS','PEBBLE','FOSSIL','MINERAL','CRYSTAL','EROSION'],
-    food:['BREAD','APPLE','GRAPE','PASTA','SALAD','PIZZA','SOUP','CAKE','MILK','JUICE','SUGAR','SPICE','BUTTER','CHEESE','CHICKEN','COFFEE','TEA','RICE','CARROT','POTATO','TOMATO','ONION','GARLIC','PEPPER','LEMON','ORANGE','MANGO','BANANA','BISCUIT','YOGURT','SALMON','NOODLE','WAFFLE','PANCAKE','MUSTARD','KETCHUP','VINEGAR','ALMOND','WALNUT','AVOCADO','BROCCOLI','SPINACH','GINGER'],
-    animals:['LION','TIGER','BEAR','WOLF','DEER','FROG','FISH','BIRD','SNAKE','HORSE','SHEEP','GOAT','DUCK','EAGLE','SHARK','WHALE','RABBIT','PARROT','MONKEY','PENGUIN','GIRAFFE','ELEPHANT','CROCODILE','KANGAROO','CHEETAH','LEOPARD','FLAMINGO','DOLPHIN','OCTOPUS','LOBSTER','HAMSTER','OSTRICH','PEACOCK','VULTURE','HEDGEHOG','SQUIRREL'],
-    countries:['FRANCE','SPAIN','ITALY','JAPAN','CHINA','INDIA','BRAZIL','CANADA','MEXICO','RUSSIA','TURKEY','EGYPT','KENYA','GHANA','NORWAY','SWEDEN','POLAND','GREECE','ISRAEL','JORDAN','SERBIA','LATVIA','MALTA','CHILE','PERU','CUBA','IRAN','IRAQ'],
-    science:['ATOM','CELL','GENE','MASS','WAVE','FORCE','LIGHT','LASER','PROTON','NEUTRON','ELECTRON','GRAVITY','ENERGY','MATTER','PLASMA','MAGNET','CIRCUIT','VOLTAGE','CURRENT','PRESSURE','CHEMICAL','REACTION','MOLECULE','COMPOUND','ELEMENT','NUCLEUS','PHOTON','QUANTUM','VELOCITY','FRICTION','MOMENTUM','CATALYST','BACTERIA','VIRUS']
+    school:['PENCIL','RULER','ERASER','CHALK','PAPER','CLASS','GRADE','STUDY','LEARN','WRITE','READ','TEST','EXAM','ATLAS','GLOBE','DESK','LESSON','LIBRARY','TEACHER','STUDENT','SCHOOL','SCIENCE','HISTORY','ALGEBRA','GEOMETRY','ESSAY','REPORT','NOTEBOOK','FOLDER','BINDER','MARKER','COMPASS','BACKPACK','TEXTBOOK','HOMEWORK','SCHEDULE','ASSEMBLY','BIOLOGY','PHYSICS','ENGLISH','FICTION','GRAMMAR','DECIMAL','FRACTION','EQUATION','CRAYON','RECESS','HALLWAY','PRINCIPAL','CHEMISTRY','ALPHABET'],
+    sport:['BALL','GOAL','TEAM','RACE','SWIM','JUMP','RUN','KICK','PASS','SCORE','GAME','COACH','COURT','FIELD','TRACK','MATCH','GYM','TENNIS','SOCCER','RUGBY','BOXING','CYCLING','ROWING','HOCKEY','SKIING','GOLF','SPRINT','RELAY','CRICKET','NETBALL','SQUASH','VOLLEYBALL','BASKETBALL','FOOTBALL','BADMINTON','ARCHERY','JAVELIN','HURDLES','TRIATHLON','MARATHON','FENCING','KAYAKING','SKATING','SURFING','BOWLING','WRESTLING','CANOEING','SNOOKER'],
+    nature:['TREE','LEAF','RAIN','SNOW','WIND','RIVER','OCEAN','BEACH','CLOUD','STORM','GRASS','FLOWER','MOUNTAIN','FOREST','VALLEY','LAKE','ISLAND','DESERT','SUNSET','THUNDER','RAINBOW','WATERFALL','MEADOW','CANYON','GLACIER','VOLCANO','ESTUARY','PLATEAU','PENINSULA','LAGOON','DUNE','TUNDRA','MARSH','SAVANNA','JUNGLE','ARCTIC','TROPICS','PEBBLE','FOSSIL','MINERAL','CRYSTAL','EROSION','BOULDER','BREEZE','BLOSSOM','PRAIRIE','BLIZZARD','BAMBOO'],
+    food:['BREAD','APPLE','GRAPE','PASTA','SALAD','PIZZA','SOUP','CAKE','MILK','JUICE','SUGAR','SPICE','BUTTER','CHEESE','CHICKEN','COFFEE','TEA','RICE','CARROT','POTATO','TOMATO','ONION','GARLIC','PEPPER','LEMON','ORANGE','MANGO','BANANA','BISCUIT','YOGURT','SALMON','NOODLE','WAFFLE','PANCAKE','MUSTARD','KETCHUP','VINEGAR','ALMOND','WALNUT','AVOCADO','BROCCOLI','SPINACH','GINGER','PRETZEL','SANDWICH','OMELETTE','CUPCAKE','MEATBALL','LASAGNA'],
+    animals:['LION','TIGER','BEAR','WOLF','DEER','FROG','FISH','BIRD','SNAKE','HORSE','SHEEP','GOAT','DUCK','EAGLE','SHARK','WHALE','RABBIT','PARROT','MONKEY','PENGUIN','GIRAFFE','ELEPHANT','CROCODILE','KANGAROO','CHEETAH','LEOPARD','FLAMINGO','DOLPHIN','OCTOPUS','LOBSTER','HAMSTER','OSTRICH','PEACOCK','VULTURE','HEDGEHOG','SQUIRREL','BADGER','OTTER','RACCOON','PANTHER','GAZELLE','WALRUS'],
+    countries:['FRANCE','SPAIN','ITALY','JAPAN','CHINA','INDIA','BRAZIL','CANADA','MEXICO','RUSSIA','TURKEY','EGYPT','KENYA','GHANA','NORWAY','SWEDEN','POLAND','GREECE','ISRAEL','JORDAN','SERBIA','LATVIA','MALTA','CHILE','PERU','CUBA','IRAN','IRAQ','GERMANY','PORTUGAL','IRELAND','FINLAND','DENMARK','AUSTRIA','BELGIUM','ICELAND'],
+    science:['ATOM','CELL','GENE','MASS','WAVE','FORCE','LIGHT','LASER','PROTON','NEUTRON','ELECTRON','GRAVITY','ENERGY','MATTER','PLASMA','MAGNET','CIRCUIT','VOLTAGE','CURRENT','PRESSURE','CHEMICAL','REACTION','MOLECULE','COMPOUND','ELEMENT','NUCLEUS','PHOTON','QUANTUM','VELOCITY','FRICTION','MOMENTUM','CATALYST','BACTERIA','VIRUS','ENZYME','ISOTOPE','GALAXY','METEOR','VACUUM','OXYGEN']
   };
   return _HANGMAN_CATS;
 }
@@ -16232,7 +16281,7 @@ const appNode=$('app');
 const GAME_HELP={
   digquest:{name:'Deep Dig',how:'A dig-and-smash story platformer over SIX chapters. ◄ ► move, JUMP leaps (grab a Spring-cap for a double-jump), DIG smashes the earth you face, DIG▼ digs straight down (keyboard: arrows/WASD, Space, Z). Tunnel for crystals, coins and gate-stones; a drilling-charm breaks solid stone and a ward-shield keeps you safe for a while; STOMP the crawling grubs from above (touch one and it bites). Touch a checkpoint flag and you respawn there. Bank crystals to buy permanent upgrades between runs. Clear each exit, then stomp the Gravecrawler boss three times to free the Heartspring. Toggle E-ink mode for fewer, chunkier frames.'},
   maze:{name:'Maze',how:'Find your way from the top-left corner to the ★ exit in the bottom-right. Move with the on-screen arrows, the keyboard arrow keys, or a swipe. Solve a maze to advance to the next, slightly larger level — see how far you can get and how fast. Best level reached is saved.'},
-  platformer:{name:'Pixel Hop',how:'A Mario-style platformer. Hold ◄ / ► to run and tap Jump to leap (keyboard: arrow keys or Space; tap the screen to jump one-handed). Run and jump across the gaps — falling in a pit costs a life. Land ON TOP of a walking enemy to stomp it; touching one from the side hurts you. Grab the coin rings along the way and reach the flag at the end. You have 3 lives and respawn at the last ledge you stood on. Score = coins + stomps + a bonus for finishing.'},
+  platformer:{name:'Pixel Hop',how:'A Mario-style platformer with THREE levels that get harder. Hold ◄ / ► to run and tap Jump to leap (keyboard: arrow keys or Space; tap the screen to jump one-handed). Run and jump across the gaps — falling in a pit costs a life. Land ON TOP of a walking enemy to stomp it; touching one from the side hurts you. Grab the coin rings and reach the flag to clear a level and move to the next. Your coins and lives carry over; you respawn at the last ledge you stood on. Beat all three to win. Score = coins + stomps + a finishing bonus.'},
   hanoi:{name:'Tower of Hanoi',how:'Move the whole stack of disks from the left peg to the right peg. Tap a peg to lift its top disk, then tap another peg to drop it. You can never place a bigger disk on a smaller one. Fewer moves is better — the minimum is 2ⁿ−1 for n disks. Choose 3 to 7 disks.'},
   blackjack:{name:'Blackjack',how:'Get closer to 21 than the dealer without going over. Hit for another card, Stand to hold. Face cards are 10; an Ace counts as 1 or 11. The dealer draws to 17. A two-card 21 (Blackjack) pays 3:2. Adjust your bet, then Deal — build the biggest chip stack you can.'},
   crazy8:{name:'Crazy Eights',how:'An Uno-style card game — play the computer or a friend online. Empty your hand first. Play a card that matches the discard by COLOUR (shown by the letter R/Y/G/B and the coloured border) or by NUMBER/symbol. Action cards: Skip and Reverse skip the other player, Draw Two makes them draw 2 and miss a turn. Wild lets you pick the colour; Wild Draw Four also makes them draw 4. Can’t play? Tap the deck to Draw, then play it or Pass. From the start menu choose “Play vs Computer” or “Play Online — 2 players”; online, the host runs the game so each player only ever sees their own hand, and there’s a chat panel to talk.'},
@@ -21399,36 +21448,50 @@ const GeometryDash=(()=>{
 const Platformer=(()=>{
   const W=360,H=240,PW=16,PH=22;
   const GRAV=0.7,MOVE=0.7,MAXVX=3.1,FRICT=0.78,JUMP=-9.6,ESPD=0.85;
-  const JBUF=7,COY=6,EW=20,EH=16,GROUND_TOP=212,GOAL=1690,WORLDW=1760;
-  const SPAWN={x:30,y:180};
-  /* Solid platforms/ground {x,y,w,h} (y = TOP). Gaps between ground rects are
-     pits you fall into. Floaters are coin routes / stepping stones. Every gap is
-     <=70px so a full-power jump (reach ~86px) clears it — beatable by design. */
-  const PLATS=[
-    {x:0,y:212,w:360,h:28},{x:430,y:212,w:250,h:28},{x:740,y:212,w:210,h:28},
-    {x:1010,y:212,w:330,h:28},{x:1400,y:212,w:360,h:28},
-    {x:250,y:150,w:80,h:14},{x:560,y:150,w:90,h:14},{x:850,y:158,w:80,h:14},
-    {x:1120,y:146,w:80,h:14},{x:1250,y:170,w:80,h:14}
+  const JBUF=7,COY=6,EW=20,EH=16,GROUND_TOP=212;
+  /* Level-scoped data (reassigned by loadLevel) — Pixel Hop now has THREE stages
+     that get progressively harder. Ground rects {x,y,w,h} (y=TOP); gaps between
+     them are pits. Every gap is <=70px so a full-power jump (reach ~86px) clears
+     it, and each enemy's patrol range sits within one ground rect — so every
+     level is beatable by design. Floaters are coin routes / stepping stones. */
+  let PLATS,COIN_DEF,ENEMY_DEF,GOAL,WORLDW,SPAWN;
+  const LEVELS=[
+    { goal:1690, worldw:1760, spawn:{x:30,y:180},
+      plats:[{x:0,y:212,w:360,h:28},{x:430,y:212,w:250,h:28},{x:740,y:212,w:210,h:28},{x:1010,y:212,w:330,h:28},{x:1400,y:212,w:360,h:28},{x:250,y:150,w:80,h:14},{x:560,y:150,w:90,h:14},{x:850,y:158,w:80,h:14},{x:1120,y:146,w:80,h:14},{x:1250,y:170,w:80,h:14}],
+      coins:[[60,180],[110,180],[160,180],[270,120],[300,120],[470,180],[520,180],[575,120],[610,120],[770,180],[820,180],[870,128],[1040,180],[1090,180],[1150,116],[1275,140],[1440,180],[1500,180],[1560,180],[1620,180]],
+      enemies:[[200,120,340],[500,440,660],[800,750,930],[1120,1015,1320],[1500,1410,1680]] },
+    { goal:1760, worldw:1830, spawn:{x:26,y:180},
+      plats:[{x:0,y:212,w:300,h:28},{x:360,y:212,w:220,h:28},{x:645,y:212,w:200,h:28},{x:905,y:212,w:260,h:28},{x:1233,y:212,w:220,h:28},{x:1513,y:212,w:317,h:28},{x:230,y:150,w:70,h:14},{x:470,y:146,w:70,h:14},{x:700,y:150,w:70,h:14},{x:980,y:150,w:80,h:14},{x:1300,y:150,w:70,h:14},{x:1560,y:150,w:80,h:14}],
+      coins:[[60,180],[120,180],[250,120],[400,180],[490,116],[520,180],[700,120],[720,180],[930,180],[1000,120],[1050,180],[1270,180],[1320,120],[1420,180],[1540,180],[1580,116],[1650,180],[1700,180]],
+      enemies:[[180,60,290],[420,365,575],[720,650,840],[1000,910,1160],[1300,1240,1450],[1600,1520,1825]] },
+    { goal:1810, worldw:1880, spawn:{x:24,y:180},
+      plats:[{x:0,y:212,w:250,h:28},{x:315,y:212,w:170,h:28},{x:552,y:212,w:180,h:28},{x:800,y:212,w:170,h:28},{x:1038,y:212,w:200,h:28},{x:1305,y:212,w:180,h:28},{x:1553,y:212,w:327,h:28},{x:180,y:150,w:64,h:14},{x:400,y:150,w:64,h:14},{x:640,y:146,w:64,h:14},{x:880,y:150,w:64,h:14},{x:1120,y:146,w:64,h:14},{x:1380,y:150,w:64,h:14},{x:1620,y:150,w:70,h:14}],
+      coins:[[50,180],[110,180],[200,120],[350,180],[420,116],[600,180],[660,116],[840,180],[900,116],[1080,180],[1140,116],[1340,180],[1400,116],[1580,180],[1640,116],[1700,180],[1760,180]],
+      enemies:[[150,40,240],[360,325,475],[620,560,725],[860,810,960],[1120,1048,1230],[1380,1315,1478],[1650,1563,1875]] }
   ];
-  const COIN_DEF=[[60,180],[110,180],[160,180],[270,120],[300,120],[470,180],[520,180],
-    [575,120],[610,120],[770,180],[820,180],[870,128],[1040,180],[1090,180],
-    [1150,116],[1275,140],[1440,180],[1500,180],[1560,180],[1620,180]];
-  const ENEMY_DEF=[[200,120,340],[500,440,660],[800,750,930],[1120,1015,1320],[1500,1410,1680]];
+  function loadLevel(idx){var L=LEVELS[Math.max(0,Math.min(LEVELS.length-1,idx))];PLATS=L.plats;COIN_DEF=L.coins;ENEMY_DEF=L.enemies;GOAL=L.goal;WORLDW=L.worldw;SPAWN=L.spawn;}
   let game=null,timer=null,_submitted=false;
 
   function _best(){return (S.games&&S.games.platformer&&S.games.platformer.best)||0;}
   function aabb(px,py,p){return px<p.x+p.w&&px+PW>p.x&&py<p.y+p.h&&py+PH>p.y;}
   function rectHit(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;}
 
+  /* Reset the player + entities to the START of the currently-loaded level.
+     Keeps coins/stomps/lives (so they carry across levels). */
+  function _spawnLevel(g){
+    g.x=SPAWN.x;g.y=SPAWN.y;g.vx=0;g.vy=0;g.onGround=false;g.face=1;g.camX=0;
+    g.jbuf=0;g.coy=0;g.inv=30;g.left=false;g.right=false;
+    g.safe={x:SPAWN.x,y:SPAWN.y};
+    g.coinGot=COIN_DEF.map(function(){return false;});
+    g.enemies=ENEMY_DEF.map(function(e){return {x:e[0],y:GROUND_TOP-EH,x0:e[1],x1:e[2],dir:1,alive:true};});
+  }
   function start(){
     if(timer){clearInterval(timer);timer=null;}
     _submitted=false;
-    game={x:SPAWN.x,y:SPAWN.y,vx:0,vy:0,onGround:false,face:1,camX:0,coins:0,stomps:0,
-      lives:3,jbuf:0,coy:0,inv:0,dead:false,won:false,active:true,left:false,right:false,
-      safe:{x:SPAWN.x,y:SPAWN.y},
-      coinGot:COIN_DEF.map(function(){return false;}),
-      enemies:ENEMY_DEF.map(function(e){return {x:e[0],y:GROUND_TOP-EH,x0:e[1],x1:e[2],dir:1,alive:true};})};
-    enterImmersive('Pixel Hop','0%');
+    loadLevel(0);
+    game={level:0,coins:0,stomps:0,lives:3,dead:false,won:false,active:true};
+    _spawnLevel(game);
+    enterImmersive('Pixel Hop','Level 1');
     immersiveRoot._trackStop=stop;
     buildUI();
     timer=setInterval(function(){if(!document.hidden)tick();},33);
@@ -21555,10 +21618,18 @@ const Platformer=(()=>{
   }
   function win(){
     if(!game||!game.active)return;
+    /* More levels to go? Advance to the next stage keeping coins/stomps/lives. */
+    if(game.level<LEVELS.length-1){
+      game.level++;loadLevel(game.level);_spawnLevel(game);
+      try{var se=$('immersiveScore');if(se)se.textContent='Level '+(game.level+1);}catch(_){}
+      toast('Level '+(game.level+1)+' of '+LEVELS.length+'!');
+      draw();
+      return;
+    }
     game.active=false;game.won=true;
     if(timer){clearInterval(timer);timer=null;}
     saveBest(true);draw();
-    toast('You reached the flag! '+game.coins+' coins');
+    toast('You beat all '+LEVELS.length+' levels! '+game.coins+' coins');
   }
   function saveBest(won){
     if(!S.games.platformer)S.games.platformer={best:0};
@@ -21610,12 +21681,15 @@ const Platformer=(()=>{
     /* progress bar */
     ctx.fillStyle=faint;ctx.fillRect(8,8,W-16,5);
     ctx.fillStyle=ink;ctx.fillRect(8,8,Math.round((W-16)*Math.min(1,g.x/GOAL)),5);
+    /* level + lives + coins HUD */
+    ctx.fillStyle=ink;ctx.textAlign='left';ctx.font='bold 11px sans-serif';
+    ctx.fillText('Lvl '+(g.level+1)+'/'+LEVELS.length+'   Lives '+g.lives+'   Coins '+g.coins,8,26);
     /* banner */
     if(g.dead||g.won){
       ctx.fillStyle=dark?'rgba(0,0,0,.6)':'rgba(255,255,255,.78)';ctx.fillRect(0,H/2-28,W,56);
       ctx.fillStyle=ink;ctx.textAlign='center';ctx.font='bold 18px sans-serif';
-      ctx.fillText(g.won?'LEVEL COMPLETE!':'GAME OVER',W/2,H/2-2);
-      ctx.font='12px sans-serif';ctx.fillText((g.won?'Coins '+g.coins+' · Stomps '+g.stomps:'')+'  Tap to '+(g.won?'play again':'retry'),W/2,H/2+16);
+      ctx.fillText(g.won?'YOU WIN!':'GAME OVER',W/2,H/2-2);
+      ctx.font='12px sans-serif';ctx.fillText((g.won?'All '+LEVELS.length+' levels · '+g.coins+' coins':'')+'  Tap to '+(g.won?'play again':'retry'),W/2,H/2+16);
       ctx.textAlign='left';
     }
   }
@@ -22316,7 +22390,27 @@ const Anagrams=(()=>{
     ['VITAMIN','A nutrient in food'],['AIRPLANE','It flies through the sky'],['COMPUTER','You are using one now'],
     ['DINOSAUR','An ancient extinct reptile'],['FIREWORK','It explodes with colour'],['HOSPITAL','Where the sick are treated'],
     ['KANGAROO','A hopping Australian marsupial'],['MOUNTAIN','A very tall landform'],['NOTEBOOK','You jot notes in it'],
-    ['SANDWICH','Filling between two slices of bread'],['UMBRELLA','It keeps rain off you']
+    ['SANDWICH','Filling between two slices of bread'],['UMBRELLA','It keeps rain off you'],
+    ['CRAYON','A wax stick for colouring'],['SPINACH','An iron-rich leafy vegetable'],
+    ['STAIRS','Steps between two floors'],['WINDMILL','A tower with spinning blades'],
+    ['SNOWMAN','Built from rolled-up snowballs'],['CAMPFIRE','You roast marshmallows over it'],
+    ['HAMMOCK','A swinging bed hung between trees'],['PRETZEL','A salty twisted baked snack'],
+    ['SEAHORSE','A tiny fish that swims upright'],['BLIZZARD','A fierce snowstorm'],
+    ['THIMBLE','Protects your finger while sewing'],['CUPCAKE','A small frosted individual cake'],
+    ['RAINCOAT','You wear it to stay dry'],['SUITCASE','You pack it for a trip'],
+    ['STAPLER','It fastens sheets of paper together'],['FIREFLY','A bug that glows in the dark'],
+    ['HEDGEHOG','A spiky little garden animal'],['PELICAN','A bird with a big throat pouch'],
+    ['TADPOLE','A baby frog with a tail'],['ORCHARD','A field of fruit trees'],
+    ['BEEHIVE','Bees live and make honey here'],['SCARECROW','It scares birds off a farm field'],
+    ['WALRUS','A tusked Arctic sea mammal'],['OSTRICH','The world’s largest flightless bird'],
+    ['CHEESE','Made from milk, often with holes'],['PANCAKE','A flat fried breakfast food'],
+    ['BALCONY','An outdoor platform on an upper floor'],['ELEVATOR','It lifts you between floors'],
+    ['KEYBOARD','You type on it'],['SCISSORS','You cut paper with these'],
+    ['BATHTUB','You wash yourself in it'],['BLENDER','It mixes and purees food'],
+    ['NECKLACE','Jewellery worn around the neck'],['BRACELET','Jewellery worn on the wrist'],
+    ['SEASHELL','Found washed up on the beach'],['STARFISH','A five-armed sea creature'],
+    ['JELLYFISH','A stinging sea creature with no bones'],['RACCOON','A masked nocturnal scavenger'],
+    ['TROPHY','You win it for first place'],['PUDDLE','A small pool of water after rain']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.anagrams&&S.games.anagrams.best)||0;}
@@ -22415,7 +22509,17 @@ const Nonogram=(()=>{
     {name:'Key',g:['11000','11111','11000','00100','00110']},
     {name:'Anchor',g:['00100','01010','00100','10101','01110']},
     {name:'Umbrella',g:['01110','11111','00100','00100','01100']},
-    {name:'Ghost',g:['01110','11111','11111','11111','10101']}
+    {name:'Ghost',g:['01110','11111','11111','11111','10101']},
+    {name:'Fish',g:['00000','00111','11111','00111','00000']},
+    {name:'Bell',g:['00100','01110','01110','11111','00100']},
+    {name:'Envelope',g:['11111','10101','11011','10001','11111']},
+    {name:'Candle',g:['00100','01110','00100','00100','01110']},
+    {name:'Hourglass',g:['11111','01110','00100','01110','11111']},
+    {name:'Crown',g:['10101','10101','11111','11111','00000']},
+    {name:'Kite',g:['00100','01110','10001','00100','00100']},
+    {name:'Lightning',g:['00110','01100','11110','00110','00100']},
+    {name:'Butterfly',g:['01010','11111','00100','11111','01010']},
+    {name:'Mushroom',g:['01110','11111','01110','00100','00100']}
   ];
   const N=5;
   let game=null,mode='fill';
@@ -23050,6 +23154,7 @@ const Arena=(()=>{
     draw();
   }
   function finish(){
+    if(!game||game.over)return;
     game.over=true;if(timer){clearInterval(timer);timer=null;}
     var best=-1,wi=-1,tie=false;for(var i=0;i<game.F.length;i++){if(game.F[i].ko>best){best=game.F[i].ko;wi=i;tie=false;}else if(game.F[i].ko===best){tie=true;}}
     game.winner=tie?-1:wi;
@@ -23364,7 +23469,29 @@ const Trivia=(()=>{
     ['Which is the only continent with no permanent human residents?','Antarctica','Australia','Africa','Asia'],
     ['What is the hardest working muscle in the body?','Heart','Biceps','Jaw','Calf'],
     ['Which instrument has 88 keys?','Piano','Organ','Harp','Xylophone'],
-    ['What is the largest internal organ in the human body?','Liver','Heart','Lungs','Stomach']
+    ['What is the largest internal organ in the human body?','Liver','Heart','Lungs','Stomach'],
+    ['What is the capital of France?','Paris','Lyon','Marseille','Nice'],
+    ['Which planet is known for a giant storm called the Great Red Spot?','Jupiter','Saturn','Mars','Neptune'],
+    ['How many strings does a standard violin have?','Four','Six','Five','Three'],
+    ['What is the largest living bird species?','Ostrich','Eagle','Albatross','Emu'],
+    ['Who wrote Pride and Prejudice?','Jane Austen','Charlotte Bronte','Emily Dickinson','Virginia Woolf'],
+    ['What is the chemical symbol for sodium?','Na','So','Sd','S'],
+    ['Which is the smallest planet in our solar system?','Mercury','Mars','Pluto','Venus'],
+    ['How many legs does an insect have?','Six','Four','Eight','Ten'],
+    ['Which big cat is generally the largest?','Tiger','Lion','Leopard','Jaguar'],
+    ['Which is the largest country in the world by area?','Russia','Canada','China','USA'],
+    ['What is the smallest bone in the human body, found in the middle ear?','Stapes','Femur','Patella','Tibia'],
+    ['Which bird is famous as the fastest animal on Earth during its hunting dive?','Peregrine falcon','Bald eagle','Ostrich','Albatross'],
+    ['What is a group of lions called?','A pride','A pack','A herd','A flock'],
+    ['What is the process by which plants use sunlight to make food called?','Photosynthesis','Respiration','Fermentation','Digestion'],
+    ['Which planet is the hottest in our solar system?','Venus','Mercury','Mars','Jupiter'],
+    ['How many arms does the most common type of starfish have?','Five','Four','Six','Eight'],
+    ['What is the capital of Egypt?','Cairo','Alexandria','Giza','Luxor'],
+    ['Who was the first person to walk on the Moon?','Neil Armstrong','Buzz Aldrin','Yuri Gagarin','John Glenn'],
+    ['What is the largest species of shark?','Whale shark','Great white shark','Hammerhead shark','Tiger shark'],
+    ['Which metal is the best natural conductor of electricity?','Silver','Copper','Gold','Aluminium'],
+    ['How many teeth does an adult human typically have?','32','28','30','36'],
+    ['What is the capital of Germany?','Berlin','Munich','Frankfurt','Hamburg']
   ];
   let game=null;
   function _best(){return (S.games&&S.games.trivia&&S.games.trivia.best)||0;}
@@ -30437,6 +30564,19 @@ function tryLocalCommand(raw){
       'Why did the scarecrow win an award? Because he was outstanding in his field.',
       'I used to play piano by ear. Now I use my hands.',
       'Two fish in a tank. One says "do you know how to drive this thing?"',
+      'I used to be a banker, but I lost interest.',
+      'Why don\'t skeletons fight each other? They don\'t have the guts.',
+      'I\'m on a seafood diet. I see food and I eat it.',
+      'Why did the coffee file a police report? It got mugged.',
+      'Parallel lines have so much in common. It\'s a shame they\'ll never meet.',
+      'Why did the bicycle fall over? It was two-tired.',
+      'I only know 25 letters of the alphabet. I don\'t know y.',
+      'What do you call a fish with no eyes? A fsh.',
+      'Why don\'t eggs tell jokes? They\'d crack each other up.',
+      'What do you call cheese that isn\'t yours? Nacho cheese.',
+      'What do you call a bear with no teeth? A gummy bear.',
+      'Why was six afraid of seven? Because seven eight nine.',
+      'I told a chemistry joke. There was no reaction.',
     ];
     return ''+JOKES[Math.floor(Math.random()*JOKES.length)];
   }
@@ -31328,6 +31468,17 @@ document.addEventListener('click',e=>{
       'How does a penguin build its house? Igloos it together.',
       'I tried to catch fog yesterday. Mist.',
       'Why did the scarecrow win an award? Because he was outstanding in his field.',
+      'I used to be a banker, but I lost interest.',
+      'Why don\'t skeletons fight each other? They don\'t have the guts.',
+      'Why did the coffee file a police report? It got mugged.',
+      'Parallel lines have so much in common. It\'s a shame they\'ll never meet.',
+      'Why did the bicycle fall over? It was two-tired.',
+      'I only know 25 letters of the alphabet. I don\'t know y.',
+      'What do you call a fish with no eyes? A fsh.',
+      'What do you call cheese that isn\'t yours? Nacho cheese.',
+      'What do you call a bear with no teeth? A gummy bear.',
+      'Why was six afraid of seven? Because seven eight nine.',
+      'I told a chemistry joke. There was no reaction.',
     ];
     addBotMsg(''+JOKES[Math.floor(Math.random()*JOKES.length)]);
   }
@@ -32932,8 +33083,8 @@ const WordSearch=(()=>{
     Music:{words:['SYMPHONY','SONATA','CONCERTO','CADENCE','MELODY','HARMONY','RHYTHM','TEMPO','OCTAVE','TIMBRE','TREBLE','SOPRANO','BARITONE','VIBRATO','PIZZICATO','STACCATO','LEGATO','ALLEGRO','ADAGIO','FORTISSIMO','CRESCENDO','OVERTURE','PRELUDE','FUGUE','CHORUS','COUNTERPOINT','MODULATION'],size:15},
     Technology:{words:['ALGORITHM','BANDWIDTH','COMPILER','DATABASE','ETHERNET','FIRMWARE','GATEWAY','HARDWARE','INTERFACE','JAVASCRIPT','KERNEL','LATENCY','METADATA','NETWORK','PROTOCOL','RUNTIME','SERVER','SYNTAX','TERMINAL','UNICODE','VARIABLE','WEBHOOK','PROXY','BUFFER','CACHE','BLOCKCHAIN','RECURSION','MIDDLEWARE'],size:15},
     Countries:{words:['BRAZIL','FRANCE','GERMANY','MEXICO','NIGERIA','PAKISTAN','RUSSIA','UKRAINE','VIETNAM','TURKEY','SWEDEN','NORWAY','FINLAND','DENMARK','BELGIUM','AUSTRIA','PORTUGAL','GREECE','HUNGARY','ROMANIA','CROATIA','BULGARIA','SLOVAKIA','ESTONIA','LATVIA','INDONESIA','ARGENTINA','COLOMBIA'],size:15},
-    Space:{words:['NEBULA','PULSAR','QUASAR','COMET','ASTEROID','GALAXY','SUPERNOVA','BLACKHOLE','NEUTRON','COSMOS','ECLIPSE','SOLSTICE','EQUINOX','ORBIT','GRAVITY','PHOTON','PLASMA','CORONA','AURORA','ZENITH','PERIHELION','APHELION','MAGNETAR'],size:15},
-    Psychology:{words:['COGNITION','EMPATHY','ANXIETY','TRAUMA','THERAPY','SYNAPSE','CORTEX','DOPAMINE','SEROTONIN','PHOBIA','NEURON','MEMORY','INSTINCT','EMOTION','BEHAVIOR','PERCEPTION','STIMULUS','RESPONSE','CONDITIONING','CATHARSIS'],size:15},
+    Space:{words:['NEBULA','PULSAR','QUASAR','COMET','ASTEROID','GALAXY','SUPERNOVA','BLACKHOLE','NEUTRON','COSMOS','ECLIPSE','SOLSTICE','EQUINOX','ORBIT','GRAVITY','PHOTON','PLASMA','CORONA','AURORA','ZENITH','PERIHELION','APHELION','MAGNETAR','METEOROID','EXOPLANET','TELESCOPE','SATELLITE','ATMOSPHERE','STARDUST','LIGHTYEAR','ASTRONAUT'],size:15},
+    Psychology:{words:['COGNITION','EMPATHY','ANXIETY','TRAUMA','THERAPY','SYNAPSE','CORTEX','DOPAMINE','SEROTONIN','PHOBIA','NEURON','MEMORY','INSTINCT','EMOTION','BEHAVIOR','PERCEPTION','STIMULUS','RESPONSE','CONDITIONING','CATHARSIS','AMYGDALA','PERSONALITY','MOTIVATION','ATTACHMENT','RESILIENCE','MINDFULNESS','INTROVERT','EXTROVERT'],size:15},
   };
 
   /* ── State ── */
@@ -34209,8 +34360,9 @@ home:()=>{
       }
     }
     renderCd();
-    // Live tick every second (text only — see tickCd)
-    let cdIv=setInterval(()=>{if(!document.contains(cdList)){clearInterval(cdIv);return;}if(document.hidden)return;tickCd();},1000);
+    // Live tick every second (text only — see tickCd); Simple Mode → 5s
+    // (e-ink can't visibly refresh at 1Hz, so the extra wake-ups are wasted).
+    let cdIv=setInterval(()=>{if(!document.contains(cdList)){clearInterval(cdIv);return;}if(document.hidden)return;tickCd();},(typeof _khSimpleMode==='function'&&_khSimpleMode())?5000:1000);
     briefCard.appendChild(cdSection);
   })();
   // Quick news headlines from cache
@@ -34513,7 +34665,7 @@ games:()=>{
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'geometrydash',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('Pixel Hop',null,c=>{
-    c.appendChild(txt('p','A Mario-style platformer — run and jump across gaps, stomp enemies, grab coins, reach the flag.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','A Mario-style platformer with 3 levels — run and jump across gaps, stomp enemies, grab coins, reach the flag.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.platformer&&S.games.platformer.best||0),{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'platformer',style:{marginTop:'6px',width:'100%'}}));
   }));
@@ -41466,7 +41618,20 @@ settings:()=>{
   selectTab('app');
 
   const g=el('div',{className:'grid'});
+  /* Settings search — filter the long list of cards by title/text as you type,
+     so you can jump to one setting without scrolling the whole page. Operates on
+     whatever cards have rendered (the queue below fills them in progressively). */
+  const _setFilterWrap=el('div',{style:{marginBottom:'12px'}});
+  const _setFilterInp=el('input',{type:'text',placeholder:'Search settings…',style:{width:'100%',fontSize:'14px',padding:'9px 11px',boxSizing:'border-box'}});
+  _setFilterWrap.appendChild(_setFilterInp);
+  appPanel.appendChild(_setFilterWrap);
   appPanel.appendChild(g);
+  function _applySetFilter(){
+    var q=(_setFilterInp.value||'').trim().toLowerCase();
+    var cards=g.querySelectorAll('.card');
+    for(var i=0;i<cards.length;i++){var t=(cards[i].textContent||'').toLowerCase();cards[i].style.display=(!q||t.indexOf(q)>=0)?'':'none';}
+  }
+  _setFilterInp.oninput=(typeof khDebounce==='function')?khDebounce(_applySetFilter,150):_applySetFilter;
 
   /* Progressive card queue — batches up to 3 cards per animation
      frame. Earlier behaviour ran one card per frame, which on Kindle
@@ -45530,7 +45695,15 @@ discover:()=>{
       'The Eiffel Tower can grow over 15 cm taller in summer as its metal expands.',
       'A teaspoon of neutron-star material would weigh about 6 billion tonnes.',
       'Sharks have existed longer than trees have.',
-      'Sea otters hold hands while sleeping so they don’t drift apart.'
+      'Sea otters hold hands while sleeping so they don’t drift apart.',
+      'Butterflies taste with their feet.',
+      'The shortest war in recorded history lasted under 40 minutes — Britain vs Zanzibar, in 1896.',
+      'A single fluffy cumulus cloud can weigh over a million pounds despite floating in the sky.',
+      'Cows form close friendships and become stressed when separated from their best friend.',
+      'A group of flamingos is called a flamboyance.',
+      'The inventor of the Pringles can was buried in one, per his own wishes.',
+      'A group of crows is called a murder, and crows can recognise individual human faces.',
+      'Honeybees communicate the direction and distance to food using a waggle dance.'
     ];
     const d=NOW();const seed=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
     const chart=CHARTS[Math.abs(Math.floor(Math.sin(seed*31337)*10000))%CHARTS.length];
@@ -51623,6 +51796,163 @@ tipcalc:()=>{
   recompute();
   return v;
 },
+/* ── Today in History — Wikipedia "on this day" (keyless, CORS-open REST feed,
+   proxy fallback). Events / Births / Deaths, walk the date, cached per day. */
+histday:()=>{
+  const v=el('section',{id:'view-histday',className:'view'});
+  v.appendChild(txt('h2','Today in History',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','What happened on this day through the centuries.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'8px'}}));
+  let d=new Date(typeof NOW==='function'?NOW():Date.now());
+  let kind='events';
+  const KINDS=[['events','Events'],['births','Births'],['deaths','Deaths']];
+  const MONS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const bar=el('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'8px'}});
+  const prev=txt('button','‹ Prev',{className:'btn small'});const dlabel=txt('div','',{style:{flex:'1',textAlign:'center',fontWeight:'800',fontSize:'13px'}});const next=txt('button','Next ›',{className:'btn small'});const today=txt('button','Today',{className:'btn small'});
+  bar.append(prev,dlabel,next,today);v.appendChild(bar);
+  const kindRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  KINDS.forEach(function(k){const b=txt('button',k[1],{className:'btn small'+(kind===k[0]?' primary':'')});b.onclick=function(){kind=k[0];load();};kindRow.appendChild(b);});
+  v.appendChild(kindRow);
+  let _lastItems=[];
+  const aiRow=el('div',{style:{marginBottom:'8px'}});
+  const aiBtn=txt('button','AI: this day in brief',{className:'btn small'});
+  aiBtn.onclick=async function(){
+    if(!_lastItems.length){if(typeof toast==='function')toast('Load a day first.');return;}
+    if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
+    aiBtn.disabled=true;var old=aiBtn.textContent;aiBtn.textContent='Thinking…';
+    try{
+      var lines=_lastItems.slice(0,12).map(function(e){return (e.year||'?')+': '+String(e.text||'').slice(0,160);}).join('\n');
+      var out=await khiCall('In 3-4 warm, engaging sentences, tell the story of what makes '+dlabel.textContent+' a notable day in history. Do not just list — weave a short narrative from these '+kind+'.\n\n'+lines,{temperature:0.6,maxTokens:420});
+      if(out&&typeof kindleAlertGlobal==='function')kindleAlertGlobal(String(out));
+      else if(typeof toast==='function')toast('AI could not respond — try again.');
+    }catch(_e){if(typeof toast==='function')toast('AI error — try again.');}
+    aiBtn.disabled=false;aiBtn.textContent=old;
+  };
+  aiRow.appendChild(aiBtn);v.appendChild(aiRow);
+  const host=el('div',{});v.appendChild(host);
+  function _ck(){return 'kh_histday_'+kind+'_'+(d.getMonth()+1)+'_'+d.getDate();}
+  function paint(items){
+    _lastItems=items||[];
+    host.innerHTML='';
+    if(!items||!items.length){host.appendChild(txt('div','No entries found — check your connection and try again.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));return;}
+    items.slice(0,60).forEach(function(e){
+      const card=el('div',{style:{border:'var(--thin)',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px',background:'var(--card)'}});
+      card.appendChild(txt('div',String(e.year||'?'),{style:{fontWeight:'900',fontSize:'15px',color:'var(--accent)'}}));
+      card.appendChild(txt('div',String(e.text||''),{style:{fontSize:'12px',lineHeight:'1.5',marginTop:'2px'}}));
+      host.appendChild(card);
+    });
+  }
+  async function load(){
+    dlabel.textContent=MONS[d.getMonth()]+' '+d.getDate();
+    Array.prototype.forEach.call(kindRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',KINDS[i][0]===kind);});
+    host.innerHTML='';host.appendChild(txt('div','Loading…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 4px'}}));
+    const mm=('0'+(d.getMonth()+1)).slice(-2),dd=('0'+d.getDate()).slice(-2);
+    const url='https://en.wikipedia.org/api/rest_v1/feed/onthisday/'+kind+'/'+mm+'/'+dd;
+    let data=null;
+    try{const r=await fetch(url);if(r.ok)data=await r.json();}catch(_e){}
+    if(!data){try{const r2=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url));if(r2.ok)data=await r2.json();}catch(_e){}}
+    let items=[];
+    if(data&&Array.isArray(data[kind]))items=data[kind].map(function(e){return {year:e.year,text:e.text};});
+    if(items.length){try{localStorage.setItem(_ck(),JSON.stringify(items.slice(0,60)));}catch(_e){}}
+    else{try{var c=localStorage.getItem(_ck());if(c)items=JSON.parse(c);}catch(_e){}}
+    paint(items);
+  }
+  prev.onclick=function(){d=new Date(d.getTime()-86400000);load();};
+  next.onclick=function(){d=new Date(d.getTime()+86400000);load();};
+  today.onclick=function(){d=new Date(typeof NOW==='function'?NOW():Date.now());load();};
+  load();
+  return v;
+},
+/* ── Life in Weeks — a 90-year x 52-week grid drawn on canvas (one paint, e-ink
+   friendly). Filled = weeks lived. Birth date stored in S.birthDate. Offline. */
+lifeweeks:()=>{
+  const v=el('section',{id:'view-lifeweeks',className:'view'});
+  v.appendChild(txt('h2','Life in Weeks',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Every square is one week of a ~90-year life. A quiet reminder of how far you have come — and how much time is still ahead.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  const YEARS=90,WPY=52;
+  const setRow=el('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'10px',flexWrap:'wrap'}});
+  setRow.appendChild(txt('span','Birth date:',{style:{fontSize:'12px',fontWeight:'700'}}));
+  const dob=el('input',{type:'date',placeholder:'YYYY-MM-DD',style:{fontSize:'13px',padding:'4px 6px'}});
+  if(S.birthDate)dob.value=S.birthDate;
+  const saveB=txt('button','Show',{className:'btn small primary'});
+  setRow.append(dob,saveB);v.appendChild(setRow);
+  const stat=txt('div','',{style:{fontSize:'13px',fontWeight:'800',marginBottom:'8px',lineHeight:'1.5'}});v.appendChild(stat);
+  const cvWrap=el('div',{style:{overflowX:'auto'}});const cv=el('canvas',{style:{display:'block',maxWidth:'100%',border:'var(--thin)',borderRadius:'8px',background:'var(--card)'}});cvWrap.appendChild(cv);v.appendChild(cvWrap);
+  function draw(){
+    const bd=(dob.value||S.birthDate||'').trim();
+    if(!bd){stat.textContent='Enter your birth date above to see your life in weeks.';cv.width=1;cv.height=1;return;}
+    const born=new Date(bd+'T00:00:00');if(isNaN(born.getTime())){stat.textContent='That date did not parse — use YYYY-MM-DD.';return;}
+    const now=(typeof NOW==='function'?NOW():new Date());
+    const lived=Math.max(0,Math.floor((now.getTime()-born.getTime())/(7*86400000)));
+    const total=YEARS*WPY,cell=6,gap=1,pad=8,cols=WPY;
+    const W=pad*2+cols*(cell+gap),H=pad*2+YEARS*(cell+gap);
+    cv.width=W;cv.height=H;
+    const ctx=cv.getContext('2d'),dark=document.body.classList.contains('dark');
+    const bg=dark?'#1a1a1a':'#ffffff',livedC=dark?'#eeeeee':'#222222',future=dark?'#3a3a3a':'#dcdcdc';
+    ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    for(var i=0;i<total;i++){var yr=Math.floor(i/cols),wk=i%cols,x=pad+wk*(cell+gap),y=pad+yr*(cell+gap);ctx.fillStyle=(i<lived)?livedC:future;ctx.fillRect(x,y,cell,cell);}
+    const pct=Math.round(lived/total*1000)/10;
+    stat.textContent='You have lived '+lived.toLocaleString()+' weeks — about '+pct+'% of a 90-year life, with '+(total-lived).toLocaleString()+' weeks ahead.';
+  }
+  saveB.onclick=function(){S.birthDate=(dob.value||'').trim();try{save();}catch(_e){}draw();};
+  draw();
+  return v;
+},
+/* ── Watch Queue — a private list of films/shows/videos to watch (and books to
+   read). Stored in S.watchQueue (synced). Offline. */
+watchq:()=>{
+  const v=el('section',{id:'view-watchq',className:'view'});
+  v.appendChild(txt('h2','Watch Queue',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','A private list of films, shows and videos to watch — and books to read. Tick things off as you go.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  if(!Array.isArray(S.watchQueue))S.watchQueue=[];
+  const addRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'6px'}});
+  const inp=el('input',{type:'text',placeholder:'Add a title…',style:{flex:'1',fontSize:'14px',padding:'8px 10px'}});
+  const typeSel=el('select',{style:{fontSize:'12px'}});['Film','Show','Video','Book','Other'].forEach(function(t){var o=document.createElement('option');o.value=t;o.textContent=t;typeSel.appendChild(o);});
+  const addB=txt('button','Add',{className:'btn small primary'});
+  addRow.append(inp,typeSel,addB);v.appendChild(addRow);
+  const filterRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const FILTS=[['todo','To watch'],['done','Watched'],['all','All']];let filt='todo';
+  FILTS.forEach(function(f){const b=txt('button',f[1],{className:'btn small'+(filt===f[0]?' primary':'')});b.onclick=function(){filt=f[0];render();};filterRow.appendChild(b);});
+  v.appendChild(filterRow);
+  /* KHI: suggest something to watch/read based on what's already on the list. */
+  const sugRow=el('div',{style:{marginBottom:'8px'}});
+  const sugBtn=txt('button','AI: suggest something',{className:'btn small'});
+  sugBtn.onclick=async function(){
+    if(typeof khiCall!=='function'){if(typeof toast==='function')toast('AI is not available.');return;}
+    sugBtn.disabled=true;var old=sugBtn.textContent;sugBtn.textContent='Thinking…';
+    try{
+      var have=(S.watchQueue||[]).slice(0,20).map(function(x){return x.title+' ('+(x.type||'')+')';}).join(', ');
+      var prompt=have?('Based on this watch/read list — '+have+' — suggest 5 more films, shows or books this person would likely enjoy. For each give the title and a one-line reason. Keep it short.'):'Suggest 5 great, widely-loved films, shows or books to watch or read, each with a one-line reason. Keep it short.';
+      var out=await khiCall(prompt,{temperature:0.7,maxTokens:420});
+      if(out&&typeof kindleAlertGlobal==='function')kindleAlertGlobal(String(out));
+      else if(typeof toast==='function')toast('AI could not respond — try again.');
+    }catch(_e){if(typeof toast==='function')toast('AI error — try again.');}
+    sugBtn.disabled=false;sugBtn.textContent=old;
+  };
+  sugRow.appendChild(sugBtn);v.appendChild(sugRow);
+  const list=el('div',{});v.appendChild(list);
+  function render(){
+    Array.prototype.forEach.call(filterRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',FILTS[i][0]===filt);});
+    list.innerHTML='';
+    var items=S.watchQueue.filter(function(x){return filt==='all'||(filt==='done'?x.done:!x.done);});
+    if(!items.length){list.appendChild(txt('div',filt==='done'?'Nothing watched yet.':'Your queue is empty — add something above.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px',fontStyle:'italic'}}));return;}
+    items.forEach(function(it){
+      const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',marginBottom:'8px',background:'var(--card)'}});
+      const cb=el('input',{type:'checkbox',style:{flexShrink:'0'}});cb.checked=!!it.done;cb.onchange=function(){it.done=cb.checked;try{save();}catch(_e){}render();};
+      row.appendChild(cb);
+      const mid=el('div',{style:{flex:'1',minWidth:'0'}});
+      mid.appendChild(txt('div',it.title,{style:{fontWeight:'700',fontSize:'14px',textDecoration:it.done?'line-through':'none',opacity:it.done?'.6':'1',wordBreak:'break-word'}}));
+      mid.appendChild(txt('div',it.type||'',{style:{fontSize:'10px',color:'var(--muted)'}}));
+      row.appendChild(mid);
+      const del=txt('button','Remove',{className:'btn small'});del.onclick=function(){var i=S.watchQueue.indexOf(it);if(i>=0)S.watchQueue.splice(i,1);try{save();}catch(_e){}render();};
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+  function add(){var t=(inp.value||'').trim();if(!t)return;S.watchQueue.unshift({id:'w'+Date.now().toString(36),title:t.slice(0,120),type:typeSel.value,done:false,at:Date.now()});inp.value='';try{save();}catch(_e){}filt='todo';render();}
+  addB.onclick=add;inp.addEventListener('keydown',function(e){if(e.key==='Enter')add();});
+  render();
+  return v;
+},
 appstore:()=>{
   /* The App Store — Discover (install first-party + community apps) and Publish
      (build/paste an app → AI review → it lives in your device/account state). */
@@ -52097,11 +52427,19 @@ appstore:()=>{
     pubBtn.onclick=async function(){
       pubBtn.disabled=true;
       const _editingId=_editApp&&_editApp.id;
+      const _editingSecret=_editApp&&_editApp.secret;
+      const _editingMine=_editApp&&_editApp.mine;
       await _khPublishApp({name:nameInp.value,html:ta.value,cat:_cat,isGame:(_cat==='Games')},
         function(msg){status.textContent=msg;},
         function(res){status.textContent=res&&res.status?('Result: '+res.status+(res.reason?(' — '+res.reason):'')):'';pubBtn.disabled=false;if(res&&res.status==='approved'){
-          /* replace the old version once the new one is approved */
-          if(_editingId&&Array.isArray(S.publishedApps)){S.publishedApps=S.publishedApps.filter(function(x){return x.id!==_editingId;});try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}}
+          /* replace the old version once the new one is approved — also UNSHARE
+             the stale row from the shared store (else editing just published a
+             SECOND copy and left the old, possibly-buggy one live forever). */
+          if(_editingId&&Array.isArray(S.publishedApps)){
+            if(_editingMine&&typeof _khUnshareFromStore==='function'){try{_khUnshareFromStore({id:_editingId,secret:_editingSecret||''});}catch(_){}}
+            try{if(typeof _khStoreHide==='function')_khStoreHide(_editingId);}catch(_){}
+            S.publishedApps=S.publishedApps.filter(function(x){return x.id!==_editingId;});try{save();}catch(_){}try{if(typeof _khSyncAppNavTabs==='function')_khSyncAppNavTabs();}catch(_){}
+          }
           _editApp=null;_tab='mine';draw();
         }});
     };
@@ -52132,7 +52470,7 @@ appstore:()=>{
     mine.forEach(function(a){
       const act=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',justifyContent:'flex-end'}});
       const openB=txt('button','Open',{className:'btn small primary'});openB.onclick=function(){_khOpenPublishedApp(a);};
-      const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun'};_tab='publish';draw();};
+      const editB=txt('button','Edit',{className:'btn small'});editB.onclick=function(){_editApp={id:a.id,name:a.name,html:a.html,cat:a.cat||'Fun',secret:a.secret||'',mine:!!a.mine};_tab='publish';draw();};
       const shareB=txt('button','Share',{className:'btn small'});shareB.onclick=function(){_shareAppCode(a);};
       const delB=txt('button','Delete',{className:'btn small'});
       function _doDelete(){
@@ -55112,7 +55450,7 @@ chords:()=>{
   let selChord='C';
   function render(){
     v.innerHTML='';
-    v.appendChild(txt('h2','Guitar Chords',{style:{fontFamily:'var(--title-font)',fontSize:'15px',marginBottom:'10px'}}));
+    v.appendChild(txt('h2','Fretboard',{style:{fontFamily:'var(--title-font)',fontSize:'18px',marginBottom:'10px'}}));
     // Chord selector
     const btns=el('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap',marginBottom:'12px'}});
     Object.keys(CHORDS).forEach(name=>{
@@ -55124,7 +55462,10 @@ chords:()=>{
     const chordArea=el('div',{id:'chord-area',style:{display:'flex',gap:'16px',alignItems:'flex-start',flexWrap:'wrap'}});
     v.appendChild(chordArea);
     function renderChord(){
-      const area=document.getElementById('chord-area');if(!area)return;
+      /* Use the in-scope chordArea ref, not getElementById — during the initial
+         build the view is still DETACHED, so getElementById('chord-area') was
+         null and the default chord diagram never drew until you tapped a button. */
+      const area=chordArea;if(!area)return;
       area.innerHTML='';
       const chord=CHORDS[selChord];if(!chord)return;
       const cw=160,ch=180;
@@ -58712,9 +59053,15 @@ messages:()=>{
        this list) — the "declined it, reload, it's back" bug. S.leftGroups IS
        union-merged, so re-applying it here on every render reliably strips any
        resurrected/declined request before it's shown. */
-    if(Array.isArray(S.chatRequests)&&Array.isArray(S.leftGroups)&&S.leftGroups.length){
-      const _cbToms=new Set(S.leftGroups);
-      const _cleanedReqs=S.chatRequests.filter(r=>!(r&&_cbToms.has(r.code)));
+    if(Array.isArray(S.chatRequests)&&S.chatRequests.length){
+      const _cbToms=new Set(Array.isArray(S.leftGroups)?S.leftGroups:[]);
+      /* Also strip requests already ACCEPTED (code already a joined group) —
+         msgGroups is union-merged and never loses an accepted group, but a
+         resolved chatRequests entry has no tombstone of its own, so the same
+         stale-pull replay that resurrects a DECLINED request can resurrect an
+         ALREADY-ACCEPTED one too. */
+      const _cbJoined=new Set((Array.isArray(S.msgGroups)?S.msgGroups:[]).map(function(g){return g&&g.code;}).filter(Boolean));
+      const _cleanedReqs=S.chatRequests.filter(r=>!(r&&(_cbToms.has(r.code)||_cbJoined.has(r.code))));
       if(_cleanedReqs.length!==S.chatRequests.length){S.chatRequests=_cleanedReqs;try{save();}catch(_){}}
     }
     const _reqs=Array.isArray(S.chatRequests)?S.chatRequests:[];
@@ -58743,9 +59090,14 @@ messages:()=>{
        S.friendReqTombs (declined earlier, or its friend later removed) — same
        rationale as the chat-request self-heal above; friendReqTombs IS
        union-merged so this reliably catches a stale-cloud-pull resurrection. */
-    if(Array.isArray(S.friendRequests)&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.length){
-      const _frToms=new Set(S.friendReqTombs);
-      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&r.mid&&_frToms.has(r.mid)));
+    if(Array.isArray(S.friendRequests)&&S.friendRequests.length){
+      const _frToms=new Set(Array.isArray(S.friendReqTombs)?S.friendReqTombs:[]);
+      /* Also strip requests already ACCEPTED (hash already in S.friends) — the
+         same stale-cloud-pull replay that resurrects a DECLINED request can
+         resurrect an ALREADY-ACCEPTED one, since accepting never tombstones
+         the request id. */
+      const _frFriends=new Set((Array.isArray(S.friends)?S.friends:[]).map(function(f){return f&&f.hash;}).filter(Boolean));
+      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&((r.mid&&_frToms.has(r.mid))||_frFriends.has(r.hash))));
       if(_cleanedFreq.length!==S.friendRequests.length){S.friendRequests=_cleanedFreq;try{save();}catch(_){}}
     }
     const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
@@ -62530,7 +62882,7 @@ BUILDERS.games=()=>{
 
     {view:'settings',target:'#simpleModeRow',pos:'below',label:'Simple Mode',
      title:'Simple Mode (E-Ink)',
-     body:'Toggle Simple Mode here on any Settings page, or from the KindleOS Control Center. It switches to a high-contrast black-and-white skin: no animations, greyscale app icons and bigger text - faster and far easier to read on e-ink.'},
+     body:'Toggle Simple Mode here on any Settings page, or from the KindleOS Control Center. It is a pure SPEED switch: it strips animations, shadows and other repaint-heavy effects that lag on e-ink, and slows background timers - without changing how the app looks. Your theme and colours stay exactly the same. (Want a different look? Use the Retro UI mode.)'},
 
     {view:'settings',target:'#view-settings .card',pos:'below',label:'Keyboard',
      title:'KindleHub Floating Keyboard',
@@ -63754,7 +64106,7 @@ window._showWelcome=function(){
     /* KindleHub Mail unread dot — one ~60-byte probe at boot and then every
        5 minutes. Deliberately sparse to protect the backend quota. */
     setTimeout(()=>{try{_mailUnreadProbe();}catch(e){}},4000);
-    setInterval(()=>{try{if(!document.hidden)_mailUnreadProbe();}catch(e){}},300000);
+    setInterval(()=>{try{if(!document.hidden)_mailUnreadProbe();}catch(e){}},(typeof _khSimpleMode==='function'&&_khSimpleMode())?600000:300000);
     /* Capacity guard — if the admin has locked new sign-ins, surface the clear
        "back on <date>" notice. Cached state gives an instant decision; the
        refresh then covers first-visit / lifted lockdowns (and removes the
@@ -64576,6 +64928,18 @@ function getPrefix(){
 }
 function updateSugg(){
   if(!_suggBar)return;
+  /* Simple Mode: rebuilding this strip (innerHTML clear + up to 5 new chip
+     buttons) on EVERY keystroke is the biggest avoidable repaint while typing.
+     Paint a static label ONCE, then no-op — zero DOM writes per keystroke. */
+  if(typeof _khSimpleMode==='function'&&_khSimpleMode()){
+    if(_suggBar.getAttribute('data-simple')==='1')return;
+    _suggBar.setAttribute('data-simple','1');
+    _suggBar.innerHTML='';
+    var sph=document.createElement('span');sph.className='kh-sugg-empty';sph.textContent='Suggestions off in Simple Mode';
+    _suggBar.appendChild(sph);
+    return;
+  }
+  _suggBar.removeAttribute('data-simple');
   _suggBar.innerHTML='';
   var prefix=getPrefix();
   var words=_aiSuggs.length?_aiSuggs:suggestFromPrefix(prefix,5);
