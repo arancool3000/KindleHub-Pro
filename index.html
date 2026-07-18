@@ -1354,7 +1354,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="header-left">
       <div class="logo"><svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true" style="flex-shrink:0"><rect width="32" height="32" rx="7" style="fill:currentColor"/><path d="M16 10.5C12 8.5 7.5 8.5 5 10.5L5 22C7.5 20 12 20 16 22Z" style="fill:var(--card,#fff)"/><path d="M16 10.5C20 8.5 24.5 8.5 27 10.5L27 22C24.5 20 20 20 16 22Z" style="fill:var(--card,#fff)"/><rect x="15.2" y="10.8" width="1.6" height="11" rx=".8" style="fill:currentColor"/><path d="M7.6 13.2C10 12.2 13 12.2 14.8 13.1" fill="none" stroke="currentColor" stroke-width=".9" opacity=".4"/><path d="M17.2 13.1C19 12.2 22 12.2 24.4 13.2" fill="none" stroke="currentColor" stroke-width=".9" opacity=".4"/></svg>KindleHub Pro</div>
       <div class="header-sub" id="flightStatusBar" style="display:none;font-family:monospace;font-size:10px;color:var(--muted)"></div>
-      <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.1.0">v8.1.0</div>
+      <div class="header-sub" id="mainHeaderSub" title="Click to verify fresh load — should say v8.2.0">v8.2.0</div>
     </div>
     <div class="header-controls">
       <div class="clock" id="sysClock"></div>
@@ -16232,7 +16232,7 @@ const appNode=$('app');
 const GAME_HELP={
   digquest:{name:'Deep Dig',how:'A dig-and-smash story platformer over SIX chapters. ◄ ► move, JUMP leaps (grab a Spring-cap for a double-jump), DIG smashes the earth you face, DIG▼ digs straight down (keyboard: arrows/WASD, Space, Z). Tunnel for crystals, coins and gate-stones; a drilling-charm breaks solid stone and a ward-shield keeps you safe for a while; STOMP the crawling grubs from above (touch one and it bites). Touch a checkpoint flag and you respawn there. Bank crystals to buy permanent upgrades between runs. Clear each exit, then stomp the Gravecrawler boss three times to free the Heartspring. Toggle E-ink mode for fewer, chunkier frames.'},
   maze:{name:'Maze',how:'Find your way from the top-left corner to the ★ exit in the bottom-right. Move with the on-screen arrows, the keyboard arrow keys, or a swipe. Solve a maze to advance to the next, slightly larger level — see how far you can get and how fast. Best level reached is saved.'},
-  platformer:{name:'Pixel Hop',how:'A Mario-style platformer. Hold ◄ / ► to run and tap Jump to leap (keyboard: arrow keys or Space; tap the screen to jump one-handed). Run and jump across the gaps — falling in a pit costs a life. Land ON TOP of a walking enemy to stomp it; touching one from the side hurts you. Grab the coin rings along the way and reach the flag at the end. You have 3 lives and respawn at the last ledge you stood on. Score = coins + stomps + a bonus for finishing.'},
+  platformer:{name:'Pixel Hop',how:'A Mario-style platformer with THREE levels that get harder. Hold ◄ / ► to run and tap Jump to leap (keyboard: arrow keys or Space; tap the screen to jump one-handed). Run and jump across the gaps — falling in a pit costs a life. Land ON TOP of a walking enemy to stomp it; touching one from the side hurts you. Grab the coin rings and reach the flag to clear a level and move to the next. Your coins and lives carry over; you respawn at the last ledge you stood on. Beat all three to win. Score = coins + stomps + a finishing bonus.'},
   hanoi:{name:'Tower of Hanoi',how:'Move the whole stack of disks from the left peg to the right peg. Tap a peg to lift its top disk, then tap another peg to drop it. You can never place a bigger disk on a smaller one. Fewer moves is better — the minimum is 2ⁿ−1 for n disks. Choose 3 to 7 disks.'},
   blackjack:{name:'Blackjack',how:'Get closer to 21 than the dealer without going over. Hit for another card, Stand to hold. Face cards are 10; an Ace counts as 1 or 11. The dealer draws to 17. A two-card 21 (Blackjack) pays 3:2. Adjust your bet, then Deal — build the biggest chip stack you can.'},
   crazy8:{name:'Crazy Eights',how:'An Uno-style card game — play the computer or a friend online. Empty your hand first. Play a card that matches the discard by COLOUR (shown by the letter R/Y/G/B and the coloured border) or by NUMBER/symbol. Action cards: Skip and Reverse skip the other player, Draw Two makes them draw 2 and miss a turn. Wild lets you pick the colour; Wild Draw Four also makes them draw 4. Can’t play? Tap the deck to Draw, then play it or Pass. From the start menu choose “Play vs Computer” or “Play Online — 2 players”; online, the host runs the game so each player only ever sees their own hand, and there’s a chat panel to talk.'},
@@ -21399,36 +21399,50 @@ const GeometryDash=(()=>{
 const Platformer=(()=>{
   const W=360,H=240,PW=16,PH=22;
   const GRAV=0.7,MOVE=0.7,MAXVX=3.1,FRICT=0.78,JUMP=-9.6,ESPD=0.85;
-  const JBUF=7,COY=6,EW=20,EH=16,GROUND_TOP=212,GOAL=1690,WORLDW=1760;
-  const SPAWN={x:30,y:180};
-  /* Solid platforms/ground {x,y,w,h} (y = TOP). Gaps between ground rects are
-     pits you fall into. Floaters are coin routes / stepping stones. Every gap is
-     <=70px so a full-power jump (reach ~86px) clears it — beatable by design. */
-  const PLATS=[
-    {x:0,y:212,w:360,h:28},{x:430,y:212,w:250,h:28},{x:740,y:212,w:210,h:28},
-    {x:1010,y:212,w:330,h:28},{x:1400,y:212,w:360,h:28},
-    {x:250,y:150,w:80,h:14},{x:560,y:150,w:90,h:14},{x:850,y:158,w:80,h:14},
-    {x:1120,y:146,w:80,h:14},{x:1250,y:170,w:80,h:14}
+  const JBUF=7,COY=6,EW=20,EH=16,GROUND_TOP=212;
+  /* Level-scoped data (reassigned by loadLevel) — Pixel Hop now has THREE stages
+     that get progressively harder. Ground rects {x,y,w,h} (y=TOP); gaps between
+     them are pits. Every gap is <=70px so a full-power jump (reach ~86px) clears
+     it, and each enemy's patrol range sits within one ground rect — so every
+     level is beatable by design. Floaters are coin routes / stepping stones. */
+  let PLATS,COIN_DEF,ENEMY_DEF,GOAL,WORLDW,SPAWN;
+  const LEVELS=[
+    { goal:1690, worldw:1760, spawn:{x:30,y:180},
+      plats:[{x:0,y:212,w:360,h:28},{x:430,y:212,w:250,h:28},{x:740,y:212,w:210,h:28},{x:1010,y:212,w:330,h:28},{x:1400,y:212,w:360,h:28},{x:250,y:150,w:80,h:14},{x:560,y:150,w:90,h:14},{x:850,y:158,w:80,h:14},{x:1120,y:146,w:80,h:14},{x:1250,y:170,w:80,h:14}],
+      coins:[[60,180],[110,180],[160,180],[270,120],[300,120],[470,180],[520,180],[575,120],[610,120],[770,180],[820,180],[870,128],[1040,180],[1090,180],[1150,116],[1275,140],[1440,180],[1500,180],[1560,180],[1620,180]],
+      enemies:[[200,120,340],[500,440,660],[800,750,930],[1120,1015,1320],[1500,1410,1680]] },
+    { goal:1760, worldw:1830, spawn:{x:26,y:180},
+      plats:[{x:0,y:212,w:300,h:28},{x:360,y:212,w:220,h:28},{x:645,y:212,w:200,h:28},{x:905,y:212,w:260,h:28},{x:1233,y:212,w:220,h:28},{x:1513,y:212,w:317,h:28},{x:230,y:150,w:70,h:14},{x:470,y:146,w:70,h:14},{x:700,y:150,w:70,h:14},{x:980,y:150,w:80,h:14},{x:1300,y:150,w:70,h:14},{x:1560,y:150,w:80,h:14}],
+      coins:[[60,180],[120,180],[250,120],[400,180],[490,116],[520,180],[700,120],[720,180],[930,180],[1000,120],[1050,180],[1270,180],[1320,120],[1420,180],[1540,180],[1580,116],[1650,180],[1700,180]],
+      enemies:[[180,60,290],[420,365,575],[720,650,840],[1000,910,1160],[1300,1240,1450],[1600,1520,1825]] },
+    { goal:1810, worldw:1880, spawn:{x:24,y:180},
+      plats:[{x:0,y:212,w:250,h:28},{x:315,y:212,w:170,h:28},{x:552,y:212,w:180,h:28},{x:800,y:212,w:170,h:28},{x:1038,y:212,w:200,h:28},{x:1305,y:212,w:180,h:28},{x:1553,y:212,w:327,h:28},{x:180,y:150,w:64,h:14},{x:400,y:150,w:64,h:14},{x:640,y:146,w:64,h:14},{x:880,y:150,w:64,h:14},{x:1120,y:146,w:64,h:14},{x:1380,y:150,w:64,h:14},{x:1620,y:150,w:70,h:14}],
+      coins:[[50,180],[110,180],[200,120],[350,180],[420,116],[600,180],[660,116],[840,180],[900,116],[1080,180],[1140,116],[1340,180],[1400,116],[1580,180],[1640,116],[1700,180],[1760,180]],
+      enemies:[[150,40,240],[360,325,475],[620,560,725],[860,810,960],[1120,1048,1230],[1380,1315,1478],[1650,1563,1875]] }
   ];
-  const COIN_DEF=[[60,180],[110,180],[160,180],[270,120],[300,120],[470,180],[520,180],
-    [575,120],[610,120],[770,180],[820,180],[870,128],[1040,180],[1090,180],
-    [1150,116],[1275,140],[1440,180],[1500,180],[1560,180],[1620,180]];
-  const ENEMY_DEF=[[200,120,340],[500,440,660],[800,750,930],[1120,1015,1320],[1500,1410,1680]];
+  function loadLevel(idx){var L=LEVELS[Math.max(0,Math.min(LEVELS.length-1,idx))];PLATS=L.plats;COIN_DEF=L.coins;ENEMY_DEF=L.enemies;GOAL=L.goal;WORLDW=L.worldw;SPAWN=L.spawn;}
   let game=null,timer=null,_submitted=false;
 
   function _best(){return (S.games&&S.games.platformer&&S.games.platformer.best)||0;}
   function aabb(px,py,p){return px<p.x+p.w&&px+PW>p.x&&py<p.y+p.h&&py+PH>p.y;}
   function rectHit(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;}
 
+  /* Reset the player + entities to the START of the currently-loaded level.
+     Keeps coins/stomps/lives (so they carry across levels). */
+  function _spawnLevel(g){
+    g.x=SPAWN.x;g.y=SPAWN.y;g.vx=0;g.vy=0;g.onGround=false;g.face=1;g.camX=0;
+    g.jbuf=0;g.coy=0;g.inv=30;g.left=false;g.right=false;
+    g.safe={x:SPAWN.x,y:SPAWN.y};
+    g.coinGot=COIN_DEF.map(function(){return false;});
+    g.enemies=ENEMY_DEF.map(function(e){return {x:e[0],y:GROUND_TOP-EH,x0:e[1],x1:e[2],dir:1,alive:true};});
+  }
   function start(){
     if(timer){clearInterval(timer);timer=null;}
     _submitted=false;
-    game={x:SPAWN.x,y:SPAWN.y,vx:0,vy:0,onGround:false,face:1,camX:0,coins:0,stomps:0,
-      lives:3,jbuf:0,coy:0,inv:0,dead:false,won:false,active:true,left:false,right:false,
-      safe:{x:SPAWN.x,y:SPAWN.y},
-      coinGot:COIN_DEF.map(function(){return false;}),
-      enemies:ENEMY_DEF.map(function(e){return {x:e[0],y:GROUND_TOP-EH,x0:e[1],x1:e[2],dir:1,alive:true};})};
-    enterImmersive('Pixel Hop','0%');
+    loadLevel(0);
+    game={level:0,coins:0,stomps:0,lives:3,dead:false,won:false,active:true};
+    _spawnLevel(game);
+    enterImmersive('Pixel Hop','Level 1');
     immersiveRoot._trackStop=stop;
     buildUI();
     timer=setInterval(function(){if(!document.hidden)tick();},33);
@@ -21555,10 +21569,18 @@ const Platformer=(()=>{
   }
   function win(){
     if(!game||!game.active)return;
+    /* More levels to go? Advance to the next stage keeping coins/stomps/lives. */
+    if(game.level<LEVELS.length-1){
+      game.level++;loadLevel(game.level);_spawnLevel(game);
+      try{var se=$('immersiveScore');if(se)se.textContent='Level '+(game.level+1);}catch(_){}
+      toast('Level '+(game.level+1)+' of '+LEVELS.length+'!');
+      draw();
+      return;
+    }
     game.active=false;game.won=true;
     if(timer){clearInterval(timer);timer=null;}
     saveBest(true);draw();
-    toast('You reached the flag! '+game.coins+' coins');
+    toast('You beat all '+LEVELS.length+' levels! '+game.coins+' coins');
   }
   function saveBest(won){
     if(!S.games.platformer)S.games.platformer={best:0};
@@ -21610,12 +21632,15 @@ const Platformer=(()=>{
     /* progress bar */
     ctx.fillStyle=faint;ctx.fillRect(8,8,W-16,5);
     ctx.fillStyle=ink;ctx.fillRect(8,8,Math.round((W-16)*Math.min(1,g.x/GOAL)),5);
+    /* level + lives + coins HUD */
+    ctx.fillStyle=ink;ctx.textAlign='left';ctx.font='bold 11px sans-serif';
+    ctx.fillText('Lvl '+(g.level+1)+'/'+LEVELS.length+'   Lives '+g.lives+'   Coins '+g.coins,8,26);
     /* banner */
     if(g.dead||g.won){
       ctx.fillStyle=dark?'rgba(0,0,0,.6)':'rgba(255,255,255,.78)';ctx.fillRect(0,H/2-28,W,56);
       ctx.fillStyle=ink;ctx.textAlign='center';ctx.font='bold 18px sans-serif';
-      ctx.fillText(g.won?'LEVEL COMPLETE!':'GAME OVER',W/2,H/2-2);
-      ctx.font='12px sans-serif';ctx.fillText((g.won?'Coins '+g.coins+' · Stomps '+g.stomps:'')+'  Tap to '+(g.won?'play again':'retry'),W/2,H/2+16);
+      ctx.fillText(g.won?'YOU WIN!':'GAME OVER',W/2,H/2-2);
+      ctx.font='12px sans-serif';ctx.fillText((g.won?'All '+LEVELS.length+' levels · '+g.coins+' coins':'')+'  Tap to '+(g.won?'play again':'retry'),W/2,H/2+16);
       ctx.textAlign='left';
     }
   }
@@ -34513,7 +34538,7 @@ games:()=>{
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'geometrydash',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('Pixel Hop',null,c=>{
-    c.appendChild(txt('p','A Mario-style platformer — run and jump across gaps, stomp enemies, grab coins, reach the flag.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','A Mario-style platformer with 3 levels — run and jump across gaps, stomp enemies, grab coins, reach the flag.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.platformer&&S.games.platformer.best||0),{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'platformer',style:{marginTop:'6px',width:'100%'}}));
   }));
