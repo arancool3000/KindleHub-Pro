@@ -6673,8 +6673,11 @@ function kindleAlertGlobal(message,cb){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999999;display:flex;align-items:center;justify-content:center;box-sizing:border-box;';
   const box=document.createElement('div');
-  box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,360px);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-md);';
-  const lbl=document.createElement('div');lbl.textContent=message;lbl.style.cssText='font-size:13px;line-height:1.5;font-family:var(--body-font);color:var(--fg);white-space:pre-wrap;';
+  box.style.cssText='background:var(--card);border:var(--border);border-radius:14px;padding:18px;width:min(92vw,360px);max-height:85vh;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-md);box-sizing:border-box;';
+  /* Long messages (e.g. the Website Editor "Explain this" output) must SCROLL
+     inside the box, not overflow a vertically-centred dialog and get clipped
+     top+bottom off-screen — that was the "explanation is cut off" bug. */
+  const lbl=document.createElement('div');lbl.textContent=message;lbl.style.cssText='font-size:13px;line-height:1.5;font-family:var(--body-font);color:var(--fg);white-space:pre-wrap;overflow-y:auto;flex:1 1 auto;min-height:0;';
   const row=document.createElement('div');row.style.cssText='display:flex;justify-content:flex-end;';
   const okB=document.createElement('button');okB.textContent='OK';okB.className='btn primary';
   const done=()=>{try{document.removeEventListener('keydown',_esc,true);}catch(_){}ov.remove();if(typeof cb==='function')cb();};
@@ -9624,6 +9627,24 @@ const _KH_EDIT_CONTEXT='ABOUT KINDLEHUB (edit with this knowledge):\n'
 /* The site editor ALWAYS generates + repairs code with Gemini 3.5 Flash (works
    on the admin's own key or the shared proxy — 3.5-flash is in both chains). */
 var _KH_EDIT_MODEL='gemini-3.5-flash';
+/* Editor AI with rate-limit AUTO-SWITCH: try the admin's own key (Gemini 3.5
+   Flash) first; if that fails or is rate-limited (khiCall returns null), fall
+   back automatically to the always-on PUBLIC shared key so editing never dead-
+   ends on a Gemini free-tier limit. No key at all → khiCall already uses shared,
+   so the fallback is skipped (it'd be the same path). */
+async function _khEditAI(prompt,opts){
+  opts=opts||{};
+  var hasKey=(typeof S!=='undefined')&&!!(S.geminiKey||S.openrouterKey||S.anthropicKey||S.openaiKey);
+  var out=null;
+  try{ out=await khiCall(prompt,Object.assign({},opts,{model:_KH_EDIT_MODEL})); }catch(_e){ out=null; }
+  if(out)return out;
+  if(hasKey){
+    try{ if(typeof toast==='function')toast('System AI busy — switching to the public AI…',2500); }catch(_e){}
+    try{ out=await khiCall(prompt,Object.assign({},opts,{provider:'shared',model:_KH_EDIT_MODEL})); }catch(_e){ out=null; }
+  }
+  return out;
+}
+window._khEditAI=_khEditAI;
 const _EDIT_TAG='[[KH_EDIT]]';
 let _editState=null;
 function _khGlobalEditGet(){if(_editState)return _editState;try{var r=localStorage.getItem('kh_gedit');if(r)_editState=JSON.parse(r);}catch(_){}return _editState||null;}
@@ -9895,7 +9916,7 @@ async function _khPolishSiteEditJs(js,onProgress,maxPasses){
     var sys='You are fixing JavaScript so it runs on an OLD Kindle Silk WebKit browser. Detected problems: '+issues+'. Rewrite to FIX EXACTLY these and change NOTHING else — keep identical behaviour. Rules: replace optional chaining with an explicit and-guard such as (a && a.b); replace nullish coalescing with a not-null ternary such as (a != null ? a : b); expand every logical-assignment operator to its long form; give every catch block an error parameter, for example catch(e); write all numbers without digit-separator underscores; use no ES2020-or-newer operator; fix any syntax error; never touch login, auth, or encryption. Return ONLY the raw corrected JavaScript — no markdown, no commentary.';
     var out=null;
     /* Site-editor code is always generated/repaired by Gemini 3.5 Flash. */
-    try{ out=await khiCall(sys+'\n\nCODE:\n'+cur,{temperature:0,maxTokens:1600,model:_KH_EDIT_MODEL}); }catch(_){ out=null; }
+    try{ out=await _khEditAI(sys+'\n\nCODE:\n'+cur,{temperature:0,maxTokens:1600}); }catch(_){ out=null; }
     if(!out){ if(onProgress)onProgress('Pass '+pass+' — AI unavailable, retrying…'); await new Promise(function(r){setTimeout(r,1200*pass);}); continue; }
     var cand=_khSiteAutofix(String(out).replace(/```[a-z]*\n?|```/g,'').trim());
     var cv=_khVerifySiteEdit({js:cand});
@@ -10109,7 +10130,7 @@ async function _khOpenSiteEditor(){
       _threadReset();_threadAdd('you','Fix this live error: '+String(top.msg||etext).slice(0,120));
       statusEl.textContent='Drafting a guard for the top error…';_pushUndo();
       var sysF='Write a SMALL, SELF-CONTAINED JavaScript patch that safely GUARDS against this runtime error on a KindleHub client. OLD Kindle Silk WebKit ES5/ES2015 ONLY: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch an error parameter. Wrap everything in try/catch. NEVER touch login, auth, encryption, credentials, or the network. Prefer defensively wrapping the failing function (typeof checks, guards). Output ONLY the raw JavaScript.';
-      var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysF+'\n\nERROR:\n'+etext,{temperature:0.2,maxTokens:1200,model:_KH_EDIT_MODEL});
+      var out=await _khEditAI(_KH_EDIT_CONTEXT+'\n\n'+sysF+'\n\nERROR:\n'+etext,{temperature:0.2,maxTokens:1200});
       var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       if(clean){statusEl.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){statusEl.textContent=t;});store.js=rr.js;box.value=rr.js;_threadAdd('ai','drafted a JS guard ('+store.js.length+' chars) — review, Test, then Publish.');statusEl.textContent='Drafted a guard — review it below, then Publish.';_verify();_updLineInfo();}
       else statusEl.textContent='AI returned nothing — try again.';
@@ -10126,7 +10147,7 @@ async function _khOpenSiteEditor(){
     explainBtn.disabled=true;statusEl.textContent='Explaining…';
     try{
       var pr='In 2-4 short plain-English sentences, explain what this '+(mode==='css'?'CSS':mode==='banner'?'banner text':'JavaScript')+' does to a Kindle web app, and flag anything risky. Be concise. '+(mode==='css'?'CSS':mode==='banner'?'TEXT':'CODE')+':\n'+c;
-      var out=await khiCall(pr,{temperature:0.2,maxTokens:300,model:_KH_EDIT_MODEL});
+      var out=await _khEditAI(pr,{temperature:0.2,maxTokens:300});
       statusEl.textContent='';
       if(typeof kindleAlertGlobal==='function')kindleAlertGlobal(String(out||'(no explanation)'));
     }catch(e){statusEl.textContent='';if(typeof toast==='function')toast('AI error: '+((e&&e.message)||e));}
@@ -10139,7 +10160,7 @@ async function _khOpenSiteEditor(){
     refineBtn.disabled=true;aiStatus.textContent='Refining…';_pushUndo();_threadAdd('you',instr);
     try{
       var sysR=(mode==='css'?'You edit CSS':mode==='banner'?'You edit a short banner text':'You edit JavaScript')+' for an OLD Kindle Silk WebKit web app. Apply the requested change to the CURRENT '+(mode==='banner'?'text':'code')+' and return ONLY the full updated '+(mode==='banner'?'text':(mode==='css'?'CSS':'JavaScript'))+' — no markdown, no explanation.'+(mode==='js'?' ES5/ES2015 only: no optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter.':'');
-      var out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sysR+'\n\nCHANGE: '+instr+'\n\nCURRENT:\n'+cur,{temperature:0.2,maxTokens:1600,model:_KH_EDIT_MODEL});
+      var out=await _khEditAI(_KH_EDIT_CONTEXT+'\n\n'+sysR+'\n\nCHANGE: '+instr+'\n\nCURRENT:\n'+cur,{temperature:0.2,maxTokens:1600});
       var clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       if(clean){store[mode]=clean;box.value=clean;if(mode==='js'){aiStatus.textContent='Checking Kindle safety…';var rr=await _khPolishSiteEditJs(clean,function(t){aiStatus.textContent=t;});store.js=rr.js;box.value=rr.js;}refineIn.value='';aiStatus.textContent='Updated — review it.';_threadAdd('ai','updated the '+mode+' ('+(store[mode]||'').length+' chars)');_verify();_updLineInfo();}
       else {aiStatus.textContent='No change returned.';_threadAdd('ai','(no change returned — try rephrasing)');}
@@ -10217,7 +10238,7 @@ async function _khOpenSiteEditor(){
       else if(mode==='banner')sys='You write a SHORT (max ~120 chars) plain-text site-wide banner notice. Output ONLY the text, no quotes, no markdown.';
       else sys='You write a SINGLE block of raw JavaScript (no <script> tag, no markdown, no explanation) that runs once on every client of a Kindle e-reader web app with full page access. OLD Kindle Silk WebKit ES5/ES2015 ONLY: NO optional chaining, nullish coalescing, logical-assignment, numeric separators; give every catch a parameter (catch(e)). Never touch login/auth/encryption. Keep it small and wrap risky parts in try/catch. Output ONLY JavaScript.';
       _pushUndo();
-      let out=await khiCall(_KH_EDIT_CONTEXT+'\n\n'+sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400,model:_KH_EDIT_MODEL});
+      let out=await _khEditAI(_KH_EDIT_CONTEXT+'\n\n'+sys+'\n\nRequest: '+d,{temperature:0.2,maxTokens:1400});
       let clean=String(out||'').replace(/```[a-z]*\n?|```/g,'').trim();
       store[mode]=clean;box.value=clean;
       /* Auto-polish drafted JS immediately so the admin starts from safe code. */
@@ -10800,7 +10821,7 @@ async function _openAnnouncementComments(a,card){
           refreshList();
           try{if(card)_renderAnnouncementWidget(card);}catch(_){}/* refresh the (N) counter */
         } else {
-          toast('Comments aren\'t enabled on this server yet — the admin needs the latest (Cloudflare) backend.',6500);
+          toast('Couldn\'t post your comment right now — please try again later.',5000);
         }
       }catch(e){ toast('Comment failed — try again in a moment.',5000); }
       post.disabled=false;post.textContent='Post comment';
@@ -14074,7 +14095,7 @@ async function _groupToggleReaction(code,msgId,key){
   save();
   if(!window._reactedLocalToastShown){
     window._reactedLocalToastShown=true;
-    toast('Reaction saved on this device only. Server-side reactions need the kh_set_reaction function — run the schema SQL on your backend, then run "notify pgrst, \'reload schema\';" once to fix.',7000);
+    toast('Reaction saved on this device.',3000);
   }
 }
 
@@ -41585,12 +41606,19 @@ settings:()=>{
   /* ── Admin-pushed scripts opt-out ── */
   const cGjs=el('div',{className:'card'});
   cGjs.appendChild(txt('h2','Admin Updates'));
-  cGjs.appendChild(txt('p','KindleHub lets the site owner push live appearance and feature updates to everyone. Appearance/banner updates always apply; you can block the optional advanced ones that run scripts.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
-  const _gjsRow=el('label',{style:{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',fontSize:'13px'}});
-  const _gjsChk=el('input',{type:'checkbox'});_gjsChk.checked=!!S.blockGlobalJs;
-  _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
-  _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device'));
+  cGjs.appendChild(txt('p','KindleHub lets the site owner push live appearance and feature updates to everyone. Appearance and banner updates always apply; you can block the optional advanced ones that run scripts.',{style:{fontSize:'12px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  /* Live status so it's obvious updates are ON by default (block OFF). */
+  const _gjsStatus=txt('div','',{style:{fontSize:'12px',fontWeight:'800',marginBottom:'8px'}});
+  function _syncGjsStatus(){var on=!S.blockGlobalJs;_gjsStatus.textContent=on?'Live updates: ON (this device receives updates)':'Live updates: scripts BLOCKED on this device';_gjsStatus.style.color=on?'var(--success)':'var(--danger)';}
+  cGjs.appendChild(_gjsStatus);
+  /* flex row: checkbox stays put, the label wraps cleanly to fill the column
+     (was squished one word per line in the narrow two-column settings grid). */
+  const _gjsRow=el('label',{style:{display:'flex',alignItems:'flex-start',gap:'8px',cursor:'pointer',fontSize:'13px'}});
+  const _gjsChk=el('input',{type:'checkbox',style:{flexShrink:'0',marginTop:'2px'}});_gjsChk.checked=!!S.blockGlobalJs;
+  _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();_syncGjsStatus();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
+  _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device',{style:{flex:'1',minWidth:'0',lineHeight:'1.4'}}));
   cGjs.appendChild(_gjsRow);
+  _syncGjsStatus();
   g.appendChild(cGjs);
   });
   _defer(()=>{
@@ -44122,7 +44150,7 @@ feedback:()=>{
         if(it){if(!Array.isArray(it.comments))it.comments=[];it.comments.push(res.comment);if(it.comments.length>60)it.comments=it.comments.slice(-60);}
         return true;
       }
-      toast('Commenting needs the latest (Cloudflare) backend.',6000);
+      toast('Couldn\'t post your comment right now — please try again later.',5000);
       return false;
     }catch(e){ toast('Comment failed — try again in a moment.',5000); return false; }
   }
@@ -44400,7 +44428,17 @@ feedback:()=>{
       /* Atomic server-side delta (kh_vote_feedback) — no read-modify-write, so a
          concurrent vote can't clobber this one; the delta is clamped server-side. */
       var res=(typeof _khRpcCall==='function')?await _khRpcCall('kh_vote_feedback',{p_id:id,p_delta:delta}):null;
-      if(!(res&&res.ok)){setStatus('Voting needs the latest (Cloudflare) backend.',true);return;}
+      if(!(res&&res.ok)){
+        /* Older backend without the atomic vote RPC: fall back to a direct
+           update so voting still works everywhere. The current backend uses the
+           clamped RPC, so this path never runs there. */
+        try{
+          var _cur0=(items||[]).filter(function(i){return i&&i.id===id;})[0];
+          var _nv=Math.max(0,((_cur0&&_cur0.votes)||0)+delta);
+          if(typeof _sbUpdate==='function'){var _u=await _sbUpdate('kh_feedback','id=eq.'+encodeURIComponent(id),{votes:_nv});if(Array.isArray(_u)?_u.length>0:!!_u)res={ok:true,votes:_nv};}
+        }catch(_e){}
+        if(!(res&&res.ok)){setStatus('Couldn\'t save your vote right now — please try again in a moment.',true);return;}
+      }
       setVoteState(id,next);
       const existing=await fbRead(activeType);
       const item=existing.find(i=>i.id===id);
