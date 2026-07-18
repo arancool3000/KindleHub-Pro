@@ -16264,7 +16264,8 @@ const GAME_HELP={
   geometrydash:{name:'Geometry Dash',how:'A one-button rhythm runner. Your cube auto-runs to the right — TAP the screen (or press Space / ▲) to jump. Clear the spikes, land on and ride the blocks, and reach 100% to beat the level "Stereo Madness". Crash into a spike or the side of a block and you restart from the beginning — tap to retry instantly. It\'s all about timing your jumps; learn the layout and beat your best percentage.'},
   crossyroad:{name:'Crossy Road',how:'Hop your chicken UP across endless lanes of grass and traffic. TAP the middle of the board (or ↑) to hop forward, tap the left/right thirds (or ←/→) to dodge sideways. Wait on the grass and time the gaps — every road always has a hole to slip through. Trees block a cell, so route around them. There\'s no timer chasing you; go as far as you can. Your score is how many rows (metres) you cross — beat your best distance.'},
   anagrams:{name:'Anagrams',how:'Unscramble the jumbled letters into the word that fits the clue. Tap a letter tile to add it to your answer, tap a tile in the answer row to send it back. Press Check when you think you have it. Shuffle re-jumbles the spare letters; Skip reveals the word and moves on. Solve as many as you can — beat your best streak.'},
-  set:{name:'Set',how:'Find a "Set": 3 cards where EACH of the four features — count (1/2/3), colour (R/G/P), shape (diamond/oval/triangle) and shading (solid/light/outline) — is either ALL THE SAME or ALL DIFFERENT across the three cards. Tap 3 cards to claim: right = +1, wrong = -1. There is always at least one set on the table. First to 6 (or most when the deck runs out) wins. Colours also carry a letter (R/G/P) so it works on a black-and-white Kindle. Modes: vs AI, 2 Players (tap P1/P2 to buzz in), or Play Online.'},
+  set:{name:'Set',how:'Find a "Set": 3 cards where EACH of the four features — count (1/2/3), colour (R/G/P), shape (diamond/oval/triangle) and shading (solid/light/outline) — is either ALL THE SAME or ALL DIFFERENT across the three cards. Tap 3 cards to claim: right = +1, wrong = -1. There is always at least one set on the table. First to 6 (or most when the deck runs out) wins. Colours also carry a letter (R/G/P) so it works on a black-and-white Kindle. Modes: Practice (solo, relaxed, no penalty, with a Hint button), vs AI, 2 Players (tap P1/P2 to buzz in), or Play Online.'},
+  arena:{name:'Arena Clash',how:'A top-down brawl against three bots. TAP anywhere in the arena to send your fighter there — it AUTO-FIRES at the nearest enemy, so you only steer (one-handed, no aiming). Use the grey blocks as cover and grab the green health packs. Knock out an enemy for a KO; first to 5 KOs wins, or the most KOs when the 2-minute timer runs out. Knocked-out fighters respawn after a moment.'},
   farm:{name:'Farm',how:'A cosy turn-based farming sim. Pick a seed from the shop (Wheat is cheapest), tap an empty plot to plant it (costs coins), then tap "Next day" to grow every crop one day. When a crop is READY, tap it to harvest and sell it for coins — then buy pricier seeds (carrots, berries, pumpkins) that sell for more. Grow your coin pile as high as you can. Your farm saves automatically, so you can come back any time; "New farm" starts over.'},
   nonogram:{name:'Nonograms',how:'A picture-logic puzzle (also called Picross). The numbers beside each row and above each column tell you the runs of filled cells in that line, in order — e.g. "2 1" means a run of two, a gap, then a run of one. Use Fill mode to fill cells and Mark mode to cross out cells you know are blank. Complete the hidden picture. Solve as many puzzles as you can.'},
   eightball:{name:'8-Ball',how:'A top-down pool table with three modes — 1 Player (practice: clear the table in as few shots as you can), 2 Players (pass-and-play on one device, taking turns) and Play Online (Ultra — match a friend on another device). Aim by dragging BACK from the white cue ball (like a slingshot) — the dotted line shows where it will go — then release to shoot; the further you drag, the harder the hit. In 2-player/online, sink a ball to shoot again; miss or scratch and it passes to your opponent. Pot your balls, then the black 8-ball LAST to win — sinking the 8 early (or with a scratch) loses.'},
@@ -16359,7 +16360,7 @@ function exitImmersive(){
      another live loop, so the site got slower and Silk eventually crashed.
      stop() is a no-op for games that aren't running (each guards its own
      handle), so calling them all is safe. */
-  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,SetGame,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
+  try{[Hangman,Memory,TTT,Connect4,Wordle,Minesweeper,Sudoku,Snake,Slither,GeometryDash,Platformer,Maze,CrossyRoad,Anagrams,Nonogram,EightBall,Trivia,G2048,Tetris,SpaceInvaders,FlightSim,Solitaire,TowerDef,Chess,Checkers,Battleship,LightsOut,SnakesLadders,WordSearch,SetGame,Arena,window.CandyCrush,Mastermind,DotsBoxes,BlockBlast,DigQuest,Hanoi,Blackjack,CrazyEights].forEach(function(g){try{if(g&&g.stop)g.stop();}catch(e){}});}catch(e){}
 
   /* Hide immersive overlay */
   immersiveRoot.style.display='none';
@@ -17353,6 +17354,7 @@ function _doLaunch(g){
     case 'trivia': Trivia.start();break;
     case 'farm': Farm.start();break;
     case 'set': SetGame.start();break;
+    case 'arena': Arena.start();break;
     case 'g2048':      G2048.start();break;
     case 'tetris':     Tetris.start();break;
     case 'spaceinv':   _initSpaceInvaders();   SpaceInvaders.start();break;
@@ -22785,6 +22787,7 @@ const SetGame=(()=>{
     var box=el('div',{style:{maxWidth:'340px',margin:'14px auto'}});
     box.appendChild(txt('h2','Set',{style:{textAlign:'center',margin:'0 0 4px'}}));
     box.appendChild(txt('p','Find a Set of 3 cards where each feature — count, colour, shape and shading — is either ALL SAME or ALL DIFFERENT across the three. Tap 3 cards to claim it.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 12px',lineHeight:'1.5',textAlign:'center'}}));
+    box.appendChild(mk('Practice (solo)','Just you — find as many sets as you can. No timer, no opponent, no penalty for a miss.',function(){begin('practice');}));
     box.appendChild(mk('vs AI','Race a computer — choose Easy, Medium or Hard.',function(){showAiMenu();}));
     box.appendChild(mk('2 Players','On this device — buzz in, then you have 7s to claim.',function(){begin('local2');}));
     box.appendChild(mk('Play Online (Ultra)','Race a friend on another device — shared board.',function(){
@@ -22846,7 +22849,12 @@ const SetGame=(()=>{
     if(game.mode==='online'){var ids=[b[s[0]].id,b[s[1]].id,b[s[2]].id];if(game.isHost)hostClaim(ids,0);else netSend({t:'CL',ids:ids,by:game.myIndex});game.sel=[];render();return;}
     var who=(game.mode==='local2')?game.claimer:0;
     stopBuzz();game.buzzDeadline=0;
-    if(isSet(b[s[0]],b[s[1]],b[s[2]])){var si=s.slice().sort(function(a,c){return c-a;});si.forEach(function(i){b.splice(i,1);});replenish();game.scores[who]++;game.msg=(game.mode==='ai')?'Set! +1':((who===0?'Player 1':'Player 2')+' got it! +1');}
+    if(isSet(b[s[0]],b[s[1]],b[s[2]])){var si=s.slice().sort(function(a,c){return c-a;});si.forEach(function(i){b.splice(i,1);});replenish();game.scores[who]++;game.msg=(game.mode==='ai'||game.mode==='practice')?'Set! +1':((who===0?'Player 1':'Player 2')+' got it! +1');}
+    else if(game.mode==='practice'){
+      /* Practice is relaxed — no penalty, just try again. */
+      game.msg='Not a set — try again';game.lockUntil=Date.now()+500;
+      setTimeout(function(){if(game&&!game.over&&game.msg==='Not a set — try again'){game.msg='';render();}},700);
+    }
     else{
       game.scores[who]=Math.max(0,game.scores[who]-1);game.msg='Not a set — -1';
       /* fair play: a brief lock after a wrong claim so you can't brute-force by
@@ -22859,7 +22867,7 @@ const SetGame=(()=>{
   function endCheck(){
     var ended=false;
     if(_noMore())ended=true;
-    if(Math.max(game.scores[0],game.scores[1])>=TARGET)ended=true;
+    if(game.mode!=='practice'&&Math.max(game.scores[0],game.scores[1])>=TARGET)ended=true;
     if(ended){game.over=true;stopAi();game.winner=(game.scores[0]===game.scores[1])?-1:(game.scores[0]>game.scores[1]?0:1);
       var mine=game.scores[0]||0;if(mine>_best()){if(!S.games)S.games={};if(!S.games.set)S.games.set={};S.games.set.best=mine;try{save();}catch(_){}}
       if(typeof _khSubmitScore==='function'){try{_khSubmitScore('set',mine);}catch(_){}}}
@@ -22906,6 +22914,7 @@ const SetGame=(()=>{
     var hud=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',flexWrap:'wrap'}});
     if(game.mode==='ai')hud.appendChild(txt('div','You '+game.scores[0]+' — '+game.scores[1]+' AI ('+((DIFF[game.diff]||DIFF.medium).name)+')',{style:{fontWeight:'800',fontSize:'14px'}}));
     else if(game.mode==='local2')hud.appendChild(txt('div','P1 '+game.scores[0]+' — '+game.scores[1]+' P2',{style:{fontWeight:'800',fontSize:'14px'}}));
+    else if(game.mode==='practice')hud.appendChild(txt('div','Sets found: '+game.scores[0]+(_best()?('  ·  best '+_best()):''),{style:{fontWeight:'800',fontSize:'14px'}}));
     else hud.appendChild(txt('div','You '+game.scores[game.myIndex]+' — '+game.scores[1-game.myIndex]+' '+game.oppName,{style:{fontWeight:'800',fontSize:'13px'}}));
     hud.appendChild(txt('div','Deck '+((game.mode==='online'&&!game.isHost)?(game._dl||0):game.deck.length),{style:{fontSize:'11px',color:'var(--muted)',marginLeft:'auto'}}));
     wrap.appendChild(hud);
@@ -22913,6 +22922,13 @@ const SetGame=(()=>{
       var buzz=el('div',{style:{display:'flex',gap:'8px',marginBottom:'6px'}});
       [['P1',0],['P2',1]].forEach(function(pr){var bb=txt('button','Buzz '+pr[0],{className:'btn small'+(game.claimer===pr[1]?' primary':''),style:{flex:'1'}});bb.onclick=function(){if(game.claimer==null)startBuzz(pr[1],pr[0]);};buzz.appendChild(bb);});
       wrap.appendChild(buzz);
+    }
+    if(game.mode==='practice'&&!game.over){
+      var hintRow=el('div',{style:{display:'flex',gap:'8px',marginBottom:'6px'}});
+      var hb=txt('button','Hint',{className:'btn small',style:{flex:'1'}});
+      hb.onclick=function(){var f=findSet(game.board);if(f){game.sel=[f[0]];game.msg='Hint: one card of a set is now selected.';render();}else{game.msg='No set here — dealing more cards…';replenish();render();}};
+      hintRow.appendChild(hb);
+      wrap.appendChild(hintRow);
     }
     if(game.msg)wrap.appendChild(txt('div',game.msg,{style:{fontSize:'12px',color:'var(--muted)',minHeight:'16px',marginBottom:'4px'}}));
     var grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}});
@@ -22925,13 +22941,140 @@ const SetGame=(()=>{
       grid.appendChild(cell);
     });
     wrap.appendChild(grid);
-    if(game.over){var res=(game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!')));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
+    if(game.over){var res=(game.mode==='practice')?('No more sets — you found '+game.scores[0]+'!'):((game.winner===-1)?'Tie game!':((game.mode==='ai')?(game.winner===0?'You win!':'AI wins!'):((game.mode==='local2')?('Player '+(game.winner+1)+' wins!'):(game.winner===game.myIndex?'You win!':game.oppName+' wins!'))));wrap.appendChild(txt('div',res,{style:{textAlign:'center',fontWeight:'900',fontSize:'18px',margin:'12px 0 6px'}}));}
     var ctr=el('div',{style:{display:'flex',gap:'8px',marginTop:'10px',justifyContent:'center'}});
     var ng=txt('button',game.over?'Play again':'New game',{className:'btn'+(game.over?' primary':' small')});ng.onclick=function(){stopAi();stopBuzz();stopNet();showMenu();};ctr.appendChild(ng);/* clear pending AI/buzz timers first — else a stale timer fires on the menu and replaces it with a self-playing board */
     wrap.appendChild(ctr);
     immersiveContent.appendChild(wrap);
   }
   return {start:start,stop:stop,isSet:isSet,findSet:findSet,decode:decode};
+})();
+
+/* ── Arena Clash ── a simple top-down arena brawler vs bots. You + 3 fighters
+   in a walled arena; TAP where you want to move (your fighter walks there) and
+   it AUTO-FIRES at the nearest enemy (one-handed, no aiming — e-ink friendly).
+   Knock out enemies to score KOs; first to the target (or most when time runs
+   out) wins. Deliberately its own thing — flat fills, ~20fps, cover blocks and
+   health packs. Not a clone of any specific game. */
+const Arena=(()=>{
+  const W=300,H=300,PR=11,SPD=2.0,BSPD=1.6,PROJ=4.2,FIRE_MS=560,BFIRE_MS=900,HP0=100,DMG=20,RANGE=170,WIN_KO=5,ROUND_S=120,TICK=50;
+  const OBST=[[128,60,44,26],[60,150,30,40],[210,150,30,40],[128,214,44,26]];
+  const FIGHTERS=[{c:'#1f6feb',l:'You',bot:false},{c:'#d1361a',l:'A',bot:true},{c:'#178a17',l:'B',bot:true},{c:'#7a2fb0',l:'C',bot:true}];
+  let game=null,timer=null,cv=null,ctx=null;
+  function _best(){return (S.games&&S.games.arena&&S.games.arena.best)||0;}
+  /* NOW() returns a DATE, so use .getTime() for millisecond arithmetic (Date +
+     number would string-concatenate and give NaN in the timer). */
+  function _now(){return (typeof NOW==='function'?NOW().getTime():Date.now());}
+  function inObst(x,y,pad){pad=pad||0;for(var i=0;i<OBST.length;i++){var o=OBST[i];if(x>o[0]-pad&&x<o[0]+o[2]+pad&&y>o[1]-pad&&y<o[1]+o[3]+pad)return true;}return false;}
+  function openSpot(){var x,y,g=0;do{x=20+Math.random()*(W-40);y=20+Math.random()*(H-40);g++;}while(inObst(x,y,PR+4)&&g<40);return {x:x,y:y};}
+  function mkFighter(i){var s=openSpot();return {i:i,x:s.x,y:s.y,tx:s.x,ty:s.y,hp:HP0,alive:true,resp:0,ko:0,fire:0,retgt:0,c:FIGHTERS[i].c,l:FIGHTERS[i].l,bot:FIGHTERS[i].bot};}
+  function dist(a,b){var dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
+  function nearestEnemy(f){var best=null,bd=1e9;for(var i=0;i<game.F.length;i++){var g=game.F[i];if(g===f||!g.alive)continue;var d=dist(f,g);if(d<bd){bd=d;best=g;}}return best;}
+  function start(){if(timer){clearInterval(timer);timer=null;}enterImmersive('Arena Clash','');var ir=document.getElementById('immersiveRoot');if(ir)ir._trackStop=stop;showMenu();}
+  function showMenu(){
+    immersiveContent.innerHTML='';
+    var box=el('div',{style:{maxWidth:'340px',margin:'14px auto',textAlign:'center'}});
+    box.appendChild(txt('h2','Arena Clash',{style:{margin:'0 0 4px'}}));
+    box.appendChild(txt('p','TAP the arena to move your fighter — it auto-fires at the nearest enemy. Knock out '+WIN_KO+' to win (or have the most KOs when the timer runs out). Grab the green health packs.',{style:{fontSize:'12px',color:'var(--muted)',margin:'0 0 12px',lineHeight:'1.5'}}));
+    var pb=txt('button','Start match',{className:'btn primary'});pb.onclick=function(){begin();};box.appendChild(pb);
+    box.appendChild(txt('div','Best KOs: '+_best(),{style:{fontSize:'11px',color:'var(--muted)',marginTop:'10px'}}));
+    immersiveContent.appendChild(box);
+  }
+  function begin(){
+    if(timer){clearInterval(timer);timer=null;}
+    game={F:[mkFighter(0),mkFighter(1),mkFighter(2),mkFighter(3)],proj:[],packs:[],over:false,winner:-1,end:_now()+ROUND_S*1000,nextPack:_now()+6000};
+    immersiveContent.innerHTML='';
+    var wrap=el('div',{style:{maxWidth:'340px',margin:'0 auto',padding:'4px'}});
+    var hud=el('div',{id:'arHud',style:{display:'flex',justifyContent:'space-between',fontWeight:'800',fontSize:'13px',marginBottom:'4px'}});
+    wrap.appendChild(hud);
+    cv=el('canvas',{width:W,height:H,style:{width:'100%',maxWidth:'340px',border:'var(--thin)',borderRadius:'10px',display:'block',background:'#e9e9ee',touchAction:'none'}});
+    wrap.appendChild(cv);
+    ctx=cv.getContext('2d');
+    var msg=el('div',{id:'arMsg',style:{textAlign:'center',fontWeight:'900',fontSize:'16px',minHeight:'20px',margin:'6px 0'}});
+    wrap.appendChild(msg);
+    var ctr=el('div',{style:{display:'flex',gap:'8px',justifyContent:'center'}});
+    var ng=txt('button','New match',{className:'btn small'});ng.onclick=function(){begin();};ctr.appendChild(ng);
+    wrap.appendChild(ctr);
+    immersiveContent.appendChild(wrap);
+    function moveTo(ev){
+      if(!game||game.over)return;var me=game.F[0];if(!me.alive)return;
+      var r=cv.getBoundingClientRect();var t=(ev.touches&&ev.touches[0])||ev;
+      var x=(t.clientX-r.left)*(W/r.width),y=(t.clientY-r.top)*(H/r.height);
+      me.tx=Math.max(PR,Math.min(W-PR,x));me.ty=Math.max(PR,Math.min(H-PR,y));
+    }
+    cv.onclick=moveTo;cv.addEventListener('touchstart',function(e){e.preventDefault();moveTo(e);},{passive:false});
+    timer=setInterval(tick,TICK);
+    draw();
+  }
+  function stepFighter(f){
+    if(!f.alive)return;
+    var dx=f.tx-f.x,dy=f.ty-f.y,d=Math.sqrt(dx*dx+dy*dy),sp=f.bot?BSPD:SPD;
+    if(d>1){var nx=f.x+dx/d*Math.min(sp,d),ny=f.y+dy/d*Math.min(sp,d);if(!inObst(nx,ny,PR)){f.x=nx;f.y=ny;}else if(!inObst(nx,f.y,PR)){f.x=nx;}else if(!inObst(f.x,ny,PR)){f.y=ny;}else{f.tx=f.x;f.ty=f.y;}}
+    f.x=Math.max(PR,Math.min(W-PR,f.x));f.y=Math.max(PR,Math.min(H-PR,f.y));
+  }
+  function botThink(f,now){
+    if(now<f.retgt)return;
+    f.retgt=now+700+Math.random()*700;
+    var e=nearestEnemy(f);if(!e)return;
+    var ang=Math.atan2(e.y-f.y,e.x-f.x)+(Math.random()-0.5)*1.1;var want=70+Math.random()*40;
+    f.tx=Math.max(PR,Math.min(W-PR,e.x-Math.cos(ang)*want));
+    f.ty=Math.max(PR,Math.min(H-PR,e.y-Math.sin(ang)*want));
+  }
+  function autoFire(f,now){
+    var gap=f.bot?BFIRE_MS:FIRE_MS;if(now-f.fire<gap)return;
+    var e=nearestEnemy(f);if(!e||dist(f,e)>RANGE)return;
+    f.fire=now;var a=Math.atan2(e.y-f.y,e.x-f.x);
+    game.proj.push({x:f.x,y:f.y,vx:Math.cos(a)*PROJ,vy:Math.sin(a)*PROJ,o:f.i,life:90});
+  }
+  function killOf(idx){for(var i=0;i<game.F.length;i++)if(game.F[i].i===idx)return game.F[i];return null;}
+  function tick(){
+    if(!game||game.over)return;var now=_now();
+    for(var i=0;i<game.F.length;i++){var f=game.F[i];
+      if(!f.alive){if(now>=f.resp){var s=openSpot();f.x=s.x;f.y=s.y;f.tx=s.x;f.ty=s.y;f.hp=HP0;f.alive=true;}continue;}
+      if(f.bot){botThink(f,now);}
+      stepFighter(f);autoFire(f,now);
+    }
+    /* health packs */
+    if(now>=game.nextPack&&game.packs.length<2){var s=openSpot();game.packs.push({x:s.x,y:s.y});game.nextPack=now+9000;}
+    for(var p=game.packs.length-1;p>=0;p--){var pk=game.packs[p];for(var q=0;q<game.F.length;q++){var g=game.F[q];if(g.alive&&dist(g,pk)<PR+7){g.hp=Math.min(HP0,g.hp+45);game.packs.splice(p,1);break;}}}
+    /* projectiles */
+    for(var j=game.proj.length-1;j>=0;j--){var pr=game.proj[j];pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
+      if(pr.life<=0||pr.x<0||pr.x>W||pr.y<0||pr.y>H||inObst(pr.x,pr.y,0)){game.proj.splice(j,1);continue;}
+      for(var k=0;k<game.F.length;k++){var t=game.F[k];if(!t.alive||t.i===pr.o)continue;
+        if(dist(pr,t)<PR+2){t.hp-=DMG;game.proj.splice(j,1);
+          if(t.hp<=0){t.alive=false;t.resp=now+1500;var kf=killOf(pr.o);if(kf){kf.ko++;if(kf.ko>=WIN_KO){finish();}}}
+          break;}
+      }
+    }
+    if(!game.over&&now>=game.end)finish();
+    draw();
+  }
+  function finish(){
+    game.over=true;if(timer){clearInterval(timer);timer=null;}
+    var best=-1,wi=-1,tie=false;for(var i=0;i<game.F.length;i++){if(game.F[i].ko>best){best=game.F[i].ko;wi=i;tie=false;}else if(game.F[i].ko===best){tie=true;}}
+    game.winner=tie?-1:wi;
+    var mine=game.F[0].ko;if(mine>_best()){if(!S.games)S.games={};if(!S.games.arena)S.games.arena={};S.games.arena.best=mine;try{save();}catch(_){}}
+    if(typeof _khSubmitScore==='function'){try{_khSubmitScore('arena',mine);}catch(_){}}
+    var m=document.getElementById('arMsg');if(m)m.textContent=(game.winner===0)?('You win! '+mine+' KOs'):(game.winner<0?'Draw!':(FIGHTERS[game.winner].l+' wins'));
+    draw();
+  }
+  function draw(){
+    if(!ctx||!game)return;
+    ctx.fillStyle='#e9e9ee';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#c3c3cc';for(var i=0;i<OBST.length;i++){var o=OBST[i];ctx.fillRect(o[0],o[1],o[2],o[3]);}
+    ctx.fillStyle='#178a17';for(var p=0;p<game.packs.length;p++){var pk=game.packs[p];ctx.fillRect(pk.x-6,pk.y-2,12,4);ctx.fillRect(pk.x-2,pk.y-6,4,12);}
+    ctx.fillStyle='#222';for(var j=0;j<game.proj.length;j++){var pr=game.proj[j];ctx.beginPath();ctx.arc(pr.x,pr.y,2.5,0,6.3);ctx.fill();}
+    for(var k=0;k<game.F.length;k++){var f=game.F[k];if(!f.alive)continue;
+      ctx.fillStyle=f.c;ctx.beginPath();ctx.arc(f.x,f.y,PR,0,6.3);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(f.l.slice(0,1),f.x,f.y);
+      /* hp bar */
+      ctx.fillStyle='#0004';ctx.fillRect(f.x-PR,f.y-PR-6,PR*2,3);ctx.fillStyle=(f.i===0?'#1f6feb':'#d1361a');ctx.fillRect(f.x-PR,f.y-PR-6,PR*2*Math.max(0,f.hp)/HP0,3);
+    }
+    var hud=document.getElementById('arHud');
+    if(hud){var secs=Math.max(0,Math.ceil((game.end-_now())/1000));hud.innerHTML='<span>You: '+game.F[0].ko+' KO'+(game.F[0].ko===1?'':'s')+'</span><span>A '+game.F[1].ko+' · B '+game.F[2].ko+' · C '+game.F[3].ko+'</span><span>'+secs+'s</span>';}
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;}game=null;cv=null;ctx=null;}
+  return {start:start,stop:stop};
 })();
 
 const EightBall=(()=>{
@@ -29841,7 +29984,7 @@ const BOOK_RECS={
   history:['Sapiens — Harari','The Guns of August — Tuchman']
 };
 const GAME_MAP=[
-  {keys:['hangman','hang man'],g:'hangman'},{keys:['set','set game','set cards','find sets'],g:'set'},{keys:['wordle','word guess'],g:'wordle'},
+  {keys:['hangman','hang man'],g:'hangman'},{keys:['set','set game','set cards','find sets'],g:'set'},{keys:['arena','arena clash','brawl','brawler','pvp'],g:'arena'},{keys:['wordle','word guess'],g:'wordle'},
   {keys:['tic tac','tictactoe','noughts','crosses','ttt','tic-tac'],g:'ttt'},
   {keys:['chess','chess game'],g:'chess'},
   {keys:['connect 4','connect four','connect4','four in a row'],g:'connect4'},
@@ -34359,6 +34502,11 @@ games:()=>{
     c.appendChild(txt('p','Hop the chicken across endless lanes of traffic. Tap to move, time the gaps, go as far as you can.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
     c.appendChild(txt('p','Best: '+(S.games&&S.games.crossyroad&&S.games.crossyroad.best||0)+'m',{style:{fontSize:'11px',color:'var(--muted)'}}));
     c.appendChild(txt('button','Play',{className:'btn primary','data-game':'crossyroad',style:{marginTop:'6px',width:'100%'}}));
+  }));
+  rowArc.appendChild(gc('Arena Clash',null,c=>{
+    c.appendChild(txt('p','Top-down brawl vs 3 bots — tap to move, it auto-fires at the nearest enemy. Grab health packs, use cover, first to 5 KOs wins.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'4px'}}));
+    c.appendChild(txt('p','Best: '+(S.games&&S.games.arena&&S.games.arena.best||0)+' KOs',{style:{fontSize:'11px',color:'var(--muted)'}}));
+    c.appendChild(txt('button','Play',{className:'btn primary','data-game':'arena',style:{marginTop:'6px',width:'100%'}}));
   }));
   rowArc.appendChild(gc('8-Ball',null,c=>{
     c.appendChild(txt('p','Top-down pool — 1 player, 2-player pass-and-play, or online (Ultra). Drag back from the cue ball and release to shoot.',{style:{fontSize:'11px',color:'var(--muted)',marginBottom:'6px'}}));
