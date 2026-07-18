@@ -346,6 +346,11 @@ input,textarea,select{
   min-height:var(--touch-min);
 }
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:inset 0 1px 2px rgba(0,0,0,.04),0 0 0 2px rgba(0,0,0,.07);}
+/* Checkboxes/radios must NOT inherit the text-input width:100% + tall min-height
+   above — otherwise a checkbox in a flex row (e.g. the Admin Updates toggle)
+   stretches to full width and squishes its label to zero, wrapping one letter
+   per line. Size them naturally so any "[x] label" row lays out correctly. */
+input[type=checkbox],input[type=radio]{width:auto;min-width:0;min-height:0;padding:0;box-shadow:none;flex:0 0 auto;}
 /* Hide Edge/IE native password reveal + clear buttons so they don't double
    up with our wrapEye toggle. */
 input::-ms-reveal,input::-ms-clear{display:none!important;width:0!important;height:0!important;}
@@ -5373,7 +5378,12 @@ function launchKindleDesktop(){
     bx.innerHTML=app.icon||'';
     const sv=bx.querySelector('svg');if(sv){sv.style.cssText='width:32px;height:32px;position:relative;z-index:1;';}
     const lbl=document.createElement('div');lbl.className='dil';
-    lbl.style.cssText='color:rgba(255,255,255,0.65);font-size:9px;font-weight:600;letter-spacing:0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:62px;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,0.6);transition:opacity .15s;';
+    /* line-height + a matching min-height so the glyph box fully contains the
+       text — with only overflow:hidden (for the horizontal ellipsis) and no
+       line-height, old Kindle Silk rendered the 9px text taller than its 10px
+       box and CLIPPED the bottom half of every dock label. Also widened a touch
+       and gave a little vertical padding for headroom. */
+    lbl.style.cssText='color:rgba(255,255,255,0.65);font-size:9px;line-height:15px;min-height:15px;font-weight:600;letter-spacing:0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:66px;text-align:center;text-shadow:0 1px 4px rgba(0,0,0,0.6);transition:opacity .15s;padding-bottom:1px;box-sizing:content-box;';
     lbl.textContent=_censorText(app.label);
     const dot=document.createElement('div');dot.className='ddi';dot.style.cssText='width:4px;height:4px;border-radius:50%;background:#fff;opacity:0;margin-top:-2px;';
     item.appendChild(bx);item.appendChild(lbl);item.appendChild(dot);
@@ -41951,7 +41961,7 @@ settings:()=>{
   /* flex row: checkbox stays put, the label wraps cleanly to fill the column
      (was squished one word per line in the narrow two-column settings grid). */
   const _gjsRow=el('label',{style:{display:'flex',alignItems:'flex-start',gap:'8px',cursor:'pointer',fontSize:'13px'}});
-  const _gjsChk=el('input',{type:'checkbox',style:{flexShrink:'0',marginTop:'2px'}});_gjsChk.checked=!!S.blockGlobalJs;
+  const _gjsChk=el('input',{type:'checkbox',style:{flex:'0 0 auto',width:'22px',height:'22px',minWidth:'22px',minHeight:'22px',margin:'1px 0 0'}});_gjsChk.checked=!!S.blockGlobalJs;
   _gjsChk.onchange=()=>{S.blockGlobalJs=_gjsChk.checked;save();_syncGjsStatus();if(typeof toast==='function')toast(_gjsChk.checked?'Admin scripts blocked on this device':'Admin scripts allowed');};
   _gjsRow.append(_gjsChk,txt('span','Block admin-pushed scripts on this device',{style:{flex:'1',minWidth:'0',lineHeight:'1.4'}}));
   cGjs.appendChild(_gjsRow);
