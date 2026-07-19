@@ -3899,20 +3899,60 @@ window._khOpenArticleReader=(function(){
      we get HTML back (not JSON-wrapped). No new proxies invented. */
   function fetchHtml(link){
     var wraps=[
+      /* KindleHub's OWN proxy worker first — far more reliable than the public
+         ones (the old chain led with allorigins, which is ~50% down/rate-limited
+         in 2026 and, with no outer cap, was the "loads forever" bug). */
+      function(u){return 'https://vpn.arancool3000.workers.dev/?url='+encodeURIComponent(u);},
+      function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);},
       function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);},
-      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);},
-      function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);}
+      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);}
     ];
     var idx=0;
     function tryNext(){
       if(idx>=wraps.length)return Promise.reject(new Error('load-failed'));
       var a=wraps[idx++](link);
-      return rfetch(a,14000).then(function(raw){
+      return rfetch(a,8000).then(function(raw){
         if(raw&&raw.length>500&&/<[a-z]/i.test(raw))return raw;
         return tryNext();
       }).catch(function(){return tryNext();});
     }
     return tryNext();
+  }
+
+  /* Jina Reader (r.jina.ai) returns already-CLEANED markdown, CORS-open + keyless,
+     and renders JS-heavy news sites server-side (so it beats a raw-HTML fetch on
+     modern single-page news pages). Parse its markdown into paragraphs + images. */
+  function extractFromJina(md){
+    var body=String(md||'').replace(/^Title:[\s\S]*?URL Source:.*\n+/i,'').replace(/^Markdown Content:\s*\n+/i,'');
+    var paras=body.split(/\n{2,}/).map(function(s){return s.replace(/\s+/g,' ').trim();}).filter(function(s){
+      if(s.length<12)return false;
+      if(s.indexOf('![')===0)return false;
+      if(/^[=_*\-]{3,}$/.test(s))return false;
+      return true;
+    });
+    var images=[],m,re=/!\[[^\]]*\]\((https?:\/\/[^)\s]+)/g;
+    while((m=re.exec(body))&&images.length<5)images.push(m[1]);
+    return {paras:paras,images:images};
+  }
+  /* Promise.race vs a timer, fail-OPEN — so the reader NEVER hangs ("loads
+     forever") no matter how slow every proxy is; the whole fetch is bounded. */
+  function _raceTOArt(pr,ms){
+    return new Promise(function(resolve){
+      var done=false;var t=setTimeout(function(){if(!done){done=true;resolve(null);}},ms);
+      Promise.resolve(pr).then(function(v){if(!done){done=true;clearTimeout(t);resolve(v);}},function(){if(!done){done=true;clearTimeout(t);resolve(null);}});
+    });
+  }
+  /* Full pipeline: HTML proxies -> extract(); if that's thin, Jina's cleaned
+     markdown. Returns {paras,images} or a thin/empty result. */
+  function fetchArticle(link){
+    var jina='https://r.jina.ai/'+String(link).replace(/#/g,'%23');
+    return fetchHtml(link).then(function(html){
+      var res=extract(html,link);
+      if(res.paras&&res.paras.length>=2)return res;
+      return rfetch(jina,8000).then(function(md){var jr=extractFromJina(md);return (jr.paras&&jr.paras.length>=2)?jr:res;}).catch(function(){return res;});
+    }).catch(function(){
+      return rfetch(jina,8000).then(function(md){return extractFromJina(md);});
+    });
   }
 
   function decodeEntities(s){
@@ -4168,11 +4208,10 @@ window._khOpenArticleReader=(function(){
     }
 
     if(_cache[meta.link]){showParsed(_cache[meta.link]);return;}
-    fetchHtml(meta.link).then(function(html){
-      var res=extract(html,meta.link);
-      if(res.paras&&res.paras.length>=2){showParsed(res);return;}
-      throw new Error('thin');
-    }).catch(function(){
+    /* Whole fetch is capped at 12s (fail-open) so it can never "load forever";
+       on timeout / thin result we drop to the feed summary. */
+    _raceTOArt(fetchArticle(meta.link),12000).then(function(res){
+      if(res&&res.paras&&res.paras.length>=2){showParsed(res);return;}
       var fb=feedFallbackParas();
       if(fb.length){
         images=[];pages=paginate(fb,1700);pos=0;renderPage();
