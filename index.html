@@ -1482,6 +1482,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="lifeweeks" style="display:none">Life in Weeks</div>
     <div class="tab" data-view="chords" style="display:none">Fretboard</div>
     <div class="tab" data-view="watchq" style="display:none">Watch Queue</div>
+    <div class="tab" data-view="stash" style="display:none">Stash</div>
+    <div class="tab" data-view="verses" style="display:none">Verse Library</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -1708,6 +1710,7 @@ function defaultState(){
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,birthDate:'',watchQueue:[],
+    stashItems:[],verseBookmarks:[],
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -3498,7 +3501,8 @@ const NAV_TABS=[
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
   ['imagesearch','Images'],['sports','Sports'],
-  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue']
+  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue'],
+  ['stash','Stash'],['verses','Verse Library']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -4814,6 +4818,8 @@ function launchKindleDesktop(){
     {id:'lifeweeks', label:'Life in Weeks',nav:'lifeweeks',color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g fill="#7c3aed"><circle cx="12" cy="12" r="2.2"/><circle cx="20" cy="12" r="2.2"/><circle cx="28" cy="12" r="2.2"/><circle cx="36" cy="12" r="2.2"/><circle cx="12" cy="20" r="2.2"/><circle cx="20" cy="20" r="2.2"/><circle cx="28" cy="20" r="2.2" opacity=".35"/><circle cx="36" cy="20" r="2.2" opacity=".35"/><circle cx="12" cy="28" r="2.2" opacity=".35"/><circle cx="20" cy="28" r="2.2" opacity=".35"/><circle cx="28" cy="28" r="2.2" opacity=".35"/><circle cx="36" cy="28" r="2.2" opacity=".35"/><circle cx="12" cy="36" r="2.2" opacity=".35"/><circle cx="20" cy="36" r="2.2" opacity=".35"/><circle cx="28" cy="36" r="2.2" opacity=".35"/><circle cx="36" cy="36" r="2.2" opacity=".35"/></g></svg>'},
     {id:'chords',    label:'Fretboard',   nav:'chords',    color:'#78350f',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g stroke="#78350f" stroke-width="1.6"><line x1="14" y1="10" x2="14" y2="38"/><line x1="20" y1="10" x2="20" y2="38"/><line x1="26" y1="10" x2="26" y2="38"/><line x1="32" y1="10" x2="32" y2="38"/><line x1="10" y1="16" x2="36" y2="16"/><line x1="10" y1="24" x2="36" y2="24"/><line x1="10" y1="32" x2="36" y2="32"/></g><circle cx="20" cy="20" r="2.6" fill="#78350f"/><circle cx="32" cy="28" r="2.6" fill="#78350f"/></svg>'},
     {id:'watchq',    label:'Watch Queue', nav:'watchq',    color:'#dc2626',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="28" rx="5" fill="#fff" stroke="#dc2626" stroke-width="2"/><polygon points="21,18 21,30 31,24" fill="#dc2626"/></svg>'},
+    {id:'stash',     label:'Stash',       nav:'stash',     color:'#0f766e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="6" width="32" height="38" rx="4" fill="#fff" stroke="#0f766e" stroke-width="2"/><path d="M16 6 L16 20 L24 15 L32 20 L32 6" fill="#0f766e"/></svg>'},
+    {id:'verses',    label:'Verse Library',nav:'verses',   color:'#7c2d12',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="6" width="19" height="36" rx="3" fill="#fff"/><rect x="24" y="6" width="19" height="36" rx="3" fill="#fff" opacity=".9"/><line x1="10" y1="16" x2="19" y2="16" stroke="#7c2d12" stroke-width="1.5"/><line x1="10" y1="22" x2="19" y2="22" stroke="#7c2d12" stroke-width="1.5"/><line x1="10" y1="28" x2="19" y2="28" stroke="#7c2d12" stroke-width="1.5"/><line x1="29" y1="16" x2="38" y2="16" stroke="#7c2d12" stroke-width="1.5"/><line x1="29" y1="22" x2="38" y2="22" stroke="#7c2d12" stroke-width="1.5"/><line x1="29" y1="28" x2="34" y2="28" stroke="#7c2d12" stroke-width="1.5"/></svg>'},
   ]);
 
   /* ── STATE ──
@@ -9212,6 +9218,8 @@ window.KH_ICONS.animals='<circle cx="12" cy="15" r="3.6"/><circle cx="6.5" cy="9
 window.KH_ICONS.unitconv='<path d="M4 7h13"/><path d="M14 4l3 3-3 3"/><path d="M20 17H7"/><path d="M10 14l-3 3 3 3"/>';
 window.KH_ICONS.tipcalc='<circle cx="12" cy="12" r="9"/><line x1="8.5" y1="15.5" x2="15.5" y2="8.5"/><circle cx="9.2" cy="9.2" r="1.3"/><circle cx="14.8" cy="14.8" r="1.3"/>';
 window.KH_ICONS.appstore='<path d="M8 21L12 6l4 15"/><line x1="9.2" y1="16" x2="14.8" y2="16"/>';
+window.KH_ICONS.stash='<path d="M5 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17l-7-4-7 4z"/>';
+window.KH_ICONS.verses='<path d="M4 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z"/><line x1="7" y1="8" x2="10" y2="8" opacity=".6"/><line x1="7" y1="12" x2="10" y2="12" opacity=".6"/>';
 /* Wikipedia + Formulas used <text> with fill:currentColor — invisible on the
    white-stroke store tiles (currentColor there isn't white). Replace with pure
    STROKE icons that render in both the retro home and the coloured store tile. */
@@ -9220,7 +9228,7 @@ window.KH_ICONS.formulas='<path d="M4 13h3l2.5 6 3-13H21"/><line x1="14" y1="15"
 window.KH_ICON_FALLBACK='<rect x="4" y="4" width="16" height="16" rx="2"/>';
 /* Brand colour per view (mirrors the KindleOS BUILTIN_APPS palette + fills the
    store-only apps). White icon strokes need DARK fills — keep them deep. */
-window.KH_APP_COLORS={chat:'#2563eb',games:'#7c3aed',appstore:'#0b7ff2',notes:'#b45309',maps:'#0f766e',weather:'#0ea5e9',starmap:'#1e1b4b',messages:'#0f766e',tools:'#475569',calc:'#1f2937',reading:'#92400e',browser:'#1f2937',draw:'#db2777',rss:'#dc2626',translate:'#0891b2',breathe:'#064e3b',kanban:'#b45309',calendar:'#0f4c81',stocks:'#166534',settings:'#374151',dictionary:'#0369a1',discover:'#7e22ce',explore:'#7e22ce',cipher:'#1e3a5f',mdjournal:'#78350f',feedback:'#065f46',science:'#0f4c5c',sleeplog:'#1e1b4b',periodic:'#4338ca',qrgen:'#111827',wikipedia:'#1a1a1a',worldclock:'#0c4a6e',wheel:'#6d28d9',formulas:'#1d4ed8',slides:'#be185d',sheets:'#15803d',cookbook:'#b91c1c',files:'#475569',sports:'#166534',imagesearch:'#0891b2',animals:'#92400e',unitconv:'#0f766e',tipcalc:'#166534',screenshot:'#334155',mail:'#b45309'};
+window.KH_APP_COLORS={chat:'#2563eb',games:'#7c3aed',appstore:'#0b7ff2',notes:'#b45309',maps:'#0f766e',weather:'#0ea5e9',starmap:'#1e1b4b',messages:'#0f766e',tools:'#475569',calc:'#1f2937',reading:'#92400e',browser:'#1f2937',draw:'#db2777',rss:'#dc2626',translate:'#0891b2',breathe:'#064e3b',kanban:'#b45309',calendar:'#0f4c81',stocks:'#166534',settings:'#374151',dictionary:'#0369a1',discover:'#7e22ce',explore:'#7e22ce',cipher:'#1e3a5f',mdjournal:'#78350f',feedback:'#065f46',science:'#0f4c5c',sleeplog:'#1e1b4b',periodic:'#4338ca',qrgen:'#111827',wikipedia:'#1a1a1a',worldclock:'#0c4a6e',wheel:'#6d28d9',formulas:'#1d4ed8',slides:'#be185d',sheets:'#15803d',cookbook:'#b91c1c',files:'#475569',sports:'#166534',imagesearch:'#0891b2',animals:'#92400e',unitconv:'#0f766e',tipcalc:'#166534',screenshot:'#334155',mail:'#b45309',stash:'#0f766e',verses:'#7c2d12'};
 /* On e-ink (Kindle) or the simple UI, brand-coloured tiles render as LOW-
    CONTRAST GRAYS — force crisp near-black tiles there; colours only on real
    colour screens. */
@@ -9279,6 +9287,7 @@ var STORE_APPS=[
   {view:'kanban',    name:'To-Do Board',   cat:'Productivity', desc:'Organise tasks on a kanban board.'},
   {view:'mdjournal', name:'Journal',       cat:'Productivity', desc:'A distraction-free markdown journal.'},
   {view:'files',     name:'Files',         cat:'Productivity', desc:'Browse what this app has stored.'},
+  {view:'stash',     name:'Stash',         cat:'Productivity', desc:'Save articles and pages to read later, even offline.'},
   /* Reference */
   {view:'animals',   name:'Animals',       cat:'Reference',    desc:'A zoo field guide — photos, stats & facts.'},
   {view:'starmap',   name:'Stars',         cat:'Reference',    desc:'A live sky map — stars, planets & satellites.'},
@@ -9287,6 +9296,7 @@ var STORE_APPS=[
   {view:'wikipedia', name:'Wikipedia',     cat:'Reference',    desc:'Search the free encyclopedia.'},
   {view:'science',   name:'Science',       cat:'Reference',    desc:'Facts, a glossary and experiments.'},
   {view:'dictionary',name:'Dictionary',    cat:'Reference',    desc:'Look up word meanings.'},
+  {view:'verses',    name:'Verse Library', cat:'Reference',    desc:'Read scripture free — any book, chapter or reference.'},
   /* Utilities */
   {view:'cipher',    name:'Cipher',        cat:'Utilities',    desc:'Encode & decode secret messages.'},
   {view:'qrgen',     name:'QR Code',       cat:'Utilities',    desc:'Generate QR codes.'},
@@ -9317,7 +9327,7 @@ var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports']
    applier only hides ones the user has never decided on, so nothing a user
    installed is ever force-hidden. teleprompter is intentionally NOT here — it's
    launched inside Tools via khTeleprompter(), not a standalone view. */
-var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq'];
+var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq','stash','verses'];
 /* Only these Gemini models are trusted to REVIEW apps, strongest first. */
 var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
 function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
@@ -34419,7 +34429,7 @@ home:()=>{
     const _LABELS={};SIMPLE_LIST.forEach(([v,l])=>{_LABELS[v]=l;});
     /* Apps grouped by purpose so the home reads as tidy labelled shelves. */
     const CATS=[
-      ['Read',   ['reading','rss','wikipedia','dictionary','imagesearch','cookbook']],
+      ['Read',   ['reading','rss','wikipedia','dictionary','imagesearch','cookbook','stash','verses']],
       ['Create', ['notes','mdjournal','slides','sheets','draw']],
       ['Play',   ['games','sports']],
       ['Connect',['chat','messages','mail']],
@@ -52833,6 +52843,249 @@ watchq:()=>{
   function add(){var t=(inp.value||'').trim();if(!t)return;S.watchQueue.unshift({id:'w'+Date.now().toString(36),title:t.slice(0,120),type:typeSel.value,done:false,at:Date.now()});inp.value='';try{save();}catch(_e){}filt='todo';render();}
   addB.onclick=add;inp.addEventListener('keydown',function(e){if(e.key==='Enter')add();});
   render();
+  return v;
+},
+/* ── Stash — a Read-Later queue. Paste a URL, save it (offline-safe — no
+   network call needed just to save; the title is guessed from the URL
+   itself), then tap Read to open the FULL article via the existing
+   window._khOpenArticleReader overlay (same reader News/Gazette use — it
+   fetches + extracts the article text/images through the app's CORS
+   proxies). Reading marks the item read. Cap ~100 newest items. */
+stash:()=>{
+  const v=el('section',{id:'view-stash',className:'view'});
+  v.appendChild(txt('h2','Stash',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Save an article or page to read later, even offline. Tap Read to open the full text.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  if(!Array.isArray(S.stashItems))S.stashItems=[];
+  const addRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const inp=el('input',{type:'text',placeholder:'Paste a URL…',style:{flex:'1',fontSize:'14px',padding:'8px 10px'}});
+  const saveBtn=txt('button','Save',{className:'btn small primary'});
+  addRow.append(inp,saveBtn);v.appendChild(addRow);
+  const filterRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const FILTS=[['all','All'],['unread','Unread']];let filt='all';
+  FILTS.forEach(function(f){const b=txt('button',f[1],{className:'btn small'+(filt===f[0]?' primary':'')});b.onclick=function(){filt=f[0];render();};filterRow.appendChild(b);});
+  v.appendChild(filterRow);
+  const list=el('div',{});v.appendChild(list);
+  function normUrl(u){
+    u=(u||'').trim();
+    if(!u)return '';
+    if(!/^https?:\/\//i.test(u))u='https://'+u;
+    return u;
+  }
+  /* Pure-offline title guess from the URL path — never blocks a save on
+     the network being reachable. */
+  function guessTitle(url){
+    try{
+      var u=url.replace(/^https?:\/\//i,'').replace(/^www\./i,'');
+      var parts=u.split('/');
+      var host=parts[0]||u;
+      var last='';
+      for(var i=parts.length-1;i>0;i--){if(parts[i]){last=parts[i];break;}}
+      if(last){
+        last=decodeURIComponent(last.replace(/\.(html?|php|aspx?)$/i,''));
+        last=last.replace(/[-_+]/g,' ').replace(/\s+/g,' ').trim();
+        if(last.length>3)return last.charAt(0).toUpperCase()+last.slice(1)+'  ·  '+host;
+      }
+      return host;
+    }catch(_e){return url;}
+  }
+  function render(){
+    Array.prototype.forEach.call(filterRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',FILTS[i][0]===filt);});
+    list.innerHTML='';
+    var items=S.stashItems.filter(function(x){return filt==='all'||!x.read;});
+    if(!items.length){list.appendChild(txt('div',filt==='unread'?'Nothing unread — nice work.':'Nothing saved yet — paste a URL above.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px',fontStyle:'italic'}}));return;}
+    items.forEach(function(it){
+      const row=el('div',{style:{padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',marginBottom:'8px',background:'var(--card)'}});
+      const mid=el('div',{style:{minWidth:'0'}});
+      mid.appendChild(txt('div',it.title||it.url,{style:{fontWeight:'700',fontSize:'14px',wordBreak:'break-word',opacity:it.read?'.6':'1'}}));
+      mid.appendChild(txt('div',it.url,{style:{fontSize:'10px',color:'var(--muted)',wordBreak:'break-all',marginTop:'2px'}}));
+      var savedLbl='Saved '+(function(){try{return _localDayKey(new Date(it.savedAt));}catch(_e){return '';}})();
+      mid.appendChild(txt('div',savedLbl+(it.read?'  ·  Read':''),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+      row.appendChild(mid);
+      const btnRow=el('div',{style:{display:'flex',gap:'6px',marginTop:'8px',justifyContent:'flex-end'}});
+      const readBtn=txt('button','Read',{className:'btn small'});
+      readBtn.onclick=function(){
+        it.read=true;try{save();}catch(_e){}
+        if(typeof window._khOpenArticleReader==='function')window._khOpenArticleReader({title:it.title,link:it.url,source:'Stash',date:it.savedAt});
+        else if(typeof toast==='function')toast('Reader is not available.');
+        render();
+      };
+      const rmBtn=txt('button','Remove',{className:'btn small'});
+      rmBtn.onclick=function(){var i=S.stashItems.indexOf(it);if(i>=0)S.stashItems.splice(i,1);try{save();}catch(_e){}render();};
+      btnRow.append(readBtn,rmBtn);
+      row.appendChild(btnRow);
+      list.appendChild(row);
+    });
+  }
+  function doSave(){
+    var raw=(inp.value||'').trim();
+    if(!raw){if(typeof toast==='function')toast('Paste a URL first.');return;}
+    var url=normUrl(raw);
+    if(S.stashItems.some(function(x){return x.url===url;})){if(typeof toast==='function')toast('Already saved.');inp.value='';return;}
+    var item={id:'st'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),url:url,title:guessTitle(url),savedAt:Date.now(),read:false};
+    S.stashItems.unshift(item);
+    if(S.stashItems.length>100)S.stashItems.length=100;
+    inp.value='';
+    try{save();}catch(_e){}
+    filt='all';
+    render();
+    if(typeof toast==='function')toast('Saved to Stash.');
+  }
+  saveBtn.onclick=doSave;
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')doSave();});
+  render();
+  return v;
+},
+/* ── Verse Library — a scripture reader. Keyless via bible-api.com (CORS-
+   open, public-domain WEB translation) — no proxy needed. Pick a book +
+   chapter or search a reference like "John 3:16"; Prev/Next walks chapters.
+   The loaded chapter text is cached in-memory only (session) — same rule as
+   the Free Library reader — NEVER written to S; only bookmarked references
+   (plain text strings) persist to S.verseBookmarks. */
+verses:()=>{
+  const v=el('section',{id:'view-verses',className:'view'});
+  v.appendChild(txt('h2','Verse Library',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Read scripture free — pick a book and chapter, or search a reference like "John 3:16".',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  if(!Array.isArray(S.verseBookmarks))S.verseBookmarks=[];
+  const OT=[['Genesis',50],['Exodus',40],['Leviticus',27],['Numbers',36],['Deuteronomy',34],['Joshua',24],['Judges',21],['Ruth',4],['1 Samuel',31],['2 Samuel',24],['1 Kings',22],['2 Kings',25],['1 Chronicles',29],['2 Chronicles',36],['Ezra',10],['Nehemiah',13],['Esther',10],['Job',42],['Psalms',150],['Proverbs',31],['Ecclesiastes',12],['Song of Solomon',8],['Isaiah',66],['Jeremiah',52],['Lamentations',5],['Ezekiel',48],['Daniel',12],['Hosea',14],['Joel',3],['Amos',9],['Obadiah',1],['Jonah',4],['Micah',7],['Nahum',3],['Habakkuk',3],['Zephaniah',3],['Haggai',2],['Zechariah',14],['Malachi',4]];
+  const NT=[['Matthew',28],['Mark',16],['Luke',24],['John',21],['Acts',28],['Romans',16],['1 Corinthians',16],['2 Corinthians',13],['Galatians',6],['Ephesians',6],['Philippians',4],['Colossians',4],['1 Thessalonians',5],['2 Thessalonians',3],['1 Timothy',6],['2 Timothy',4],['Titus',3],['Philemon',1],['Hebrews',13],['James',5],['1 Peter',5],['2 Peter',3],['1 John',5],['2 John',1],['3 John',1],['Jude',1],['Revelation',22]];
+  const BOOKS=OT.concat(NT);
+  function chaptersFor(name){for(var i=0;i<BOOKS.length;i++)if(BOOKS[i][0]===name)return BOOKS[i][1];return 1;}
+  let _book='Genesis',_chap=1,_curRef='';
+  const _cache={};   /* session-only: 'Book chapter' -> API response */
+  const pickRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}});
+  const bookSel=el('select',{style:{flex:'1',minWidth:'140px',fontSize:'14px',padding:'8px'}});
+  const ogOT=document.createElement('optgroup');ogOT.label='Old Testament';
+  OT.forEach(function(b){const o=document.createElement('option');o.value=b[0];o.textContent=b[0];ogOT.appendChild(o);});
+  const ogNT=document.createElement('optgroup');ogNT.label='New Testament';
+  NT.forEach(function(b){const o=document.createElement('option');o.value=b[0];o.textContent=b[0];ogNT.appendChild(o);});
+  bookSel.appendChild(ogOT);bookSel.appendChild(ogNT);
+  bookSel.value=_book;
+  pickRow.appendChild(bookSel);
+  v.appendChild(pickRow);
+  const chapRow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',flexWrap:'wrap'}});
+  const chLabel=txt('span','Ch.',{style:{fontSize:'12px',color:'var(--muted)'}});
+  const minus=txt('button','−',{className:'btn small',style:{minWidth:'40px'}});
+  const chapLbl=txt('div',String(_chap),{style:{fontSize:'15px',fontWeight:'800',minWidth:'30px',textAlign:'center'}});
+  const plus=txt('button','+',{className:'btn small',style:{minWidth:'40px'}});
+  const loadBtn=txt('button','Load',{className:'btn small primary'});
+  function syncChapLbl(){if(chapLbl.textContent!==String(_chap))chapLbl.textContent=String(_chap);}
+  minus.onclick=function(){if(_chap>1){_chap--;syncChapLbl();}};
+  plus.onclick=function(){var mx=chaptersFor(_book);if(_chap<mx){_chap++;syncChapLbl();}};
+  bookSel.onchange=function(){_book=bookSel.value;_chap=1;syncChapLbl();};
+  loadBtn.onclick=function(){loadChapter(_book,_chap);};
+  chapRow.append(chLabel,minus,chapLbl,plus,loadBtn);
+  v.appendChild(chapRow);
+  const searchRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+  const searchInp=el('input',{type:'text',placeholder:'Search a reference, e.g. John 3:16',style:{flex:'1',fontSize:'14px',padding:'8px 10px'}});
+  const searchBtn=txt('button','Go',{className:'btn small'});
+  searchRow.append(searchInp,searchBtn);
+  v.appendChild(searchRow);
+  searchBtn.onclick=function(){var q=(searchInp.value||'').trim();if(q)doSearch(q);};
+  searchInp.addEventListener('keydown',function(e){if(e.key==='Enter'){var q=(searchInp.value||'').trim();if(q)doSearch(q);}});
+  const bmRow=el('div',{style:{display:'flex',alignItems:'flex-start',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}});
+  const bmBtn=txt('button','+ Bookmark',{className:'btn small'});
+  const bmChips=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',flex:'1'}});
+  bmRow.append(bmBtn,bmChips);
+  v.appendChild(bmRow);
+  bmBtn.onclick=function(){addBookmark();};
+  const host=el('div',{});
+  v.appendChild(host);
+  const pagerRow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',margin:'10px 0'}});
+  const prevBtn=txt('button','‹ Prev chapter',{className:'btn small'});
+  const nextBtn=txt('button','Next chapter ›',{className:'btn small'});
+  prevBtn.onclick=function(){if(_chap>1)loadChapter(_book,_chap-1);};
+  nextBtn.onclick=function(){var mx=chaptersFor(_book);if(_chap<mx)loadChapter(_book,_chap+1);};
+  pagerRow.append(prevBtn,nextBtn);
+  v.appendChild(pagerRow);
+  function renderBookmarks(){
+    bmChips.innerHTML='';
+    if(!S.verseBookmarks.length){bmChips.appendChild(txt('span','No bookmarks yet.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
+    S.verseBookmarks.forEach(function(ref,idx){
+      const chip=el('span',{style:{display:'inline-flex',alignItems:'center',gap:'4px',border:'var(--thin)',borderRadius:'999px',padding:'4px 8px',fontSize:'11px',background:'var(--card)'}});
+      const lbl=txt('span',ref,{style:{cursor:'pointer'}});lbl.onclick=function(){doSearch(ref);};
+      const rm=txt('span','×',{style:{fontWeight:'900',color:'var(--muted)',padding:'0 2px',cursor:'pointer'}});
+      rm.onclick=function(e){e.stopPropagation();var i=S.verseBookmarks.indexOf(ref);if(i>=0)S.verseBookmarks.splice(i,1);try{save();}catch(_e){}renderBookmarks();};
+      chip.append(lbl,rm);
+      bmChips.appendChild(chip);
+    });
+  }
+  function addBookmark(){
+    if(!_curRef){if(typeof toast==='function')toast('Load a passage first.');return;}
+    if(S.verseBookmarks.indexOf(_curRef)>=0){if(typeof toast==='function')toast('Already bookmarked.');return;}
+    S.verseBookmarks.unshift(_curRef);
+    if(S.verseBookmarks.length>50)S.verseBookmarks.length=50;
+    try{save();}catch(_e){}
+    renderBookmarks();
+    if(typeof toast==='function')toast('Bookmarked '+_curRef);
+  }
+  /* Kindle-safe abortable fetch (mirrors the app's fetchWithTimeout pattern) —
+     bible-api.com is CORS-open so no proxy chain is needed here. */
+  function fetchVerse(pathQuery){
+    var url='https://bible-api.com/'+encodeURIComponent(pathQuery)+'?translation=web';
+    return new Promise(function(resolve,reject){
+      var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      var tid=setTimeout(function(){if(ctrl){try{ctrl.abort();}catch(_e){}}reject(new Error('timeout'));},10000);
+      fetch(url,ctrl?{signal:ctrl.signal,cache:'no-store'}:{cache:'no-store'}).then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return r.json();
+      }).then(function(d){clearTimeout(tid);resolve(d);}).catch(function(e){clearTimeout(tid);reject(e);});
+    });
+  }
+  function paintVerses(data,refLabel){
+    _curRef=refLabel;
+    host.innerHTML='';
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'12px',padding:'14px 16px',background:'var(--card)'}});
+    card.appendChild(txt('div',refLabel,{style:{fontFamily:'var(--title-font)',fontSize:'17px',fontWeight:'800',marginBottom:'8px'}}));
+    const vs=data.verses||[];
+    if(!vs.length){card.appendChild(txt('div',data.text||'No verses found.',{style:{fontSize:'15px',lineHeight:'1.8',fontFamily:'var(--title-font)'}}));}
+    else{
+      const p=el('p',{style:{fontSize:'15px',lineHeight:'1.9',fontFamily:'var(--title-font)',margin:'0'}});
+      vs.forEach(function(vv){
+        p.appendChild(txt('sup',String(vv.verse)+' ',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)'}}));
+        p.appendChild(document.createTextNode(String(vv.text||'').replace(/\n/g,' ').trim()+'  '));
+      });
+      card.appendChild(p);
+    }
+    host.appendChild(card);
+  }
+  function loadChapter(book,chap){
+    const key=book+' '+chap;
+    _book=book;_chap=chap;bookSel.value=book;syncChapLbl();
+    if(_cache[key]){paintVerses(_cache[key],_cache[key].reference||key);return;}
+    host.innerHTML='';host.appendChild(txt('div','Loading…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 4px'}}));
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){
+      host.innerHTML='';host.appendChild(txt('div','You are offline — connect to the internet to read scripture.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+      return;
+    }
+    fetchVerse(key).then(function(d){
+      if(!d||d.error)throw new Error((d&&d.error)||'not found');
+      _cache[key]=d;
+      paintVerses(d,d.reference||key);
+    }).catch(function(){
+      host.innerHTML='';
+      host.appendChild(txt('div','Could not load that passage right now — check your connection and try again.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+    });
+  }
+  function doSearch(q){
+    host.innerHTML='';host.appendChild(txt('div','Searching…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 4px'}}));
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){
+      host.innerHTML='';host.appendChild(txt('div','You are offline — connect to the internet to search scripture.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+      return;
+    }
+    fetchVerse(q).then(function(d){
+      if(!d||d.error||!(d.verses&&d.verses.length))throw new Error((d&&d.error)||'not found');
+      const first=d.verses[0];
+      if(first&&first.book_name){_book=first.book_name;_chap=first.chapter||1;bookSel.value=_book;syncChapLbl();}
+      const key=_book+' '+_chap;
+      _cache[key]=d;
+      paintVerses(d,d.reference||q);
+    }).catch(function(){
+      host.innerHTML='';
+      host.appendChild(txt('div','No results for "'+q+'" — try a reference like "John 3:16" or "Psalm 23".',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+    });
+  }
+  renderBookmarks();
+  loadChapter(_book,_chap);
   return v;
 },
 appstore:()=>{
