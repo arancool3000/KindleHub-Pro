@@ -4889,11 +4889,36 @@ function launchKindleDesktop(){
      above is a static fallback (errs SHORTER-than-visible on Silk = never
      clips). Re-fit on resize/orientationchange; the handler removes itself once
      kd-root leaves the DOM so no listener leaks across launches. */
-  function _kdFitVp(){var h=window.innerHeight||document.documentElement.clientHeight||0;if(h>0)kd.style.height=h+'px';}
-  function _kdVpHandler(){if(!document.getElementById('kd-root')){try{window.removeEventListener('resize',_kdVpHandler);}catch(_e){}try{window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}return;}_kdFitVp();}
+  /* Size #kd-root to the VISIBLE viewport. On Kindle Silk window.innerHeight is
+     the LAYOUT viewport — TALLER than what's actually on screen, because the
+     browser's bottom toolbar overlays the lower strip — so pinning to
+     innerHeight left the dock (and the grid row just above it) hidden under the
+     chrome / cut off. window.visualViewport.height is the truly-visible height;
+     prefer it, take the SMALLER of it and innerHeight to be safe, and nudge the
+     fixed root down by any visualViewport.offsetTop so its bottom lines up with
+     the visible bottom. Falls back to innerHeight only when visualViewport is
+     unavailable. Re-fits on every viewport/toolbar change. */
+  function _kdFitVp(){
+    var vv=window.visualViewport;
+    var inner=window.innerHeight||document.documentElement.clientHeight||0;
+    var h=(vv&&vv.height)?Math.min(vv.height,inner||vv.height):inner;
+    if(h>0)kd.style.height=Math.round(h)+'px';
+    var ot=(vv&&typeof vv.offsetTop==='number'&&vv.offsetTop>0)?Math.round(vv.offsetTop):0;
+    kd.style.top=ot+'px';
+  }
+  function _kdVpHandler(){
+    if(!document.getElementById('kd-root')){
+      try{window.removeEventListener('resize',_kdVpHandler);}catch(_e){}
+      try{window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}
+      if(window.visualViewport){try{window.visualViewport.removeEventListener('resize',_kdVpHandler);}catch(_e2){}try{window.visualViewport.removeEventListener('scroll',_kdVpHandler);}catch(_e3){}}
+      return;
+    }
+    _kdFitVp();
+  }
   _kdFitVp();
   window.addEventListener('resize',_kdVpHandler);
   window.addEventListener('orientationchange',_kdVpHandler);
+  if(window.visualViewport){window.visualViewport.addEventListener('resize',_kdVpHandler);window.visualViewport.addEventListener('scroll',_kdVpHandler);}
 
   /* ── WALLPAPER LAYER ── */
   const kdBg=document.createElement('div');
@@ -5692,7 +5717,14 @@ function launchKindleDesktop(){
     _curPage=Math.min(prev,numPages()-1);
     const PER=iconsPerPage();
     const cols=4,rows=5;
-    const gridStyle='min-width:100%;height:100%;display:grid;grid-template-columns:repeat('+cols+',1fr);grid-template-rows:repeat('+rows+',1fr);align-content:start;padding:4px 6px 56px;box-sizing:border-box;';
+    /* Rows are NATURAL height (min-content) packed at the TOP, not
+       repeat(5,1fr): forcing 5 equal rows into height:100% squished each row
+       shorter than the icon+label on a short Kindle viewport, so a lower row's
+       label overflowed and got clipped at the grid's bottom edge (right where
+       the dock begins) — that was the "row above the dock has no labels" bug.
+       min-content rows are exactly icon+label tall and can't compress, and the
+       big bottom padding keeps the last row clear of the dock. */
+    const gridStyle='min-width:100%;height:100%;display:grid;grid-template-columns:repeat('+cols+',1fr);grid-auto-rows:min-content;align-content:start;row-gap:2px;padding:6px 6px 64px;box-sizing:border-box;';
     /* Build empty shells synchronously (cheap) and only populate icons for
        pages near the viewport. Pages further away get their icons lazily on
        the next frame, so first paint is fast even with many custom apps. */
@@ -6088,7 +6120,7 @@ function launchKindleDesktop(){
     if(_clockTickAlign)clearTimeout(_clockTickAlign);
     /* Drop the viewport re-fit listeners installed at launch (belt-and-braces:
        _kdVpHandler also self-removes once kd-root is gone). */
-    try{window.removeEventListener('resize',_kdVpHandler);window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}
+    try{window.removeEventListener('resize',_kdVpHandler);window.removeEventListener('orientationchange',_kdVpHandler);if(window.visualViewport){window.visualViewport.removeEventListener('resize',_kdVpHandler);window.visualViewport.removeEventListener('scroll',_kdVpHandler);}}catch(_e){}
     /* The boot-poll timers from the tour also need to know we're gone */
     window._kdGone=true;
     /* Clean up the full-app-mode artefacts: the back FAB, the body
