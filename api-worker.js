@@ -1137,8 +1137,15 @@ let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
    response as X-KH-Load so clients can self-throttle their background polling
    before anyone hits the hard cap (closed-loop capacity control). */
 let _loadFrac = 0;
-const REQ_HARD_CAP   = 99000;   // Workers free: 100k requests/day — error at 99k, resets 00:00 UTC
-const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — separate safety (estW counts 2/write)
+/* Workers Free = 100k requests/DAY across the WHOLE ACCOUNT (this API Worker +
+   the state Worker + the email Worker + anything else) — NOT per-Worker. So this
+   API Worker must go read-only well BELOW 100k to leave headroom for the others,
+   or the account trips Cloudflare error 1027 and EVERY Worker (the whole site)
+   goes down until 00:00 UTC. 60k leaves ~40k for the rest. Both are env-tunable
+   (REQ_HARD_CAP / WRITE_HARD_CAP) so the ceiling can be lowered further without a
+   code change if the other Workers' share grows. */
+const REQ_HARD_CAP   = 60000;   // was 99000 — left no room for the state/email Workers → account-wide 1027
+const WRITE_HARD_CAP = 60000;   // D1 free: 100k row-writes/day (estW counts 2/write)
 async function dailyUsed(DB, isWrite){
   const today = nowIso().slice(0,10);
   const now = Date.now();
@@ -1601,15 +1608,19 @@ export default {
        Health check above is always allowed so uptime monitors keep working. */
     const _isWrite = request.method!=='GET' && request.method!=='HEAD';
     const _usage = await dailyUsed(DB, _isWrite);
+    /* Env-tunable ceilings so the account-wide budget can be split without a code
+       change (lower these if the state/email Workers grow). */
+    const _reqCap = parseInt((env&&env.REQ_HARD_CAP)||'',10)||REQ_HARD_CAP;
+    const _wrtCap = parseInt((env&&env.WRITE_HARD_CAP)||'',10)||WRITE_HARD_CAP;
     /* Publish the higher of the request/write utilisation so clients back off. */
-    _loadFrac = Math.max(_usage.n/REQ_HARD_CAP, _usage.w/WRITE_HARD_CAP);
+    _loadFrac = Math.max(_usage.n/_reqCap, _usage.w/_wrtCap);
     /* Over a daily free-tier ceiling → just error the cloud request (503),
        non-admin only (admin token bypasses; resets 00:00 UTC). No read-only
        degrade band — a request past the limit simply fails. */
-    if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
+    if(_usage.n>_reqCap || (_usage.w>_wrtCap && _isWrite)){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){
-        if(_usage.n>REQ_HARD_CAP)
+        if(_usage.n>_reqCap)
           return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
         return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub reached its daily free-tier write limit. Service resumes automatically at midnight UTC.'},503,env);
       }

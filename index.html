@@ -1478,6 +1478,7 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="sports">Sports</div>
     <div class="tab" data-view="unitconv" style="display:none">Unit Converter</div>
     <div class="tab" data-view="tipcalc" style="display:none">Tip Calculator</div>
+    <div class="tab" data-view="flipbook" style="display:none">Flipbook</div>
     <div class="tab" data-view="histday" style="display:none">Today in History</div>
     <div class="tab" data-view="lifeweeks" style="display:none">Life in Weeks</div>
     <div class="tab" data-view="chords" style="display:none">Fretboard</div>
@@ -1710,7 +1711,7 @@ function defaultState(){
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],storeHidden:[],storeRemoved:{},appReviewModel:'auto',cpMenuDisabled:false,birthDate:'',watchQueue:[],
-    stashItems:[],verseBookmarks:[],
+    stashItems:[],verseBookmarks:[],flipbooks:[],
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -1889,7 +1890,7 @@ let _periodicTimer=null;
 let _stateDirty=false;          /* true while local state differs from last cloud sync */
 let _lastSyncedHash='';         /* fingerprint of last successfully synced state */
 const _CLOUD_DEBOUNCE_MS=10000; /* 10s after the LAST edit before upload — the user wants changes to reach the cloud fast; a flush-on-background (see visibilitychange) also pushes pending edits the moment the app is closed/backgrounded, so nothing is stranded locally for days */
-const _PERIODIC_SYNC_MS=60000;  /* background pull every 60s (was 30s) — chat has its own realtime socket, so 60s cross-device latency is invisible and idle egress halves */
+const _PERIODIC_SYNC_MS=90000;  /* background pull every 90s (was 60s/30s) — trims the shared free-tier request budget; the updated_at probe means an unchanged blob isn't re-downloaded, so 90s cross-device latency is a fine trade */
 
 /* Quick non-cryptographic fingerprint so we can tell "did anything change?"
    without re-encrypting the whole state.
@@ -2535,7 +2536,68 @@ function _khStickerParse(text){var v=String(text||'');if(v.indexOf('KHSTK1:')!==
 function _khIsStickerMsg(text){return String(text||'').indexOf('KHSTK1:')===0;}
 /* One-word label so a media message never shows its raw code in a reply
    preview, notification toast, or when copied. Returns '' for plain text. */
-function _khMediaLabel(text){if(_khIsImgMsg(text))return '[Image]';if(_khIsStickerMsg(text)){var id=_khStickerParse(text);return '[Sticker'+(id&&_KH_STICKERS[id]?' · '+_KH_STICKERS[id].label:'')+']';}return '';}
+function _khMediaLabel(text){if(_khIsImgMsg(text))return '[Image]';if(_khIsFlipMsg(text))return '[Flipbook]';if(_khIsStickerMsg(text)){var id=_khStickerParse(text);return '[Sticker'+(id&&_KH_STICKERS[id]?' · '+_KH_STICKERS[id].label:'')+']';}return '';}
+/* ── Flipbook: a tiny 1-bit frame animation that rides the normal chat message
+   path (like KHIMG1:/KHSTK1:). Each frame is W*H bits packed 4-per-hex-char, so
+   a 28x28 x 12-frame clip is ~2 KB of hex → well under the message cap, no media
+   backend. Format: KHFLIP1:<base64 JSON {n,w,h,fps,f:[hex,...]}>. */
+function _khFlipPack(cells,n){var s='';for(var i=0;i<n;i+=4){var v=0;for(var b=0;b<4;b++){if(cells[i+b])v|=(1<<b);}s+=v.toString(16);}return s;}
+function _khFlipUnpack(hex,n){var cells=new Array(n);for(var i=0;i<n;i++)cells[i]=0;hex=String(hex||'');for(var c=0;c<hex.length;c++){var v=parseInt(hex.charAt(c),16);if(isNaN(v))v=0;for(var b=0;b<4;b++){var idx=c*4+b;if(idx<n)cells[idx]=(v>>b)&1;}}return cells;}
+function _khFlipCode(fb){try{return 'KHFLIP1:'+btoa(unescape(encodeURIComponent(JSON.stringify(fb))));}catch(_){return '';}}
+function _khFlipParse(text){var v=String(text||'');if(v.indexOf('KHFLIP1:')!==0)return null;try{var o=JSON.parse(decodeURIComponent(escape(atob(v.slice(8)))));if(!o||!o.w||!o.h||!Array.isArray(o.f)||!o.f.length)return null;if(o.w>64||o.h>64||o.f.length>60)return null;o.fps=Math.max(1,Math.min(15,o.fps||6));return o;}catch(_){return null;}}
+function _khIsFlipMsg(text){return String(text||'').indexOf('KHFLIP1:')===0;}
+/* Paint one frame's cells onto a 2D context (black cells on a white ground). */
+function _khFlipPaint(ctx,fb,frameIdx,px){
+  try{
+    var w=fb.w,h=fb.h,scale=px/Math.max(w,h);
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,px,px);
+    var cells=_khFlipUnpack(fb.f[frameIdx%fb.f.length],w*h);
+    ctx.fillStyle='#111';
+    for(var y=0;y<h;y++)for(var x=0;x<w;x++){if(cells[y*w+x])ctx.fillRect(Math.floor(x*scale),Math.floor(y*scale),Math.ceil(scale),Math.ceil(scale));}
+  }catch(_){}
+}
+/* A small static thumbnail canvas (frame 0) for a chat bubble. */
+function _khFlipThumb(fb,px){px=px||132;var c=document.createElement('canvas');c.width=px;c.height=px;c.style.cssText='width:'+px+'px;height:'+px+'px;border:var(--thin);border-radius:8px;background:#fff;display:block;';var ctx=c.getContext('2d');if(ctx)_khFlipPaint(ctx,fb,0,px);return c;}
+/* Fullscreen flipbook player — plays frames at fb.fps, tap to play/pause. The
+   interval is cleared on close, so no animation loop leaks (e-ink discipline). */
+function _khOpenFlipViewer(fb){
+  try{
+    if(!fb)return;
+    var ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.9)',zIndex:'100010',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'12px'}});
+    var px=Math.min(320,(window.innerWidth||360)-40);
+    var c=el('canvas',{style:{width:px+'px',height:px+'px',background:'#fff',borderRadius:'10px'}});c.width=px;c.height=px;
+    var ctx=c.getContext('2d');
+    var i=0,timer=null,playing=false;
+    function frame(){_khFlipPaint(ctx,fb,i,px);}
+    frame();
+    var bar=el('div',{style:{display:'flex',gap:'8px',marginTop:'14px'}});
+    var playBtn=txt('button','Play',{className:'btn small primary'});
+    function stop(){if(timer){clearInterval(timer);timer=null;}playing=false;playBtn.textContent='Play';}
+    function start(){stop();playing=true;playBtn.textContent='Pause';timer=setInterval(function(){i=(i+1)%fb.f.length;frame();},Math.round(1000/(fb.fps||6)));}
+    playBtn.onclick=function(){if(playing)stop();else start();};
+    var cl=txt('button','Close',{className:'btn small'});cl.onclick=function(){stop();ov.remove();};
+    bar.append(playBtn,cl);
+    if(fb.n)ov.appendChild(txt('div',String(fb.n).slice(0,40),{style:{color:'#fff',fontSize:'13px',marginBottom:'10px',fontWeight:'700'}}));
+    ov.appendChild(c);ov.appendChild(bar);
+    ov.onclick=function(e){if(e.target===ov){stop();ov.remove();}};
+    _overlayHost().appendChild(ov);
+    start();/* autoplay once opened */
+  }catch(_){}
+}
+/* From the Flipbook editor's "Send to a chat": save it, then route to Messages
+   where the composer's + (Attach) → Flipbook picker actually posts it (the
+   editor has no chat context of its own). */
+function _khSendFlipbookPicker(fb){
+  try{
+    if(!fb)return;
+    if(!Array.isArray(S.flipbooks))S.flipbooks=[];
+    var code=_khFlipCode(fb);
+    var exists=S.flipbooks.some(function(x){return _khFlipCode(x)===code;});
+    if(!exists){S.flipbooks.unshift(Object.assign({id:'fb_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),at:(typeof NOW==='function'?NOW():Date.now())},fb));if(S.flipbooks.length>24)S.flipbooks.length=24;try{save();}catch(_){}}
+    try{showView('messages');}catch(_){}
+    if(typeof toast==='function')toast('Saved. Open a chat, then tap + (Attach) → Flipbook to send "'+(fb.n||'it')+'".',5500);
+  }catch(_){}
+}
 /* Built-in sticker pack — inline SVG line/fill art in currentColor, so it's
    crisp on e-ink (no tofu, no animation to lag) and adopts the theme colour. */
 var _KH_STICKERS={
@@ -2605,6 +2667,7 @@ function _khOpenImageViewer(dataUrl){
 window._khImgCode=_khImgCode;window._khImgParse=_khImgParse;window._khIsImgMsg=_khIsImgMsg;
 window._khStickerCode=_khStickerCode;window._khStickerParse=_khStickerParse;window._khIsStickerMsg=_khIsStickerMsg;
 window._khMediaLabel=_khMediaLabel;window._khDownscaleImage=_khDownscaleImage;window._khOpenImageViewer=_khOpenImageViewer;window._KH_STICKERS=_KH_STICKERS;
+window._khFlipCode=_khFlipCode;window._khFlipParse=_khFlipParse;window._khIsFlipMsg=_khIsFlipMsg;window._khFlipPack=_khFlipPack;window._khFlipUnpack=_khFlipUnpack;window._khFlipThumb=_khFlipThumb;window._khOpenFlipViewer=_khOpenFlipViewer;window._khFlipPaint=_khFlipPaint;window._khSendFlipbookPicker=_khSendFlipbookPicker;
 
 /* ── Admin AI: "ask about a user" ─────────────────────────────────────────
    Gathers a user's cloud METADATA (email, last sync, message count + recent
@@ -2753,7 +2816,7 @@ function _startMessageNotifier(){
        to ceil(groups.length/NOTIFY_BATCH)*45s. Each group still only costs a
        cheap ~50-byte _groupLatestId probe (gated below) unless it genuinely has
        something new, so this doesn't reintroduce the all-groups CPU/GC spike. */
-    const NOTIFY_BATCH=8;
+    const NOTIFY_BATCH=5;/* was 8 — fewer per-tick probes to cut the shared free-tier request budget */
     if(_notifyIdx>=groups.length)_notifyIdx=0;
     const _batch=[];
     for(let _b=0;_b<NOTIFY_BATCH&&_b<groups.length;_b++){
@@ -2828,7 +2891,7 @@ function _startMessageNotifier(){
       }catch(e){}
     }
   }
-  _msgNotifyTimer=setInterval(_notifyTick,(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);
+  _msgNotifyTimer=setInterval(_notifyTick,(typeof _khSimpleMode==='function'&&_khSimpleMode())?150000:75000);/* was 90s/45s — slower background chat-notifier poll to cut the shared free-tier request budget */
   /* Immediate first sweep so new-message notifications appear right after
      load / turn-on — not only after the first 45-90s poll tick (the reported
      "notifications show up 3 minutes later" complaint). seedSeen only seeds
@@ -3016,6 +3079,8 @@ function _startPeriodicSync(){
   _periodicTimer=setInterval(async()=>{
     if(!S.authToken||!S.syncEnabled)return;
     if(document.hidden)return;
+    if(typeof _khCfBlocked==='function'&&_khCfBlocked(false))return;/* park background sync during a CF limit */
+    if(typeof _khLoadSkip==='function'&&_khLoadSkip())return;/* adaptive backoff as the shared budget fills */
     /* Pull first — picks up edits from other devices. Push second
        — uploads anything new from this device. Order matters: if
        we push first and an opposing device pushed simultaneously,
@@ -3507,7 +3572,7 @@ const NAV_TABS=[
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
   ['imagesearch','Images'],['sports','Sports'],
-  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue'],
+  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['flipbook','Flipbook'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue'],
   ['stash','Stash'],['verses','Verse Library']
 ];
 function getNavOrder(){
@@ -4859,6 +4924,7 @@ function launchKindleDesktop(){
     {id:'animals',   label:'Animals',     nav:'animals',   color:'#b45309',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><ellipse cx="24" cy="31" rx="9" ry="7" fill="#b45309"/><circle cx="13" cy="21" r="3.4" fill="#b45309"/><circle cx="20" cy="15" r="3.4" fill="#b45309"/><circle cx="28" cy="15" r="3.4" fill="#b45309"/><circle cx="35" cy="21" r="3.4" fill="#b45309"/></svg>'},
     {id:'unitconv',  label:'Unit Converter',nav:'unitconv',color:'#0d9488',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><path d="M10 18 L38 18 M10 18 L16 12 M10 18 L16 24" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M38 30 L10 30 M38 30 L32 24 M38 30 L32 36" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
     {id:'tipcalc',   label:'Tip Calculator',nav:'tipcalc',color:'#16a34a',icon:'<svg viewBox="0 0 48 48" fill="none"><path d="M12 4 L36 4 L36 44 L32 41 L28 44 L24 41 L20 44 L16 41 L12 44 Z" fill="#fff" stroke="#16a34a" stroke-width="2" stroke-linejoin="round"/><text x="24" y="30" font-size="18" font-weight="900" fill="#16a34a" text-anchor="middle" font-family="serif">$</text></svg>'},
+    {id:'flipbook',  label:'Flipbook',     nav:'flipbook',  color:'#9333ea',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="6" width="30" height="34" rx="3" fill="#fff" transform="rotate(-4 24 24)"/><rect x="10" y="8" width="30" height="34" rx="3" fill="#fff"/><circle cx="20" cy="20" r="5" fill="#9333ea"/><path d="M14 34 L23 24 L30 30 L36 22 L40 27 L40 34 Z" fill="#9333ea" opacity=".55"/></svg>'},
     {id:'histday',   label:'Today in History',nav:'histday',color:'#92400e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><circle cx="24" cy="24" r="15" fill="none" stroke="#92400e" stroke-width="2.5"/><line x1="24" y1="24" x2="24" y2="14" stroke="#92400e" stroke-width="2.5" stroke-linecap="round"/><line x1="24" y1="24" x2="32" y2="28" stroke="#92400e" stroke-width="2.5" stroke-linecap="round"/></svg>'},
     {id:'lifeweeks', label:'Life in Weeks',nav:'lifeweeks',color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g fill="#7c3aed"><circle cx="12" cy="12" r="2.2"/><circle cx="20" cy="12" r="2.2"/><circle cx="28" cy="12" r="2.2"/><circle cx="36" cy="12" r="2.2"/><circle cx="12" cy="20" r="2.2"/><circle cx="20" cy="20" r="2.2"/><circle cx="28" cy="20" r="2.2" opacity=".35"/><circle cx="36" cy="20" r="2.2" opacity=".35"/><circle cx="12" cy="28" r="2.2" opacity=".35"/><circle cx="20" cy="28" r="2.2" opacity=".35"/><circle cx="28" cy="28" r="2.2" opacity=".35"/><circle cx="36" cy="28" r="2.2" opacity=".35"/><circle cx="12" cy="36" r="2.2" opacity=".35"/><circle cx="20" cy="36" r="2.2" opacity=".35"/><circle cx="28" cy="36" r="2.2" opacity=".35"/><circle cx="36" cy="36" r="2.2" opacity=".35"/></g></svg>'},
     {id:'chords',    label:'Fretboard',   nav:'chords',    color:'#78350f',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g stroke="#78350f" stroke-width="1.6"><line x1="14" y1="10" x2="14" y2="38"/><line x1="20" y1="10" x2="20" y2="38"/><line x1="26" y1="10" x2="26" y2="38"/><line x1="32" y1="10" x2="32" y2="38"/><line x1="10" y1="16" x2="36" y2="16"/><line x1="10" y1="24" x2="36" y2="24"/><line x1="10" y1="32" x2="36" y2="32"/></g><circle cx="20" cy="20" r="2.6" fill="#78350f"/><circle cx="32" cy="28" r="2.6" fill="#78350f"/></svg>'},
@@ -6506,6 +6572,9 @@ function launchKindleDesktop(){
   stPreview.className='card';
   stPreview.style.cssText+='display:none;flex-direction:column;gap:10px;';
   stBody.appendChild(stPreview);
+  /* base44-style iterative editing: remember the last built app so a "refine"
+     request modifies IT instead of starting from scratch. */
+  let _stLastHtml='',_stLastLabel='',_stLastColor='';
   /* PERF FIX: an AI-built preview can contain its OWN setInterval/RAF (countdown,
      clock, game — the first placeholder example is literally a countdown). The
      sandboxed iframe keeps that loop running after you leave this screen, because
@@ -6799,9 +6868,11 @@ function launchKindleDesktop(){
     return txt2;
   }
 
-  stBuild.onclick=async()=>{
-    const desc=stTextarea.value.trim();
-    if(!desc){stStatus.textContent='Please describe the app first.';stStatus.style.display='block';return;}
+  async function _stBuild(opts){
+    opts=opts||{};
+    const isRefine=(opts.refine!=null);
+    const desc=(isRefine?String(opts.refine):stTextarea.value).trim();
+    if(!desc){stStatus.textContent=isRefine?'Describe the change first.':'Please describe the app first.';stStatus.style.display='block';return;}
     const modelId=osState.aiModel||'gemini';
     const _hasGemKey=!!S.geminiKey;
     const _hasORKey=!!S.openrouterKey;
@@ -6853,7 +6924,10 @@ CRITICAL KINDLE WEBKIT COMPATIBILITY RULES (violating these will break the app):
 
 GENERAL RULES:
 - Return ONLY valid JSON, no markdown, no preamble, no code fences.
-- Schema: {"label":"App Name","color":"#hexcolor","html":"complete HTML string"}
+- Schema: {"label":"App Name","color":"#hexcolor","html":"complete HTML string","summary":"2-4 short sentences: what the app does, how to use it, and its key features"}
+- ALWAYS return a working app. NEVER reply with a question, a refusal, or a request for an API key, image-generation service, or any external tool — you cannot ask for credentials and the app has no network. If something isn't possible offline, build the closest self-contained version instead.
+- Build a REAL, INTERACTIVE app with working JavaScript — buttons, inputs, saved state (localStorage), the actual logic. Never a static mockup or a page of placeholder text.
+- IMAGES & GRAPHICS: draw them yourself with inline SVG, CSS, or <canvas>. Do NOT use <img src> to a URL, and NEVER ask for an image-generation API — if the user wants pictures, make SVG illustrations, icons, or geometric art in code.
 - The html field must be a fully working standalone HTML document.
 - All CSS and JS inline. The app runs fully SANDBOXED with NO network access once installed — fetch/XMLHttpRequest/WebSocket and external <img>/<script>/<link> are all blocked. Everything must be self-contained and work OFFLINE. Do NOT rely on any web API or CDN.
 - Design for portrait ~360x580px. High contrast black/white. Large tap targets (min 44px height).
@@ -6879,7 +6953,9 @@ SEND EMAIL — the app has NO email/network of its own. To send mail, ask the HO
   });
   parent.postMessage({kh:'app',action:'sendMail',rid:_rid,to:'someone@example.com',subject:'Hi',body:'text'},'*');
 Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in the sandbox. Only the postMessage bridge above works.`;
-      const userMsg='Build this app: '+desc;
+      const userMsg=opts.priorHtml
+        ?('Here is the CURRENT app HTML:\n'+opts.priorHtml+'\n\nUpdate it as follows, keeping everything else working: '+desc+'\n\nReturn the COMPLETE updated app as JSON {"label","color","html","summary"} — summary should say what changed.')
+        :('Build this app: '+desc);
       let raw=await _khCallActiveAI(systemPrompt,userMsg);
       const clean=raw.replace(/```json[\s\S]*?```|```[\s\S]*?```/g,m=>m.replace(/```json|```/g,'')).replace(/^```json|^```|```$/gm,'').trim();
       const parsed=JSON.parse(clean);
@@ -6943,6 +7019,17 @@ Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in
         stBuild.disabled=false;stBuild.textContent='Build with AI';
       };
       stPreview.appendChild(ptitle);
+      /* base44-style "here's what I built" summary — the model explains the app
+         and how to use it (falls back to a generic line if it didn't send one). */
+      _stLastHtml=parsed.html;_stLastLabel=parsed.label||'App';_stLastColor=appColor;
+      const summaryText=(parsed.summary&&String(parsed.summary).trim())||'';
+      if(summaryText){
+        const sp=document.createElement('div');
+        sp.style.cssText='font-size:12px;line-height:1.55;padding:9px 11px;border:var(--thin);border-radius:9px;background:var(--highlight,#f2f2f2);color:var(--fg,#111);';
+        const sh=document.createElement('div');sh.textContent=isRefine?'What changed':'What I built';sh.style.cssText='font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted,#777);margin-bottom:3px;';
+        const sb=document.createElement('div');sb.textContent=summaryText.slice(0,600);
+        sp.appendChild(sh);sp.appendChild(sb);stPreview.appendChild(sp);
+      }
       if(_silkIssues.length){
         const w=document.createElement('div');
         w.style.cssText='font-size:11px;line-height:1.45;padding:7px 9px;border:1px solid #d35400;border-radius:7px;background:rgba(211,84,0,0.06);color:#a04000;';
@@ -6950,12 +7037,23 @@ Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in
         stPreview.appendChild(w);
       }
       stPreview.appendChild(pframe);stPreview.appendChild(installBtn);
-      stPreview.style.display='flex';stStatus.textContent='Done. Preview below.';
+      /* Iterate on the app without starting over (base44's refine loop). */
+      const refWrap=document.createElement('div');
+      refWrap.style.cssText='display:flex;flex-direction:column;gap:6px;margin-top:2px;';
+      refWrap.appendChild(txt('div','Want a change? Describe it and update the app:',{style:{fontSize:'11px',color:'var(--muted,#777)'}}));
+      const refRow=document.createElement('div');refRow.style.cssText='display:flex;gap:6px;';
+      const refInp=document.createElement('input');refInp.type='text';refInp.placeholder='e.g. add a dark theme, make the buttons bigger…';refInp.style.cssText='flex:1;min-width:0;font-size:13px;padding:8px 10px;border:var(--thin);border-radius:8px;';
+      const refBtn=document.createElement('button');refBtn.textContent='Update';refBtn.className='btn small primary';refBtn.style.cssText+='flex:0 0 auto;';
+      refBtn.onclick=function(){const c=(refInp.value||'').trim();if(!c){refInp.focus();return;}_stBuild({refine:c,priorHtml:_stLastHtml});};
+      refRow.append(refInp,refBtn);refWrap.appendChild(refRow);
+      stPreview.appendChild(refWrap);
+      stPreview.style.display='flex';stStatus.textContent=isRefine?'Updated. Preview below.':'Done. Preview below.';
     }catch(err){
       stStatus.textContent='Error: '+(err.message||'Build failed. Try again.');
     }
     stBuild.disabled=false;stBuild.textContent='Build with AI';
-  };
+  }
+  stBuild.onclick=function(){_stBuild();};
 
   function openStore(){
     /* Sync model selection to whichever provider has a key */
@@ -8826,8 +8924,11 @@ function _khCfBlocked(isWrite){
 window._khLoad=window._khLoad||0;   // server-reported daily budget fraction (0..1)
 function _khLoadSkip(){
   const L=window._khLoad||0;
-  if(L<0.55)return false;
-  let p=(L-0.55)*1.9; if(p>0.85)p=0.85;
+  /* Back off EARLIER (was 0.55) and harder: with the account-wide free-tier
+     budget shared across several Workers, start shedding background polls at 40%
+     usage so the account never approaches the 100k/day request cap (error 1027).*/
+  if(L<0.40)return false;
+  let p=(L-0.40)*2.2; if(p>0.9)p=0.9;
   return Math.random()<p;
 }
 function _khCfOn503(body){
@@ -8841,15 +8942,30 @@ function _khCfOn503(body){
 async function _sbFetch(path,opts){
   opts=opts||{};
   const url=_sbBase()+'/rest/v1'+path;
-  const ac=typeof AbortController!=='undefined'?new AbortController():null;
-  const tid=setTimeout(()=>{if(ac)ac.abort();},12000);
-  let r;
-  try{
-    r=await fetch(url,Object.assign({},opts,{
-      headers:_sbHeaders(opts.headers),
-      signal:ac?ac.signal:undefined,
-    }));
-  }finally{clearTimeout(tid);}
+  const _method=(opts.method||'GET').toUpperCase();
+  /* Retry ONLY idempotent reads, and ONLY on a network-level reject/timeout
+     (e.g. WebKit's generic "Load failed" on flaky Kindle Wi-Fi) — never on an
+     HTTP error status (those are deliberate) and never on a write (could
+     double-insert). One backoff retry heals the common transient "Sync issue:
+     Cloud fetch error: Load failed" without changing any behaviour on success. */
+  const _idem=(_method==='GET'||_method==='HEAD');
+  const _tries=_idem?2:1;
+  let r,_netErr=null;
+  for(let _a=0;_a<_tries;_a++){
+    const ac=typeof AbortController!=='undefined'?new AbortController():null;
+    const tid=setTimeout(()=>{if(ac)ac.abort();},12000);
+    try{
+      r=await fetch(url,Object.assign({},opts,{
+        headers:_sbHeaders(opts.headers),
+        signal:ac?ac.signal:undefined,
+      }));
+      _netErr=null;
+    }catch(e){ _netErr=e; }
+    finally{clearTimeout(tid);}
+    if(!_netErr)break;
+    if(_a<_tries-1)await new Promise(res=>setTimeout(res,700+_a*600));
+  }
+  if(_netErr)throw _netErr;
   /* Track the shared daily budget the Worker reports so background pollers can
      self-throttle before anyone hits the hard cap (see _khLoadSkip). */
   try{ const _ld=r&&r.headers&&r.headers.get('x-kh-load'); if(_ld!=null){ const _n=parseInt(_ld,10); if(!isNaN(_n))window._khLoad=_n/100; } }catch(_){}
@@ -9387,6 +9503,7 @@ var STORE_APPS=[
   {view:'tipcalc',   name:'Tip Calculator',cat:'Utilities',    desc:'Split the bill and work out the tip.'},
   /* Creativity */
   {view:'draw',      name:'Draw',          cat:'Creativity',   desc:'A sketch pad.'},
+  {view:'flipbook',  name:'Flipbook',      cat:'Creativity',   desc:'Draw frame-by-frame animations and send them in chat.'},
   /* Lifestyle */
   {view:'cookbook',  name:'Cookbook',      cat:'Lifestyle',    desc:'Save and browse recipes.'},
   {view:'sleeplog',  name:'Sleep',         cat:'Lifestyle',    desc:'Track your sleep.'},
@@ -9409,7 +9526,7 @@ var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports']
    applier only hides ones the user has never decided on, so nothing a user
    installed is ever force-hidden. teleprompter is intentionally NOT here — it's
    launched inside Tools via khTeleprompter(), not a standalone view. */
-var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq','stash','verses'];
+var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','flipbook','histday','lifeweeks','chords','watchq','stash','verses'];
 /* Only these Gemini models are trusted to REVIEW apps, strongest first. */
 var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
 function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
@@ -9442,6 +9559,7 @@ var _KH_PAGE_DESC={
   animals:'A zoo field guide: browse by class or search, then tap an animal for photos, stats and fun facts.',
   unitconv:'Convert units — pick a category, type a value, and it converts instantly. Tap Swap to reverse.',
   tipcalc:'Split a bill: enter the amount, pick a tip %, set the number of people, and it shows tip, total and each share.',
+  flipbook:'Draw a frame-by-frame animation on a small canvas, play it back, then send it into any chat from the composer’s + (Attach) menu.',
   dictionary:'Look up any word for its meaning, pronunciation and examples.',
   periodic:'The full periodic table — tap any element for its detailed profile.',
   sleeplog:'Log your sleep each night and watch your patterns and averages build up over time.',
@@ -43163,7 +43281,7 @@ settings:()=>{
                 }
               }
             }
-          }catch(e){pullErr='Cloud fetch error: '+(e&&e.message||String(e)).slice(0,60);}
+          }catch(e){var _em=(e&&e.message||String(e));pullErr=/load failed|network|fetch|abort/i.test(_em)?'Could not reach the cloud — check your Wi-Fi (and the backend gateway in Admin). It retried automatically; try Sync Now again in a moment.':('Cloud fetch error: '+_em.slice(0,60));}
         } else {
           try{
             const doc=await _masterRead();
@@ -61227,6 +61345,38 @@ messages:()=>{
       ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
       _overlayHost().appendChild(ov);
     }
+    /* Pick a saved flipbook to send (rides the normal message path as a KHFLIP1:
+       code — capped at the same 16 KB chat budget as an app share). */
+    function _khOpenFlipbookPicker(){
+      const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100001',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
+      const sheet=el('div',{style:{background:'var(--card)',width:'100%',maxWidth:'480px',borderRadius:'16px 16px 0 0',padding:'14px 14px 20px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 -4px 24px rgba(0,0,0,.3)'}});
+      sheet.appendChild(txt('h3','Flipbooks',{style:{fontFamily:'var(--title-font)',fontSize:'15px',margin:'0 0 8px'}}));
+      const list=(Array.isArray(S.flipbooks)?S.flipbooks:[]);
+      if(!list.length){
+        sheet.appendChild(txt('div','You haven\'t made any flipbooks yet. Open the Flipbook app to draw a quick animation, then send it here.',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'6px 0'}}));
+        const go=txt('button','Open Flipbook',{className:'btn small primary',style:{marginTop:'6px'}});go.onclick=function(){ov.remove();try{showView('flipbook');}catch(_){}};
+        sheet.appendChild(go);
+      } else {
+        const grid=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px'}});
+        list.forEach(function(fb){
+          const cell=el('button',{title:fb.n||'Flipbook',style:{padding:'6px',border:'var(--thin)',borderRadius:'10px',background:'var(--bg)',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'4px'}});
+          try{cell.appendChild(_khFlipThumb(fb,80));}catch(_){}
+          cell.appendChild(txt('div',fb.n||'Flipbook',{style:{fontSize:'10px',fontWeight:'700',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'80px'}}));
+          cell.onclick=function(){
+            const code=(typeof _khFlipCode==='function')?_khFlipCode(fb):'';
+            if(!code){if(typeof toast==='function')toast('Could not pack that flipbook.');return;}
+            if(code.length>16000){if(typeof toast==='function')toast('That flipbook is too detailed to send in chat — use fewer frames.',4500);return;}
+            ov.remove();_sendPayload(code);
+          };
+          grid.appendChild(cell);
+        });
+        sheet.appendChild(grid);
+      }
+      const cl=txt('button','Cancel',{className:'btn small',style:{marginTop:'12px'}});cl.onclick=function(){ov.remove();};
+      sheet.appendChild(cl);
+      ov.appendChild(sheet);ov.onclick=function(e){if(e.target===ov)ov.remove();};
+      _overlayHost().appendChild(ov);
+    }
     function _khOpenAppShareMenu(){
       const apps=(typeof osState!=='undefined'&&osState&&Array.isArray(osState.customApps))?osState.customApps:[];
       const ov=el('div',{style:{position:'fixed',top:'0',left:'0',right:'0',bottom:'0',background:'rgba(0,0,0,.6)',zIndex:'100000',display:'flex',alignItems:'flex-end',justifyContent:'center'}});
@@ -61243,6 +61393,7 @@ messages:()=>{
       _attachRow('IMG','Send a photo from your device.','Choose',_khPickAndSendImage);
       _attachRow('SHOT','Send a screenshot of the app.','Pick',_khOpenScreenshotPicker);
       _attachRow('STK','Stickers — quick visual reactions, no lag.','Pick',_khOpenStickerPicker);
+      _attachRow('FLIP','Flipbooks — send a little animation you drew.','Pick',_khOpenFlipbookPicker);
       /* Create a poll */
       const pollRow=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'9px 4px',borderBottom:'var(--thin)',marginBottom:'6px'}});
       pollRow.appendChild(txt('span','POLL',{style:{fontSize:'9px',fontWeight:'900',background:'var(--accent)',color:'var(--accent-inv)',padding:'3px 6px',borderRadius:'4px',flexShrink:'0'}}));
@@ -62145,10 +62296,13 @@ messages:()=>{
         var _poll=(typeof _khPollParse==='function')?_khPollParse(m.text):null;
         var _imgUrl=(typeof _khImgParse==='function')?_khImgParse(m.text):null;
         var _stkId=(typeof _khStickerParse==='function')?_khStickerParse(m.text):null;
+        var _flip=(typeof _khFlipParse==='function')?_khFlipParse(m.text):null;
         if(String(m.text||'').indexOf('KHAPP1:')===0&&typeof _khAppMsgCard==='function'){
           textBox.appendChild(_khAppMsgCard(m.text,own));
         } else if(_imgUrl){
           textBox.appendChild(_renderImgCard(_imgUrl));
+        } else if(_flip){
+          textBox.appendChild(_renderFlipCard(_flip));
         } else if(_stkId){
           textBox.appendChild(_renderStickerCard(_stkId));
         } else if(_poll){
@@ -62459,6 +62613,18 @@ messages:()=>{
       wrap.appendChild(im);
       return wrap;
     }
+    /* Flipbook bubble — a static frame-0 thumbnail with a Play badge; tapping
+       opens the fullscreen player (only THEN does it animate, so a chat full of
+       flipbooks doesn't spawn a dozen e-ink-thrashing loops). */
+    function _renderFlipCard(fb){
+      const wrap=el('div',{style:{position:'relative',width:'132px',height:'132px',cursor:'pointer'}});
+      try{ wrap.appendChild(_khFlipThumb(fb,132)); }catch(_){ wrap.appendChild(txt('div','[Flipbook]',{})); }
+      const badge=el('div',{style:{position:'absolute',right:'6px',bottom:'6px',background:'rgba(0,0,0,.72)',color:'#fff',fontSize:'10px',fontWeight:'800',padding:'2px 7px',borderRadius:'10px'}});
+      badge.textContent='▶ Play';
+      wrap.appendChild(badge);
+      wrap.onclick=function(e){if(e&&e.stopPropagation)e.stopPropagation();if(typeof _khOpenFlipViewer==='function')_khOpenFlipViewer(fb);};
+      return wrap;
+    }
     /* Inline sticker bubble — renders the built-in SVG from the fixed pack. */
     function _renderStickerCard(id){
       const st=(typeof _KH_STICKERS!=='undefined'&&_KH_STICKERS[id])?_KH_STICKERS[id]:null;
@@ -62706,7 +62872,7 @@ messages:()=>{
           const tailChanged=msgs.length&&_messages.length&&msgs[msgs.length-1].id!==_messages[_messages.length-1].id;
           if(msgs.length!==_lastMsgCount||tailChanged){_lastMsgCount=msgs.length;_messages=msgs;renderMessages(msgs);}
         }catch(e){}
-      },15000);
+      },22000);/* was 15s — slower open-chat poll to cut the shared free-tier request budget (the ~50-byte latest-id probe means a quiet room is still cheap) */
     }
   }
 
@@ -64158,6 +64324,154 @@ BUILDERS.browser=()=>{
   v.appendChild(wrap);
 
   setTimeout(paint,0);
+  return v;
+};
+
+/* ── Flipbook: a 1-bit frame-by-frame animation studio (e-ink-safe). Draw on a
+   28x28 canvas, add/duplicate/delete frames with onion-skinning, play it back,
+   save to S.flipbooks, and post it into any chat via the composer's Attach menu
+   (it rides the normal message path as a KHFLIP1: code — no media backend). */
+BUILDERS.flipbook=()=>{
+  const W=28,H=28,N=W*H,PX=280,SC=PX/W;
+  const v=el('section',{id:'view-flipbook',className:'view'});
+  v.appendChild(txt('h2','Flipbook',{style:{fontFamily:'var(--title-font)',fontSize:'24px',fontWeight:'900',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Draw a frame-by-frame animation, then send it in any chat.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px'}}));
+  let frames=[_flipBlank()];
+  let cur=0,drawErase=false,onion=true,fps=6,playing=false,playTimer=null;
+  function _flipBlank(){var a=new Array(N);for(var i=0;i<N;i++)a[i]=0;return a;}
+  const wrap=el('div',{style:{maxWidth:'340px',margin:'0 auto'}});
+  const cv=el('canvas',{style:{width:'100%',maxWidth:PX+'px',height:'auto',border:'2px solid var(--fg)',borderRadius:'8px',background:'#fff',display:'block',margin:'0 auto',touchAction:'none'}});
+  cv.width=PX;cv.height=PX;
+  const ctx=cv.getContext('2d');
+  function drawCells(cells){for(var y=0;y<H;y++)for(var x=0;x<W;x++){if(cells[y*W+x])ctx.fillRect(Math.floor(x*SC),Math.floor(y*SC),Math.ceil(SC),Math.ceil(SC));}}
+  function paint(){
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,PX,PX);
+    if(onion&&!playing&&cur>0){ctx.fillStyle='rgba(0,0,0,0.16)';drawCells(frames[cur-1]);}
+    ctx.fillStyle='#111';drawCells(frames[cur]);
+    /* faint grid */
+    ctx.strokeStyle='rgba(0,0,0,0.08)';ctx.lineWidth=1;
+    for(var i=0;i<=W;i+=4){var p=Math.floor(i*SC)+0.5;ctx.beginPath();ctx.moveTo(p,0);ctx.lineTo(p,PX);ctx.moveTo(0,p);ctx.lineTo(PX,p);ctx.stroke();}
+  }
+  function cellIdx(clientX,clientY){var r=cv.getBoundingClientRect();var x=Math.floor((clientX-r.left)/r.width*W),y=Math.floor((clientY-r.top)/r.height*H);if(x<0||y<0||x>=W||y>=H)return -1;return y*W+x;}
+  let _painting=false;
+  function applyAt(clientX,clientY){if(playing)return;var idx=cellIdx(clientX,clientY);if(idx<0)return;var nv=drawErase?0:1;if(frames[cur][idx]!==nv){frames[cur][idx]=nv;paint();}}
+  function _pd(e){_painting=true;var t=e.touches?e.touches[0]:e;applyAt(t.clientX,t.clientY);if(e.cancelable)e.preventDefault();}
+  function _pm(e){if(!_painting)return;var t=e.touches?e.touches[0]:e;applyAt(t.clientX,t.clientY);if(e.cancelable)e.preventDefault();}
+  function _pu(){_painting=false;updateStrip();}
+  cv.addEventListener('touchstart',_pd,{passive:false});
+  cv.addEventListener('touchmove',_pm,{passive:false});
+  cv.addEventListener('touchend',_pu,{passive:true});
+  cv.addEventListener('mousedown',_pd);
+  cv.addEventListener('mousemove',_pm);
+  window.addEventListener('mouseup',_pu);
+  wrap.appendChild(cv);
+  /* Tool row */
+  const tools=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',justifyContent:'center',margin:'8px 0'}});
+  const penBtn=txt('button','Draw',{className:'btn small primary'});
+  const eraBtn=txt('button','Erase',{className:'btn small'});
+  penBtn.onclick=function(){drawErase=false;penBtn.className='btn small primary';eraBtn.className='btn small';};
+  eraBtn.onclick=function(){drawErase=true;eraBtn.className='btn small primary';penBtn.className='btn small';};
+  const onionBtn=txt('button','Onion: on',{className:'btn small'});
+  onionBtn.onclick=function(){onion=!onion;onionBtn.textContent='Onion: '+(onion?'on':'off');paint();};
+  const clrBtn=txt('button','Clear frame',{className:'btn small'});
+  clrBtn.onclick=function(){frames[cur]=_flipBlank();paint();updateStrip();};
+  tools.append(penBtn,eraBtn,onionBtn,clrBtn);
+  wrap.appendChild(tools);
+  /* Frame controls */
+  const fctl=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center',justifyContent:'center',margin:'2px 0 8px'}});
+  const prevB=txt('button','‹',{className:'btn small'});
+  const frameLbl=txt('span','1 / 1',{style:{fontSize:'12px',fontWeight:'700',minWidth:'54px',textAlign:'center'}});
+  const nextB=txt('button','›',{className:'btn small'});
+  const addB=txt('button','+ Frame',{className:'btn small'});
+  const dupB=txt('button','Duplicate',{className:'btn small'});
+  const delB=txt('button','Delete',{className:'btn small'});
+  prevB.onclick=function(){if(cur>0){cur--;paint();updateStrip();}};
+  nextB.onclick=function(){if(cur<frames.length-1){cur++;paint();updateStrip();}};
+  addB.onclick=function(){if(frames.length>=24){toast('Max 24 frames.');return;}frames.splice(cur+1,0,_flipBlank());cur++;paint();updateStrip();};
+  dupB.onclick=function(){if(frames.length>=24){toast('Max 24 frames.');return;}frames.splice(cur+1,0,frames[cur].slice());cur++;paint();updateStrip();};
+  delB.onclick=function(){if(frames.length<=1){frames[0]=_flipBlank();cur=0;}else{frames.splice(cur,1);if(cur>=frames.length)cur=frames.length-1;}paint();updateStrip();};
+  fctl.append(prevB,frameLbl,nextB,addB,dupB,delB);
+  wrap.appendChild(fctl);
+  /* Play + speed + count */
+  const pctl=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',alignItems:'center',justifyContent:'center',margin:'0 0 8px'}});
+  const playB=txt('button','Play',{className:'btn small primary'});
+  const slowB=txt('button','−',{className:'btn small'});
+  const fpsLbl=txt('span','6 fps',{style:{fontSize:'12px',fontWeight:'700',minWidth:'46px',textAlign:'center'}});
+  const fastB=txt('button','+',{className:'btn small'});
+  function stopPlay(){if(playTimer){clearInterval(playTimer);playTimer=null;}playing=false;playB.textContent='Play';paint();}
+  function startPlay(){if(frames.length<2){toast('Add another frame to animate.');return;}stopPlay();playing=true;playB.textContent='Stop';var i=cur;playTimer=setInterval(function(){i=(i+1)%frames.length;ctx.fillStyle='#fff';ctx.fillRect(0,0,PX,PX);ctx.fillStyle='#111';drawCells(frames[i]);},Math.round(1000/fps));}
+  playB.onclick=function(){if(playing)stopPlay();else startPlay();};
+  slowB.onclick=function(){fps=Math.max(2,fps-1);fpsLbl.textContent=fps+' fps';if(playing)startPlay();};
+  fastB.onclick=function(){fps=Math.min(12,fps+1);fpsLbl.textContent=fps+' fps';if(playing)startPlay();};
+  pctl.append(playB,slowB,fpsLbl,fastB);
+  wrap.appendChild(pctl);
+  /* Frame thumbnail strip */
+  const strip=el('div',{style:{display:'flex',gap:'4px',overflowX:'auto',padding:'4px 2px',margin:'0 0 10px'}});
+  function updateStrip(){
+    frameLbl.textContent=(cur+1)+' / '+frames.length;
+    strip.innerHTML='';
+    frames.forEach(function(fr,i){
+      const tc=el('canvas',{style:{width:'40px',height:'40px',flex:'0 0 auto',border:(i===cur?'2px solid var(--accent)':'var(--thin)'),borderRadius:'5px',background:'#fff',cursor:'pointer'}});
+      tc.width=40;tc.height=40;var tctx=tc.getContext('2d');if(tctx){tctx.fillStyle='#fff';tctx.fillRect(0,0,40,40);tctx.fillStyle='#111';var s=40/W;for(var y=0;y<H;y++)for(var x=0;x<W;x++){if(fr[y*W+x])tctx.fillRect(Math.floor(x*s),Math.floor(y*s),Math.ceil(s),Math.ceil(s));}}
+      tc.onclick=function(){stopPlay();cur=i;paint();updateStrip();};
+      strip.appendChild(tc);
+    });
+  }
+  wrap.appendChild(strip);
+  /* Save + send */
+  const saveRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const nameInp=el('input',{type:'text',placeholder:'Name your flipbook',style:{flex:'1',minWidth:'0',fontSize:'13px',padding:'8px 10px'}});
+  const saveB=txt('button','Save',{className:'btn small primary'});
+  function _pack(){return {n:(nameInp.value||'Flipbook').slice(0,40),w:W,h:H,fps:fps,f:frames.map(function(fr){return _khFlipPack(fr,N);})};}
+  saveB.onclick=function(){
+    if(!frames.some(function(fr){return fr.some(function(c){return c;});})){toast('Draw something first.');return;}
+    if(!Array.isArray(S.flipbooks))S.flipbooks=[];
+    S.flipbooks.unshift(Object.assign({id:'fb_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),at:(typeof NOW==='function'?NOW():Date.now())},_pack()));
+    if(S.flipbooks.length>24)S.flipbooks.length=24;
+    try{save();}catch(_){}
+    toast('Saved. Send it from any chat with the + (Attach) button → Flipbook.',5000);
+    renderSaved();
+  };
+  saveRow.append(nameInp,saveB);wrap.appendChild(saveRow);
+  const sendRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}});
+  const sendB=txt('button','Send to a chat',{className:'btn small',style:{flex:'1'}});
+  sendB.onclick=function(){
+    if(!frames.some(function(fr){return fr.some(function(c){return c;});})){toast('Draw something first.');return;}
+    const fb=_pack();
+    if(typeof _khSendFlipbookPicker==='function')_khSendFlipbookPicker(fb);
+    else toast('Save it, then open a chat and use + → Flipbook.',5000);
+  };
+  sendRow.append(sendB);wrap.appendChild(sendRow);
+  /* Saved list */
+  const savedHost=el('div',{});
+  function renderSaved(){
+    savedHost.innerHTML='';
+    const list=(Array.isArray(S.flipbooks)?S.flipbooks:[]);
+    if(!list.length)return;
+    savedHost.appendChild(txt('div','Saved flipbooks',{style:{fontSize:'13px',fontWeight:'800',margin:'6px 0'}}));
+    const g=el('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(96px,1fr))',gap:'8px'}});
+    list.forEach(function(fb){
+      const card=el('div',{style:{border:'var(--thin)',borderRadius:'8px',padding:'6px',textAlign:'center',background:'var(--card)'}});
+      const th=_khFlipThumb(fb,84);th.style.margin='0 auto 4px';th.style.cursor='pointer';th.onclick=function(){_khOpenFlipViewer(fb);};
+      card.appendChild(th);
+      card.appendChild(txt('div',fb.n||'Flipbook',{style:{fontSize:'11px',fontWeight:'700',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}));
+      const row=el('div',{style:{display:'flex',gap:'3px',marginTop:'4px'}});
+      const ed=txt('button','Edit',{className:'btn small',style:{flex:'1',fontSize:'10px',padding:'3px'}});
+      ed.onclick=function(){stopPlay();frames=fb.f.map(function(hx){return _khFlipUnpack(hx,N);});cur=0;fps=fb.fps||6;fpsLbl.textContent=fps+' fps';nameInp.value=fb.n||'';paint();updateStrip();try{v.scrollIntoView&&v.scrollIntoView();}catch(_){}};
+      const snd=txt('button','Send',{className:'btn small',style:{flex:'1',fontSize:'10px',padding:'3px'}});
+      snd.onclick=function(){if(typeof _khSendFlipbookPicker==='function')_khSendFlipbookPicker(fb);else toast('Open a chat and use + → Flipbook.',4500);};
+      const dl=txt('button','×',{className:'btn small',style:{fontSize:'11px',padding:'3px 6px'}});
+      dl.onclick=function(){S.flipbooks=S.flipbooks.filter(function(x){return x.id!==fb.id;});try{save();}catch(_){}renderSaved();};
+      row.append(ed,snd,dl);card.appendChild(row);
+      g.appendChild(card);
+    });
+    savedHost.appendChild(g);
+  }
+  wrap.appendChild(savedHost);
+  v.appendChild(wrap);
+  paint();updateStrip();renderSaved();
+  /* Stop the play loop when leaving the view (e-ink discipline). */
+  v._khCleanup=function(){stopPlay();};
   return v;
 };
 
@@ -66082,6 +66396,11 @@ var _capsLock=false;
 var _numMode=false;
 var _aiPending=false;
 var _aiSuggs=[];
+/* Keyboard polish: a spacebar-drag that moved the caret must NOT also type a
+   space; a backspace hold that auto-repeated must NOT also delete once more on
+   the trailing click. */
+var _spaceDrag=false;
+var _bsRepeated=false;
 var _kbEl=null;
 var _rowsEl=null;
 var _suggBar=null;
@@ -66235,6 +66554,45 @@ function mk(label,cls,handler){
   return b;
 }
 
+/* Drag the space bar left/right to slide the text caret (the iOS/Gboard gesture).
+   On old Kindle Silk the target field is readOnly, so the user CANNOT tap to
+   reposition the caret mid-text — this is the only way to edit an earlier word. */
+function _attachSpaceCaretDrag(btn){
+  var startX=null,base=0,moved=false;
+  btn.addEventListener('touchstart',function(e){
+    if(!_target||!e.touches||!e.touches[0])return;
+    startX=e.touches[0].clientX;moved=false;
+    base=_kbCaret(_target.value||'');
+  },{passive:true});
+  btn.addEventListener('touchmove',function(e){
+    if(startX==null||!_target||!e.touches||!e.touches[0])return;
+    var dx=e.touches[0].clientX-startX;
+    if(Math.abs(dx)>8){moved=true;_spaceDrag=true;}
+    if(!moved)return;
+    var v=_target.value||'';
+    var np=Math.max(0,Math.min(base+Math.round(dx/11),v.length));
+    if(np!==_caret){_kbSetCaret(np);updateSugg();}
+  },{passive:true});
+  btn.addEventListener('touchend',function(){startX=null;},{passive:true});
+}
+/* Hold backspace to auto-repeat (accelerating). Single tap still deletes one via
+   the button's onclick; a hold that repeated sets _bsRepeated so the trailing
+   click is swallowed instead of eating one extra character. */
+function _attachBackspaceHold(btn){
+  var timer=null,count=0,didRepeat=false;
+  function tick(){count++;didRepeat=true;typeBackspace();var d=count>14?40:(count>6?75:120);timer=setTimeout(tick,d);}
+  function start(){stop();count=0;didRepeat=false;timer=setTimeout(tick,340);}
+  /* Set _bsRepeated only at release, from THIS press — so a plain tap after a
+     prior hold isn't swallowed, and a hold's trailing click doesn't over-delete. */
+  function stop(){if(timer){clearTimeout(timer);timer=null;}_bsRepeated=didRepeat;}
+  btn.addEventListener('touchstart',start,{passive:true});
+  btn.addEventListener('touchend',stop,{passive:true});
+  btn.addEventListener('touchcancel',stop,{passive:true});
+  btn.addEventListener('mousedown',start);
+  btn.addEventListener('mouseup',stop);
+  btn.addEventListener('mouseleave',stop);
+}
+
 var SVG_SHIFT_OFF='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 4L3 13h5v7h8v-7h5z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
 var SVG_SHIFT_ON='<svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 4L3 13h5v7h8v-7h5z" fill="currentColor"/></svg>';
 var SVG_CAPS='<svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 4L3 13h5v7h8v-7h5z" fill="currentColor"/><rect x="9" y="21" width="6" height="2" rx="1" fill="currentColor"/></svg>';
@@ -66274,7 +66632,12 @@ function renderKbd(){
       var label=(_shifted||_capsLock)?ch.toUpperCase():ch;
       r3.appendChild(mk(label,'',function(){typeChar(label);}));
     });
-    r3.appendChild(mk(SVG_BS,'kh-key-wide kh-key-muted',typeBackspace));
+    /* Backspace: single tap deletes one char; HOLD auto-repeats (accelerating)
+       so you can clear a field without 40 taps — the standard phone behaviour,
+       which old Kindle Silk's native keyboard never offered here. */
+    var bsBtn=mk(SVG_BS,'kh-key-wide kh-key-muted',function(){if(_bsRepeated){_bsRepeated=false;return;}typeBackspace();});
+    _attachBackspaceHold(bsBtn);
+    r3.appendChild(bsBtn);
     _rowsEl.appendChild(r3);
   }
 
@@ -66297,8 +66660,9 @@ function renderKbd(){
   numBtn.style.minWidth='52px';
   rb.appendChild(numBtn);
 
-  var spaceBtn=mk('space','kh-key-wide',function(){typeChar(' ');});
+  var spaceBtn=mk('space','kh-key-wide',function(){if(_spaceDrag){_spaceDrag=false;return;}typeChar(' ');});
   spaceBtn.style.flex='1';
+  _attachSpaceCaretDrag(spaceBtn);
   rb.appendChild(spaceBtn);
 
   var aiBtn=mk(SVG_AI,'kh-key-wide kh-key-muted',requestAiSuggestions);
