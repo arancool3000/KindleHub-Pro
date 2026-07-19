@@ -1143,15 +1143,19 @@ let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
    response as X-KH-Load so clients can self-throttle their background polling
    before anyone hits the hard cap (closed-loop capacity control). */
 let _loadFrac = 0;
-/* Workers Free = 100k requests/DAY across the WHOLE ACCOUNT (this API Worker +
-   the state Worker + the email Worker + anything else) — NOT per-Worker. So this
-   API Worker must go read-only well BELOW 100k to leave headroom for the others,
-   or the account trips Cloudflare error 1027 and EVERY Worker (the whole site)
-   goes down until 00:00 UTC. 60k leaves ~40k for the rest. Both are env-tunable
-   (REQ_HARD_CAP / WRITE_HARD_CAP) so the ceiling can be lowered further without a
-   code change if the other Workers' share grows. */
-const REQ_HARD_CAP   = 60000;   // was 99000 — left no room for the state/email Workers → account-wide 1027
-const WRITE_HARD_CAP = 60000;   // D1 free: 100k row-writes/day (estW counts 2/write)
+/* PAID PLAN (Workers Paid, $5/mo): the account now gets 10,000,000 requests/DAY
+   included (then usage-based), so the old 100k free-tier cliff (Cloudflare error
+   1027) is gone. The guard is therefore no longer a "keep the site up" survival
+   limit — it's a RUNAWAY / SURPRISE-BILL guardrail: shed non-admin load only if a
+   bug or abuse pushes traffic far past what ~real usage should be, well before it
+   costs anything meaningful. 1,000,000/day is ~4–8× the expected peak for this
+   user base yet a tiny fraction of the 10M included, so normal traffic never trips
+   it and a runaway loop is capped at ~$0.30. Both are env-tunable (REQ_HARD_CAP /
+   WRITE_HARD_CAP) — RAISE them toward the included 10M if the user base grows, or
+   lower them back to ~60k if the account is ever reverted to the FREE plan (on
+   free these MUST stay well under the shared 100k/day or the account 1027s). */
+const REQ_HARD_CAP   = 1000000;   // paid: runaway/bill guardrail, not a survival cliff (was 60000 on free)
+const WRITE_HARD_CAP = 1000000;   // paid D1 write allowance is large; this is a runaway backstop
 async function dailyUsed(DB, isWrite){
   const today = nowIso().slice(0,10);
   const now = Date.now();
