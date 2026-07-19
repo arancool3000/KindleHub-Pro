@@ -1172,6 +1172,7 @@ async function ensureSchema(DB){
 const PROXY_MODELS = new Set([
   'gemini-3.1-flash-lite','gemini-2.5-flash-lite','gemini-2.5-flash',
   'gemini-3.5-flash','gemini-3.1-flash',
+  'gemini-2.0-flash-lite','gemini-2.0-flash',
 ]);
 /* Shared-proxy allow-list = the hard-coded PROXY_MODELS PLUS any live model the
    daily catalogue refresh discovered (cached in kh_config.model_live), so a
