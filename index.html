@@ -2125,6 +2125,24 @@ function _khDeclineChatRequest(code){
    AES-key hash), so friending never leaks a secret. A→B FRIEND_REQUEST; when B
    accepts it adds A and sends FRIEND_ACCEPT back so A adds B. Both persist in
    S.friends / S.friendRequests (device-synced like chatRequests). */
+/* Match an existing friend by the stable-ish identity: hash prefix, then
+   userId, then a case-insensitive display NAME. A person's 16-char hash
+   prefix (and userId, which equals key.slice(0,16)) CHANGES when they reset
+   their password, so hash/uid alone can't recognise a returning friend —
+   that is what produced duplicate rows and "friend request from someone
+   already a friend". Name is the only key that survives a key reset. Still
+   stores ONLY the 16-char prefix, never the full AES hash. */
+function _khFindFriend(hash,uid,name){
+  if(typeof S==='undefined'||!Array.isArray(S.friends))return null;
+  var nk=String(name||'').toLowerCase().trim();
+  for(var i=0;i<S.friends.length;i++){
+    var f=S.friends[i];if(!f)continue;
+    if(hash&&f.hash===hash)return f;
+    if(uid&&f.uid&&f.uid===uid)return f;
+    if(nk&&String(f.name||'').toLowerCase().trim()===nk)return f;
+  }
+  return null;
+}
 function _khOnFriendRequest(env){
   try{
     const p=(env&&env.payload)||{};
@@ -2141,11 +2159,12 @@ function _khOnFriendRequest(env){
        message — a genuinely new request later gets its own id and still comes
        through. Fixes "I unfriend/decline and the request comes back forever". */
     if(mid&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.indexOf(mid)>=0)return;
-    if(!Array.isArray(S.friends))S.friends=[];
-    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already friends */
-    if(!Array.isArray(S.friendRequests))S.friendRequests=[];
-    if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid))))return;/* already pending */
     const fromName=String(p.fromName||'Someone').slice(0,40);
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(_khFindFriend(hash,uid,fromName))return;/* already friends (by hash, uid OR name — their key can change on a password reset) */
+    if(!Array.isArray(S.friendRequests))S.friendRequests=[];
+    var _fnk=fromName.toLowerCase().trim();
+    if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid)||(_fnk&&String(r.name||'').toLowerCase().trim()===_fnk))))return;/* already pending */
     S.friendRequests.push({hash:hash,uid:uid,name:fromName,ts:Date.now(),mid:mid});
     if(S.friendRequests.length>60)S.friendRequests=S.friendRequests.slice(-60);
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
@@ -2162,10 +2181,11 @@ function _khOnFriendAccept(env){
     if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
     const mid=String((env&&env.id)||'');
     if(mid&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.indexOf(mid)>=0)return;/* already resolved/unfriended — inbox replay of an old FRIEND_ACCEPT */
-    if(!Array.isArray(S.friends))S.friends=[];
-    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already have them */
     const nm=String(p.fromName||'Friend').slice(0,40);
-    S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now(),mid:mid});
+    if(!Array.isArray(S.friends))S.friends=[];
+    var _exA=_khFindFriend(hash,uid,nm);
+    if(_exA){_exA.hash=hash;if(uid)_exA.uid=uid;if(nm)_exA.name=nm;}/* already have them — refresh the (possibly reset) key in place, never add a 2nd row */
+    else S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now(),mid:mid});
     if(Array.isArray(S.friendRequests))S.friendRequests=S.friendRequests.filter(r=>!(r&&(r.hash===hash||(uid&&r.uid===uid))));
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(nm):nm)+' accepted your friend request!',5000);
@@ -2178,7 +2198,9 @@ function _khAcceptFriendRequest(hash){
     const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
     const req=S.friendRequests[i];
     if(!Array.isArray(S.friends))S.friends=[];
-    if(!S.friends.find(f=>f&&f.hash===req.hash))S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now(),mid:req.mid||''});
+    var _exAc=_khFindFriend(req.hash,req.uid||'',req.name);
+    if(_exAc){if(req.hash)_exAc.hash=req.hash;if(req.uid)_exAc.uid=req.uid;if(req.name)_exAc.name=req.name;}/* already a friend — refresh in place, no duplicate */
+    else S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now(),mid:req.mid||''});
     S.friendRequests.splice(i,1);
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     /* Tell the requester we accepted so they add us back. */
@@ -3825,6 +3847,323 @@ window.khOpenBookReader=(function(){
 
   return openReader;
 })();
+/* ── In-app Article View (full-story news reader) ────────────────────
+   Tapping a News headline opens this full-screen reader. It fetches the
+   article's HTML through the SAME allorigins/corsproxy fallbacks the
+   Gutenberg book reader uses (news sites send no CORS header), extracts
+   the main readable text (<article> or the densest <p> cluster) + a few
+   images, and paginates it ~1700 chars/page mirroring #kh-reader. Silk-
+   safe: DOMParser is feature-detected with a detached-div then pure-regex
+   fallback (no DOMParser reliance). Article text is session-only cache,
+   NEVER written to S. */
+window._khOpenArticleReader=(function(){
+  var _cache={};   /* article link -> {paras,images} (session only) */
+
+  function rfetch(url,ms){
+    return new Promise(function(resolve,reject){
+      var done=false;
+      var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      var tid=setTimeout(function(){done=true;if(ctrl){try{ctrl.abort();}catch(e){}}reject(new Error('timeout'));},ms||14000);
+      fetch(url,ctrl?{signal:ctrl.signal,cache:'no-store'}:{cache:'no-store'}).then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return r.text();
+      }).then(function(t){if(done)return;clearTimeout(tid);resolve(t);})
+        .catch(function(e){if(done)return;clearTimeout(tid);reject(e);});
+    });
+  }
+
+  /* Same proxy chain as khOpenBookReader.fetchBookText — RAW endpoints so
+     we get HTML back (not JSON-wrapped). No new proxies invented. */
+  function fetchHtml(link){
+    var wraps=[
+      function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);},
+      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);},
+      function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);}
+    ];
+    var idx=0;
+    function tryNext(){
+      if(idx>=wraps.length)return Promise.reject(new Error('load-failed'));
+      var a=wraps[idx++](link);
+      return rfetch(a,14000).then(function(raw){
+        if(raw&&raw.length>500&&/<[a-z]/i.test(raw))return raw;
+        return tryNext();
+      }).catch(function(){return tryNext();});
+    }
+    return tryNext();
+  }
+
+  function decodeEntities(s){
+    return String(s||'')
+      .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+      .replace(/&nbsp;/g,' ').replace(/&quot;/g,'"').replace(/&#0*39;/g,"'")
+      .replace(/&apos;/g,"'").replace(/&#8217;/g,'’').replace(/&#8216;/g,'‘')
+      .replace(/&#8220;/g,'“').replace(/&#8221;/g,'”').replace(/&#8212;/g,'—')
+      .replace(/&mdash;/g,'—').replace(/&rsquo;/g,'’').replace(/&lsquo;/g,'‘')
+      .replace(/&ldquo;/g,'“').replace(/&rdquo;/g,'”').replace(/&hellip;/g,'…');
+  }
+
+  /* Parse HTML to a DOM root: DOMParser (verified) -> detached div -> null.
+     innerHTML on a NON-inserted node never runs scripts nor loads images. */
+  function parseRoot(html){
+    try{
+      if(typeof DOMParser!=='undefined'){
+        var d=new DOMParser().parseFromString(html,'text/html');
+        if(d&&d.body&&typeof d.body.querySelectorAll==='function'&&d.body.querySelector('p'))return d.body;
+      }
+    }catch(e){}
+    try{
+      var stripped=String(html)
+        .replace(/<script[\s\S]*?<\/script>/gi,'')
+        .replace(/<style[\s\S]*?<\/style>/gi,'')
+        .replace(/<!--[\s\S]*?-->/g,'');
+      var bm=stripped.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      if(bm)stripped=bm[1];
+      var div=document.createElement('div');
+      div.innerHTML=stripped;
+      if(div.querySelector('p'))return div;
+    }catch(e){}
+    return null;
+  }
+
+  function absUrl(src,base){
+    src=(src||'').trim();
+    if(!src||/^data:/i.test(src)||/^javascript:/i.test(src))return '';
+    if(/^https?:\/\//i.test(src))return src;
+    if(src.indexOf('//')===0)return 'https:'+src;
+    try{return new URL(src,base).href;}catch(e){}
+    var origin=base.match(/^(https?:\/\/[^\/]+)/);
+    if(!origin)return '';
+    if(src.charAt(0)==='/')return origin[1]+src;
+    return origin[1]+'/'+src;
+  }
+
+  function collectImages(rootEl,base){
+    var out=[],seen={};
+    if(!rootEl||!rootEl.querySelectorAll)return out;
+    var imgs=rootEl.querySelectorAll('img');
+    for(var i=0;i<imgs.length&&out.length<5;i++){
+      var im=imgs[i];
+      var raw=im.getAttribute('src')||im.getAttribute('data-src')||im.getAttribute('data-original')||im.getAttribute('data-lazy-src')||'';
+      if(!raw){var ss=im.getAttribute('srcset')||im.getAttribute('data-srcset');if(ss)raw=ss.split(',')[0].trim().split(/\s+/)[0];}
+      var u=absUrl(raw,base);
+      if(!u)continue;
+      if(/sprite|icon|logo|avatar|pixel|1x1|blank|spacer|doubleclick|analytics|beacon|\.svg(\?|$)/i.test(u))continue;
+      var w=parseInt(im.getAttribute('width')||'0',10),h=parseInt(im.getAttribute('height')||'0',10);
+      if((w&&w<120)||(h&&h<90))continue;
+      if(seen[u])continue;seen[u]=1;
+      out.push(u);
+    }
+    return out;
+  }
+
+  function textOfBlocks(container){
+    var ps=container.querySelectorAll?container.querySelectorAll('p,h2,h3,blockquote,li'):[];
+    var parts=[];
+    for(var i=0;i<ps.length;i++){
+      var tag=(ps[i].tagName||'').toLowerCase();
+      var t=(ps[i].textContent||'').replace(/\s+/g,' ').trim();
+      if(!t)continue;
+      if(t.length<25&&tag==='p')continue;
+      if(tag==='h2'||tag==='h3')parts.push('• '+t);   /* sub-head marker */
+      else parts.push(t);
+    }
+    return parts;
+  }
+
+  /* Prefer a real <article>; else the parent holding the largest <p> text. */
+  function pickContainer(rootEl){
+    var art=rootEl.querySelector('article');
+    if(art){var ap=art.querySelectorAll('p');if(ap&&ap.length>=3)return art;}
+    var ps=rootEl.querySelectorAll('p');
+    var scores=[],nodes=[];
+    for(var i=0;i<ps.length;i++){
+      var par=ps[i].parentNode;if(!par||par.nodeType!==1)continue;
+      var idx=-1;
+      for(var k=0;k<nodes.length;k++){if(nodes[k]===par){idx=k;break;}}
+      var len=(ps[i].textContent||'').replace(/\s+/g,' ').trim().length;
+      if(idx<0){nodes.push(par);scores.push(len);}else scores[idx]+=len;
+    }
+    var best=null,bestS=0;
+    for(var j=0;j<nodes.length;j++){if(scores[j]>bestS){bestS=scores[j];best=nodes[j];}}
+    return best||art||rootEl;
+  }
+
+  /* Last resort when no DOM: strip noise blocks then pull <p> by regex. */
+  function regexParas(html){
+    var t=String(html)
+      .replace(/<script[\s\S]*?<\/script>/gi,'')
+      .replace(/<style[\s\S]*?<\/style>/gi,'')
+      .replace(/<nav[\s\S]*?<\/nav>/gi,'')
+      .replace(/<header[\s\S]*?<\/header>/gi,'')
+      .replace(/<footer[\s\S]*?<\/footer>/gi,'')
+      .replace(/<aside[\s\S]*?<\/aside>/gi,'')
+      .replace(/<form[\s\S]*?<\/form>/gi,'');
+    var out=[],m,re=/<p[^>]*>([\s\S]*?)<\/p>/gi;
+    while((m=re.exec(t))){
+      var s=decodeEntities(m[1].replace(/<[^>]+>/g,' ')).replace(/\s+/g,' ').trim();
+      if(s.length>=40)out.push(s);
+    }
+    return out;
+  }
+
+  function extract(html,base){
+    var rootEl=parseRoot(html);
+    var paras=[],images=[];
+    if(rootEl){
+      var c=pickContainer(rootEl);
+      paras=textOfBlocks(c);
+      images=collectImages(c,base);
+      if(images.length<1)images=collectImages(rootEl,base);
+    }
+    if(paras.length<2)paras=regexParas(html);
+    var clean=[],last='';
+    for(var i=0;i<paras.length;i++){
+      var p=paras[i];
+      if(p===last)continue;last=p;
+      if(/^(share this|advertisement|sign up|subscribe|related stories|read more|most read)$/i.test(p))continue;
+      clean.push(p);
+    }
+    return {paras:clean,images:images};
+  }
+
+  function paginate(paras,budget){
+    budget=budget||1700;
+    var pages=[],cur=[],len=0,i,j;
+    for(i=0;i<paras.length;i++){
+      var p=paras[i];
+      if(p.length>budget*1.6){
+        for(j=0;j<p.length;j+=budget){
+          var chunk=p.slice(j,j+budget);
+          if(len&&len+chunk.length>budget){pages.push(cur);cur=[];len=0;}
+          cur.push(chunk);len+=chunk.length;
+          if(len>=budget){pages.push(cur);cur=[];len=0;}
+        }
+        continue;
+      }
+      if(len&&len+p.length>budget){pages.push(cur);cur=[];len=0;}
+      cur.push(p);len+=p.length;
+    }
+    if(cur.length)pages.push(cur);
+    return pages.length?pages:[['(No readable text was found for this article.)']];
+  }
+
+  function openReader(meta){
+    if(!meta||!meta.link){if(typeof toast==='function')toast('No article link available');return;}
+    var prevOvf=document.body.style.overflow;
+    var fontSize=Math.min(28,Math.max(14,(S&&S.readerFont)||18));
+    var pages=null,images=[],pos=0;
+
+    var titleEl=txt('div',(meta.title||'Article'),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700',fontSize:'14px'}});
+    var progEl=txt('div','',{style:{fontSize:'12px',color:'var(--muted)',whiteSpace:'nowrap'}});
+    var closeBtn=txt('button','× Close',{className:'btn small'});
+    var aMinus=txt('button','A−',{className:'btn small'});
+    var aPlus=txt('button','A+',{className:'btn small'});
+    var topBar=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',padding:'8px 12px',borderBottom:'var(--thin)',background:'var(--card)',flexWrap:'nowrap'}},[closeBtn,titleEl,aMinus,aPlus]);
+
+    var content=el('div',{style:{flex:'1',overflowY:'auto',webkitOverflowScrolling:'touch',padding:'18px 20px 28px',maxWidth:'680px',width:'100%',margin:'0 auto',boxSizing:'border-box',lineHeight:'1.7',fontSize:fontSize+'px'}});
+
+    var prevBtn=txt('button','‹ Prev',{className:'btn',style:{minWidth:'84px',minHeight:'48px'}});
+    var nextBtn=txt('button','Next ›',{className:'btn primary',style:{minWidth:'84px',minHeight:'48px'}});
+    var openExt=txt('button','Open externally',{className:'btn small'});
+    openExt.onclick=function(){if(typeof _khOpenExt==='function')_khOpenExt(meta.link);};
+    var centerCol=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',flex:'1'}},[progEl,openExt]);
+    var bottomBar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderTop:'var(--thin)',background:'var(--card)'}},[prevBtn,centerCol,nextBtn]);
+
+    var root=el('div',{id:'kh-article-reader',style:{position:'fixed',left:'0',top:'0',width:'100%',height:'100%',background:'var(--bg,#fff)',color:'var(--fg,#111)',zIndex:'100000',display:'flex',flexDirection:'column'}},[topBar,content,bottomBar]);
+
+    function onKey(e){
+      if(e.key==='Escape'){close();e.preventDefault();}
+      else if(e.key==='ArrowRight'||e.key==='PageDown'){go(1);e.preventDefault();}
+      else if(e.key==='ArrowLeft'||e.key==='PageUp'){go(-1);e.preventDefault();}
+    }
+    function close(){
+      document.body.style.overflow=prevOvf||'';
+      document.removeEventListener('keydown',onKey,true);
+      if(root.parentNode)root.parentNode.removeChild(root);
+    }
+    function renderPage(){
+      if(!pages)return;
+      if(pos<0)pos=0;if(pos>pages.length-1)pos=pages.length-1;
+      content.innerHTML='';
+      if(pos===0){
+        var hd=el('div',{style:{marginBottom:'14px',paddingBottom:'10px',borderBottom:'var(--thin)'}});
+        hd.appendChild(txt('div',(meta.title||'Article'),{style:{fontSize:'1.35em',fontWeight:'800',lineHeight:'1.3',fontFamily:'var(--title-font)',marginBottom:'6px'}}));
+        var srcLine=meta.source?String(meta.source):'';
+        if(meta.date){try{srcLine+=(srcLine?'  ·  ':'')+new Date(meta.date).toLocaleDateString();}catch(_){}}
+        if(srcLine)hd.appendChild(txt('div',srcLine,{style:{fontSize:'0.78em',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',fontWeight:'700'}}));
+        content.appendChild(hd);
+        for(var g=0;g<images.length;g++){
+          var im=el('img',{src:images[g],alt:'',style:{maxWidth:'100%',height:'auto',display:'block',margin:'0 auto 12px',border:'var(--thin)'}});
+          im.onerror=(function(node){return function(){if(node.parentNode)node.parentNode.removeChild(node);};})(im);
+          content.appendChild(im);
+        }
+      }
+      var pg=pages[pos]||[],i;
+      for(i=0;i<pg.length;i++){
+        var line=pg[i],isSub=line.indexOf('• ')===0;
+        content.appendChild(txt('p',isSub?line.slice(2):line,isSub?{style:{margin:'0 0 0.6em',fontWeight:'800'}}:{style:{margin:'0 0 0.9em'}}));
+      }
+      content.scrollTop=0;
+      var pctTxt='Page '+(pos+1)+' of '+pages.length;
+      if(progEl.textContent!==pctTxt)progEl.textContent=pctTxt;
+      prevBtn.disabled=(pos<=0);
+      var nt=(pos>=pages.length-1)?'End':'Next ›';
+      if(nextBtn.textContent!==nt)nextBtn.textContent=nt;
+    }
+    function go(d){if(!pages)return;var np=pos+d;if(np<0||np>pages.length-1)return;pos=np;renderPage();}
+    function applyFont(delta){fontSize=Math.min(28,Math.max(14,fontSize+delta));content.style.fontSize=fontSize+'px';if(S){S.readerFont=fontSize;try{save();}catch(e){}}}
+    prevBtn.onclick=function(){go(-1);};
+    nextBtn.onclick=function(){go(1);};
+    closeBtn.onclick=close;
+    aMinus.onclick=function(){applyFont(-2);};
+    aPlus.onclick=function(){applyFont(2);};
+    content.addEventListener('click',function(e){
+      if(e.target&&e.target.tagName==='IMG')return;
+      var r=content.getBoundingClientRect(),x=e.clientX-r.left;
+      if(x<r.width*0.28)go(-1);else if(x>r.width*0.72)go(1);
+    });
+    document.addEventListener('keydown',onKey,true);
+
+    document.body.style.overflow='hidden';
+    document.body.appendChild(root);
+    content.appendChild(txt('p','Loading full article…',{style:{color:'var(--muted)'}}));
+
+    function showParsed(res){
+      images=res.images||[];
+      pages=paginate(res.paras,1700);
+      pos=0;renderPage();
+      _cache[meta.link]={paras:res.paras,images:images};
+    }
+    function feedFallbackParas(){
+      var fb=(meta.feedBody||meta.desc||'')
+        .replace(/<img[^>]+>/gi,' ').replace(/<br\s*\/?>/gi,'\n\n')
+        .replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,' ');
+      fb=decodeEntities(fb).replace(/[ \t]{2,}/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+      if(!fb)return [];
+      var arr=fb.split(/\n{2,}/).map(function(x){return x.replace(/\s+/g,' ').trim();}).filter(Boolean);
+      return arr.length?arr:[fb];
+    }
+
+    if(_cache[meta.link]){showParsed(_cache[meta.link]);return;}
+    fetchHtml(meta.link).then(function(html){
+      var res=extract(html,meta.link);
+      if(res.paras&&res.paras.length>=2){showParsed(res);return;}
+      throw new Error('thin');
+    }).catch(function(){
+      var fb=feedFallbackParas();
+      if(fb.length){
+        images=[];pages=paginate(fb,1700);pos=0;renderPage();
+        content.appendChild(txt('div','Showing the feed summary — the full article could not be fetched. Use "Open externally" to read it on the site.',{style:{marginTop:'14px',padding:'8px',fontSize:'0.8em',color:'var(--muted)',border:'var(--thin)',borderRadius:'4px'}}));
+      }else{
+        content.innerHTML='';
+        content.appendChild(txt('p','Sorry — this article could not be loaded right now. Tap "Open externally" to read it on the site.',{style:{color:'var(--danger,#b00)'}}));
+      }
+    });
+  }
+
+  return openReader;
+})();
+
 
 /* ── Screenshot capture ───────────────────────────────────────────────
    Take a PNG screenshot of the LIVE page (no file upload) via html2canvas,
@@ -4449,6 +4788,13 @@ function launchKindleDesktop(){
     {id:'files',     label:'Files',       nav:'files',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="32" rx="4" fill="#fff"/><path d="M6 14 L20 14 L24 18 L42 18 L42 42 L6 42 Z" fill="#475569" opacity=".15" stroke="#475569" stroke-width="2"/><line x1="6" y1="22" x2="42" y2="22" stroke="#475569" stroke-width="1.5"/><rect x="11" y="27" width="26" height="3" rx="1" fill="#475569" opacity=".4"/><rect x="11" y="32" width="18" height="3" rx="1" fill="#475569" opacity=".3"/></svg>'},
     {id:'sports',    label:'Sports',      nav:'sports',    color:'#166534',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="20" fill="none" stroke="#166534" stroke-width="2"/><polygon points="24,14 30,18.5 27.7,25.5 20.3,25.5 18,18.5" fill="#166534"/><path d="M24 4 L24 14 M40.6 17 L30 18.5 M37.5 38 L27.7 25.5 M10.5 38 L20.3 25.5 M7.4 17 L18 18.5" stroke="#166534" stroke-width="1.6"/></svg>'},
     {id:'imagesearch',label:'Images',     nav:'imagesearch',color:'#0891b2',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="38" height="32" rx="5" fill="#fff"/><circle cx="16" cy="18" r="4" fill="#0891b2"/><path d="M8 38 L20 24 L28 32 L36 22 L40 27 L40 38 Z" fill="#0891b2" opacity=".35"/><path d="M8 38 L20 24 L28 32 L36 22 L44 32" stroke="#0891b2" stroke-width="2.5" fill="none" stroke-linejoin="round"/></svg>'},
+    {id:'animals',   label:'Animals',     nav:'animals',   color:'#b45309',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><ellipse cx="24" cy="31" rx="9" ry="7" fill="#b45309"/><circle cx="13" cy="21" r="3.4" fill="#b45309"/><circle cx="20" cy="15" r="3.4" fill="#b45309"/><circle cx="28" cy="15" r="3.4" fill="#b45309"/><circle cx="35" cy="21" r="3.4" fill="#b45309"/></svg>'},
+    {id:'unitconv',  label:'Unit Converter',nav:'unitconv',color:'#0d9488',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><path d="M10 18 L38 18 M10 18 L16 12 M10 18 L16 24" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M38 30 L10 30 M38 30 L32 24 M38 30 L32 36" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
+    {id:'tipcalc',   label:'Tip Calculator',nav:'tipcalc',color:'#16a34a',icon:'<svg viewBox="0 0 48 48" fill="none"><path d="M12 4 L36 4 L36 44 L32 41 L28 44 L24 41 L20 44 L16 41 L12 44 Z" fill="#fff" stroke="#16a34a" stroke-width="2" stroke-linejoin="round"/><text x="24" y="30" font-size="18" font-weight="900" fill="#16a34a" text-anchor="middle" font-family="serif">$</text></svg>'},
+    {id:'histday',   label:'Today in History',nav:'histday',color:'#92400e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><circle cx="24" cy="24" r="15" fill="none" stroke="#92400e" stroke-width="2.5"/><line x1="24" y1="24" x2="24" y2="14" stroke="#92400e" stroke-width="2.5" stroke-linecap="round"/><line x1="24" y1="24" x2="32" y2="28" stroke="#92400e" stroke-width="2.5" stroke-linecap="round"/></svg>'},
+    {id:'lifeweeks', label:'Life in Weeks',nav:'lifeweeks',color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g fill="#7c3aed"><circle cx="12" cy="12" r="2.2"/><circle cx="20" cy="12" r="2.2"/><circle cx="28" cy="12" r="2.2"/><circle cx="36" cy="12" r="2.2"/><circle cx="12" cy="20" r="2.2"/><circle cx="20" cy="20" r="2.2"/><circle cx="28" cy="20" r="2.2" opacity=".35"/><circle cx="36" cy="20" r="2.2" opacity=".35"/><circle cx="12" cy="28" r="2.2" opacity=".35"/><circle cx="20" cy="28" r="2.2" opacity=".35"/><circle cx="28" cy="28" r="2.2" opacity=".35"/><circle cx="36" cy="28" r="2.2" opacity=".35"/><circle cx="12" cy="36" r="2.2" opacity=".35"/><circle cx="20" cy="36" r="2.2" opacity=".35"/><circle cx="28" cy="36" r="2.2" opacity=".35"/><circle cx="36" cy="36" r="2.2" opacity=".35"/></g></svg>'},
+    {id:'chords',    label:'Fretboard',   nav:'chords',    color:'#78350f',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g stroke="#78350f" stroke-width="1.6"><line x1="14" y1="10" x2="14" y2="38"/><line x1="20" y1="10" x2="20" y2="38"/><line x1="26" y1="10" x2="26" y2="38"/><line x1="32" y1="10" x2="32" y2="38"/><line x1="10" y1="16" x2="36" y2="16"/><line x1="10" y1="24" x2="36" y2="24"/><line x1="10" y1="32" x2="36" y2="32"/></g><circle cx="20" cy="20" r="2.6" fill="#78350f"/><circle cx="32" cy="28" r="2.6" fill="#78350f"/></svg>'},
+    {id:'watchq',    label:'Watch Queue', nav:'watchq',    color:'#dc2626',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="28" rx="5" fill="#fff" stroke="#dc2626" stroke-width="2"/><polygon points="21,18 21,30 31,24" fill="#dc2626"/></svg>'},
   ]);
 
   /* ── STATE ──
@@ -4505,7 +4851,24 @@ function launchKindleDesktop(){
 
   const kd=document.createElement('div');
   kd.id='kd-root';
-  kd.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;z-index:500000;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;overflow:hidden;background:#000;box-sizing:border-box;';
+  kd.style.cssText='position:fixed;top:0;left:0;width:100%;height:100vh;height:100dvh;z-index:500000;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;overflow:hidden;background:#000;box-sizing:border-box;';
+  /* ── VISIBLE-VIEWPORT HEIGHT (dock label-clipping fix) ──
+     #kd-root is a flex COLUMN whose last child is the dock; a height:100% (or
+     100vh) root on Kindle Silk resolves to the LAYOUT viewport, which is TALLER
+     than the visible area, so the browser's bottom chrome overlays the lower
+     strip and the dock's labels (bottom of the bottom flex child) were hidden
+     behind it. Pinning the root to window.innerHeight (the VISIBLE viewport —
+     the same signal 100dvh uses on modern engines) makes the column exactly as
+     tall as what the user can see, so the dock always sits fully above the
+     chrome, no chrome-height guessing needed. The 100vh/100dvh in the cssText
+     above is a static fallback (errs SHORTER-than-visible on Silk = never
+     clips). Re-fit on resize/orientationchange; the handler removes itself once
+     kd-root leaves the DOM so no listener leaks across launches. */
+  function _kdFitVp(){var h=window.innerHeight||document.documentElement.clientHeight||0;if(h>0)kd.style.height=h+'px';}
+  function _kdVpHandler(){if(!document.getElementById('kd-root')){try{window.removeEventListener('resize',_kdVpHandler);}catch(_e){}try{window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}return;}_kdFitVp();}
+  _kdFitVp();
+  window.addEventListener('resize',_kdVpHandler);
+  window.addEventListener('orientationchange',_kdVpHandler);
 
   /* ── WALLPAPER LAYER ── */
   const kdBg=document.createElement('div');
@@ -5698,6 +6061,9 @@ function launchKindleDesktop(){
     if(bgTimer)clearInterval(bgTimer);
     if(_clockTickInterval)clearInterval(_clockTickInterval);
     if(_clockTickAlign)clearTimeout(_clockTickAlign);
+    /* Drop the viewport re-fit listeners installed at launch (belt-and-braces:
+       _kdVpHandler also self-removes once kd-root is gone). */
+    try{window.removeEventListener('resize',_kdVpHandler);window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}
     /* The boot-poll timers from the tour also need to know we're gone */
     window._kdGone=true;
     /* Clean up the full-app-mode artefacts: the back FAB, the body
@@ -49307,9 +49673,16 @@ rss:()=>{
       /* Title — clickable to expand */
       const titleEl=txt('div',item.title||'(no title)',{className:'rss-article-title',style:{cursor:'pointer'}});
       titleEl.onclick=()=>{
-        expandedId=isExpanded?null:id;
         if(!isRead){S.rssRead[id]=true;save();}
-        renderContent();
+        /* Full Article View reader (paginated body + images + byline).
+           Falls back to the old inline expand when there's no link. */
+        if(item.link&&typeof window._khOpenArticleReader==='function'){
+          window._khOpenArticleReader({title:item.title,link:item.link,source:item.feedLabel,date:item.pubDate,desc:rawDesc,feedBody:(item.content||item.description||'')});
+          refreshViewTabs();
+        }else{
+          expandedId=isExpanded?null:id;
+          renderContent();
+        }
       };
       card.appendChild(titleEl);
 
@@ -53436,6 +53809,28 @@ stocks:()=>{
       /* 1. Stooq — promoted from last-resort to second attempt because it's
             the most reliable free source in 2026 and doesn't need a crumb. */
       ['Stooq',async()=>_fetchStooq(ticker)],
+      /* 1b. Yahoo v8 chart via reliable keyless CORS proxies. The direct
+            query1/query2 calls above are CORS-blocked in the Kindle browser,
+            so a plain US ticker (TSLA, GOOGL, MSFT, ...) previously only had a
+            chance through the two flaky public proxies at the very END of
+            this chain — when both were rate-limited/403 EVERY symbol returned
+            "Not found". codetabs and allorigins-raw are keyless, CORS-open and
+            forward Yahoo's JSON untouched, so the symbol is queried AS TYPED
+            and maps to the correct US-listed security (chart/TSLA = Tesla on
+            NASDAQ, USD). A user-typed .L symbol still passes through verbatim,
+            so explicit London tickers keep working. */
+      ['codetabs Yahoo v8',async()=>{
+        var yurl='https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d';
+        const r=await fetchWithTimeout('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(yurl),13000);
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return parseYahooChart(await r.json(),ticker);
+      }],
+      ['allorigins-raw Yahoo v8',async()=>{
+        var yurl='https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d';
+        const r=await fetchWithTimeout('https://api.allorigins.win/raw?url='+encodeURIComponent(yurl),13000);
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return parseYahooChart(await r.json(),ticker);
+      }],
       /* 2. Yahoo v8 chart 5d — backup if intraday call was rate-limited. */
       ['Yahoo v8 (5d)',async()=>{
         const r=await fetchWithTimeout('https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d',9000);
@@ -53612,7 +54007,7 @@ stocks:()=>{
         /* Suggest exchange variants for plain symbols */
         if(/^[A-Z]{1,5}$/.test(ticker)){
           const suggestRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'10px'}});
-          ['.L','.US','.DE','.PA','.TO'].forEach(suf=>{
+          ['.US','.L','.DE','.PA','.TO'].forEach(suf=>{
             const btn=txt('button','Try '+ticker+suf,{className:'btn small'});
             btn.onclick=()=>{
               const newT=ticker+suf;
@@ -53992,23 +54387,19 @@ stocks:()=>{
         const errWrap=el('div',{style:{display:'flex',flexDirection:'column',gap:'2px',alignItems:'flex-end'}});
         const errLbl=txt('div','Not found',{style:{color:'var(--danger)',fontSize:'11px',fontFamily:'monospace',fontWeight:'700'}});
         errWrap.appendChild(errLbl);
-        /* Suggest the most likely exchange suffix if the user typed a plain
-           symbol — common cause is "RPI" (no .L / .US) being ambiguous and
-           returning empty data from every provider. */
-        if(/^[A-Z]{1,5}$/.test(ticker)){
-          const tryBtn=txt('button','Try .L',{className:'btn small',style:{fontSize:'9px',padding:'1px 6px',minHeight:'18px',marginTop:'2px'}});
-          tryBtn.onclick=e=>{
-            e.stopPropagation();
-            const newT=ticker+'.L';
-            if(watchlist.includes(newT)){toast(newT+' already in watchlist');return;}
-            watchlist=watchlist.map(x=>x===ticker?newT:x);
-            saveWatchlist(watchlist);
-            delete prices[ticker];
-            renderMain();
-            if(navigator.onLine)fetchOne(newT,true);
-          };
-          errWrap.appendChild(tryBtn);
-        }
+        /* Re-fetch the symbol AS TYPED. Deliberately NO auto-append of ".L":
+           that is the London Stock Exchange suffix and it silently renamed
+           plain US tickers (AAPL -> AAPL.L) onto a WRONG London-listed
+           leveraged ETP quoted in GBp. If the user genuinely needs another
+           exchange, the detail view offers .US/.L/.DE/.PA/.TO as an explicit
+           choice. */
+        const tryBtn=txt('button','Retry',{className:'btn small',style:{fontSize:'9px',padding:'1px 6px',minHeight:'18px',marginTop:'2px'}});
+        tryBtn.onclick=e=>{
+          e.stopPropagation();
+          delete prices[ticker];
+          if(navigator.onLine!==false)fetchOne(ticker,true);else renderMain();
+        };
+        errWrap.appendChild(tryBtn);
         if(errReason){
           /* Tooltip-style detail on hover (or visible on touch via title) */
           errLbl.title=errReason;
@@ -59278,7 +59669,8 @@ messages:()=>{
          resurrect an ALREADY-ACCEPTED one, since accepting never tombstones
          the request id. */
       const _frFriends=new Set((Array.isArray(S.friends)?S.friends:[]).map(function(f){return f&&f.hash;}).filter(Boolean));
-      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&((r.mid&&_frToms.has(r.mid))||_frFriends.has(r.hash))));
+      const _frFriendNames=new Set((Array.isArray(S.friends)?S.friends:[]).map(function(f){return f&&f.name?String(f.name).toLowerCase().trim():'';}).filter(Boolean));
+      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&((r.mid&&_frToms.has(r.mid))||_frFriends.has(r.hash)||(r.name&&_frFriendNames.has(String(r.name).toLowerCase().trim())))));
       if(_cleanedFreq.length!==S.friendRequests.length){S.friendRequests=_cleanedFreq;try{save();}catch(_){}}
     }
     const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
@@ -59310,7 +59702,15 @@ messages:()=>{
       if(!_friends.length){
         body.appendChild(txt('div','No friends yet. Tap + Add to find people by username.',{style:{fontSize:'11px',color:'var(--muted)',fontStyle:'italic',marginBottom:'10px'}}));
       } else {
-        _friends.slice().forEach(fr=>{
+        const _seenFr=new Set();
+        _friends.slice().filter(function(fr){
+          if(!fr)return false;
+          const _hk=fr.hash?('h:'+fr.hash):'';
+          const _nk=fr.name?('n:'+String(fr.name).toLowerCase().trim()):'';
+          if((_hk&&_seenFr.has(_hk))||(_nk&&_seenFr.has(_nk)))return false;/* same person (by hash OR name) already rendered */
+          if(_hk)_seenFr.add(_hk);if(_nk)_seenFr.add(_nk);
+          return true;
+        }).forEach(fr=>{
           const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'var(--border)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'8px'}});
           try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(fr.name||'?',32));}catch(_){}
           const fi=el('div',{style:{flex:'1',minWidth:'0'}});
