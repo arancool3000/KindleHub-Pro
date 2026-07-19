@@ -807,11 +807,13 @@ async function handlePost(table, url, request, env, DB){
        blank. City granularity only. No cf (local/non-CF) → leave whatever the
        client sent as a fallback. */
     if(table==='kh_messages'){
+      /* PRIVACY: COUNTRY-LEVEL ONLY. This app has child users, so city/region
+         granularity over-collects location. Stamp just the (spoof-proof edge)
+         country; for a client-supplied fallback keep only its country part. */
       const cf = request.cf || {};
-      const _city = String(cf.city||'').slice(0,60);
-      const _cc   = String(cf.country||'').slice(0,4);
-      const _reg  = String(cf.region||'').slice(0,40);
-      if(_city || _cc){ raw.location_hint = ((_city?_city+', ':(_reg?_reg+', ':''))+_cc).slice(0,120); }
+      const _cc = String(cf.country||'').slice(0,4);
+      if(_cc){ raw.location_hint = _cc; }
+      else if(typeof raw.location_hint==='string'){ var _lp=raw.location_hint.split(','); raw.location_hint=String(_lp[_lp.length-1]||'').trim().slice(0,40); }
     }
     /* Leaderboard integrity: the score comes straight from the client, so clamp
        it to a sane non-negative integer (blocks MAX_INT / absurd injected scores
@@ -821,6 +823,16 @@ async function handlePost(table, url, request, env, DB){
       if(raw.score!=null){ let sc=Math.floor(Number(raw.score)); if(!isFinite(sc)||sc<0)sc=0; if(sc>999999999)sc=999999999; raw.score=sc; }
       if(typeof raw.display_name==='string') raw.display_name=raw.display_name.slice(0,40);
     }
+    /* SECURITY: the D1 self-created schema didn't reproduce most of Supabase's
+       per-field size limits, and these tables (messages/feedback/errors/presence/
+       mail) allow anonymous insertion — so cap the length of EVERY string field
+       before it reaches the DB, blocking oversized/malformed records that would
+       burn D1 storage + request capacity. Per-field caps for the hot columns; a
+       generous global cap for anything else. group_code is also format-restricted
+       so junk can't spawn garbage rooms/partitions. */
+    var _FMAX={text:4000,display_name:60,user_id:100,group_code:24,device_hint:200,location_hint:120,reactions:2000,subject:200,body:8000,from_user:60,to_user:60,from_id:100,to_id:100,name:80,reason:400,ua_hint:200,city:80,country:8,day:12,message:2000,stack:4000,url:400,comments:20000,targets:2000,author:60,html:600000};
+    for(var _fk in raw){ if(typeof raw[_fk]==='string'){ var _fm=_FMAX[_fk]||6000; if(raw[_fk].length>_fm)raw[_fk]=raw[_fk].slice(0,_fm); } }
+    if(typeof raw.group_code==='string')raw.group_code=raw.group_code.replace(/[^A-Za-z0-9_-]/g,'').slice(0,24);
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
     for(const tc of TS_COLS){ if(cols.indexOf(tc)>=0 && keys.indexOf(tc)<0){ raw[tc]=nowIso(); keys.push(tc); } }
