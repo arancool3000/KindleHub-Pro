@@ -1890,7 +1890,7 @@ let _periodicTimer=null;
 let _stateDirty=false;          /* true while local state differs from last cloud sync */
 let _lastSyncedHash='';         /* fingerprint of last successfully synced state */
 const _CLOUD_DEBOUNCE_MS=10000; /* 10s after the LAST edit before upload — the user wants changes to reach the cloud fast; a flush-on-background (see visibilitychange) also pushes pending edits the moment the app is closed/backgrounded, so nothing is stranded locally for days */
-const _PERIODIC_SYNC_MS=90000;  /* background pull every 90s (was 60s/30s) — trims the shared free-tier request budget; the updated_at probe means an unchanged blob isn't re-downloaded, so 90s cross-device latency is a fine trade */
+const _PERIODIC_SYNC_MS=60000;  /* background pull every 60s — paid plan has ample request budget, and the updated_at probe skips re-downloading an unchanged blob (the free-tier 90s slowdown is no longer needed) */
 
 /* Quick non-cryptographic fingerprint so we can tell "did anything change?"
    without re-encrypting the whole state.
@@ -2816,7 +2816,7 @@ function _startMessageNotifier(){
        to ceil(groups.length/NOTIFY_BATCH)*45s. Each group still only costs a
        cheap ~50-byte _groupLatestId probe (gated below) unless it genuinely has
        something new, so this doesn't reintroduce the all-groups CPU/GC spike. */
-    const NOTIFY_BATCH=5;/* was 8 — fewer per-tick probes to cut the shared free-tier request budget */
+    const NOTIFY_BATCH=8;/* paid plan — full batch again for snappier cross-group notifications */
     if(_notifyIdx>=groups.length)_notifyIdx=0;
     const _batch=[];
     for(let _b=0;_b<NOTIFY_BATCH&&_b<groups.length;_b++){
@@ -2891,7 +2891,7 @@ function _startMessageNotifier(){
       }catch(e){}
     }
   }
-  _msgNotifyTimer=setInterval(_notifyTick,(typeof _khSimpleMode==='function'&&_khSimpleMode())?150000:75000);/* was 90s/45s — slower background chat-notifier poll to cut the shared free-tier request budget */
+  _msgNotifyTimer=setInterval(_notifyTick,(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);/* Workers Paid plan — 10M req/day, so the snappy 45s/90s notifier is fine (the free-tier 75s/150s slowdown is no longer needed) */
   /* Immediate first sweep so new-message notifications appear right after
      load / turn-on — not only after the first 45-90s poll tick (the reported
      "notifications show up 3 minutes later" complaint). seedSeen only seeds
@@ -9036,11 +9036,12 @@ function _khCfBlocked(isWrite){
 window._khLoad=window._khLoad||0;   // server-reported daily budget fraction (0..1)
 function _khLoadSkip(){
   const L=window._khLoad||0;
-  /* Back off EARLIER (was 0.55) and harder: with the account-wide free-tier
-     budget shared across several Workers, start shedding background polls at 40%
-     usage so the account never approaches the 100k/day request cap (error 1027).*/
-  if(L<0.40)return false;
-  let p=(L-0.40)*2.2; if(p>0.9)p=0.9;
+  /* Paid plan: the Worker's REQ_HARD_CAP is now a high runaway/bill guardrail, so
+     the load fraction (used/cap) stays low under normal traffic and this backoff
+     effectively never fires — it only sheds background polls if usage approaches
+     the guardrail (a runaway), a last line of defence before the hard 503. */
+  if(L<0.65)return false;
+  let p=(L-0.65)*2.4; if(p>0.9)p=0.9;
   return Math.random()<p;
 }
 function _khCfOn503(body){
@@ -62984,7 +62985,7 @@ messages:()=>{
           const tailChanged=msgs.length&&_messages.length&&msgs[msgs.length-1].id!==_messages[_messages.length-1].id;
           if(msgs.length!==_lastMsgCount||tailChanged){_lastMsgCount=msgs.length;_messages=msgs;renderMessages(msgs);}
         }catch(e){}
-      },22000);/* was 15s — slower open-chat poll to cut the shared free-tier request budget (the ~50-byte latest-id probe means a quiet room is still cheap) */
+      },15000);/* paid plan — restore the snappy 15s open-chat poll (the ~50-byte latest-id probe keeps a quiet room cheap) */
     }
   }
 
