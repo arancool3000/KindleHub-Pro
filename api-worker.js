@@ -310,9 +310,12 @@ async function reassembleStates(DB, table, rows){
   for(const r of rows){
     if(typeof r.state==='string' && r.state.slice(0,6)===CHUNK_PREFIX){
       try{
-        const m=r.state.slice(6), ci=m.indexOf(':');
-        const n=parseInt(ci>=0?m.slice(0,ci):m,10)||0;
-        const ph=ci>=0?m.slice(ci+1):'';
+        /* Marker: 'KHCH1:<n>:<hash>[:<totalLen>]'. hash is 64-hex (no colons) so a
+           plain split is safe; totalLen is absent on legacy (pre-integrity) rows. */
+        const seg=r.state.slice(6).split(':');
+        const n=parseInt(seg[0],10)||0;
+        const ph=seg[1]||'';
+        const expectLen=seg.length>=3?(parseInt(seg[2],10)||0):-1;
         if(n>0&&ph){
           const pr=await DB.prepare('SELECT idx,part FROM kh_state_parts WHERE hash=? ORDER BY idx').bind(ph).all();
           const parts=(pr&&pr.results)||[];
@@ -320,7 +323,11 @@ async function reassembleStates(DB, table, rows){
           for(const p of parts)byIdx[p.idx]=p.part;
           let s='';let okAll=true;
           for(let i2=0;i2<n;i2++){ if(typeof byIdx[i2]!=='string'){okAll=false;break;} s+=byIdx[i2]; }
-          if(okAll)r.state=s;
+          /* Integrity: only substitute the reassembled state if it's COMPLETE —
+             all n parts present AND (when the marker records it) the concatenated
+             length matches. A torn/racing read leaves the marker untouched, so the
+             client keeps its local copy rather than decrypting a truncated blob. */
+          if(okAll && (expectLen<0 || s.length===expectLen))r.state=s;
         }
       }catch(_){}
     }
@@ -923,10 +930,12 @@ async function handlePost(table, url, request, env, DB){
       if(_sv.length>CHUNK_LIMIT && _stateHash){
         _stateParts=[];
         for(let _off=0;_off<_sv.length;_off+=CHUNK_LIMIT)_stateParts.push(_sv.slice(_off,_off+CHUNK_LIMIT));
-        raw.state = CHUNK_PREFIX+_stateParts.length+':'+_stateHash;
-        for(let _pi=0;_pi<_stateParts.length;_pi++){
-          await DB.prepare('INSERT INTO kh_state_parts(hash,idx,part) VALUES(?,?,?) ON CONFLICT(hash,idx) DO UPDATE SET part=excluded.part').bind(_stateHash,_pi,_stateParts[_pi]).run();
-        }
+        /* Marker carries the part-count AND the total length so a read can VERIFY
+           the reassembly is complete (defence-in-depth against a torn write). The
+           part rows are NOT written here — they go into the SAME atomic batch as
+           the main-row write below, so a concurrent multi-device save can't
+           interleave and leave the marker inconsistent with the stored parts. */
+        raw.state = CHUNK_PREFIX+_stateParts.length+':'+_stateHash+':'+_sv.length;
       } else {
         raw.state = _sv;
       }
@@ -948,14 +957,25 @@ async function handlePost(table, url, request, env, DB){
       const upd = keys.filter(k=>conflict.indexOf(k)<0);
       sql += ' ON CONFLICT('+conflict.map(QUOTE).join(',')+') DO UPDATE SET '+(upd.length?upd.map(k=>QUOTE(k)+'=excluded.'+QUOTE(k)).join(','):QUOTE(conflict[0])+'='+QUOTE(conflict[0]));
     }
-    const res = await DB.prepare(sql).bind(...vals).run();
-    /* Chunked-state housekeeping: drop leftover parts past the new count, or ALL
-       parts once the account shrinks back under one row (best-effort). */
-    if(table==='kh_users' && _stateHash){
-      try{
-        if(_stateParts) await DB.prepare('DELETE FROM kh_state_parts WHERE hash=? AND idx>=?').bind(_stateHash,_stateParts.length).run();
-        else await DB.prepare('DELETE FROM kh_state_parts WHERE hash=?').bind(_stateHash).run();
-      }catch(_){}
+    let res;
+    if(table==='kh_users' && _stateParts){
+      /* ATOMIC chunked save — parts + main row + stale-part cleanup as ONE D1
+         batch (implicit transaction). Without this the three writes are separate
+         autocommits, so two devices of the same account saving near-simultaneously
+         could interleave and leave the marker's part-count out of sync with the
+         parts that exist, making the cloud state unreadable (and a fresh device
+         login mis-report 'wrong password'). */
+      const _stmts=[];
+      for(let _pi=0;_pi<_stateParts.length;_pi++)_stmts.push(DB.prepare('INSERT INTO kh_state_parts(hash,idx,part) VALUES(?,?,?) ON CONFLICT(hash,idx) DO UPDATE SET part=excluded.part').bind(_stateHash,_pi,_stateParts[_pi]));
+      _stmts.push(DB.prepare(sql).bind(...vals));
+      _stmts.push(DB.prepare('DELETE FROM kh_state_parts WHERE hash=? AND idx>=?').bind(_stateHash,_stateParts.length));
+      const _br = await DB.batch(_stmts);
+      res = _br[_stateParts.length];/* the main-row result (kh_users re-reads by PK, not last_row_id) */
+    } else {
+      res = await DB.prepare(sql).bind(...vals).run();
+      /* Shrink: a kh_users write that is NO LONGER chunked clears any leftover
+         parts so a stale marker can't be reassembled from old fragments. */
+      if(table==='kh_users' && _stateHash){ try{ await DB.prepare('DELETE FROM kh_state_parts WHERE hash=?').bind(_stateHash).run(); }catch(_){} }
     }
     await applyCaps(DB, table, raw);
     if(!minimal){
