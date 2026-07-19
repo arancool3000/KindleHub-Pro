@@ -1,0 +1,48 @@
+name: CI
+
+# Automated checks on every PR and push to main — the "no automated checks"
+# gap: catches syntax regressions, Kindle-Silk-hostile JS in the deploy build,
+# and accidentally-committed secrets before they can reach production.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Worker syntax check
+        run: |
+          for f in api-worker.js state-worker.js email-worker.js; do
+            if [ -f "$f" ]; then node --check "$f" && echo "ok $f"; fi
+          done
+
+      - name: Build deploy bundle + old-WebKit (Silk) syntax gate
+        run: |
+          cd tools
+          npm install --no-audit --no-fund
+          node minify.mjs   # writes ../index.min.html; FAILS on banned Silk syntax
+
+      - name: Secret scan
+        run: |
+          # Fail the build if a real credential shape lands in a tracked file.
+          # (The Supabase ANON JWT is public-by-design + RLS-gated, so it is not
+          #  scanned here — only true secrets: Google/OpenAI keys, the maint key
+          #  shape, and private keys.)
+          if grep -REn \
+            'AQ\.Ab[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|sk-[A-Za-z0-9]{30,}|-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----' \
+            --include='*.js' --include='*.html' --include='*.sql' --include='*.json' --include='*.yml' . ; then
+            echo "::error::Potential secret detected in a tracked file — remove it (use Worker env vars)."
+            exit 1
+          fi
+          echo "No obvious secrets found."

@@ -844,8 +844,27 @@ async function handlePost(table, url, request, env, DB){
        burn D1 storage + request capacity. Per-field caps for the hot columns; a
        generous global cap for anything else. group_code is also format-restricted
        so junk can't spawn garbage rooms/partitions. */
-    var _FMAX={text:4000,display_name:60,user_id:100,group_code:24,device_hint:200,location_hint:120,reactions:2000,subject:200,body:8000,from_user:60,to_user:60,from_id:100,to_id:100,name:80,reason:400,ua_hint:200,city:80,country:8,day:12,message:2000,stack:4000,url:400,comments:20000,targets:2000,author:60,html:600000};
-    for(var _fk in raw){ if(typeof raw[_fk]==='string'){ var _fm=_FMAX[_fk]||6000; if(raw[_fk].length>_fm)raw[_fk]=raw[_fk].slice(0,_fm); } }
+    /* CRITICAL: several columns hold ENCRYPTED ciphertext — kh_users.state,
+       kh_messages.text (also carries encrypted image/sticker/app-share media),
+       kh_mail.subject/body. Truncating ciphertext makes it PERMANENTLY
+       undecryptable (silent data loss), so we REJECT an oversized value with 413
+       rather than slicing it. Caps are generous — a legit encrypted blob always
+       passes; only genuinely abusive payloads trip it. (An earlier build sliced
+       these at 4–6 KB, which corrupted large states and any media message — this
+       replaces that.) */
+    var _FMAX={
+      state:16000000,            /* encrypted account blob — multi-MB */
+      text:200000,               /* chat message incl. encrypted media */
+      subject:8000, body:600000, /* encrypted mail (subject expands past plaintext) */
+      html:600000, comments:60000, reactions:8000, targets:8000,
+      message:8000, stack:8000, url:2000,
+      display_name:4000,         /* Slither packs a presence beacon in here */
+      user_id:200, group_code:24, device_hint:200, location_hint:200,
+      from_user:200, to_user:200, from_id:200, to_id:200,
+      name:200, reason:4000, ua_hint:400, city:120, country:16, day:16,
+      author:200, email:320, hash:200, secret:200, owner_secret:200
+    };
+    for(var _fk in raw){ if(typeof raw[_fk]==='string' && raw[_fk].length > (_FMAX[_fk]||16000)){ return err('Field "'+_fk+'" exceeds the maximum size',413,env); } }
     if(typeof raw.group_code==='string')raw.group_code=raw.group_code.replace(/[^A-Za-z0-9_-]/g,'').slice(0,24);
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
@@ -1093,8 +1112,14 @@ async function handleGeminiProxy(request, env, DB){
     await DB.prepare('INSERT INTO kh_shared_api_usage(date,count) VALUES(?,1) ON CONFLICT(date) DO UPDATE SET count=count+1').bind(today).run();
     const r = await DB.prepare('SELECT count FROM kh_shared_api_usage WHERE date=?').bind(today).first();
     newCount = (r&&r.count)||0; capActive=true;
-  }catch(_){ /* counter unavailable — serve without the cap */ }
-  if(capActive && newCount>cap){
+  }catch(_){ capActive=false; }
+  /* Fail CLOSED: if the usage counter is unavailable we cannot enforce the daily
+     cap, so refuse rather than serve UNMETERED shared-key calls (a cost/abuse
+     guard — users with their own key are unaffected). Was: served without a cap. */
+  if(!capActive){
+    return json({error:'Shared AI is briefly unavailable — try again shortly, or add your own Gemini key.',code:'CAP_UNAVAIL'},503,env);
+  }
+  if(newCount>cap){
     return json({error:'Shared key tapped out today ('+newCount+'/'+cap+'). Resets midnight UTC, or add your own Gemini key.',code:'CAP_REACHED',count:newCount,cap:cap},429,env);
   }
   const up = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':streamGenerateContent?alt=sse&key='+KEY,{
@@ -1118,8 +1143,15 @@ let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
    response as X-KH-Load so clients can self-throttle their background polling
    before anyone hits the hard cap (closed-loop capacity control). */
 let _loadFrac = 0;
-const REQ_HARD_CAP   = 99000;   // Workers free: 100k requests/day — error at 99k, resets 00:00 UTC
-const WRITE_HARD_CAP = 90000;   // D1 free: 100k row-writes/day — separate safety (estW counts 2/write)
+/* Workers Free = 100k requests/DAY across the WHOLE ACCOUNT (this API Worker +
+   the state Worker + the email Worker + anything else) — NOT per-Worker. So this
+   API Worker must go read-only well BELOW 100k to leave headroom for the others,
+   or the account trips Cloudflare error 1027 and EVERY Worker (the whole site)
+   goes down until 00:00 UTC. 60k leaves ~40k for the rest. Both are env-tunable
+   (REQ_HARD_CAP / WRITE_HARD_CAP) so the ceiling can be lowered further without a
+   code change if the other Workers' share grows. */
+const REQ_HARD_CAP   = 60000;   // was 99000 — left no room for the state/email Workers → account-wide 1027
+const WRITE_HARD_CAP = 60000;   // D1 free: 100k row-writes/day (estW counts 2/write)
 async function dailyUsed(DB, isWrite){
   const today = nowIso().slice(0,10);
   const now = Date.now();
@@ -1582,15 +1614,19 @@ export default {
        Health check above is always allowed so uptime monitors keep working. */
     const _isWrite = request.method!=='GET' && request.method!=='HEAD';
     const _usage = await dailyUsed(DB, _isWrite);
+    /* Env-tunable ceilings so the account-wide budget can be split without a code
+       change (lower these if the state/email Workers grow). */
+    const _reqCap = parseInt((env&&env.REQ_HARD_CAP)||'',10)||REQ_HARD_CAP;
+    const _wrtCap = parseInt((env&&env.WRITE_HARD_CAP)||'',10)||WRITE_HARD_CAP;
     /* Publish the higher of the request/write utilisation so clients back off. */
-    _loadFrac = Math.max(_usage.n/REQ_HARD_CAP, _usage.w/WRITE_HARD_CAP);
+    _loadFrac = Math.max(_usage.n/_reqCap, _usage.w/_wrtCap);
     /* Over a daily free-tier ceiling → just error the cloud request (503),
        non-admin only (admin token bypasses; resets 00:00 UTC). No read-only
        degrade band — a request past the limit simply fails. */
-    if(_usage.n>REQ_HARD_CAP || (_usage.w>WRITE_HARD_CAP && _isWrite)){
+    if(_usage.n>_reqCap || (_usage.w>_wrtCap && _isWrite)){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){
-        if(_usage.n>REQ_HARD_CAP)
+        if(_usage.n>_reqCap)
           return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
         return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub reached its daily free-tier write limit. Service resumes automatically at midnight UTC.'},503,env);
       }
@@ -1600,7 +1636,7 @@ export default {
        this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */
     if(url.pathname==='/functions/v1/kh-gemini-proxy'){
       try{ return await handleGeminiProxy(request, env, DB); }
-      catch(e){ return json({error:String((e&&e.message)||e).slice(0,160)},500,env); }
+      catch(e){ try{console.error('proxy',(e&&e.message)||e);}catch(_){} return json({error:'AI proxy error'},500,env); }
     }
 
     const m = url.pathname.match(/^\/rest\/v1\/(rpc\/)?([A-Za-z0-9_]+)\/?$/);
@@ -1624,7 +1660,10 @@ export default {
         default:       return err('method not allowed',405,env);
       }
     }catch(e){
-      return err(String((e&&e.message)||e).slice(0,200), 500, env);
+      /* Don't leak backend/D1 exception text to clients — keep diagnostics
+         server-side (wrangler tail) and return a generic error. */
+      try{console.error('worker',(e&&e.message)||e);}catch(_){}
+      return err('Internal error', 500, env);
     }
   },
 };
