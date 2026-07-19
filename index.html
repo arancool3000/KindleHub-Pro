@@ -4958,6 +4958,9 @@ function launchKindleDesktop(){
        grid (page 1). Opt-in — a community request; default off so nothing
        changes for existing users. */
     ['widgetsFirst',  'kh_os_widgetsfirst',false,             'b'],
+    /* iOS-style home-screen folders: [{id,name,auto,apps:[appId,...]}]. Apps in a
+       folder leave the top-level grid and live inside the folder's overlay. */
+    ['folders',       'kh_os_folders',    [],                 'j'],
   ];
   let osState={};
   OS_SCHEMA.forEach(([k,ls,def,t])=>{
@@ -4977,6 +4980,72 @@ function launchKindleDesktop(){
     });
   }
   function allApps(){var rm=(S&&S.storeRemoved&&typeof S.storeRemoved==='object')?S.storeRemoved:{};return [...BUILTIN_APPS,...osState.customApps,...(typeof _khPublishedOsApps==='function'?_khPublishedOsApps():[])].filter(function(a){return !(a&&a.nav&&rm[a.nav]===true);});}
+  /* ── iOS-style folders ──────────────────────────────────────────────────
+     osState.folders = [{id,name,auto,apps:[appId,...]}]. Apps inside a folder
+     leave the top-level grid; the folder shows as a tile that opens an overlay.
+     A folder with <2 apps dissolves (its app returns to the grid). */
+  function _appById(id){var all=allApps();for(var i=0;i<all.length;i++)if(all[i].id===id)return all[i];return null;}
+  function _folderById(fid){var fs=osState.folders||[];for(var i=0;i<fs.length;i++)if(fs[i].id===fid)return fs[i];return null;}
+  function _folderAppIdSet(){var s={};(osState.folders||[]).forEach(function(f){(f.apps||[]).forEach(function(id){s[id]=1;});});return s;}
+  function _appCat(app){try{if(app&&app.nav&&typeof _khStoreMeta==='function'){var m=_khStoreMeta(app.nav);if(m&&m.cat)return m.cat;}}catch(_){}return null;}
+  function folderAutoName(f){var counts={},best=null,bestN=0;(f.apps||[]).forEach(function(id){var a=_appById(id);var c=a?_appCat(a):null;if(!c)return;counts[c]=(counts[c]||0)+1;if(counts[c]>bestN){bestN=counts[c];best=c;}});return best||'Folder';}
+  function _pruneFolders(){osState.folders=(osState.folders||[]).filter(function(f){return f&&Array.isArray(f.apps)&&f.apps.length>=2;});}
+  function _saveFolders(){try{persistOS();}catch(_){}try{buildPages();}catch(_){}}
+  function _createFolder(idA,idB){if(!idA||!idB||idA===idB)return;if(!Array.isArray(osState.folders))osState.folders=[];
+    /* pull both out of any existing folder first */
+    (osState.folders).forEach(function(o){o.apps=(o.apps||[]).filter(function(x){return x!==idA&&x!==idB;});});
+    var f={id:'fold_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),name:'',auto:true,apps:[idA,idB]};f.name=folderAutoName(f);
+    osState.folders.push(f);_pruneFolders();_saveFolders();}
+  function _addToFolder(fid,appId){var f=_folderById(fid);if(!f||!appId)return;(osState.folders||[]).forEach(function(o){o.apps=(o.apps||[]).filter(function(x){return x!==appId;});});if(f.apps.indexOf(appId)<0)f.apps.push(appId);if(f.auto)f.name=folderAutoName(f);_pruneFolders();_saveFolders();}
+  function _removeFromFolder(fid,appId){var f=_folderById(fid);if(!f)return;f.apps=(f.apps||[]).filter(function(x){return x!==appId;});if(f.auto)f.name=folderAutoName(f);_pruneFolders();_saveFolders();}
+  function _renameFolder(fid,name){var f=_folderById(fid);if(!f)return;name=String(name||'').trim().slice(0,24);if(name){f.name=name;f.auto=false;}else{f.auto=true;f.name=folderAutoName(f);}try{persistOS();}catch(_){}}
+  /* The grid's item list: loose apps (not in a folder) + one pseudo-item per
+     folder. buildPages/numIconPages render this; allApps() stays the FULL flat
+     list (so search + openApp mapping still see foldered apps). */
+  function gridItems(){
+    var inF=_folderAppIdSet();
+    var loose=allApps().filter(function(a){return !(a&&a.id&&inF[a.id]);});
+    var folders=(osState.folders||[]).map(function(f){return {__folder:true,id:f.id,fid:f.id,label:(f.auto?folderAutoName(f):(f.name||'Folder')),apps:(f.apps||[]).slice(),color:'#5b6472'};});
+    return loose.concat(folders);
+  }
+  /* Folder overlay — the apps inside, a rename box, and a per-app remove. */
+  function openFolder(fid){
+    var f=_folderById(fid);if(!f)return;
+    var ov=document.createElement('div');
+    ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:560000;background:rgba(10,10,20,0.72);display:flex;align-items:center;justify-content:center;padding:18px;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;';
+    var panel=document.createElement('div');
+    panel.style.cssText='background:rgba(240,240,245,0.98);border-radius:22px;max-width:360px;width:100%;max-height:80%;overflow-y:auto;padding:16px 14px 18px;box-shadow:0 20px 60px rgba(0,0,0,0.5);';
+    var nameInp=document.createElement('input');nameInp.type='text';nameInp.value=(f.auto?folderAutoName(f):(f.name||''));nameInp.placeholder='Folder name';
+    nameInp.style.cssText='display:block;width:100%;box-sizing:border-box;text-align:center;font-size:16px;font-weight:800;color:#111;background:transparent;border:none;border-bottom:1px dashed rgba(0,0,0,0.18);padding:4px 0 8px;margin-bottom:12px;';
+    nameInp.onchange=function(){_renameFolder(fid,nameInp.value);};
+    panel.appendChild(nameInp);
+    var grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:8px;';
+    function fill(){
+      grid.innerHTML='';
+      var ff=_folderById(fid);if(!ff){ov.remove();return;}
+      ff.apps.forEach(function(id){
+        var a=_appById(id);if(!a)return;
+        var cell=document.createElement('div');cell.style.cssText='position:relative;display:flex;flex-direction:column;align-items:center;';
+        var box=document.createElement('div');box.style.cssText='width:52px;height:52px;border-radius:14px;overflow:hidden;background:'+a.color+';display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.2);cursor:pointer;';
+        box.innerHTML=a.icon||'';var sv=box.querySelector('svg');if(sv)sv.style.cssText='width:34px;height:34px;';
+        box.onclick=function(){ov.remove();openApp(a);};
+        var lb=document.createElement('div');lb.textContent=_censorText(a.label);lb.style.cssText='font-size:9px;color:#222;margin-top:3px;max-width:58px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;';
+        var rm=document.createElement('button');rm.textContent='×';rm.title='Remove from folder';rm.style.cssText='position:absolute;top:-6px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:#111;color:#fff;font-size:13px;font-weight:900;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.4);';
+        rm.onclick=function(e){e.stopPropagation();_removeFromFolder(fid,id);if(!_folderById(fid)){ov.remove();return;}fill();};
+        cell.appendChild(box);cell.appendChild(lb);cell.appendChild(rm);
+        grid.appendChild(cell);
+      });
+    }
+    fill();
+    panel.appendChild(grid);
+    var done=document.createElement('button');done.textContent='Done';done.style.cssText='display:block;width:100%;margin-top:16px;padding:11px;border:none;border-radius:12px;background:#111;color:#fff;font-size:14px;font-weight:800;cursor:pointer;';
+    done.onclick=function(){ov.remove();};
+    panel.appendChild(done);
+    ov.appendChild(panel);
+    ov.onclick=function(e){if(e.target===ov)ov.remove();};
+    (document.getElementById('kd-root')||document.body).appendChild(ov);
+    setTimeout(function(){try{nameInp.blur();}catch(_){}},0);
+  }
   function widgetOn(id){return osState.enabledWidgets.includes(id);}
 
   /* ── SHELL ── */
@@ -5561,7 +5630,7 @@ function launchKindleDesktop(){
   let _curPage=osState.widgetsFirst?0:1;/* land on widgets (0) or apps (1) per user setting */
   /* 16 apps per page (4×4 in a 5-row grid). */
   function iconsPerPage(){return 16;}
-  function numIconPages(){return Math.max(1,Math.ceil(allApps().length/iconsPerPage()));}
+  function numIconPages(){return Math.max(1,Math.ceil(gridItems().length/iconsPerPage()));}
   function numPages(){return 1+numIconPages();}
 
   /* ── WIDGET PAGE (page 0) ── */
@@ -5788,43 +5857,84 @@ function launchKindleDesktop(){
   }
   renderWidgets();
 
+  function _kdMiniIcon(a,px){var d=document.createElement('div');d.style.cssText='width:'+px+'px;height:'+px+'px;border-radius:5px;overflow:hidden;background:'+(a?a.color:'rgba(255,255,255,0.5)')+';display:flex;align-items:center;justify-content:center;';if(a&&a.icon){d.innerHTML=a.icon;var s=d.querySelector('svg');if(s)s.style.cssText='width:'+Math.round(px*0.66)+'px;height:'+Math.round(px*0.66)+'px;';}return d;}
   function makeIcon(app){
+    const isFolder=!!app.__folder;
     const cell=document.createElement('div');
     cell.style.cssText='display:flex;flex-direction:column;align-items:center;padding:8px 2px 10px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;min-width:0;';
+    /* Data attributes let a drag hit-test find the drop target under the finger. */
+    if(isFolder)cell.dataset.kdFolder=app.fid;else if(app.id)cell.dataset.kdApp=app.id;
     const outer=document.createElement('div');outer.style.cssText='position:relative;width:62px;height:62px;flex-shrink:0;';
-    /* Icon body — clean flat */
     const box=document.createElement('div');
     box.className='kh-app-tile';
-    box.style.cssText='position:relative;width:62px;height:62px;border-radius:16px;overflow:hidden;background:'+app.color+';display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.18);z-index:1;transition:transform 0.13s,opacity 0.11s;';
-    const iconInner=document.createElement('div');
-    iconInner.innerHTML=app.icon||'';
-    const svg=iconInner.querySelector('svg');
-    if(svg)svg.style.cssText='width:40px;height:40px;position:relative;z-index:1;display:block;';
-    iconInner.style.cssText='display:flex;align-items:center;justify-content:center;position:relative;z-index:1;';
-    box.appendChild(iconInner);
+    box.style.cssText='position:relative;width:62px;height:62px;border-radius:16px;overflow:hidden;background:'+(isFolder?'rgba(150,150,165,0.32)':app.color)+';display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.18);z-index:1;transition:transform 0.13s,opacity 0.11s;';
+    if(isFolder){
+      const mini=document.createElement('div');mini.style.cssText='display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:3px;padding:8px;width:100%;height:100%;box-sizing:border-box;';
+      (app.apps||[]).slice(0,4).forEach(function(id){mini.appendChild(_kdMiniIcon(_appById(id),20));});
+      box.appendChild(mini);
+    } else {
+      const iconInner=document.createElement('div');
+      iconInner.innerHTML=app.icon||'';
+      const svg=iconInner.querySelector('svg');
+      if(svg)svg.style.cssText='width:40px;height:40px;position:relative;z-index:1;display:block;';
+      iconInner.style.cssText='display:flex;align-items:center;justify-content:center;position:relative;z-index:1;';
+      box.appendChild(iconInner);
+    }
     outer.appendChild(box);
     /* Label */
     const lbl=document.createElement('div');
     lbl.className='kd-icon-lbl';
-    lbl.textContent=_censorText(app.label);
+    lbl.textContent=isFolder?String(app.label||'Folder'):_censorText(app.label);
     lbl.style.cssText='color:#111;font-size:10px;font-weight:600;text-align:center;margin-top:4px;max-width:70px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;letter-spacing:0.1px;line-height:1.2;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;';
     cell.appendChild(outer);cell.appendChild(lbl);
     /* Press feedback */
-    cell.addEventListener('touchstart',()=>{
-      box.style.transform='scale(0.88)';box.style.opacity='0.8';
-    },{passive:true});
-    cell.addEventListener('touchend',()=>{
-      box.style.transform='';box.style.opacity='';
-    },{passive:true});
+    cell.addEventListener('touchstart',()=>{if(window._kdDragging)return;box.style.transform='scale(0.88)';box.style.opacity='0.8';},{passive:true});
+    cell.addEventListener('touchend',()=>{box.style.transform='';box.style.opacity='';},{passive:true});
     cell.addEventListener('touchcancel',()=>{box.style.transform='';box.style.opacity='';},{passive:true});
-    cell.addEventListener('click',()=>openApp(app));
+    cell.addEventListener('click',()=>{if(cell._kdDidDrag){cell._kdDidDrag=false;return;}if(isFolder)openFolder(app.fid);else openApp(app);});
+    if(!isFolder)_attachIconDrag(cell,app.id,box);
     return cell;
+  }
+  /* Long-press an app icon to pick it up, then drop it onto another app (→ new
+     folder) or onto a folder (→ add). Drop is decided by where the finger LIFTS
+     (elementFromPoint), so it's reliable on slow e-ink even if the drag clone
+     doesn't track smoothly. A move before the long-press fires = a page swipe. */
+  function _attachIconDrag(cell,appId,box){
+    var lpTimer=null,sx=0,sy=0,dragging=false,clone=null,lastHi=null;
+    function clearLp(){if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}}
+    function targetAt(x,y){
+      if(clone)clone.style.display='none';
+      var elx=document.elementFromPoint(x,y);
+      if(clone)clone.style.display='';
+      while(elx&&elx!==document.body){if(elx.dataset&&(elx.dataset.kdApp||elx.dataset.kdFolder))return elx;elx=elx.parentNode;}
+      return null;
+    }
+    function hi(x,y){var t=targetAt(x,y);if(lastHi&&lastHi!==t){var b=lastHi.querySelector('.kh-app-tile');if(b)b.style.boxShadow='';}if(t&&t!==cell){var b2=t.querySelector('.kh-app-tile');if(b2)b2.style.boxShadow='0 0 0 3px #fde68a';}lastHi=t;}
+    function startDrag(x,y){dragging=true;window._kdDragging=appId;cell._kdDidDrag=true;
+      clone=cell.cloneNode(true);clone.style.cssText+=';position:fixed;left:'+(x-31)+'px;top:'+(y-31)+'px;width:62px;z-index:590000;pointer-events:none;opacity:0.9;';
+      (document.getElementById('kd-root')||document.body).appendChild(clone);
+      box.style.opacity='0.3';try{if(navigator.vibrate)navigator.vibrate(12);}catch(_){}}
+    function endDrag(x,y){
+      if(lastHi){var b=lastHi.querySelector('.kh-app-tile');if(b)b.style.boxShadow='';lastHi=null;}
+      if(clone){clone.remove();clone=null;}
+      box.style.opacity='';window._kdDragging=null;
+      var t=(x>=0)?targetAt(x,y):null;
+      if(t&&t!==cell){
+        if(t.dataset.kdFolder)_addToFolder(t.dataset.kdFolder,appId);
+        else if(t.dataset.kdApp&&t.dataset.kdApp!==appId)_createFolder(appId,t.dataset.kdApp);
+      } else if(dragging&&x>=0&&typeof toast==='function'){toast('Drop it on another app to make a folder.',2500);}
+      dragging=false;
+    }
+    cell.addEventListener('touchstart',function(e){if(!e.touches||!e.touches[0])return;sx=e.touches[0].clientX;sy=e.touches[0].clientY;clearLp();lpTimer=setTimeout(function(){startDrag(sx,sy);},430);},{passive:true});
+    cell.addEventListener('touchmove',function(e){if(!e.touches||!e.touches[0])return;var dx=e.touches[0].clientX-sx,dy=e.touches[0].clientY-sy;if(!dragging){if(Math.abs(dx)>10||Math.abs(dy)>10)clearLp();return;}if(e.cancelable)e.preventDefault();if(clone){clone.style.left=(e.touches[0].clientX-31)+'px';clone.style.top=(e.touches[0].clientY-31)+'px';}hi(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
+    cell.addEventListener('touchend',function(e){clearLp();if(dragging){var t=(e.changedTouches&&e.changedTouches[0])||{clientX:sx,clientY:sy};endDrag(t.clientX,t.clientY);}},{passive:true});
+    cell.addEventListener('touchcancel',function(){clearLp();if(dragging)endDrag(-1,-1);},{passive:true});
   }
 
   function buildPages(){
     const prev=_curPage;
     while(kdPagesTrack.children.length>1)kdPagesTrack.removeChild(kdPagesTrack.lastChild);
-    const apps=allApps();const iconPages=numIconPages();
+    const apps=gridItems();const iconPages=numIconPages();
     _curPage=Math.min(prev,numPages()-1);
     const PER=iconsPerPage();
     const cols=4,rows=5;
@@ -5913,11 +6023,13 @@ function launchKindleDesktop(){
      swipe gesture vanishes with this cache. */
   let _pgX=null,_pgY=null,_pgMoving=false,_pgWidth=0;
   kdPagesOuter.addEventListener('touchstart',e=>{
+    if(window._kdDragging)return;/* an icon is being dragged to a folder — don't page-swipe */
     _pgX=e.touches[0].clientX;_pgY=e.touches[0].clientY;_pgMoving=false;
     _pgWidth=kdPagesOuter.offsetWidth;
     kdPagesTrack.style.transition='none';
   },{passive:true});
   kdPagesOuter.addEventListener('touchmove',e=>{
+    if(window._kdDragging){_pgX=null;return;}/* suppress swipe mid-drag */
     if(_pgX===null)return;
     const dx=e.touches[0].clientX-_pgX,dy=Math.abs(e.touches[0].clientY-_pgY);
     if(!_pgMoving&&dy>Math.abs(dx))return;
@@ -7073,7 +7185,7 @@ Do NOT try mailto:, fetch to a mail API, or a <form action=...> — none work in
     const STEPS=[
       {sel:null,title:'Welcome to KindleOS',body:'A focused launcher layered on top of KindleHub. Every page, all in one place. Let\'s take a quick tour.'},
       {sel:'.kd-tour-sb',pos:'top',title:'The status bar',body:'Time, signal, search. Tap the time any time to open the Control Centre.',swipe:'down'},
-      {sel:'.kd-tour-pages',pos:'center',title:'Your apps',body:'Tap any tile to launch a KindleHub page — Notes, Cookbook, Stars, anything.\\n\\nSwipe left or right to flip between pages of apps.'},
+      {sel:'.kd-tour-pages',pos:'center',title:'Your apps',body:'Tap any tile to launch a KindleHub page — Notes, Cookbook, Stars, anything.\\n\\nSwipe left or right to flip between pages of apps.\\n\\nHold an app for a moment, then drop it onto another to make a FOLDER. Tap a folder to open it, and tap its name to rename it.'},
       {sel:'.kd-tour-dock',pos:'bottom',title:'The dock',body:'Your most-used apps live here — Chat, Notes, Games and the AI Builder. Tap one to jump straight in.'},
       {sel:'.kd-tour-sb',pos:'top',title:'Control Centre',body:'Swipe down on the status bar (or tap the clock) to open Control Centre — quick toggles for dark mode, wallpaper, font size, widgets, and more.',swipe:'down'},
       {sel:null,title:'You\'re set',body:'Add new apps — or build your own with AI — from the AI Builder in the dock, and remove any of them from there too.\\n\\nOpen Control Centre (tap the clock, or swipe down on the status bar) for wallpaper, widgets, font size and dark mode — and to exit KindleOS.'},
