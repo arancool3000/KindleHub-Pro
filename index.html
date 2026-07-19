@@ -2720,7 +2720,6 @@ function _startMessageNotifier(){
       }catch(e){}
     }
   }
-  seedSeen();
   /* Round-robin cursor so each tick checks only ONE group, not all of
      them. Fetching + AES-decrypting up to 50 messages for every joined
      group on a single 45s tick was a CPU/GC spike that, on a Kindle with
@@ -2729,7 +2728,7 @@ function _startMessageNotifier(){
      realtime socket already covering the busy room, the slight latency on
      quiet rooms is invisible. */
   let _notifyIdx=0;
-  _msgNotifyTimer=setInterval(async()=>{
+  async function _notifyTick(){
     /* Skip while tab hidden — no point firing toasts no-one will see. */
     if(document.hidden)return;
     /* Skip while user IS on the messages tab (their existing chat
@@ -2828,7 +2827,14 @@ function _startMessageNotifier(){
         if(msgs.length)localStorage.setItem(lastSeenKey(g.code),msgs[msgs.length-1].id||'');
       }catch(e){}
     }
-  },(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);
+  }
+  _msgNotifyTimer=setInterval(_notifyTick,(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);
+  /* Immediate first sweep so new-message notifications appear right after
+     load / turn-on — not only after the first 45-90s poll tick (the reported
+     "notifications show up 3 minutes later" complaint). seedSeen only seeds
+     groups with NO marker, so existing groups notify vs their persisted
+     last-seen; brand-new groups are seeded first to avoid a history blast. */
+  seedSeen().then(function(){try{_notifyTick();}catch(_e){}});
 }
 
 /* Heartbeat — every 45 s we check whether the local state has changed
@@ -3899,20 +3905,60 @@ window._khOpenArticleReader=(function(){
      we get HTML back (not JSON-wrapped). No new proxies invented. */
   function fetchHtml(link){
     var wraps=[
+      /* KindleHub's OWN proxy worker first — far more reliable than the public
+         ones (the old chain led with allorigins, which is ~50% down/rate-limited
+         in 2026 and, with no outer cap, was the "loads forever" bug). */
+      function(u){return 'https://vpn.arancool3000.workers.dev/?url='+encodeURIComponent(u);},
+      function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);},
       function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);},
-      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);},
-      function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);}
+      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);}
     ];
     var idx=0;
     function tryNext(){
       if(idx>=wraps.length)return Promise.reject(new Error('load-failed'));
       var a=wraps[idx++](link);
-      return rfetch(a,14000).then(function(raw){
+      return rfetch(a,8000).then(function(raw){
         if(raw&&raw.length>500&&/<[a-z]/i.test(raw))return raw;
         return tryNext();
       }).catch(function(){return tryNext();});
     }
     return tryNext();
+  }
+
+  /* Jina Reader (r.jina.ai) returns already-CLEANED markdown, CORS-open + keyless,
+     and renders JS-heavy news sites server-side (so it beats a raw-HTML fetch on
+     modern single-page news pages). Parse its markdown into paragraphs + images. */
+  function extractFromJina(md){
+    var body=String(md||'').replace(/^Title:[\s\S]*?URL Source:.*\n+/i,'').replace(/^Markdown Content:\s*\n+/i,'');
+    var paras=body.split(/\n{2,}/).map(function(s){return s.replace(/\s+/g,' ').trim();}).filter(function(s){
+      if(s.length<12)return false;
+      if(s.indexOf('![')===0)return false;
+      if(/^[=_*\-]{3,}$/.test(s))return false;
+      return true;
+    });
+    var images=[],m,re=/!\[[^\]]*\]\((https?:\/\/[^)\s]+)/g;
+    while((m=re.exec(body))&&images.length<5)images.push(m[1]);
+    return {paras:paras,images:images};
+  }
+  /* Promise.race vs a timer, fail-OPEN — so the reader NEVER hangs ("loads
+     forever") no matter how slow every proxy is; the whole fetch is bounded. */
+  function _raceTOArt(pr,ms){
+    return new Promise(function(resolve){
+      var done=false;var t=setTimeout(function(){if(!done){done=true;resolve(null);}},ms);
+      Promise.resolve(pr).then(function(v){if(!done){done=true;clearTimeout(t);resolve(v);}},function(){if(!done){done=true;clearTimeout(t);resolve(null);}});
+    });
+  }
+  /* Full pipeline: HTML proxies -> extract(); if that's thin, Jina's cleaned
+     markdown. Returns {paras,images} or a thin/empty result. */
+  function fetchArticle(link){
+    var jina='https://r.jina.ai/'+String(link).replace(/#/g,'%23');
+    return fetchHtml(link).then(function(html){
+      var res=extract(html,link);
+      if(res.paras&&res.paras.length>=2)return res;
+      return rfetch(jina,8000).then(function(md){var jr=extractFromJina(md);return (jr.paras&&jr.paras.length>=2)?jr:res;}).catch(function(){return res;});
+    }).catch(function(){
+      return rfetch(jina,8000).then(function(md){return extractFromJina(md);});
+    });
   }
 
   function decodeEntities(s){
@@ -4168,11 +4214,10 @@ window._khOpenArticleReader=(function(){
     }
 
     if(_cache[meta.link]){showParsed(_cache[meta.link]);return;}
-    fetchHtml(meta.link).then(function(html){
-      var res=extract(html,meta.link);
-      if(res.paras&&res.paras.length>=2){showParsed(res);return;}
-      throw new Error('thin');
-    }).catch(function(){
+    /* Whole fetch is capped at 12s (fail-open) so it can never "load forever";
+       on timeout / thin result we drop to the feed summary. */
+    _raceTOArt(fetchArticle(meta.link),12000).then(function(res){
+      if(res&&res.paras&&res.paras.length>=2){showParsed(res);return;}
       var fb=feedFallbackParas();
       if(fb.length){
         images=[];pages=paginate(fb,1700);pos=0;renderPage();
@@ -11055,6 +11100,42 @@ function _khBuildModCard(){
   const btn=txt('button','View stats',{className:'btn primary small'});
   row.appendChild(inp);row.appendChild(btn);c.appendChild(row);
   const out=el('div',{style:{fontSize:'12px',lineHeight:'1.7'}});c.appendChild(out);
+  /* Turnkey in-app grant request: enter an invite code the admin generated ->
+     kh_mod_claim marks it 'requested' -> the admin Accepts/Declines from their
+     Moderators card. No admin token needed here (this RPC is public — anyone
+     with the code can send the request; the ADMIN still has to approve it). */
+  const claimWrap=el('div',{style:{marginTop:'12px',paddingTop:'10px',borderTop:'1px dashed var(--muted)'}});
+  claimWrap.appendChild(txt('div','Got an invite code from the admin?',{style:{fontSize:'11px',fontWeight:'700',marginBottom:'4px'}}));
+  claimWrap.appendChild(txt('div','Enter it below to request moderator access. The admin will confirm it’s really you before anything is granted.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'6px'}}));
+  const claimRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
+  const claimInp=el('input',{type:'text',placeholder:'invite code',autocomplete:'off',style:{flex:'1',minWidth:'140px',fontSize:'13px',padding:'8px 10px',border:'var(--border)',borderRadius:'8px',background:'var(--bg)',color:'var(--fg)',boxSizing:'border-box',textTransform:'uppercase'}});
+  const claimBtn=txt('button','Request moderator access',{className:'btn small'});
+  claimRow.appendChild(claimInp);claimRow.appendChild(claimBtn);
+  claimWrap.appendChild(claimRow);
+  const claimOut=el('div',{style:{fontSize:'11px',color:'var(--muted)',marginTop:'6px'}});
+  claimWrap.appendChild(claimOut);
+  claimBtn.onclick=async function(){
+    const code=(claimInp.value||'').trim().toUpperCase();
+    if(!code){claimOut.textContent='Enter the invite code first.';return;}
+    claimBtn.disabled=true;claimBtn.textContent='Sending…';
+    try{
+      const hash=await _sha256(code);
+      const uid=String((typeof S!=='undefined'&&S.userId)||'').slice(0,16);
+      const name=(typeof _khSelfDisplayName==='function')?_khSelfDisplayName():'Reader';
+      const res=await _khRpcCall('kh_mod_claim',{p_code_hash:hash,p_name:String(name).slice(0,60),p_uid:uid});
+      if(res&&res.ok){
+        try{localStorage.setItem('kh_mod_code',code);}catch(_){}
+        inp.value=code;
+        claimInp.value='';
+        claimOut.textContent='Request sent — the admin will approve you shortly.';
+        if(typeof toast==='function')toast('Request sent — the admin will approve you shortly.',4000);
+      } else {
+        claimOut.textContent='That code is invalid, already used, or was revoked.';
+      }
+    }catch(_){ claimOut.textContent='Network error — try again.'; }
+    claimBtn.disabled=false;claimBtn.textContent='Request moderator access';
+  };
+  c.appendChild(claimWrap);
   async function load(saveIt){
     const code=(inp.value||'').trim();
     if(saveIt){ try{ if(code)localStorage.setItem('kh_mod_code',code); else localStorage.removeItem('kh_mod_code'); }catch(_){} }
@@ -11077,6 +11158,120 @@ function _khBuildModCard(){
   if(_modCode()||window._adminToken) setTimeout(function(){load(false);},60);
   return c;
 }
+/* Mirrors displayName()'s fallback chain (that function lives inside the chat
+   module's own closure, out of reach here) so the claim request sends the same
+   name the admin would recognise: S.profileName -> email local-part -> S.user
+   -> 'Reader'. */
+function _khSelfDisplayName(){
+  try{
+    var pn=String((typeof S!=='undefined'&&S.profileName)||'').trim();
+    if(pn)return pn.slice(0,40);
+    if(typeof S!=='undefined'&&S.email)return String(S.email).split('@')[0];
+    if(typeof S!=='undefined'&&S.user)return String(S.user);
+  }catch(_){}
+  return 'Reader';
+}
+/* Random human-friendly invite code: 10 chars from a charset with ambiguous
+   glyphs removed (no 0/O, 1/I/L) so it's easy to read aloud / retype. Uses
+   crypto.getRandomValues when available (every real browser), with a
+   Math.random fallback so this never throws. */
+function _khGenModCode(){
+  var ALPHA='ABCDEFGHJKMNPQRSTUVWXYZ23456789', len=10, out='';
+  try{
+    var arr=new Uint32Array(len);
+    crypto.getRandomValues(arr);
+    for(var i=0;i<len;i++)out+=ALPHA.charAt(arr[i]%ALPHA.length);
+  }catch(_){
+    out='';
+    for(var j=0;j<len;j++)out+=ALPHA.charAt(Math.floor(Math.random()*ALPHA.length));
+  }
+  return out;
+}
+window._khSelfDisplayName=_khSelfDisplayName;window._khGenModCode=_khGenModCode;
+/* ── ADMIN "Moderators" card — the turnkey grant workflow ───────────────────
+   Generate a one-time invite code (shown once, plaintext, for the admin to
+   copy/send); below it, a live list of pending (nobody's entered it yet),
+   requested (someone has — Accept/Decline) and active (Revoke) grants. Only
+   ever shown to a confirmed admin (window._isAdminCached===true), mirroring
+   _khBuildModCard's gating pattern one section up in Settings -> Account. */
+function _khBuildModGrantsCard(){
+  const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginTop:'12px',boxShadow:'var(--shadow)'}});
+  c.appendChild(txt('div','MODERATORS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
+  c.appendChild(txt('div','Generate a one-time invite code for someone you trust. When they enter it, you\'ll see a request here to Accept or Decline — nothing is granted until you approve it. A moderator can never ban or warn an admin account.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'8px'}}));
+  const genBtn=txt('button','Generate invite code',{className:'btn primary small'});
+  c.appendChild(genBtn);
+  const codeOut=el('div',{style:{fontSize:'12px',marginTop:'8px'}});
+  c.appendChild(codeOut);
+  const listOut=el('div',{style:{fontSize:'12px',lineHeight:'1.6',marginTop:'12px'}});
+  c.appendChild(listOut);
+  async function refreshList(){
+    listOut.textContent='Loading…';
+    const rows=await _khRpcCall('kh_mod_list',{p_token:window._adminToken||''});
+    if(!Array.isArray(rows)){ listOut.textContent='Could not load — check your connection.'; return; }
+    listOut.innerHTML='';
+    if(!rows.length){ listOut.appendChild(txt('div','No invite codes yet.',{style:{color:'var(--muted)',fontStyle:'italic'}})); return; }
+    rows.forEach(function(g){
+      const row=el('div',{style:{borderTop:'1px dashed var(--muted)',paddingTop:'6px',marginTop:'6px'}});
+      const head=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'6px'}});
+      const label=g.status==='pending'?'Waiting to be claimed':(g.status==='requested'?('Requested by '+(g.requester_name||'someone')):('Active moderator'+(g.requester_name?(' · '+g.requester_name):'')));
+      head.appendChild(txt('span',label,{style:{fontWeight:'700'}}));
+      head.appendChild(txt('span',String(g.status||'').toUpperCase(),{style:{fontSize:'9px',color:'var(--muted)'}}));
+      row.appendChild(head);
+      if(g.created_at)row.appendChild(txt('div','Created '+new Date(g.created_at).toLocaleString(),{style:{fontSize:'10px',color:'var(--muted)'}}));
+      const bar=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'4px'}});
+      if(g.status==='requested'){
+        const acc=txt('button','Accept',{className:'btn small primary'});
+        acc.onclick=async function(){
+          acc.disabled=true;
+          const r=await _adminRpc('kh_mod_approve',{p_id:g.id,p_token:window._adminToken||''});
+          if(r.ok){toast('Moderator approved.',3000);refreshList();} else {acc.disabled=false;toast('Could not approve.',3000);}
+        };
+        const dec=txt('button','Decline',{className:'btn small'});
+        dec.onclick=async function(){
+          dec.disabled=true;
+          const r=await _adminRpc('kh_mod_decline',{p_id:g.id,p_token:window._adminToken||''});
+          if(r.ok){toast('Request declined.',3000);refreshList();} else {dec.disabled=false;toast('Could not decline.',3000);}
+        };
+        bar.appendChild(acc);bar.appendChild(dec);
+      } else if(g.status==='active'){
+        const rev=txt('button','Revoke',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+        rev.onclick=async function(){
+          if(!await kindleConfirm('Revoke moderator access for '+(g.requester_name||'this person')+'? Their code stops working immediately.'))return;
+          rev.disabled=true;
+          const r=await _adminRpc('kh_mod_revoke',{p_id:g.id,p_token:window._adminToken||''});
+          if(r.ok){toast('Moderator revoked.',3000);refreshList();} else {rev.disabled=false;toast('Could not revoke.',3000);}
+        };
+        bar.appendChild(rev);
+      }
+      if(bar.childNodes.length)row.appendChild(bar);
+      listOut.appendChild(row);
+    });
+  }
+  genBtn.onclick=async function(){
+    genBtn.disabled=true;genBtn.textContent='Generating…';
+    try{
+      const code=_khGenModCode();
+      const hash=await _sha256(code);
+      const res=await _khRpcCall('kh_mod_create',{p_code_hash:hash,p_token:window._adminToken||''});
+      if(!res){ toast('Could not create an invite code.',4000); }
+      else{
+        codeOut.innerHTML='';
+        codeOut.appendChild(txt('div','Invite code — send this to them (works ONCE):',{style:{fontWeight:'700',marginBottom:'4px'}}));
+        const box=el('div',{style:{display:'flex',gap:'6px',alignItems:'center',flexWrap:'wrap'}});
+        box.appendChild(txt('div',code,{style:{fontFamily:'monospace',fontSize:'16px',fontWeight:'800',letterSpacing:'2px',background:'var(--bg)',border:'var(--thin)',borderRadius:'6px',padding:'6px 10px'}}));
+        const cpy=txt('button','Copy',{className:'btn small'});
+        cpy.onclick=function(){ try{navigator.clipboard.writeText(code);toast('Copied.',1500);}catch(_){} };
+        box.appendChild(cpy);
+        codeOut.appendChild(box);
+        refreshList();
+      }
+    }catch(_){ toast('Could not create an invite code.',4000); }
+    genBtn.disabled=false;genBtn.textContent='Generate invite code';
+  };
+  refreshList();
+  return c;
+}
+window._khBuildModGrantsCard=_khBuildModGrantsCard;
 async function _khBanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
@@ -11088,6 +11283,7 @@ async function _khBanUsername(name){
     return true;
   }
   if(/not authoriz|unauthorized/i.test(res.body||''))toast('Not authorised (admin token mismatch).',4500);
+  else if(/cannot moderate an admin/i.test(res.body||''))toast('Moderators can\'t ban an admin account.',4500);
   else if(/PGRST202|PGRST205|Could not find/i.test(res.body||''))toast('Ban list not set up — run the kh_banned_usernames SQL (admin Diagnostics), then reload schema.',7000);
   else toast('Ban failed: '+String(res.body||('HTTP '+res.status)).slice(0,120),5000);
   return false;
@@ -11127,7 +11323,10 @@ async function _khWarnUsername(name){
     /* Moderator (no admin token): locked-down warn RPC, mod-gated on D1. */
     const _r=await _adminRpc('kh_warn_username',{p_name:name.slice(0,80),p_reason:msg.slice(0,600),p_token:_tok});
     ok=_r.ok;
-    if(!ok)toast('Warn failed: '+String(_r.body||('HTTP '+_r.status)).slice(0,120),5000);
+    if(!ok){
+      if(/cannot moderate an admin/i.test(_r.body||''))toast('Moderators can\'t warn an admin account.',4500);
+      else toast('Warn failed: '+String(_r.body||('HTTP '+_r.status)).slice(0,120),5000);
+    }
   }
   if(ok)toast('Warning sent privately to “'+name+'”.',3500);
   /* _announceRpc surfaces its own error toast on failure. */
@@ -42734,6 +42933,10 @@ settings:()=>{
     cAccount.appendChild(_ultraBox);
     /* Limited moderator stats card — code-gated, counts only (see _khBuildModCard). */
     try{ if(typeof _khBuildModCard==='function') cAccount.appendChild(_khBuildModCard()); }catch(_){}
+    /* Admin-only "Moderators" card — generate invite codes, review requests,
+       revoke grants. Gated the same way every other admin-only card in this
+       panel is (window._isAdminCached===true). */
+    try{ if(window._isAdminCached===true && typeof _khBuildModGrantsCard==='function') cAccount.appendChild(_khBuildModGrantsCard()); }catch(_){}
   }catch(_){}
 
   /* Two modes: login (username+pw) and register (username+pw+confirm).
@@ -65316,7 +65519,7 @@ window._showWelcome=function(){
     setTimeout(()=>{try{_startPresence();}catch(e){}},3000);
     /* Background message notifier — polls each joined group every 45s and
        shows push-notification toasts when new messages arrive. */
-    setTimeout(()=>{try{_startMessageNotifier();}catch(e){}},3000);
+    setTimeout(()=>{try{_startMessageNotifier();}catch(e){}},800);
     /* KindleHub Mail unread dot — one ~60-byte probe at boot and then every
        5 minutes. Deliberately sparse to protect the backend quota. */
     setTimeout(()=>{try{_mailUnreadProbe();}catch(e){}},4000);

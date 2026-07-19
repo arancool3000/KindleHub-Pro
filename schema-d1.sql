@@ -119,6 +119,27 @@ CREATE TABLE IF NOT EXISTS kh_banned_usernames (
   created_at TEXT
 );
 
+-- Turnkey IN-APP moderator invite/grant system (replaces the env-var MOD_HASHES
+-- flow). code_hash is the SHA-256 of a randomly-generated plaintext invite code
+-- — the plaintext itself never reaches the server, only its hash. Lifecycle:
+--   pending   -- admin generated a code, nobody has entered it yet
+--   requested -- someone entered the code (kh_mod_claim); awaiting admin review
+--   active    -- admin Accepted the request; the code now passes isMod()
+--   revoked   -- admin Revoked (or Declined a request) — the code stops working
+-- See kh_mod_create / kh_mod_claim / kh_mod_list / kh_mod_approve /
+-- kh_mod_decline / kh_mod_revoke in api-worker.js, and isMod()'s DB check.
+CREATE TABLE IF NOT EXISTS kh_mod_grants (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  code_hash      TEXT UNIQUE,
+  status         TEXT DEFAULT 'pending',
+  requester_name TEXT,
+  requester_uid  TEXT,
+  created_at     TEXT,
+  claimed_at     TEXT,
+  approved_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS kh_mod_grants_status ON kh_mod_grants(status);
+
 CREATE TABLE IF NOT EXISTS kh_visits (
   device_id TEXT NOT NULL,
   day       TEXT NOT NULL,
