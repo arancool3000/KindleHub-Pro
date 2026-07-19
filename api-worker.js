@@ -430,14 +430,29 @@ async function handleRpc(fn, body, DB, env, request){
     return json((res.meta&&res.meta.changes)||0, 200, env);
   }
   if(fn==='kh_ban_username'){
-    if(!await isAdmin(body.p_token)) return err('not authorized',403,env);
+    if(!await isMod(body.p_token, env)) return err('not authorized',403,env);
     await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(String(body.p_name||'').trim().toLowerCase(),'admin',nowIso()).run();
     return json(null,204,env);
   }
   if(fn==='kh_unban_username'){
-    if(!await isAdmin(body.p_token)) return err('not authorized',403,env);
+    if(!await isMod(body.p_token, env)) return err('not authorized',403,env);
     await DB.prepare('DELETE FROM kh_banned_usernames WHERE name=?').bind(String(body.p_name||'').trim().toLowerCase()).run();
     return json(null,204,env);
+  }
+  if(fn==='kh_warn_username'){
+    /* Moderator OR admin: deliver a PRIVATE warning to ONE named user. This is a
+       locked-down wrapper over the announcement table — the server FORCES the
+       warn tag + a single-username target, so a mod can only ever warn one named
+       user and can NEVER post a broadcast/general announcement (that stays
+       admin-only via kh_post_announcement). Text mirrors the client _WARN_TAG. */
+    if(!await isMod(body.p_token, env)) return err('unauthorized',403,env);
+    const target = String(body.p_name||'').trim().toLowerCase();
+    if(!target) return err('missing username',400,env);
+    const reason = (String(body.p_reason||'').trim().slice(0,600)) || 'Please follow the community rules.';
+    const wtext = '[[KH_WARN]]WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
+    const wres = await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext.slice(0,1000), JSON.stringify([target]), nowIso()).run();
+    const wid = wres.meta && wres.meta.last_row_id;
+    return json(wid||0, 200, env);
   }
   if(fn==='kh_increment_shared_api'){
     const d = String(body.p_date||nowIso().slice(0,10));

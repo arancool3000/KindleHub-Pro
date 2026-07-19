@@ -1242,8 +1242,15 @@ body.launcher-ui .view{padding-bottom:80px;}
       if(!raw)return;
       var Sp=JSON.parse(raw);
       if(!Sp||typeof Sp!=='object')return;
-      hints={t:Sp.theme,u:Sp.uiMode,sm:Sp.simpleMode,lm:Sp.liteMode};
+      hints={t:Sp.theme,u:Sp.uiMode,sm:Sp.simpleMode,lm:Sp.liteMode,nh:Sp.navHidden,no:Sp.navOrder};
+      /* PERF: stash this one-off full parse so the theme + nav preload scripts
+         below can reuse it instead of each re-parsing the same kindlehub_v5 blob
+         (this used to be 3 full JSON.parse passes of the state before first paint). */
+      window.__khBootFallbackS=Sp;
     }
+    /* PERF: expose the resolved hints so scripts 3 & 4 never touch localStorage/
+       JSON.parse again — same fields, same fallback safety net. */
+    window.__khBootHints=hints;
     var body=document.body,html=document.documentElement;
     if(hints.u==='simple')body.classList.add('simple-ui');
     else if(hints.u==='launcher')body.classList.add('launcher-ui');
@@ -1395,18 +1402,23 @@ body.launcher-ui .view{padding-bottom:80px;}
   <script>
   (function(){
     try{
-      var raw=localStorage.getItem('kindlehub_v5');
-      if(!raw)return;
-      var S=JSON.parse(raw);
+      /* PERF: reuse what the kh_boot preloader already parsed instead of a
+         second full JSON.parse of the same kindlehub_v5 blob. */
+      var S=window.__khBootHints||window.__khBootFallbackS;
+      if(!S){
+        var raw=localStorage.getItem('kindlehub_v5');
+        if(!raw)return;
+        S=JSON.parse(raw);
+      }
       if(!S||typeof S!=='object')return;
       var themeBtn=document.getElementById('themeBtn');
       if(themeBtn){
-        var t=S.theme||'light';
+        var t=S.theme||S.t||'light';
         themeBtn.textContent=t==='dark'?'Dark':(t==='sepia'?'Sepia':'Light');
       }
       var uiBtn=document.getElementById('uiModeBtn');
       if(uiBtn){
-        var m=S.uiMode||'classic';
+        var m=S.uiMode||S.u||'classic';
         uiBtn.textContent=(m==='simple'?'Retro':(m==='launcher'?'Launcher':'Classic'));
       }
     }catch(e){}
@@ -1470,6 +1482,8 @@ body.launcher-ui .view{padding-bottom:80px;}
     <div class="tab" data-view="lifeweeks" style="display:none">Life in Weeks</div>
     <div class="tab" data-view="chords" style="display:none">Fretboard</div>
     <div class="tab" data-view="watchq" style="display:none">Watch Queue</div>
+    <div class="tab" data-view="stash" style="display:none">Stash</div>
+    <div class="tab" data-view="verses" style="display:none">Verse Library</div>
     <div class="tab nav-essential" data-view="settings">Settings</div>
   </nav>
   <!-- ────────────────────────────────────────────────────────────
@@ -1485,9 +1499,14 @@ body.launcher-ui .view{padding-bottom:80px;}
   <script>
   (function(){
     try{
-      var raw=localStorage.getItem('kindlehub_v5');
-      if(!raw)return;
-      var S=JSON.parse(raw);
+      /* PERF: reuse the hints already parsed above — this was a THIRD full
+         JSON.parse of kindlehub_v5 on every single boot. */
+      var S=window.__khBootHints||window.__khBootFallbackS;
+      if(!S){
+        var raw=localStorage.getItem('kindlehub_v5');
+        if(!raw)return;
+        S=JSON.parse(raw);
+      }
       if(!S||typeof S!=='object')return;
       var navEl=document.getElementById('mainNav');
       if(!navEl)return;
@@ -1495,7 +1514,8 @@ body.launcher-ui .view{padding-bottom:80px;}
             and ensure default-hidden tabs (those with style=display:none
             in the markup) become visible if the user explicitly chose
             to show them. */
-      var hidden=(S.navHidden&&typeof S.navHidden==='object')?S.navHidden:{};
+      var navHidden=S.navHidden||S.nh;
+      var hidden=(navHidden&&typeof navHidden==='object')?navHidden:{};
       var tabs=navEl.querySelectorAll('.tab');
       for(var i=0;i<tabs.length;i++){
         var t=tabs[i];
@@ -1511,7 +1531,8 @@ body.launcher-ui .view{padding-bottom:80px;}
             front and Settings to the very end — same invariants
             applyNavOrder() enforces at runtime, kept here so the
             preloader's first paint matches the steady state. */
-      var order=Array.isArray(S.navOrder)?S.navOrder:null;
+      var navOrder=S.navOrder||S.no;
+      var order=Array.isArray(navOrder)?navOrder:null;
       if(order&&order.length){
         var byView={};
         for(var j=0;j<tabs.length;j++){
@@ -1689,6 +1710,7 @@ function defaultState(){
     homeWidgets:{welcome:true,weather:true,goal:true,countdown:true,wotd:true,quote:true,stats:true,lastplayed:true,ai:true,today:true,flashcards:true,khi:true},
     navHidden:{periodic:true,formulas:true,qrgen:true,wikipedia:true},clockOffset:0,clockZone:'',blockGlobalJs:false,siteEdits:[],tutorialSeen:false,feedbackUrl:'',
     publishedApps:[],appReviewQueue:[],storeHidden:[],appReviewModel:'auto',cpMenuDisabled:false,birthDate:'',watchQueue:[],
+    stashItems:[],verseBookmarks:[],
     kanban:{todo:[],doing:[],done:[]},sleepLog:[],uiMode:'classic',
     desktopMode:false,weatherUnit:'C',starTimeOffset:0,
     msgGroups:[],kindleKeyboard:true,calEvents:[],
@@ -1761,7 +1783,7 @@ let S=(()=>{try{
    theme / uiMode / lite-mode WITHOUT parsing the whole state blob (saves one
    full JSON.parse before first paint on a loaded account). Written here once at
    boot and again from save()/saveNow() whenever state is persisted. */
-function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode}));}catch(_){}
+function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode,nh:S.navHidden,no:S.navOrder}));}catch(_){}
   /* Tiny, UNCOMPRESSED session mirror. The big kindlehub_v5 blob is gzip-packed,
      and on a cold Kindle boot the inflate can fail under memory pressure — which
      dropped the user to defaultState() (logged OUT) even though their data was
@@ -2125,6 +2147,24 @@ function _khDeclineChatRequest(code){
    AES-key hash), so friending never leaks a secret. A→B FRIEND_REQUEST; when B
    accepts it adds A and sends FRIEND_ACCEPT back so A adds B. Both persist in
    S.friends / S.friendRequests (device-synced like chatRequests). */
+/* Match an existing friend by the stable-ish identity: hash prefix, then
+   userId, then a case-insensitive display NAME. A person's 16-char hash
+   prefix (and userId, which equals key.slice(0,16)) CHANGES when they reset
+   their password, so hash/uid alone can't recognise a returning friend —
+   that is what produced duplicate rows and "friend request from someone
+   already a friend". Name is the only key that survives a key reset. Still
+   stores ONLY the 16-char prefix, never the full AES hash. */
+function _khFindFriend(hash,uid,name){
+  if(typeof S==='undefined'||!Array.isArray(S.friends))return null;
+  var nk=String(name||'').toLowerCase().trim();
+  for(var i=0;i<S.friends.length;i++){
+    var f=S.friends[i];if(!f)continue;
+    if(hash&&f.hash===hash)return f;
+    if(uid&&f.uid&&f.uid===uid)return f;
+    if(nk&&String(f.name||'').toLowerCase().trim()===nk)return f;
+  }
+  return null;
+}
 function _khOnFriendRequest(env){
   try{
     const p=(env&&env.payload)||{};
@@ -2141,11 +2181,12 @@ function _khOnFriendRequest(env){
        message — a genuinely new request later gets its own id and still comes
        through. Fixes "I unfriend/decline and the request comes back forever". */
     if(mid&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.indexOf(mid)>=0)return;
-    if(!Array.isArray(S.friends))S.friends=[];
-    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already friends */
-    if(!Array.isArray(S.friendRequests))S.friendRequests=[];
-    if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid))))return;/* already pending */
     const fromName=String(p.fromName||'Someone').slice(0,40);
+    if(!Array.isArray(S.friends))S.friends=[];
+    if(_khFindFriend(hash,uid,fromName))return;/* already friends (by hash, uid OR name — their key can change on a password reset) */
+    if(!Array.isArray(S.friendRequests))S.friendRequests=[];
+    var _fnk=fromName.toLowerCase().trim();
+    if(S.friendRequests.find(r=>r&&(r.hash===hash||(uid&&r.uid===uid)||(_fnk&&String(r.name||'').toLowerCase().trim()===_fnk))))return;/* already pending */
     S.friendRequests.push({hash:hash,uid:uid,name:fromName,ts:Date.now(),mid:mid});
     if(S.friendRequests.length>60)S.friendRequests=S.friendRequests.slice(-60);
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
@@ -2162,10 +2203,11 @@ function _khOnFriendAccept(env){
     if(!/^[0-9a-f]{6,16}$/i.test(hash)||typeof S==='undefined')return;
     const mid=String((env&&env.id)||'');
     if(mid&&Array.isArray(S.friendReqTombs)&&S.friendReqTombs.indexOf(mid)>=0)return;/* already resolved/unfriended — inbox replay of an old FRIEND_ACCEPT */
-    if(!Array.isArray(S.friends))S.friends=[];
-    if(S.friends.find(f=>f&&(f.hash===hash||(uid&&f.uid===uid))))return;/* already have them */
     const nm=String(p.fromName||'Friend').slice(0,40);
-    S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now(),mid:mid});
+    if(!Array.isArray(S.friends))S.friends=[];
+    var _exA=_khFindFriend(hash,uid,nm);
+    if(_exA){_exA.hash=hash;if(uid)_exA.uid=uid;if(nm)_exA.name=nm;}/* already have them — refresh the (possibly reset) key in place, never add a 2nd row */
+    else S.friends.push({hash:hash,uid:uid,name:nm,since:Date.now(),mid:mid});
     if(Array.isArray(S.friendRequests))S.friendRequests=S.friendRequests.filter(r=>!(r&&(r.hash===hash||(uid&&r.uid===uid))));
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     if(typeof toast==='function')toast((typeof _censorText==='function'?_censorText(nm):nm)+' accepted your friend request!',5000);
@@ -2178,7 +2220,9 @@ function _khAcceptFriendRequest(hash){
     const i=S.friendRequests.findIndex(r=>r&&r.hash===hash);if(i<0)return;
     const req=S.friendRequests[i];
     if(!Array.isArray(S.friends))S.friends=[];
-    if(!S.friends.find(f=>f&&f.hash===req.hash))S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now(),mid:req.mid||''});
+    var _exAc=_khFindFriend(req.hash,req.uid||'',req.name);
+    if(_exAc){if(req.hash)_exAc.hash=req.hash;if(req.uid)_exAc.uid=req.uid;if(req.name)_exAc.name=req.name;}/* already a friend — refresh in place, no duplicate */
+    else S.friends.push({hash:req.hash,uid:req.uid||'',name:req.name,since:Date.now(),mid:req.mid||''});
     S.friendRequests.splice(i,1);
     if(typeof saveNow==='function')saveNow();else if(typeof save==='function')save();
     /* Tell the requester we accepted so they add us back. */
@@ -3457,7 +3501,8 @@ const NAV_TABS=[
   ['sleeplog','Sleep'],['qrgen','QR Code'],
   ['wikipedia','Wikipedia'],['cookbook','Cookbook'],['files','Files'],['screenshot','Screenshot'],['mail','Mail'],
   ['imagesearch','Images'],['sports','Sports'],
-  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue']
+  ['unitconv','Unit Converter'],['tipcalc','Tip Calculator'],['histday','Today in History'],['lifeweeks','Life in Weeks'],['chords','Fretboard'],['watchq','Watch Queue'],
+  ['stash','Stash'],['verses','Verse Library']
 ];
 function getNavOrder(){
   /* Return saved order, but always include any NAV_TABS missing from it
@@ -3825,6 +3870,323 @@ window.khOpenBookReader=(function(){
 
   return openReader;
 })();
+/* ── In-app Article View (full-story news reader) ────────────────────
+   Tapping a News headline opens this full-screen reader. It fetches the
+   article's HTML through the SAME allorigins/corsproxy fallbacks the
+   Gutenberg book reader uses (news sites send no CORS header), extracts
+   the main readable text (<article> or the densest <p> cluster) + a few
+   images, and paginates it ~1700 chars/page mirroring #kh-reader. Silk-
+   safe: DOMParser is feature-detected with a detached-div then pure-regex
+   fallback (no DOMParser reliance). Article text is session-only cache,
+   NEVER written to S. */
+window._khOpenArticleReader=(function(){
+  var _cache={};   /* article link -> {paras,images} (session only) */
+
+  function rfetch(url,ms){
+    return new Promise(function(resolve,reject){
+      var done=false;
+      var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      var tid=setTimeout(function(){done=true;if(ctrl){try{ctrl.abort();}catch(e){}}reject(new Error('timeout'));},ms||14000);
+      fetch(url,ctrl?{signal:ctrl.signal,cache:'no-store'}:{cache:'no-store'}).then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return r.text();
+      }).then(function(t){if(done)return;clearTimeout(tid);resolve(t);})
+        .catch(function(e){if(done)return;clearTimeout(tid);reject(e);});
+    });
+  }
+
+  /* Same proxy chain as khOpenBookReader.fetchBookText — RAW endpoints so
+     we get HTML back (not JSON-wrapped). No new proxies invented. */
+  function fetchHtml(link){
+    var wraps=[
+      function(u){return 'https://api.allorigins.win/raw?url='+encodeURIComponent(u);},
+      function(u){return 'https://corsproxy.io/?url='+encodeURIComponent(u);},
+      function(u){return 'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(u);}
+    ];
+    var idx=0;
+    function tryNext(){
+      if(idx>=wraps.length)return Promise.reject(new Error('load-failed'));
+      var a=wraps[idx++](link);
+      return rfetch(a,14000).then(function(raw){
+        if(raw&&raw.length>500&&/<[a-z]/i.test(raw))return raw;
+        return tryNext();
+      }).catch(function(){return tryNext();});
+    }
+    return tryNext();
+  }
+
+  function decodeEntities(s){
+    return String(s||'')
+      .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+      .replace(/&nbsp;/g,' ').replace(/&quot;/g,'"').replace(/&#0*39;/g,"'")
+      .replace(/&apos;/g,"'").replace(/&#8217;/g,'’').replace(/&#8216;/g,'‘')
+      .replace(/&#8220;/g,'“').replace(/&#8221;/g,'”').replace(/&#8212;/g,'—')
+      .replace(/&mdash;/g,'—').replace(/&rsquo;/g,'’').replace(/&lsquo;/g,'‘')
+      .replace(/&ldquo;/g,'“').replace(/&rdquo;/g,'”').replace(/&hellip;/g,'…');
+  }
+
+  /* Parse HTML to a DOM root: DOMParser (verified) -> detached div -> null.
+     innerHTML on a NON-inserted node never runs scripts nor loads images. */
+  function parseRoot(html){
+    try{
+      if(typeof DOMParser!=='undefined'){
+        var d=new DOMParser().parseFromString(html,'text/html');
+        if(d&&d.body&&typeof d.body.querySelectorAll==='function'&&d.body.querySelector('p'))return d.body;
+      }
+    }catch(e){}
+    try{
+      var stripped=String(html)
+        .replace(/<script[\s\S]*?<\/script>/gi,'')
+        .replace(/<style[\s\S]*?<\/style>/gi,'')
+        .replace(/<!--[\s\S]*?-->/g,'');
+      var bm=stripped.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      if(bm)stripped=bm[1];
+      var div=document.createElement('div');
+      div.innerHTML=stripped;
+      if(div.querySelector('p'))return div;
+    }catch(e){}
+    return null;
+  }
+
+  function absUrl(src,base){
+    src=(src||'').trim();
+    if(!src||/^data:/i.test(src)||/^javascript:/i.test(src))return '';
+    if(/^https?:\/\//i.test(src))return src;
+    if(src.indexOf('//')===0)return 'https:'+src;
+    try{return new URL(src,base).href;}catch(e){}
+    var origin=base.match(/^(https?:\/\/[^\/]+)/);
+    if(!origin)return '';
+    if(src.charAt(0)==='/')return origin[1]+src;
+    return origin[1]+'/'+src;
+  }
+
+  function collectImages(rootEl,base){
+    var out=[],seen={};
+    if(!rootEl||!rootEl.querySelectorAll)return out;
+    var imgs=rootEl.querySelectorAll('img');
+    for(var i=0;i<imgs.length&&out.length<5;i++){
+      var im=imgs[i];
+      var raw=im.getAttribute('src')||im.getAttribute('data-src')||im.getAttribute('data-original')||im.getAttribute('data-lazy-src')||'';
+      if(!raw){var ss=im.getAttribute('srcset')||im.getAttribute('data-srcset');if(ss)raw=ss.split(',')[0].trim().split(/\s+/)[0];}
+      var u=absUrl(raw,base);
+      if(!u)continue;
+      if(/sprite|icon|logo|avatar|pixel|1x1|blank|spacer|doubleclick|analytics|beacon|\.svg(\?|$)/i.test(u))continue;
+      var w=parseInt(im.getAttribute('width')||'0',10),h=parseInt(im.getAttribute('height')||'0',10);
+      if((w&&w<120)||(h&&h<90))continue;
+      if(seen[u])continue;seen[u]=1;
+      out.push(u);
+    }
+    return out;
+  }
+
+  function textOfBlocks(container){
+    var ps=container.querySelectorAll?container.querySelectorAll('p,h2,h3,blockquote,li'):[];
+    var parts=[];
+    for(var i=0;i<ps.length;i++){
+      var tag=(ps[i].tagName||'').toLowerCase();
+      var t=(ps[i].textContent||'').replace(/\s+/g,' ').trim();
+      if(!t)continue;
+      if(t.length<25&&tag==='p')continue;
+      if(tag==='h2'||tag==='h3')parts.push('• '+t);   /* sub-head marker */
+      else parts.push(t);
+    }
+    return parts;
+  }
+
+  /* Prefer a real <article>; else the parent holding the largest <p> text. */
+  function pickContainer(rootEl){
+    var art=rootEl.querySelector('article');
+    if(art){var ap=art.querySelectorAll('p');if(ap&&ap.length>=3)return art;}
+    var ps=rootEl.querySelectorAll('p');
+    var scores=[],nodes=[];
+    for(var i=0;i<ps.length;i++){
+      var par=ps[i].parentNode;if(!par||par.nodeType!==1)continue;
+      var idx=-1;
+      for(var k=0;k<nodes.length;k++){if(nodes[k]===par){idx=k;break;}}
+      var len=(ps[i].textContent||'').replace(/\s+/g,' ').trim().length;
+      if(idx<0){nodes.push(par);scores.push(len);}else scores[idx]+=len;
+    }
+    var best=null,bestS=0;
+    for(var j=0;j<nodes.length;j++){if(scores[j]>bestS){bestS=scores[j];best=nodes[j];}}
+    return best||art||rootEl;
+  }
+
+  /* Last resort when no DOM: strip noise blocks then pull <p> by regex. */
+  function regexParas(html){
+    var t=String(html)
+      .replace(/<script[\s\S]*?<\/script>/gi,'')
+      .replace(/<style[\s\S]*?<\/style>/gi,'')
+      .replace(/<nav[\s\S]*?<\/nav>/gi,'')
+      .replace(/<header[\s\S]*?<\/header>/gi,'')
+      .replace(/<footer[\s\S]*?<\/footer>/gi,'')
+      .replace(/<aside[\s\S]*?<\/aside>/gi,'')
+      .replace(/<form[\s\S]*?<\/form>/gi,'');
+    var out=[],m,re=/<p[^>]*>([\s\S]*?)<\/p>/gi;
+    while((m=re.exec(t))){
+      var s=decodeEntities(m[1].replace(/<[^>]+>/g,' ')).replace(/\s+/g,' ').trim();
+      if(s.length>=40)out.push(s);
+    }
+    return out;
+  }
+
+  function extract(html,base){
+    var rootEl=parseRoot(html);
+    var paras=[],images=[];
+    if(rootEl){
+      var c=pickContainer(rootEl);
+      paras=textOfBlocks(c);
+      images=collectImages(c,base);
+      if(images.length<1)images=collectImages(rootEl,base);
+    }
+    if(paras.length<2)paras=regexParas(html);
+    var clean=[],last='';
+    for(var i=0;i<paras.length;i++){
+      var p=paras[i];
+      if(p===last)continue;last=p;
+      if(/^(share this|advertisement|sign up|subscribe|related stories|read more|most read)$/i.test(p))continue;
+      clean.push(p);
+    }
+    return {paras:clean,images:images};
+  }
+
+  function paginate(paras,budget){
+    budget=budget||1700;
+    var pages=[],cur=[],len=0,i,j;
+    for(i=0;i<paras.length;i++){
+      var p=paras[i];
+      if(p.length>budget*1.6){
+        for(j=0;j<p.length;j+=budget){
+          var chunk=p.slice(j,j+budget);
+          if(len&&len+chunk.length>budget){pages.push(cur);cur=[];len=0;}
+          cur.push(chunk);len+=chunk.length;
+          if(len>=budget){pages.push(cur);cur=[];len=0;}
+        }
+        continue;
+      }
+      if(len&&len+p.length>budget){pages.push(cur);cur=[];len=0;}
+      cur.push(p);len+=p.length;
+    }
+    if(cur.length)pages.push(cur);
+    return pages.length?pages:[['(No readable text was found for this article.)']];
+  }
+
+  function openReader(meta){
+    if(!meta||!meta.link){if(typeof toast==='function')toast('No article link available');return;}
+    var prevOvf=document.body.style.overflow;
+    var fontSize=Math.min(28,Math.max(14,(S&&S.readerFont)||18));
+    var pages=null,images=[],pos=0;
+
+    var titleEl=txt('div',(meta.title||'Article'),{style:{flex:'1',minWidth:'0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:'700',fontSize:'14px'}});
+    var progEl=txt('div','',{style:{fontSize:'12px',color:'var(--muted)',whiteSpace:'nowrap'}});
+    var closeBtn=txt('button','× Close',{className:'btn small'});
+    var aMinus=txt('button','A−',{className:'btn small'});
+    var aPlus=txt('button','A+',{className:'btn small'});
+    var topBar=el('div',{style:{display:'flex',alignItems:'center',gap:'6px',padding:'8px 12px',borderBottom:'var(--thin)',background:'var(--card)',flexWrap:'nowrap'}},[closeBtn,titleEl,aMinus,aPlus]);
+
+    var content=el('div',{style:{flex:'1',overflowY:'auto',webkitOverflowScrolling:'touch',padding:'18px 20px 28px',maxWidth:'680px',width:'100%',margin:'0 auto',boxSizing:'border-box',lineHeight:'1.7',fontSize:fontSize+'px'}});
+
+    var prevBtn=txt('button','‹ Prev',{className:'btn',style:{minWidth:'84px',minHeight:'48px'}});
+    var nextBtn=txt('button','Next ›',{className:'btn primary',style:{minWidth:'84px',minHeight:'48px'}});
+    var openExt=txt('button','Open externally',{className:'btn small'});
+    openExt.onclick=function(){if(typeof _khOpenExt==='function')_khOpenExt(meta.link);};
+    var centerCol=el('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',flex:'1'}},[progEl,openExt]);
+    var bottomBar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'8px 12px',borderTop:'var(--thin)',background:'var(--card)'}},[prevBtn,centerCol,nextBtn]);
+
+    var root=el('div',{id:'kh-article-reader',style:{position:'fixed',left:'0',top:'0',width:'100%',height:'100%',background:'var(--bg,#fff)',color:'var(--fg,#111)',zIndex:'100000',display:'flex',flexDirection:'column'}},[topBar,content,bottomBar]);
+
+    function onKey(e){
+      if(e.key==='Escape'){close();e.preventDefault();}
+      else if(e.key==='ArrowRight'||e.key==='PageDown'){go(1);e.preventDefault();}
+      else if(e.key==='ArrowLeft'||e.key==='PageUp'){go(-1);e.preventDefault();}
+    }
+    function close(){
+      document.body.style.overflow=prevOvf||'';
+      document.removeEventListener('keydown',onKey,true);
+      if(root.parentNode)root.parentNode.removeChild(root);
+    }
+    function renderPage(){
+      if(!pages)return;
+      if(pos<0)pos=0;if(pos>pages.length-1)pos=pages.length-1;
+      content.innerHTML='';
+      if(pos===0){
+        var hd=el('div',{style:{marginBottom:'14px',paddingBottom:'10px',borderBottom:'var(--thin)'}});
+        hd.appendChild(txt('div',(meta.title||'Article'),{style:{fontSize:'1.35em',fontWeight:'800',lineHeight:'1.3',fontFamily:'var(--title-font)',marginBottom:'6px'}}));
+        var srcLine=meta.source?String(meta.source):'';
+        if(meta.date){try{srcLine+=(srcLine?'  ·  ':'')+new Date(meta.date).toLocaleDateString();}catch(_){}}
+        if(srcLine)hd.appendChild(txt('div',srcLine,{style:{fontSize:'0.78em',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.5px',fontWeight:'700'}}));
+        content.appendChild(hd);
+        for(var g=0;g<images.length;g++){
+          var im=el('img',{src:images[g],alt:'',style:{maxWidth:'100%',height:'auto',display:'block',margin:'0 auto 12px',border:'var(--thin)'}});
+          im.onerror=(function(node){return function(){if(node.parentNode)node.parentNode.removeChild(node);};})(im);
+          content.appendChild(im);
+        }
+      }
+      var pg=pages[pos]||[],i;
+      for(i=0;i<pg.length;i++){
+        var line=pg[i],isSub=line.indexOf('• ')===0;
+        content.appendChild(txt('p',isSub?line.slice(2):line,isSub?{style:{margin:'0 0 0.6em',fontWeight:'800'}}:{style:{margin:'0 0 0.9em'}}));
+      }
+      content.scrollTop=0;
+      var pctTxt='Page '+(pos+1)+' of '+pages.length;
+      if(progEl.textContent!==pctTxt)progEl.textContent=pctTxt;
+      prevBtn.disabled=(pos<=0);
+      var nt=(pos>=pages.length-1)?'End':'Next ›';
+      if(nextBtn.textContent!==nt)nextBtn.textContent=nt;
+    }
+    function go(d){if(!pages)return;var np=pos+d;if(np<0||np>pages.length-1)return;pos=np;renderPage();}
+    function applyFont(delta){fontSize=Math.min(28,Math.max(14,fontSize+delta));content.style.fontSize=fontSize+'px';if(S){S.readerFont=fontSize;try{save();}catch(e){}}}
+    prevBtn.onclick=function(){go(-1);};
+    nextBtn.onclick=function(){go(1);};
+    closeBtn.onclick=close;
+    aMinus.onclick=function(){applyFont(-2);};
+    aPlus.onclick=function(){applyFont(2);};
+    content.addEventListener('click',function(e){
+      if(e.target&&e.target.tagName==='IMG')return;
+      var r=content.getBoundingClientRect(),x=e.clientX-r.left;
+      if(x<r.width*0.28)go(-1);else if(x>r.width*0.72)go(1);
+    });
+    document.addEventListener('keydown',onKey,true);
+
+    document.body.style.overflow='hidden';
+    document.body.appendChild(root);
+    content.appendChild(txt('p','Loading full article…',{style:{color:'var(--muted)'}}));
+
+    function showParsed(res){
+      images=res.images||[];
+      pages=paginate(res.paras,1700);
+      pos=0;renderPage();
+      _cache[meta.link]={paras:res.paras,images:images};
+    }
+    function feedFallbackParas(){
+      var fb=(meta.feedBody||meta.desc||'')
+        .replace(/<img[^>]+>/gi,' ').replace(/<br\s*\/?>/gi,'\n\n')
+        .replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,' ');
+      fb=decodeEntities(fb).replace(/[ \t]{2,}/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+      if(!fb)return [];
+      var arr=fb.split(/\n{2,}/).map(function(x){return x.replace(/\s+/g,' ').trim();}).filter(Boolean);
+      return arr.length?arr:[fb];
+    }
+
+    if(_cache[meta.link]){showParsed(_cache[meta.link]);return;}
+    fetchHtml(meta.link).then(function(html){
+      var res=extract(html,meta.link);
+      if(res.paras&&res.paras.length>=2){showParsed(res);return;}
+      throw new Error('thin');
+    }).catch(function(){
+      var fb=feedFallbackParas();
+      if(fb.length){
+        images=[];pages=paginate(fb,1700);pos=0;renderPage();
+        content.appendChild(txt('div','Showing the feed summary — the full article could not be fetched. Use "Open externally" to read it on the site.',{style:{marginTop:'14px',padding:'8px',fontSize:'0.8em',color:'var(--muted)',border:'var(--thin)',borderRadius:'4px'}}));
+      }else{
+        content.innerHTML='';
+        content.appendChild(txt('p','Sorry — this article could not be loaded right now. Tap "Open externally" to read it on the site.',{style:{color:'var(--danger,#b00)'}}));
+      }
+    });
+  }
+
+  return openReader;
+})();
+
 
 /* ── Screenshot capture ───────────────────────────────────────────────
    Take a PNG screenshot of the LIVE page (no file upload) via html2canvas,
@@ -4449,6 +4811,15 @@ function launchKindleDesktop(){
     {id:'files',     label:'Files',       nav:'files',     color:'#475569',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="32" rx="4" fill="#fff"/><path d="M6 14 L20 14 L24 18 L42 18 L42 42 L6 42 Z" fill="#475569" opacity=".15" stroke="#475569" stroke-width="2"/><line x1="6" y1="22" x2="42" y2="22" stroke="#475569" stroke-width="1.5"/><rect x="11" y="27" width="26" height="3" rx="1" fill="#475569" opacity=".4"/><rect x="11" y="32" width="18" height="3" rx="1" fill="#475569" opacity=".3"/></svg>'},
     {id:'sports',    label:'Sports',      nav:'sports',    color:'#166534',icon:'<svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" fill="#fff"/><circle cx="24" cy="24" r="20" fill="none" stroke="#166534" stroke-width="2"/><polygon points="24,14 30,18.5 27.7,25.5 20.3,25.5 18,18.5" fill="#166534"/><path d="M24 4 L24 14 M40.6 17 L30 18.5 M37.5 38 L27.7 25.5 M10.5 38 L20.3 25.5 M7.4 17 L18 18.5" stroke="#166534" stroke-width="1.6"/></svg>'},
     {id:'imagesearch',label:'Images',     nav:'imagesearch',color:'#0891b2',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="8" width="38" height="32" rx="5" fill="#fff"/><circle cx="16" cy="18" r="4" fill="#0891b2"/><path d="M8 38 L20 24 L28 32 L36 22 L40 27 L40 38 Z" fill="#0891b2" opacity=".35"/><path d="M8 38 L20 24 L28 32 L36 22 L44 32" stroke="#0891b2" stroke-width="2.5" fill="none" stroke-linejoin="round"/></svg>'},
+    {id:'animals',   label:'Animals',     nav:'animals',   color:'#b45309',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><ellipse cx="24" cy="31" rx="9" ry="7" fill="#b45309"/><circle cx="13" cy="21" r="3.4" fill="#b45309"/><circle cx="20" cy="15" r="3.4" fill="#b45309"/><circle cx="28" cy="15" r="3.4" fill="#b45309"/><circle cx="35" cy="21" r="3.4" fill="#b45309"/></svg>'},
+    {id:'unitconv',  label:'Unit Converter',nav:'unitconv',color:'#0d9488',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><path d="M10 18 L38 18 M10 18 L16 12 M10 18 L16 24" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M38 30 L10 30 M38 30 L32 24 M38 30 L32 36" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'},
+    {id:'tipcalc',   label:'Tip Calculator',nav:'tipcalc',color:'#16a34a',icon:'<svg viewBox="0 0 48 48" fill="none"><path d="M12 4 L36 4 L36 44 L32 41 L28 44 L24 41 L20 44 L16 41 L12 44 Z" fill="#fff" stroke="#16a34a" stroke-width="2" stroke-linejoin="round"/><text x="24" y="30" font-size="18" font-weight="900" fill="#16a34a" text-anchor="middle" font-family="serif">$</text></svg>'},
+    {id:'histday',   label:'Today in History',nav:'histday',color:'#92400e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><circle cx="24" cy="24" r="15" fill="none" stroke="#92400e" stroke-width="2.5"/><line x1="24" y1="24" x2="24" y2="14" stroke="#92400e" stroke-width="2.5" stroke-linecap="round"/><line x1="24" y1="24" x2="32" y2="28" stroke="#92400e" stroke-width="2.5" stroke-linecap="round"/></svg>'},
+    {id:'lifeweeks', label:'Life in Weeks',nav:'lifeweeks',color:'#7c3aed',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g fill="#7c3aed"><circle cx="12" cy="12" r="2.2"/><circle cx="20" cy="12" r="2.2"/><circle cx="28" cy="12" r="2.2"/><circle cx="36" cy="12" r="2.2"/><circle cx="12" cy="20" r="2.2"/><circle cx="20" cy="20" r="2.2"/><circle cx="28" cy="20" r="2.2" opacity=".35"/><circle cx="36" cy="20" r="2.2" opacity=".35"/><circle cx="12" cy="28" r="2.2" opacity=".35"/><circle cx="20" cy="28" r="2.2" opacity=".35"/><circle cx="28" cy="28" r="2.2" opacity=".35"/><circle cx="36" cy="28" r="2.2" opacity=".35"/><circle cx="12" cy="36" r="2.2" opacity=".35"/><circle cx="20" cy="36" r="2.2" opacity=".35"/><circle cx="28" cy="36" r="2.2" opacity=".35"/><circle cx="36" cy="36" r="2.2" opacity=".35"/></g></svg>'},
+    {id:'chords',    label:'Fretboard',   nav:'chords',    color:'#78350f',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="4" y="4" width="40" height="40" rx="8" fill="#fff"/><g stroke="#78350f" stroke-width="1.6"><line x1="14" y1="10" x2="14" y2="38"/><line x1="20" y1="10" x2="20" y2="38"/><line x1="26" y1="10" x2="26" y2="38"/><line x1="32" y1="10" x2="32" y2="38"/><line x1="10" y1="16" x2="36" y2="16"/><line x1="10" y1="24" x2="36" y2="24"/><line x1="10" y1="32" x2="36" y2="32"/></g><circle cx="20" cy="20" r="2.6" fill="#78350f"/><circle cx="32" cy="28" r="2.6" fill="#78350f"/></svg>'},
+    {id:'watchq',    label:'Watch Queue', nav:'watchq',    color:'#dc2626',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="6" y="10" width="36" height="28" rx="5" fill="#fff" stroke="#dc2626" stroke-width="2"/><polygon points="21,18 21,30 31,24" fill="#dc2626"/></svg>'},
+    {id:'stash',     label:'Stash',       nav:'stash',     color:'#0f766e',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="6" width="32" height="38" rx="4" fill="#fff" stroke="#0f766e" stroke-width="2"/><path d="M16 6 L16 20 L24 15 L32 20 L32 6" fill="#0f766e"/></svg>'},
+    {id:'verses',    label:'Verse Library',nav:'verses',   color:'#7c2d12',icon:'<svg viewBox="0 0 48 48" fill="none"><rect x="5" y="6" width="19" height="36" rx="3" fill="#fff"/><rect x="24" y="6" width="19" height="36" rx="3" fill="#fff" opacity=".9"/><line x1="10" y1="16" x2="19" y2="16" stroke="#7c2d12" stroke-width="1.5"/><line x1="10" y1="22" x2="19" y2="22" stroke="#7c2d12" stroke-width="1.5"/><line x1="10" y1="28" x2="19" y2="28" stroke="#7c2d12" stroke-width="1.5"/><line x1="29" y1="16" x2="38" y2="16" stroke="#7c2d12" stroke-width="1.5"/><line x1="29" y1="22" x2="38" y2="22" stroke="#7c2d12" stroke-width="1.5"/><line x1="29" y1="28" x2="34" y2="28" stroke="#7c2d12" stroke-width="1.5"/></svg>'},
   ]);
 
   /* ── STATE ──
@@ -4505,7 +4876,24 @@ function launchKindleDesktop(){
 
   const kd=document.createElement('div');
   kd.id='kd-root';
-  kd.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;z-index:500000;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;overflow:hidden;background:#000;box-sizing:border-box;';
+  kd.style.cssText='position:fixed;top:0;left:0;width:100%;height:100vh;height:100dvh;z-index:500000;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;overflow:hidden;background:#000;box-sizing:border-box;';
+  /* ── VISIBLE-VIEWPORT HEIGHT (dock label-clipping fix) ──
+     #kd-root is a flex COLUMN whose last child is the dock; a height:100% (or
+     100vh) root on Kindle Silk resolves to the LAYOUT viewport, which is TALLER
+     than the visible area, so the browser's bottom chrome overlays the lower
+     strip and the dock's labels (bottom of the bottom flex child) were hidden
+     behind it. Pinning the root to window.innerHeight (the VISIBLE viewport —
+     the same signal 100dvh uses on modern engines) makes the column exactly as
+     tall as what the user can see, so the dock always sits fully above the
+     chrome, no chrome-height guessing needed. The 100vh/100dvh in the cssText
+     above is a static fallback (errs SHORTER-than-visible on Silk = never
+     clips). Re-fit on resize/orientationchange; the handler removes itself once
+     kd-root leaves the DOM so no listener leaks across launches. */
+  function _kdFitVp(){var h=window.innerHeight||document.documentElement.clientHeight||0;if(h>0)kd.style.height=h+'px';}
+  function _kdVpHandler(){if(!document.getElementById('kd-root')){try{window.removeEventListener('resize',_kdVpHandler);}catch(_e){}try{window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}return;}_kdFitVp();}
+  _kdFitVp();
+  window.addEventListener('resize',_kdVpHandler);
+  window.addEventListener('orientationchange',_kdVpHandler);
 
   /* ── WALLPAPER LAYER ── */
   const kdBg=document.createElement('div');
@@ -5698,6 +6086,9 @@ function launchKindleDesktop(){
     if(bgTimer)clearInterval(bgTimer);
     if(_clockTickInterval)clearInterval(_clockTickInterval);
     if(_clockTickAlign)clearTimeout(_clockTickAlign);
+    /* Drop the viewport re-fit listeners installed at launch (belt-and-braces:
+       _kdVpHandler also self-removes once kd-root is gone). */
+    try{window.removeEventListener('resize',_kdVpHandler);window.removeEventListener('orientationchange',_kdVpHandler);}catch(_e){}
     /* The boot-poll timers from the tour also need to know we're gone */
     window._kdGone=true;
     /* Clean up the full-app-mode artefacts: the back FAB, the body
@@ -7443,8 +7834,12 @@ async function khiCall(prompt, opts){
     try{
       /* Pass opts.model through so a caller (e.g. the App Store reviewer) can
          pin the shared proxy to a specific approved model; undefined = the
-         normal auto-switch chain, so every other shared caller is unaffected. */
-      const r=await callSharedGeminiStream([{role:'user',text:prompt}],t=>{_last=t;},{model:opts.model});
+         normal auto-switch chain, so every other shared caller is unaffected.
+         opts.preferModel is milder: it tries that model FIRST but still falls
+         through the rest of the shared chain if it's busy (used by AI
+         moderation, which wants gemini-3.1-flash-lite specifically but
+         shouldn't dead-end if that one model is rate-limited). */
+      const r=await callSharedGeminiStream([{role:'user',text:prompt}],t=>{_last=t;},{model:opts.model,preferModel:opts.preferModel});
       const out=String(r||_last||'').trim();
       return out||null;
     }catch(e){console.warn('KHI shared error',e);toast('KHI: shared key error');return null;}
@@ -8680,6 +9075,25 @@ function _tokenProfane(norm){
   }
   return false;
 }
+/* ── "67" meme filter ──────────────────────────────────────────────────
+   Admin request: black out the disruptive standalone "67" meme, but keep
+   legit uses of the number ("v67", "1967", "$67", "67%", "67kg", "route 67",
+   "67 pages", scores, addresses). A LONE "67" is one NOT glued to a letter,
+   digit, currency symbol ($ £ € ¥ #) on the left, or a letter, digit, % or °
+   on the right — so it's a bare token, never part of "1967"/"$67"/"67%"/"v67".
+   _LONE67_RE captures the leading delimiter (Silk has NO lookbehind) and uses
+   a negative LOOKAHEAD (allowed on Silk) for the trailing side. We only redact
+   when the WHOLE message is nothing but lone "67"s + separators (_khIs67Meme),
+   so "67"/"67 67 67"/"67!!!" go but "route 67"/"67 pages" (other real words
+   remain) stay. DISPLAY-only, reversible — same philosophy as the profanity
+   passes. Use _LONE67_RE ONLY with String.replace (stateless), never .test. */
+var _LONE67_RE=/(^|[^A-Za-z0-9$£€¥#])67(?![A-Za-z0-9%°])/g;
+function _khIs67Meme(s){
+  if(typeof s!=='string'||s.indexOf('67')<0)return false;
+  var stripped=s.replace(_LONE67_RE,function(m,lead){return lead;});
+  /* at least one lone 67 was removed AND nothing else alphanumeric remains */
+  return stripped!==s&&!/[A-Za-z0-9]/.test(stripped);
+}
 var _censorMemo=new Map();/* pure fn of its input (static word lists) — cache so chat/leaderboard re-renders don't re-run two regex passes on the same names every 15s */
 function _censorText(s){
   if(typeof s!=='string'||!s)return s;
@@ -8692,6 +9106,10 @@ function _censorText(s){
     if(_tokenProfane(_normLeet(tok)))return '█'.repeat(Math.max(3,tok.replace(/[^A-Za-z0-9]/g,'').length));
     return tok;
   });
+  /* Pass 3: the standalone "67" meme — redact every lone "67" ONLY when the
+     whole message is just lone "67"s + separators (see _khIs67Meme), so legit
+     sentences that merely contain a "67" are never touched. */
+  if(_khIs67Meme(out))out=out.replace(_LONE67_RE,function(m,lead){return lead+'██';});
   if(_censorMemo.size>=800)_censorMemo.clear();/* bound the cache */
   _censorMemo.set(s,out);
   return out;
@@ -8800,6 +9218,8 @@ window.KH_ICONS.animals='<circle cx="12" cy="15" r="3.6"/><circle cx="6.5" cy="9
 window.KH_ICONS.unitconv='<path d="M4 7h13"/><path d="M14 4l3 3-3 3"/><path d="M20 17H7"/><path d="M10 14l-3 3 3 3"/>';
 window.KH_ICONS.tipcalc='<circle cx="12" cy="12" r="9"/><line x1="8.5" y1="15.5" x2="15.5" y2="8.5"/><circle cx="9.2" cy="9.2" r="1.3"/><circle cx="14.8" cy="14.8" r="1.3"/>';
 window.KH_ICONS.appstore='<path d="M8 21L12 6l4 15"/><line x1="9.2" y1="16" x2="14.8" y2="16"/>';
+window.KH_ICONS.stash='<path d="M5 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17l-7-4-7 4z"/>';
+window.KH_ICONS.verses='<path d="M4 4h7a3 3 0 0 1 3 3v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-7a3 3 0 0 0-3 3v14a2 2 0 0 1 2-2h8z"/><line x1="7" y1="8" x2="10" y2="8" opacity=".6"/><line x1="7" y1="12" x2="10" y2="12" opacity=".6"/>';
 /* Wikipedia + Formulas used <text> with fill:currentColor — invisible on the
    white-stroke store tiles (currentColor there isn't white). Replace with pure
    STROKE icons that render in both the retro home and the coloured store tile. */
@@ -8808,7 +9228,7 @@ window.KH_ICONS.formulas='<path d="M4 13h3l2.5 6 3-13H21"/><line x1="14" y1="15"
 window.KH_ICON_FALLBACK='<rect x="4" y="4" width="16" height="16" rx="2"/>';
 /* Brand colour per view (mirrors the KindleOS BUILTIN_APPS palette + fills the
    store-only apps). White icon strokes need DARK fills — keep them deep. */
-window.KH_APP_COLORS={chat:'#2563eb',games:'#7c3aed',appstore:'#0b7ff2',notes:'#b45309',maps:'#0f766e',weather:'#0ea5e9',starmap:'#1e1b4b',messages:'#0f766e',tools:'#475569',calc:'#1f2937',reading:'#92400e',browser:'#1f2937',draw:'#db2777',rss:'#dc2626',translate:'#0891b2',breathe:'#064e3b',kanban:'#b45309',calendar:'#0f4c81',stocks:'#166534',settings:'#374151',dictionary:'#0369a1',discover:'#7e22ce',explore:'#7e22ce',cipher:'#1e3a5f',mdjournal:'#78350f',feedback:'#065f46',science:'#0f4c5c',sleeplog:'#1e1b4b',periodic:'#4338ca',qrgen:'#111827',wikipedia:'#1a1a1a',worldclock:'#0c4a6e',wheel:'#6d28d9',formulas:'#1d4ed8',slides:'#be185d',sheets:'#15803d',cookbook:'#b91c1c',files:'#475569',sports:'#166534',imagesearch:'#0891b2',animals:'#92400e',unitconv:'#0f766e',tipcalc:'#166534',screenshot:'#334155',mail:'#b45309'};
+window.KH_APP_COLORS={chat:'#2563eb',games:'#7c3aed',appstore:'#0b7ff2',notes:'#b45309',maps:'#0f766e',weather:'#0ea5e9',starmap:'#1e1b4b',messages:'#0f766e',tools:'#475569',calc:'#1f2937',reading:'#92400e',browser:'#1f2937',draw:'#db2777',rss:'#dc2626',translate:'#0891b2',breathe:'#064e3b',kanban:'#b45309',calendar:'#0f4c81',stocks:'#166534',settings:'#374151',dictionary:'#0369a1',discover:'#7e22ce',explore:'#7e22ce',cipher:'#1e3a5f',mdjournal:'#78350f',feedback:'#065f46',science:'#0f4c5c',sleeplog:'#1e1b4b',periodic:'#4338ca',qrgen:'#111827',wikipedia:'#1a1a1a',worldclock:'#0c4a6e',wheel:'#6d28d9',formulas:'#1d4ed8',slides:'#be185d',sheets:'#15803d',cookbook:'#b91c1c',files:'#475569',sports:'#166534',imagesearch:'#0891b2',animals:'#92400e',unitconv:'#0f766e',tipcalc:'#166534',screenshot:'#334155',mail:'#b45309',stash:'#0f766e',verses:'#7c2d12'};
 /* On e-ink (Kindle) or the simple UI, brand-coloured tiles render as LOW-
    CONTRAST GRAYS — force crisp near-black tiles there; colours only on real
    colour screens. */
@@ -8867,6 +9287,7 @@ var STORE_APPS=[
   {view:'kanban',    name:'To-Do Board',   cat:'Productivity', desc:'Organise tasks on a kanban board.'},
   {view:'mdjournal', name:'Journal',       cat:'Productivity', desc:'A distraction-free markdown journal.'},
   {view:'files',     name:'Files',         cat:'Productivity', desc:'Browse what this app has stored.'},
+  {view:'stash',     name:'Stash',         cat:'Productivity', desc:'Save articles and pages to read later, even offline.'},
   /* Reference */
   {view:'animals',   name:'Animals',       cat:'Reference',    desc:'A zoo field guide — photos, stats & facts.'},
   {view:'starmap',   name:'Stars',         cat:'Reference',    desc:'A live sky map — stars, planets & satellites.'},
@@ -8875,6 +9296,7 @@ var STORE_APPS=[
   {view:'wikipedia', name:'Wikipedia',     cat:'Reference',    desc:'Search the free encyclopedia.'},
   {view:'science',   name:'Science',       cat:'Reference',    desc:'Facts, a glossary and experiments.'},
   {view:'dictionary',name:'Dictionary',    cat:'Reference',    desc:'Look up word meanings.'},
+  {view:'verses',    name:'Verse Library', cat:'Reference',    desc:'Read scripture free — any book, chapter or reference.'},
   /* Utilities */
   {view:'cipher',    name:'Cipher',        cat:'Utilities',    desc:'Encode & decode secret messages.'},
   {view:'qrgen',     name:'QR Code',       cat:'Utilities',    desc:'Generate QR codes.'},
@@ -8905,7 +9327,7 @@ var STORE_FEATURED=['unitconv','animals','starmap','slides','cookbook','sports']
    applier only hides ones the user has never decided on, so nothing a user
    installed is ever force-hidden. teleprompter is intentionally NOT here — it's
    launched inside Tools via khTeleprompter(), not a standalone view. */
-var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq'];
+var STORE_DEFAULT_HIDDEN=['slides','sheets','kanban','starmap','animals','cipher','draw','cookbook','sleeplog','stocks','science','unitconv','tipcalc','histday','lifeweeks','chords','watchq','stash','verses'];
 /* Only these Gemini models are trusted to REVIEW apps, strongest first. */
 var APP_REVIEW_MODELS=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-2.5-flash'];
 function _khStoreMeta(view){for(var i=0;i<STORE_APPS.length;i++)if(STORE_APPS[i].view===view)return STORE_APPS[i];return null;}
@@ -10572,10 +10994,25 @@ async function _khModStats(tok){
   if(!tok) return {ok:false,status:401};
   try{
     const r=await fetch(_sbBase()+'/rest/v1/rpc/kh_mod_stats',{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_token:tok})});
-    if(!r.ok) return {ok:false,status:r.status};
+    if(!r.ok){ if(window._isAdminCached!==true)window._isModCached=false; return {ok:false,status:r.status}; }
+    try{window._isModCached=true;}catch(_){}
     return {ok:true,data:await r.json()};
   }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
 }
+function _khModToken(){ return (window._adminToken||'') || _modCode() || ''; }
+window._khModToken=_khModToken;
+/* Resolve whether THIS device holds a valid moderator credential (admin implies
+   mod). Verifies the stored code against the server's kh_mod_stats gate and
+   caches window._isModCached, so the client can surface the mod Warn/Ban actions
+   without re-hitting the server on every render. */
+async function _checkMod(){
+  if(window._isAdminCached===true){window._isModCached=true;return true;}
+  const code=_modCode();
+  if(!code){window._isModCached=false;return false;}
+  try{ const r=await _khModStats(code); window._isModCached=!!(r&&r.ok); }catch(_){ }
+  return window._isModCached===true;
+}
+window._checkMod=_checkMod;
 function _khBuildModCard(){
   const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginTop:'12px',boxShadow:'var(--shadow)'}});
   c.appendChild(txt('div','MODERATOR TOOLS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -10611,8 +11048,9 @@ function _khBuildModCard(){
 async function _khBanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
-  if(!window._adminToken){toast('Admin only — open the admin panel first.',4000);return false;}
-  const res=await _adminRpc('kh_ban_username',{p_name:String(name).slice(0,80),p_token:window._adminToken||''});
+  const _tok=_khModToken();
+  if(!_tok){toast('Moderators only — enter your moderator code in Settings → Account first.',4500);return false;}
+  const res=await _adminRpc('kh_ban_username',{p_name:String(name).slice(0,80),p_token:_tok});
   if(res.ok){
     if(_khBannedCache&&_khBannedCache.indexOf(String(name).toLowerCase())<0)_khBannedCache.push(String(name).toLowerCase());
     return true;
@@ -10625,8 +11063,9 @@ async function _khBanUsername(name){
 async function _khUnbanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
-  if(!window._adminToken){toast('Admin only.',3000);return false;}
-  const res=await _adminRpc('kh_unban_username',{p_name:String(name).slice(0,80),p_token:window._adminToken||''});
+  const _tok=_khModToken();
+  if(!_tok){toast('Moderators only.',3000);return false;}
+  const res=await _adminRpc('kh_unban_username',{p_name:String(name).slice(0,80),p_token:_tok});
   if(res.ok&&_khBannedCache){const i=_khBannedCache.indexOf(String(name).toLowerCase());if(i>=0)_khBannedCache.splice(i,1);}
   return res.ok;
 }
@@ -10642,12 +11081,22 @@ async function _khWarnUsername(name){
   name=String(name||'').trim();
   if(!name){toast('No username to warn');return false;}
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
-  if(!window._adminToken){toast('Admin only — open the admin panel first.',4000);return false;}
+  const _tok=_khModToken();
+  if(!_tok){toast('Moderators only — enter your moderator code in Settings → Account first.',4500);return false;}
   const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
   if(reason==null)return false;/* admin cancelled */
   const msg=String(reason||'').trim()||'Please follow the community rules.';
   const text=_WARN_TAG+'WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
-  const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
+  let ok;
+  if(window._adminToken){
+    /* Admin: unchanged path — targeted announcement (works on Supabase + D1). */
+    ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken,p_targets:[name]});
+  }else{
+    /* Moderator (no admin token): locked-down warn RPC, mod-gated on D1. */
+    const _r=await _adminRpc('kh_warn_username',{p_name:name.slice(0,80),p_reason:msg.slice(0,600),p_token:_tok});
+    ok=_r.ok;
+    if(!ok)toast('Warn failed: '+String(_r.body||('HTTP '+_r.status)).slice(0,120),5000);
+  }
   if(ok)toast('Warning sent privately to “'+name+'”.',3500);
   /* _announceRpc surfaces its own error toast on failure. */
   return !!ok;
@@ -10666,6 +11115,31 @@ async function _khWarnUsernameSilent(name,reason){
   return !!ok;
 }
 window._khWarnUsernameSilent=_khWarnUsernameSilent;
+/* Minimal moderator action sheet — Warn / Ban on a PUBLIC display name only,
+   with NO user-data panel (unlike the admin-only _openUserAboutModal). Shown to
+   a verified moderator from the chat message action row. Reuses the now
+   mod-capable _khWarnUsername / _khBanUsername (both accept a mod token). */
+function _khModerateUser(name){
+  name=String(name||'').trim();
+  if(!name){toast('No username to moderate');return;}
+  const host=(typeof _overlayHost==='function'?_overlayHost():document.body);
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const box=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'18px',maxWidth:'360px',width:'100%',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('h3','Moderate · '+name.slice(0,40),{style:{fontSize:'15px',marginBottom:'4px'}}));
+  box.appendChild(txt('div','Moderator actions on this username. Warnings and bans are logged for the admin.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'12px'}}));
+  const bar=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
+  const closeBtn=txt('button','Close',{className:'btn small primary'});
+  closeBtn.onclick=()=>ov.remove();
+  const warnBtn=txt('button','! Warn',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+  warnBtn.onclick=async()=>{ warnBtn.disabled=true; const ok=await _khWarnUsername(name); warnBtn.disabled=false; if(ok)ov.remove(); };
+  const banBtn=txt('button','Ban username',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
+  banBtn.onclick=async()=>{ if(!await kindleConfirm('Ban "'+name+'"? They can no longer sign in or post, and the name shows as [removed] in chat.'))return; banBtn.disabled=true;banBtn.textContent='Banning…'; const ok=await _khBanUsername(name); if(ok){toast('Banned "'+name+'".',3000);ov.remove();} else {banBtn.disabled=false;banBtn.textContent='Ban username';} };
+  bar.append(closeBtn,warnBtn,banBtn);
+  box.appendChild(bar);
+  ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  host.appendChild(ov);
+}
+window._khModerateUser=_khModerateUser;
 /* AI moderation triage: judge a user-vs-user report and return a one-line verdict
    "AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <reason>" that gets recorded INTO the
    report. Works for ANY reporter (it's just an AI call, no privilege needed) —
@@ -10691,6 +11165,92 @@ async function _khAITriageReport(name,reason,note,autoFlagged){
   }catch(_){return '';}
 }
 window._khAITriageReport=_khAITriageReport;
+/* ── Severity-aware AI moderation verdict (admin "AI decide" feature) ──────
+   Distinct from _khAITriageReport above (a lightweight one-line classification
+   recorded into the report body at SUBMIT time, using whichever AI the
+   REPORTER happens to have enabled). This is the admin-initiated, on-demand
+   decision: it ALWAYS uses the shared/system key pinned to gemini-3.1-flash-lite
+   (falling back through the rest of SHARED_KEY_FALLBACK_CHAIN if that model is
+   busy), independent of the admin's own personal AI provider/key settings, and
+   returns STRICT structured JSON so the client enforces the severity rubric
+   itself instead of trusting free text. */
+function _khModVerdictPrompt(name,contextText){
+  return 'You are the SEVERITY-AWARE content-moderation assistant for KindleHub, a friendly Kindle e-reader app whose users include minors. '
+    +'Read the report below and decide the PROPORTIONATE action. Reply with STRICT JSON ONLY — no prose, no markdown fences — in EXACTLY this shape:\n'
+    +'{"action":"BAN","severity":"high","reason":"one short sentence"}\n'
+    +'action is one of "BAN", "WARN", "IGNORE". severity is one of "low", "medium", "high".\n\n'
+    +'RUBRIC — most reports should end in WARN, not BAN:\n'
+    +'- BAN (severity "high") ONLY for genuinely severe, unambiguous cases: explicit threats of violence against a person; doxxing (sharing someone\'s real address, phone number, full legal name or other private identifying info without consent); sexual content involving minors; severe targeted harassment (sustained, extreme abuse aimed at one person); credible encouragement of self-harm or suicide.\n'
+    +'- WARN (severity "low" or "medium") for everything milder: profanity, insults, a single slur, mild sexual content, spam, one-off rudeness, ordinary harassment or rule-breaking that is not in the BAN list above.\n'
+    +'- IGNORE (severity "low") when the report is trivial, unclear, describes no real violation, or looks like a false or retaliatory report.\n'
+    +'If you are not fully confident, choose the MILDER action — WARN over BAN, IGNORE over WARN. A false ban is far worse than a missed one.\n\n'
+    +'REPORTED USERNAME: "'+String(name||'').slice(0,80)+'"\n'
+    +'FULL REPORT:\n'+String(contextText||'').slice(0,1200)+'\n\n'
+    +'Reply with the JSON object only, nothing else.';
+}
+/* Parse the strict-JSON verdict (text fallback for a stray non-JSON reply is
+   deliberately NOT attempted — an unparseable reply must fall through to
+   "leave for a human", never be guessed at). Re-enforces "never ban below
+   high severity" HERE too (never trust the prompt alone): a BAN verdict at
+   anything but "high" severity is downgraded to WARN before it ever reaches
+   the caller. Returns null if unparseable. */
+function _khParseModVerdict(out){
+  try{
+    var s=String(out||'');
+    var m=s.match(/\{[\s\S]*\}/);
+    if(!m)return null;
+    var o=null;try{o=JSON.parse(m[0]);}catch(_e){return null;}
+    if(!o||!o.action)return null;
+    var action=String(o.action).toUpperCase();
+    if(action!=='BAN'&&action!=='WARN'&&action!=='IGNORE')return null;
+    var severity=String(o.severity||'medium').toLowerCase();
+    if(severity!=='low'&&severity!=='medium'&&severity!=='high')severity='medium';
+    var reason=String(o.reason||'No reason given.').trim().slice(0,200);
+    if(action==='BAN'&&severity!=='high'){action='WARN';reason='(AI asked for BAN but severity was only '+severity+', downgraded to WARN) '+reason;}
+    return {action:action,severity:severity,reason:reason};
+  }catch(_){return null;}
+}
+/* Ask the AI to decide. NEVER throws. Returns either a decision
+   {action:'BAN'|'WARN'|'IGNORE',severity,reason} or, if the AI is
+   unavailable/unclear, {action:'HUMAN',reason} — the caller must leave the
+   report untouched in that case (no silent auto-resolve on a failed call). */
+async function _khAIModerateReport(name,contextText){
+  try{
+    if(typeof khiCall!=='function')return {action:'HUMAN',reason:'AI moderation isn\'t available in this build.'};
+    if(navigator.onLine===false)return {action:'HUMAN',reason:'Offline — left for a human review.'};
+    var prompt=_khModVerdictPrompt(name,contextText);
+    var out=null;
+    try{out=await khiCall(prompt,{provider:'shared',preferModel:'gemini-3.1-flash-lite',temperature:0,maxTokens:220});}catch(_e){out=null;}
+    if(!out)return {action:'HUMAN',reason:'The AI moderator is unavailable right now — left for a human review.'};
+    var v=_khParseModVerdict(out);
+    if(!v)return {action:'HUMAN',reason:'The AI\'s reply was unclear — left for a human review.'};
+    return v;
+  }catch(_){return {action:'HUMAN',reason:'AI moderation failed — left for a human review.'};}
+}
+/* Apply a decision from _khAIModerateReport. Reuses the EXACT same admin-
+   token-gated delivery paths as the manual Warn/Ban buttons (_khBanUsername /
+   _khWarnUsernameSilent), so behaviour — announcement text, the ban list,
+   "already warned" tracking — is identical whether a human or the AI decided.
+   A moderator (has a mod code, no admin token) can trigger "AI decide" and
+   see the verdict, but these underlying calls still refuse without a real
+   admin token — exactly like the manual buttons — so a mod can never
+   actually apply a ban/warn through this path. Returns {ok,label}. */
+async function _khApplyModVerdict(name,verdict){
+  if(!verdict||verdict.action==='HUMAN')return {ok:false,label:'"'+name+'": '+((verdict&&verdict.reason)||'left for a human review.')};
+  if(verdict.action==='BAN'){
+    var bok=await _khBanUsername(name);
+    return bok?{ok:true,label:'AI banned "'+name+'" ('+verdict.severity+' severity) — '+verdict.reason}:{ok:false,label:'AI recommended a BAN for "'+name+'" but the ban call failed (admin token missing?).'};
+  }
+  if(verdict.action==='WARN'){
+    var wok=await _khWarnUsernameSilent(name,verdict.reason);
+    return wok?{ok:true,label:'AI warned "'+name+'" — '+verdict.reason}:{ok:false,label:'AI recommended a WARN for "'+name+'" but the warn call failed (admin token missing?).'};
+  }
+  return {ok:true,label:'AI found no violation for "'+name+'" — '+verdict.reason};
+}
+window._khModVerdictPrompt=_khModVerdictPrompt;
+window._khParseModVerdict=_khParseModVerdict;
+window._khAIModerateReport=_khAIModerateReport;
+window._khApplyModVerdict=_khApplyModVerdict;
 
 function _composeAnnouncement(card){
   card.innerHTML='';
@@ -29782,8 +30342,12 @@ async function callSharedGeminiStream(messages, onChunk, opts){
   const _autoSwitchShared=S.autoSwitchShared!==false;
   /* The user's picked public model (S.sharedModel, from the model picker) is
      tried FIRST; the rest of the fallback chain follows so auto-switch can
-     still rescue an overloaded pick. */
-  const _pref=(S.sharedModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(S.sharedModel)>=0)?S.sharedModel:null;
+     still rescue an overloaded pick. A caller-supplied opts.preferModel (e.g.
+     AI moderation, which always wants gemini-3.1-flash-lite specifically)
+     outranks S.sharedModel — it's what THIS call needs, not the user's own
+     chat-model preference — but it's still just an ordering preference: the
+     rest of the chain follows if it's busy. */
+  const _pref=(opts&&opts.preferModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(opts.preferModel)>=0)?opts.preferModel:((S.sharedModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(S.sharedModel)>=0)?S.sharedModel:null);
   let _chain;
   if(_autoSwitchShared){_chain=SHARED_KEY_FALLBACK_CHAIN.slice();if(_pref)_chain=[_pref].concat(_chain.filter(function(m){return m!==_pref;}));}
   else{_chain=[_pref||SHARED_KEY_FALLBACK_CHAIN[0]];}
@@ -30172,6 +30736,8 @@ function _khiOptsFromPicker(){
     st.textContent='@supports (content-visibility:auto){'
       +'.simple-app-grid .simple-app{content-visibility:auto;contain-intrinsic-size:auto 84px;}'
       +'.dash-grid .dash-tile{content-visibility:auto;contain-intrinsic-size:auto 78px;}'
+      +'#notesList .note-item{content-visibility:auto;contain-intrinsic-size:auto 48px;}'
+      +'.rss-article{content-visibility:auto;contain-intrinsic-size:auto 96px;}'
       +'}';
     (document.head||document.documentElement).appendChild(st);
   }catch(_){}
@@ -33863,7 +34429,7 @@ home:()=>{
     const _LABELS={};SIMPLE_LIST.forEach(([v,l])=>{_LABELS[v]=l;});
     /* Apps grouped by purpose so the home reads as tidy labelled shelves. */
     const CATS=[
-      ['Read',   ['reading','rss','wikipedia','dictionary','imagesearch','cookbook']],
+      ['Read',   ['reading','rss','wikipedia','dictionary','imagesearch','cookbook','stash','verses']],
       ['Create', ['notes','mdjournal','slides','sheets','draw']],
       ['Play',   ['games','sports']],
       ['Connect',['chat','messages','mail']],
@@ -44486,6 +45052,11 @@ feedback:()=>{
   const refreshBtn=txt('button','Refresh',{className:'btn small',style:{marginBottom:'10px'}});
   refreshBtn.onclick=()=>{if(navigator.onLine===false)return toast('Requires internet.');loadData();};
   boardSection.appendChild(refreshBtn);
+  /* Host for the admin-only "AI auto-triage all open reports" bulk button —
+     rebuilt on every renderItems() so the count/visibility always match the
+     current tab + report list. */
+  const _bulkHost=el('div',{style:{marginBottom:'10px'}});
+  boardSection.appendChild(_bulkHost);
   boardSection.appendChild(listEl);
 
   let items=[];
@@ -44562,6 +45133,30 @@ feedback:()=>{
       return false;
     }
   }
+  /* Full AI-moderation pipeline for ONE report row: ask the shared-key AI
+     (gemini-3.1-flash-lite, severity-aware — see _khAIModerateReport) to
+     decide, apply the verdict via the exact same admin-gated Warn/Ban
+     delivery the manual buttons use, then resolve the report's status.
+     Shared by the per-report "AI decide" buttons and the bulk "AI
+     auto-triage" action below. Returns {bucket,label} — bucket is
+     'banned'|'warned'|'ignored'|'left' (for the bulk-run tally), label is a
+     short outcome string for a toast. Never throws, never silently no-ops:
+     an unavailable/unclear AI always resolves to bucket 'left' with the
+     report untouched. */
+  async function _khAIDecideAndResolve(item,name){
+    name=String(name||'').trim();
+    if(!name)return {bucket:'left',label:'No username could be parsed from this report — left for you to review.'};
+    const verdict=await _khAIModerateReport(name,item.text||'');
+    if(!verdict||verdict.action==='HUMAN'){
+      return {bucket:'left',label:'"'+name+'": '+(verdict&&verdict.reason?verdict.reason:'left for a human review.')};
+    }
+    const res=await _khApplyModVerdict(name,verdict);
+    if(!res.ok)return {bucket:'left',label:res.label};
+    if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,verdict.action==='IGNORE'?'ignored':'done');}catch(_){}}
+    if(verdict.action==='BAN'||verdict.action==='WARN'){try{await _khSweepReportsFor(name,item.id);}catch(_2){}}/* action one report -> resolve every other report about the same user */
+    try{if(verdict.action==='WARN'&&typeof _khRefreshModerationCard==='function')_khRefreshModerationCard();}catch(_){}
+    return {bucket:(verdict.action==='BAN'?'banned':(verdict.action==='WARN'?'warned':'ignored')),label:res.label};
+  }
   /* Admin: DELETE a report/suggestion from the cloud outright (not just mark it
      done). _sbHeaders already sends the X-KH-Admin token, and the worker now lets
      an admin delete ANY kh_feedback row — so it's gone in one round-trip and can't
@@ -44573,6 +45168,40 @@ feedback:()=>{
       const ix=items.findIndex(function(x){return x.id===id;});if(ix>=0)items.splice(ix,1);
       return true;
     }catch(e){toast('Delete failed: '+String((e&&e.message)||e).slice(0,120),6000);return false;}
+  }
+  /* Extract the TARGET username a report is about. [USERNAME] ban-requests carry
+     it as  Username: "X" ; message [REPORT] rows carry it as  By: X (uid=...) .
+     Returns a lowercased/trimmed name, or '' for a non-report row (so ordinary
+     bug reports are never matched). */
+  function _khReportTarget(text){
+    text=String(text||'');
+    if(!/\[REPORT\]|\[USERNAME\]/.test(text))return '';
+    var m=/Username:\s*"([^"]*)"/.exec(text);
+    if(m&&m[1]&&m[1].trim())return m[1].trim().toLowerCase();
+    m=/By:\s*([^()]+?)\s*\(uid=/.exec(text);
+    if(m&&m[1]&&m[1].trim())return m[1].trim().toLowerCase();
+    return '';
+  }
+  /* After a Warn/Ban of username X, make every OTHER pending report about X
+     vanish: mark it resolved (done) then delete it from the cloud via the SAME
+     path the admin Delete button uses (_deleteItem -> _sbDelete, admin token
+     already sent). keepId = the report just actioned, left as-is so it stays as
+     the record of the action. De-duped (ids collected before deleting, since
+     _deleteItem splices `items`) and gated on the report markers + an exact
+     lowercased name match so unrelated reports are never removed. */
+  async function _khSweepReportsFor(name,keepId){
+    var target=String(name||'').trim().toLowerCase();
+    if(!target)return;
+    var victims=[];
+    (items||[]).forEach(function(it){
+      if(!it||!it.id||it.id===keepId)return;
+      if(_khReportTarget(it.text)===target)victims.push(it.id);
+    });
+    for(var i=0;i<victims.length;i++){
+      var vid=victims[i];
+      if(_schemaHasStatus!==false){try{await _setItemStatus(vid,'done');}catch(_e){}}
+      try{await _deleteItem(vid);}catch(_e2){}
+    }
   }
   /* Open to all users: add a comment to a feedback item's thread. */
   async function _addComment(id,text){
@@ -44602,6 +45231,39 @@ feedback:()=>{
       if(sa!==sb)return sa-sb;
       return (b.votes||0)-(a.votes||0);
     });
+    /* Bulk AI triage — admin-only, Bug Reports tab only (both [USERNAME]
+       ban-requests and [REPORT] message reports live there), shown only when
+       there's at least one OPEN report to act on. Rebuilt every render so the
+       count stays accurate as reports resolve. */
+    _bulkHost.innerHTML='';
+    if(window._isAdminCached===true&&activeType==='bug'){
+      const openReports=filtered.filter(function(i){return (i.status||'open')==='open'&&/\[REPORT\]/.test(i.text||'');});
+      if(openReports.length){
+        const bulkBtn=txt('button','AI auto-triage all open reports ('+openReports.length+')',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+        bulkBtn.onclick=async()=>{
+          if(!await kindleConfirm('Let the AI (shared key, gemini-3.1-flash-lite) decide WARN, BAN or IGNORE for all '+openReports.length+' open report(s)? It only bans really severe cases (threats of violence, doxxing, sexual content involving minors, severe targeted harassment, credible self-harm encouragement) — everything milder is warned, and anything unclear is left open for you.'))return;
+          bulkBtn.disabled=true;
+          let banned=0,warned=0,ignored=0,left=0;const _seenTargets={};
+          for(let i=0;i<openReports.length;i++){
+            const it=openReports[i];
+            const mU=/Username:\s*"([^"]*)"/.exec(it.text||'');
+            const mR=/By:\s*([^()]+?)\s*\(uid=/.exec(it.text||'');
+            const nm=mU?mU[1]:(mR?mR[1].trim():'');
+            var _tk=String(nm||'').toLowerCase().trim();if(_tk&&_seenTargets[_tk])continue;if(_tk)_seenTargets[_tk]=1;/* a prior ban/warn already swept this user's other reports */
+            bulkBtn.textContent='Triaging '+(i+1)+'/'+openReports.length+'…';
+            const outcome=await _khAIDecideAndResolve(it,nm);
+            if(outcome.bucket==='banned')banned++;
+            else if(outcome.bucket==='warned')warned++;
+            else if(outcome.bucket==='ignored')ignored++;
+            else left++;
+            await new Promise(function(r){setTimeout(r,700);});/* small gap between shared-key calls */
+          }
+          toast('AI triage done — banned '+banned+', warned '+warned+', ignored '+ignored+', left '+left+' for you to review.',6000);
+          renderItems();
+        };
+        _bulkHost.appendChild(bulkBtn);
+      }
+    }
     if(!filtered.length){listEl.appendChild(txt('div','No '+activeType+'s yet — be the first!',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'12px 0'}}));return;}
     /* Reset the page size when the tab (suggestions / bugs / errors) changes,
        then show 10 at a time so a big backlog can't overwhelm the Kindle. */
@@ -44668,6 +45330,7 @@ feedback:()=>{
             const ok=await _khWarnUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
+              await _khSweepReportsFor(_banName,item.id);
               toast('Warned “'+_banDisp+'” and marked the report done.',3000);
               renderItems();
             } else { warnBtn.disabled=false; }
@@ -44681,11 +45344,20 @@ feedback:()=>{
             const ok=await _khBanUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
+              await _khSweepReportsFor(_banName,item.id);
               toast('Username "'+_banDisp+'" banned.',3500);
               renderItems();
             } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banDisp.slice(0,24)+'"'; }
           };
           actRow.appendChild(banBtn);
+          const aiBtn=txt('button','AI decide',{className:'btn small'});
+          aiBtn.onclick=async()=>{
+            aiBtn.disabled=true;aiBtn.textContent='Asking AI…';
+            const outcome=await _khAIDecideAndResolve(item,_banName);
+            toast(outcome.label.slice(0,220),4500);
+            renderItems();
+          };
+          actRow.appendChild(aiBtn);
         }
       }
       /* Message-content reports ([REPORT] …) name the offender as
@@ -44700,7 +45372,7 @@ feedback:()=>{
           rWarn.onclick=async()=>{
             rWarn.disabled=true;
             const ok=await _khWarnUsername(_rName);
-            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} await _khSweepReportsFor(_rName,item.id); toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
             else { rWarn.disabled=false; }
           };
           if(window._khWarnedSet&&window._khWarnedSet.has(String(_rName).toLowerCase()))actRow.appendChild(txt('span','! already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
@@ -44710,10 +45382,18 @@ feedback:()=>{
             if(!await kindleConfirm('Ban "'+_rDisp+'"? They can no longer sign in or post, and the name shows as [removed] in chat. This resolves the report.'))return;
             rBan.disabled=true;rBan.textContent='Banning…';
             const ok=await _khBanUsername(_rName);
-            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Banned "'+_rDisp+'".',3500); renderItems(); }
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} await _khSweepReportsFor(_rName,item.id); toast('Banned "'+_rDisp+'".',3500); renderItems(); }
             else { rBan.disabled=false;rBan.textContent='Ban "'+_rDisp.slice(0,18)+'"'; }
           };
           actRow.appendChild(rBan);
+          const rAi=txt('button','AI decide',{className:'btn small'});
+          rAi.onclick=async()=>{
+            rAi.disabled=true;rAi.textContent='Asking AI…';
+            const outcome=await _khAIDecideAndResolve(item,_rName);
+            toast(outcome.label.slice(0,220),4500);
+            renderItems();
+          };
+          actRow.appendChild(rAi);
         }
       }
       /* Admin status controls — gated on _schemaHasStatus so the admin
@@ -49307,9 +49987,16 @@ rss:()=>{
       /* Title — clickable to expand */
       const titleEl=txt('div',item.title||'(no title)',{className:'rss-article-title',style:{cursor:'pointer'}});
       titleEl.onclick=()=>{
-        expandedId=isExpanded?null:id;
         if(!isRead){S.rssRead[id]=true;save();}
-        renderContent();
+        /* Full Article View reader (paginated body + images + byline).
+           Falls back to the old inline expand when there's no link. */
+        if(item.link&&typeof window._khOpenArticleReader==='function'){
+          window._khOpenArticleReader({title:item.title,link:item.link,source:item.feedLabel,date:item.pubDate,desc:rawDesc,feedBody:(item.content||item.description||'')});
+          refreshViewTabs();
+        }else{
+          expandedId=isExpanded?null:id;
+          renderContent();
+        }
       };
       card.appendChild(titleEl);
 
@@ -51252,6 +51939,24 @@ sports:()=>{
   function _pick(arr,ha){for(let i=0;i<(arr||[]).length;i++){if(arr[i]&&arr[i].homeAway===ha)return arr[i];}return null;}
   function _teamName(c){return (c&&c.team&&(c.team.displayName||c.team.shortDisplayName||c.team.name||c.team.abbreviation))||'—';}
   function _abbr(c){return (c&&c.team&&(c.team.abbreviation||c.team.shortDisplayName))||'';}
+  /* ESPN puts penalty-shootout + two-leg aggregate on the competitor as
+     shootoutScore / aggregateScore, SEPARATE from the 90/120-min `score`.
+     Never fold them into the goal tally: keep `score` as the main line and
+     annotate, so a 1-1 (4-2 pens) knockout reads correctly. */
+  function _shoot(c){var s=c&&c.shootoutScore;return (s==null||s==='')?null:s;}
+  function _agg(c){var s=c&&c.aggregateScore;return (s==null||s==='')?null:s;}
+  function _penSummary(away,home){
+    var sa=_shoot(away),sh=_shoot(home);if(sa==null&&sh==null)return '';
+    var a=(sa==null?'0':String(sa)),h=(sh==null?'0':String(sh));
+    var win=(away&&away.winner)?away:((home&&home.winner)?home:null);
+    var wsc=a,lsc=h;if(win===home){wsc=h;lsc=a;}
+    var wn=win?(_abbr(win)||_teamName(win)):'';
+    return (wn?wn+' ':'')+'won on penalties '+wsc+'-'+lsc;
+  }
+  function _aggNote(away,home){
+    var aa=_agg(away),ah=_agg(home);if(aa==null&&ah==null)return '';
+    return 'Aggregate '+(aa==null?'0':String(aa))+'-'+(ah==null?'0':String(ah));
+  }
   /* Date bar */
   const dateBar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}});
   const prevBtn=txt('button','‹ Prev',{className:'btn small'});
@@ -51305,6 +52010,9 @@ sports:()=>{
           rr.appendChild(txt('span',(t.score!=null?String(t.score):''),{style:{fontWeight:t.winner?'800':'500',fontVariantNumeric:'tabular-nums'}}));
           row.appendChild(rr);
         });
+        var _pn=_penSummary(away,home),_ag=_aggNote(away,home);
+        if(_pn)row.appendChild(txt('div',_pn,{style:{fontSize:'11px',color:'var(--muted)',fontWeight:'700',marginTop:'2px'}}));
+        if(_ag)row.appendChild(txt('div',_ag,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'1px'}}));
         const foot=el('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'4px'}});
         if(st)foot.appendChild(txt('span',st,{style:{fontSize:'11px',color:'var(--muted)'}}));
         foot.appendChild(txt('span','Details ›',{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700'}}));
@@ -51446,6 +52154,9 @@ sports:()=>{
         rr.appendChild(txt('span',(t.score!=null?String(t.score):'-'),{style:{fontWeight:'900',fontVariantNumeric:'tabular-nums'}}));
         sc.appendChild(rr);
       });
+      var _pn=_penSummary(away,home),_ag=_aggNote(away,home);
+      if(_pn)sc.appendChild(txt('div',_pn,{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px',fontWeight:'800'}}));
+      if(_ag)sc.appendChild(txt('div',_ag,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px',fontWeight:'700'}}));
       if(stTxt)sc.appendChild(txt('div',stTxt,{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px',fontWeight:'700'}}));
       if(venue)sc.appendChild(txt('div',venue,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
       detail.appendChild(sc);
@@ -52132,6 +52843,249 @@ watchq:()=>{
   function add(){var t=(inp.value||'').trim();if(!t)return;S.watchQueue.unshift({id:'w'+Date.now().toString(36),title:t.slice(0,120),type:typeSel.value,done:false,at:Date.now()});inp.value='';try{save();}catch(_e){}filt='todo';render();}
   addB.onclick=add;inp.addEventListener('keydown',function(e){if(e.key==='Enter')add();});
   render();
+  return v;
+},
+/* ── Stash — a Read-Later queue. Paste a URL, save it (offline-safe — no
+   network call needed just to save; the title is guessed from the URL
+   itself), then tap Read to open the FULL article via the existing
+   window._khOpenArticleReader overlay (same reader News/Gazette use — it
+   fetches + extracts the article text/images through the app's CORS
+   proxies). Reading marks the item read. Cap ~100 newest items. */
+stash:()=>{
+  const v=el('section',{id:'view-stash',className:'view'});
+  v.appendChild(txt('h2','Stash',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Save an article or page to read later, even offline. Tap Read to open the full text.',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  if(!Array.isArray(S.stashItems))S.stashItems=[];
+  const addRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const inp=el('input',{type:'text',placeholder:'Paste a URL…',style:{flex:'1',fontSize:'14px',padding:'8px 10px'}});
+  const saveBtn=txt('button','Save',{className:'btn small primary'});
+  addRow.append(inp,saveBtn);v.appendChild(addRow);
+  const filterRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px'}});
+  const FILTS=[['all','All'],['unread','Unread']];let filt='all';
+  FILTS.forEach(function(f){const b=txt('button',f[1],{className:'btn small'+(filt===f[0]?' primary':'')});b.onclick=function(){filt=f[0];render();};filterRow.appendChild(b);});
+  v.appendChild(filterRow);
+  const list=el('div',{});v.appendChild(list);
+  function normUrl(u){
+    u=(u||'').trim();
+    if(!u)return '';
+    if(!/^https?:\/\//i.test(u))u='https://'+u;
+    return u;
+  }
+  /* Pure-offline title guess from the URL path — never blocks a save on
+     the network being reachable. */
+  function guessTitle(url){
+    try{
+      var u=url.replace(/^https?:\/\//i,'').replace(/^www\./i,'');
+      var parts=u.split('/');
+      var host=parts[0]||u;
+      var last='';
+      for(var i=parts.length-1;i>0;i--){if(parts[i]){last=parts[i];break;}}
+      if(last){
+        last=decodeURIComponent(last.replace(/\.(html?|php|aspx?)$/i,''));
+        last=last.replace(/[-_+]/g,' ').replace(/\s+/g,' ').trim();
+        if(last.length>3)return last.charAt(0).toUpperCase()+last.slice(1)+'  ·  '+host;
+      }
+      return host;
+    }catch(_e){return url;}
+  }
+  function render(){
+    Array.prototype.forEach.call(filterRow.querySelectorAll('button'),function(b,i){b.classList.toggle('primary',FILTS[i][0]===filt);});
+    list.innerHTML='';
+    var items=S.stashItems.filter(function(x){return filt==='all'||!x.read;});
+    if(!items.length){list.appendChild(txt('div',filt==='unread'?'Nothing unread — nice work.':'Nothing saved yet — paste a URL above.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px',fontStyle:'italic'}}));return;}
+    items.forEach(function(it){
+      const row=el('div',{style:{padding:'10px 12px',border:'var(--thin)',borderRadius:'10px',marginBottom:'8px',background:'var(--card)'}});
+      const mid=el('div',{style:{minWidth:'0'}});
+      mid.appendChild(txt('div',it.title||it.url,{style:{fontWeight:'700',fontSize:'14px',wordBreak:'break-word',opacity:it.read?'.6':'1'}}));
+      mid.appendChild(txt('div',it.url,{style:{fontSize:'10px',color:'var(--muted)',wordBreak:'break-all',marginTop:'2px'}}));
+      var savedLbl='Saved '+(function(){try{return _localDayKey(new Date(it.savedAt));}catch(_e){return '';}})();
+      mid.appendChild(txt('div',savedLbl+(it.read?'  ·  Read':''),{style:{fontSize:'10px',color:'var(--muted)',marginTop:'2px'}}));
+      row.appendChild(mid);
+      const btnRow=el('div',{style:{display:'flex',gap:'6px',marginTop:'8px',justifyContent:'flex-end'}});
+      const readBtn=txt('button','Read',{className:'btn small'});
+      readBtn.onclick=function(){
+        it.read=true;try{save();}catch(_e){}
+        if(typeof window._khOpenArticleReader==='function')window._khOpenArticleReader({title:it.title,link:it.url,source:'Stash',date:it.savedAt});
+        else if(typeof toast==='function')toast('Reader is not available.');
+        render();
+      };
+      const rmBtn=txt('button','Remove',{className:'btn small'});
+      rmBtn.onclick=function(){var i=S.stashItems.indexOf(it);if(i>=0)S.stashItems.splice(i,1);try{save();}catch(_e){}render();};
+      btnRow.append(readBtn,rmBtn);
+      row.appendChild(btnRow);
+      list.appendChild(row);
+    });
+  }
+  function doSave(){
+    var raw=(inp.value||'').trim();
+    if(!raw){if(typeof toast==='function')toast('Paste a URL first.');return;}
+    var url=normUrl(raw);
+    if(S.stashItems.some(function(x){return x.url===url;})){if(typeof toast==='function')toast('Already saved.');inp.value='';return;}
+    var item={id:'st'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),url:url,title:guessTitle(url),savedAt:Date.now(),read:false};
+    S.stashItems.unshift(item);
+    if(S.stashItems.length>100)S.stashItems.length=100;
+    inp.value='';
+    try{save();}catch(_e){}
+    filt='all';
+    render();
+    if(typeof toast==='function')toast('Saved to Stash.');
+  }
+  saveBtn.onclick=doSave;
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter')doSave();});
+  render();
+  return v;
+},
+/* ── Verse Library — a scripture reader. Keyless via bible-api.com (CORS-
+   open, public-domain WEB translation) — no proxy needed. Pick a book +
+   chapter or search a reference like "John 3:16"; Prev/Next walks chapters.
+   The loaded chapter text is cached in-memory only (session) — same rule as
+   the Free Library reader — NEVER written to S; only bookmarked references
+   (plain text strings) persist to S.verseBookmarks. */
+verses:()=>{
+  const v=el('section',{id:'view-verses',className:'view'});
+  v.appendChild(txt('h2','Verse Library',{style:{fontFamily:'var(--title-font)',fontSize:'20px',margin:'0 0 2px'}}));
+  v.appendChild(txt('div','Read scripture free — pick a book and chapter, or search a reference like "John 3:16".',{style:{fontSize:'12px',color:'var(--muted)',marginBottom:'10px',lineHeight:'1.5'}}));
+  if(!Array.isArray(S.verseBookmarks))S.verseBookmarks=[];
+  const OT=[['Genesis',50],['Exodus',40],['Leviticus',27],['Numbers',36],['Deuteronomy',34],['Joshua',24],['Judges',21],['Ruth',4],['1 Samuel',31],['2 Samuel',24],['1 Kings',22],['2 Kings',25],['1 Chronicles',29],['2 Chronicles',36],['Ezra',10],['Nehemiah',13],['Esther',10],['Job',42],['Psalms',150],['Proverbs',31],['Ecclesiastes',12],['Song of Solomon',8],['Isaiah',66],['Jeremiah',52],['Lamentations',5],['Ezekiel',48],['Daniel',12],['Hosea',14],['Joel',3],['Amos',9],['Obadiah',1],['Jonah',4],['Micah',7],['Nahum',3],['Habakkuk',3],['Zephaniah',3],['Haggai',2],['Zechariah',14],['Malachi',4]];
+  const NT=[['Matthew',28],['Mark',16],['Luke',24],['John',21],['Acts',28],['Romans',16],['1 Corinthians',16],['2 Corinthians',13],['Galatians',6],['Ephesians',6],['Philippians',4],['Colossians',4],['1 Thessalonians',5],['2 Thessalonians',3],['1 Timothy',6],['2 Timothy',4],['Titus',3],['Philemon',1],['Hebrews',13],['James',5],['1 Peter',5],['2 Peter',3],['1 John',5],['2 John',1],['3 John',1],['Jude',1],['Revelation',22]];
+  const BOOKS=OT.concat(NT);
+  function chaptersFor(name){for(var i=0;i<BOOKS.length;i++)if(BOOKS[i][0]===name)return BOOKS[i][1];return 1;}
+  let _book='Genesis',_chap=1,_curRef='';
+  const _cache={};   /* session-only: 'Book chapter' -> API response */
+  const pickRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'8px',flexWrap:'wrap'}});
+  const bookSel=el('select',{style:{flex:'1',minWidth:'140px',fontSize:'14px',padding:'8px'}});
+  const ogOT=document.createElement('optgroup');ogOT.label='Old Testament';
+  OT.forEach(function(b){const o=document.createElement('option');o.value=b[0];o.textContent=b[0];ogOT.appendChild(o);});
+  const ogNT=document.createElement('optgroup');ogNT.label='New Testament';
+  NT.forEach(function(b){const o=document.createElement('option');o.value=b[0];o.textContent=b[0];ogNT.appendChild(o);});
+  bookSel.appendChild(ogOT);bookSel.appendChild(ogNT);
+  bookSel.value=_book;
+  pickRow.appendChild(bookSel);
+  v.appendChild(pickRow);
+  const chapRow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',flexWrap:'wrap'}});
+  const chLabel=txt('span','Ch.',{style:{fontSize:'12px',color:'var(--muted)'}});
+  const minus=txt('button','−',{className:'btn small',style:{minWidth:'40px'}});
+  const chapLbl=txt('div',String(_chap),{style:{fontSize:'15px',fontWeight:'800',minWidth:'30px',textAlign:'center'}});
+  const plus=txt('button','+',{className:'btn small',style:{minWidth:'40px'}});
+  const loadBtn=txt('button','Load',{className:'btn small primary'});
+  function syncChapLbl(){if(chapLbl.textContent!==String(_chap))chapLbl.textContent=String(_chap);}
+  minus.onclick=function(){if(_chap>1){_chap--;syncChapLbl();}};
+  plus.onclick=function(){var mx=chaptersFor(_book);if(_chap<mx){_chap++;syncChapLbl();}};
+  bookSel.onchange=function(){_book=bookSel.value;_chap=1;syncChapLbl();};
+  loadBtn.onclick=function(){loadChapter(_book,_chap);};
+  chapRow.append(chLabel,minus,chapLbl,plus,loadBtn);
+  v.appendChild(chapRow);
+  const searchRow=el('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+  const searchInp=el('input',{type:'text',placeholder:'Search a reference, e.g. John 3:16',style:{flex:'1',fontSize:'14px',padding:'8px 10px'}});
+  const searchBtn=txt('button','Go',{className:'btn small'});
+  searchRow.append(searchInp,searchBtn);
+  v.appendChild(searchRow);
+  searchBtn.onclick=function(){var q=(searchInp.value||'').trim();if(q)doSearch(q);};
+  searchInp.addEventListener('keydown',function(e){if(e.key==='Enter'){var q=(searchInp.value||'').trim();if(q)doSearch(q);}});
+  const bmRow=el('div',{style:{display:'flex',alignItems:'flex-start',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}});
+  const bmBtn=txt('button','+ Bookmark',{className:'btn small'});
+  const bmChips=el('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',flex:'1'}});
+  bmRow.append(bmBtn,bmChips);
+  v.appendChild(bmRow);
+  bmBtn.onclick=function(){addBookmark();};
+  const host=el('div',{});
+  v.appendChild(host);
+  const pagerRow=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',margin:'10px 0'}});
+  const prevBtn=txt('button','‹ Prev chapter',{className:'btn small'});
+  const nextBtn=txt('button','Next chapter ›',{className:'btn small'});
+  prevBtn.onclick=function(){if(_chap>1)loadChapter(_book,_chap-1);};
+  nextBtn.onclick=function(){var mx=chaptersFor(_book);if(_chap<mx)loadChapter(_book,_chap+1);};
+  pagerRow.append(prevBtn,nextBtn);
+  v.appendChild(pagerRow);
+  function renderBookmarks(){
+    bmChips.innerHTML='';
+    if(!S.verseBookmarks.length){bmChips.appendChild(txt('span','No bookmarks yet.',{style:{fontSize:'11px',color:'var(--muted)'}}));return;}
+    S.verseBookmarks.forEach(function(ref,idx){
+      const chip=el('span',{style:{display:'inline-flex',alignItems:'center',gap:'4px',border:'var(--thin)',borderRadius:'999px',padding:'4px 8px',fontSize:'11px',background:'var(--card)'}});
+      const lbl=txt('span',ref,{style:{cursor:'pointer'}});lbl.onclick=function(){doSearch(ref);};
+      const rm=txt('span','×',{style:{fontWeight:'900',color:'var(--muted)',padding:'0 2px',cursor:'pointer'}});
+      rm.onclick=function(e){e.stopPropagation();var i=S.verseBookmarks.indexOf(ref);if(i>=0)S.verseBookmarks.splice(i,1);try{save();}catch(_e){}renderBookmarks();};
+      chip.append(lbl,rm);
+      bmChips.appendChild(chip);
+    });
+  }
+  function addBookmark(){
+    if(!_curRef){if(typeof toast==='function')toast('Load a passage first.');return;}
+    if(S.verseBookmarks.indexOf(_curRef)>=0){if(typeof toast==='function')toast('Already bookmarked.');return;}
+    S.verseBookmarks.unshift(_curRef);
+    if(S.verseBookmarks.length>50)S.verseBookmarks.length=50;
+    try{save();}catch(_e){}
+    renderBookmarks();
+    if(typeof toast==='function')toast('Bookmarked '+_curRef);
+  }
+  /* Kindle-safe abortable fetch (mirrors the app's fetchWithTimeout pattern) —
+     bible-api.com is CORS-open so no proxy chain is needed here. */
+  function fetchVerse(pathQuery){
+    var url='https://bible-api.com/'+encodeURIComponent(pathQuery)+'?translation=web';
+    return new Promise(function(resolve,reject){
+      var ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+      var tid=setTimeout(function(){if(ctrl){try{ctrl.abort();}catch(_e){}}reject(new Error('timeout'));},10000);
+      fetch(url,ctrl?{signal:ctrl.signal,cache:'no-store'}:{cache:'no-store'}).then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return r.json();
+      }).then(function(d){clearTimeout(tid);resolve(d);}).catch(function(e){clearTimeout(tid);reject(e);});
+    });
+  }
+  function paintVerses(data,refLabel){
+    _curRef=refLabel;
+    host.innerHTML='';
+    const card=el('div',{style:{border:'var(--thin)',borderRadius:'12px',padding:'14px 16px',background:'var(--card)'}});
+    card.appendChild(txt('div',refLabel,{style:{fontFamily:'var(--title-font)',fontSize:'17px',fontWeight:'800',marginBottom:'8px'}}));
+    const vs=data.verses||[];
+    if(!vs.length){card.appendChild(txt('div',data.text||'No verses found.',{style:{fontSize:'15px',lineHeight:'1.8',fontFamily:'var(--title-font)'}}));}
+    else{
+      const p=el('p',{style:{fontSize:'15px',lineHeight:'1.9',fontFamily:'var(--title-font)',margin:'0'}});
+      vs.forEach(function(vv){
+        p.appendChild(txt('sup',String(vv.verse)+' ',{style:{fontSize:'10px',fontWeight:'800',color:'var(--muted)'}}));
+        p.appendChild(document.createTextNode(String(vv.text||'').replace(/\n/g,' ').trim()+'  '));
+      });
+      card.appendChild(p);
+    }
+    host.appendChild(card);
+  }
+  function loadChapter(book,chap){
+    const key=book+' '+chap;
+    _book=book;_chap=chap;bookSel.value=book;syncChapLbl();
+    if(_cache[key]){paintVerses(_cache[key],_cache[key].reference||key);return;}
+    host.innerHTML='';host.appendChild(txt('div','Loading…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 4px'}}));
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){
+      host.innerHTML='';host.appendChild(txt('div','You are offline — connect to the internet to read scripture.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+      return;
+    }
+    fetchVerse(key).then(function(d){
+      if(!d||d.error)throw new Error((d&&d.error)||'not found');
+      _cache[key]=d;
+      paintVerses(d,d.reference||key);
+    }).catch(function(){
+      host.innerHTML='';
+      host.appendChild(txt('div','Could not load that passage right now — check your connection and try again.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+    });
+  }
+  function doSearch(q){
+    host.innerHTML='';host.appendChild(txt('div','Searching…',{style:{fontSize:'13px',color:'var(--muted)',padding:'10px 4px'}}));
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){
+      host.innerHTML='';host.appendChild(txt('div','You are offline — connect to the internet to search scripture.',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+      return;
+    }
+    fetchVerse(q).then(function(d){
+      if(!d||d.error||!(d.verses&&d.verses.length))throw new Error((d&&d.error)||'not found');
+      const first=d.verses[0];
+      if(first&&first.book_name){_book=first.book_name;_chap=first.chapter||1;bookSel.value=_book;syncChapLbl();}
+      const key=_book+' '+_chap;
+      _cache[key]=d;
+      paintVerses(d,d.reference||q);
+    }).catch(function(){
+      host.innerHTML='';
+      host.appendChild(txt('div','No results for "'+q+'" — try a reference like "John 3:16" or "Psalm 23".',{style:{fontSize:'13px',color:'var(--muted)',padding:'12px 4px'}}));
+    });
+  }
+  renderBookmarks();
+  loadChapter(_book,_chap);
   return v;
 },
 appstore:()=>{
@@ -53436,6 +54390,28 @@ stocks:()=>{
       /* 1. Stooq — promoted from last-resort to second attempt because it's
             the most reliable free source in 2026 and doesn't need a crumb. */
       ['Stooq',async()=>_fetchStooq(ticker)],
+      /* 1b. Yahoo v8 chart via reliable keyless CORS proxies. The direct
+            query1/query2 calls above are CORS-blocked in the Kindle browser,
+            so a plain US ticker (TSLA, GOOGL, MSFT, ...) previously only had a
+            chance through the two flaky public proxies at the very END of
+            this chain — when both were rate-limited/403 EVERY symbol returned
+            "Not found". codetabs and allorigins-raw are keyless, CORS-open and
+            forward Yahoo's JSON untouched, so the symbol is queried AS TYPED
+            and maps to the correct US-listed security (chart/TSLA = Tesla on
+            NASDAQ, USD). A user-typed .L symbol still passes through verbatim,
+            so explicit London tickers keep working. */
+      ['codetabs Yahoo v8',async()=>{
+        var yurl='https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d';
+        const r=await fetchWithTimeout('https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(yurl),13000);
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return parseYahooChart(await r.json(),ticker);
+      }],
+      ['allorigins-raw Yahoo v8',async()=>{
+        var yurl='https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d';
+        const r=await fetchWithTimeout('https://api.allorigins.win/raw?url='+encodeURIComponent(yurl),13000);
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        return parseYahooChart(await r.json(),ticker);
+      }],
       /* 2. Yahoo v8 chart 5d — backup if intraday call was rate-limited. */
       ['Yahoo v8 (5d)',async()=>{
         const r=await fetchWithTimeout('https://query1.finance.yahoo.com/v8/finance/chart/'+enc+'?interval=1d&range=5d',9000);
@@ -53612,7 +54588,7 @@ stocks:()=>{
         /* Suggest exchange variants for plain symbols */
         if(/^[A-Z]{1,5}$/.test(ticker)){
           const suggestRow=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'10px'}});
-          ['.L','.US','.DE','.PA','.TO'].forEach(suf=>{
+          ['.US','.L','.DE','.PA','.TO'].forEach(suf=>{
             const btn=txt('button','Try '+ticker+suf,{className:'btn small'});
             btn.onclick=()=>{
               const newT=ticker+suf;
@@ -53992,23 +54968,19 @@ stocks:()=>{
         const errWrap=el('div',{style:{display:'flex',flexDirection:'column',gap:'2px',alignItems:'flex-end'}});
         const errLbl=txt('div','Not found',{style:{color:'var(--danger)',fontSize:'11px',fontFamily:'monospace',fontWeight:'700'}});
         errWrap.appendChild(errLbl);
-        /* Suggest the most likely exchange suffix if the user typed a plain
-           symbol — common cause is "RPI" (no .L / .US) being ambiguous and
-           returning empty data from every provider. */
-        if(/^[A-Z]{1,5}$/.test(ticker)){
-          const tryBtn=txt('button','Try .L',{className:'btn small',style:{fontSize:'9px',padding:'1px 6px',minHeight:'18px',marginTop:'2px'}});
-          tryBtn.onclick=e=>{
-            e.stopPropagation();
-            const newT=ticker+'.L';
-            if(watchlist.includes(newT)){toast(newT+' already in watchlist');return;}
-            watchlist=watchlist.map(x=>x===ticker?newT:x);
-            saveWatchlist(watchlist);
-            delete prices[ticker];
-            renderMain();
-            if(navigator.onLine)fetchOne(newT,true);
-          };
-          errWrap.appendChild(tryBtn);
-        }
+        /* Re-fetch the symbol AS TYPED. Deliberately NO auto-append of ".L":
+           that is the London Stock Exchange suffix and it silently renamed
+           plain US tickers (AAPL -> AAPL.L) onto a WRONG London-listed
+           leveraged ETP quoted in GBp. If the user genuinely needs another
+           exchange, the detail view offers .US/.L/.DE/.PA/.TO as an explicit
+           choice. */
+        const tryBtn=txt('button','Retry',{className:'btn small',style:{fontSize:'9px',padding:'1px 6px',minHeight:'18px',marginTop:'2px'}});
+        tryBtn.onclick=e=>{
+          e.stopPropagation();
+          delete prices[ticker];
+          if(navigator.onLine!==false)fetchOne(ticker,true);else renderMain();
+        };
+        errWrap.appendChild(tryBtn);
         if(errReason){
           /* Tooltip-style detail on hover (or visible on touch via title) */
           errLbl.title=errReason;
@@ -56259,6 +57231,16 @@ function repaint(){
   ctx.restore();
   updateSlideList();
 }
+/* PERF: repaint() also rebuilds the ENTIRE slide-thumbnail strip
+   (updateSlideList — one new <canvas> + full redraw per slide). Typing in a
+   text field or dragging a colour/opacity control fires oninput on every
+   keystroke/tick, so calling repaint() directly there rebuilt the whole strip
+   per character — the worst input-lag / e-ink-flash source in the app. This
+   debounced wrapper is used at those continuous-input sites ONLY; onclick-
+   triggered repaint() calls (add shape, select, swatch tap) stay instant.
+   pushHist()/saveDecks() still fire per keystroke, so undo + autosave are
+   unchanged — only the expensive redraw is batched. */
+const _slideRepaintDebounced=(typeof khDebounce==='function')?khDebounce(repaint,200):repaint;
 
 /* ══════════════════════════════════════════════
    BUILD UI
@@ -57455,7 +58437,7 @@ function buildEditor(){
     textOverlay.style.fontStyle=elem.italic?'italic':'normal';
     textOverlay.style.textAlign=elem.align||'left';
     textOverlay.value=elem.text||'';
-    textOverlay.oninput=()=>{pushHist();elem.text=textOverlay.value;repaint();};
+    textOverlay.oninput=()=>{pushHist();elem.text=textOverlay.value;_slideRepaintDebounced();};
     setTimeout(()=>{
       textOverlay.focus();textOverlay.select();
       /* Older WebKit (Kindle) sometimes drops the focusin event when
@@ -57689,7 +58671,7 @@ function renderProps(){
   }
   function colorInp(val,onChange){
     const i=el('input',{type:'color',value:val||'#000000',style:{width:'100%',height:'26px',padding:'0',border:'var(--thin)',borderRadius:'5px',cursor:'pointer'}});
-    i.oninput=()=>{pushHist();onChange(i.value);saveDecks();repaint();};
+    i.oninput=()=>{pushHist();onChange(i.value);saveDecks();_slideRepaintDebounced();};
     return i;
   }
   function checkboxRow(label,checked,onChange){
@@ -57734,7 +58716,7 @@ function renderProps(){
 
   if(slide&&slide.bgType==='gradient'){
     const gradInp=el('input',{placeholder:'angle,#color1,#color2',value:slide.bgGrad||'135,#0f172a,#1e3a5f',style:{fontSize:'10px',width:'100%',marginBottom:'4px',padding:'3px 5px'}});
-    gradInp.oninput=()=>{slide.bgGrad=gradInp.value;saveDecks();repaint();};
+    gradInp.oninput=()=>{slide.bgGrad=gradInp.value;saveDecks();_slideRepaintDebounced();};
     propsPanel.appendChild(gradInp);
     propsPanel.appendChild(txt('div','Format: angle,#start,#end',{style:{fontSize:'9px',color:'var(--muted)'}}));
     const presets=[['135,#0f172a,#1e3a5f','Night'],['135,#7f1d1d,#1f0a12','Rose'],['180,#14231a,#0d2a0d','Forest'],['90,#0c4a6e,#0ea5e9','Ocean'],['135,#581c87,#312e81','Purple'],['45,#1c1917,#292524','Stone']];
@@ -57766,7 +58748,7 @@ function renderProps(){
       const oRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'3px'}});
       oRow.appendChild(txt('span','Opacity',{style:{fontSize:'10px',color:'var(--muted)'}}));
       const opInp=el('input',{type:'range',min:0,max:1,step:0.05,value:slide.bgImgOpacity||1,style:{flex:'1',marginLeft:'6px'}});
-      opInp.oninput=()=>{slide.bgImgOpacity=parseFloat(opInp.value);saveDecks();repaint();};
+      opInp.oninput=()=>{slide.bgImgOpacity=parseFloat(opInp.value);saveDecks();_slideRepaintDebounced();};
       oRow.appendChild(opInp);propsPanel.appendChild(oRow);
     }
   }
@@ -57831,7 +58813,7 @@ function renderProps(){
   const opRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'3px',gap:'4px'}});
   opRow.appendChild(txt('span','Opacity',{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0'}}));
   const opSlider=el('input',{type:'range',min:0,max:1,step:0.05,value:elem.opacity!=null?elem.opacity:1,style:{flex:'1'}});
-  opSlider.oninput=()=>{elem.opacity=parseFloat(opSlider.value);saveDecks();repaint();};
+  opSlider.oninput=()=>{elem.opacity=parseFloat(opSlider.value);saveDecks();_slideRepaintDebounced();};
   opRow.appendChild(opSlider);propsPanel.appendChild(opRow);
   checkboxRow('Shadow',elem.shadow,v2=>elem.shadow=v2);
 
@@ -57840,7 +58822,7 @@ function renderProps(){
     sec('TEXT');
     const textTa=el('textarea',{rows:3,style:{fontSize:'11px',lineHeight:'1.5',resize:'vertical',width:'100%',marginBottom:'3px'}});
     textTa.value=elem.text||'';
-    textTa.oninput=()=>{pushHist();elem.text=textTa.value;saveDecks();repaint();};
+    textTa.oninput=()=>{pushHist();elem.text=textTa.value;saveDecks();_slideRepaintDebounced();};
     propsPanel.appendChild(textTa);
 
     const fsInp=el('select',{style:{fontSize:'11px',width:'100%',marginBottom:'3px',padding:'2px 4px',border:'var(--thin)',borderRadius:'5px',background:'var(--card)',color:'var(--fg)'}});
@@ -57876,7 +58858,7 @@ function renderProps(){
     if(elem.textBg){
       propsPanel.appendChild(txt('span','BG Color',{style:{fontSize:'10px',color:'var(--muted)'}}));
       const tbgI=el('input',{type:'color',value:'#000000',style:{width:'100%',height:'24px',padding:'0',border:'var(--thin)',borderRadius:'4px',cursor:'pointer',marginBottom:'3px'}});
-      tbgI.oninput=()=>{pushHist();elem.textBgColor=tbgI.value;saveDecks();repaint();};
+      tbgI.oninput=()=>{pushHist();elem.textBgColor=tbgI.value;saveDecks();_slideRepaintDebounced();};
       propsPanel.appendChild(tbgI);
     }
 
@@ -59056,7 +60038,7 @@ messages:()=>{
   /* Resolve admin status early so the About button on chat messages shows
      up the first time the user opens chat (previously you had to visit
      Feedback first to populate window._isAdminCached). */
-  (async function(){try{await _checkAdmin();}catch(_){}})();
+  (async function(){try{await _checkAdmin();}catch(_){} try{if(typeof _checkMod==='function'){var _wasMod=window._isModCached;await _checkMod();if(window._isModCached===true&&_wasMod!==true&&typeof render==='function')render();}}catch(_){}})();
 
   /* ── State ── */
   let _screen='list'; // list | create | join | chat
@@ -59278,7 +60260,8 @@ messages:()=>{
          resurrect an ALREADY-ACCEPTED one, since accepting never tombstones
          the request id. */
       const _frFriends=new Set((Array.isArray(S.friends)?S.friends:[]).map(function(f){return f&&f.hash;}).filter(Boolean));
-      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&((r.mid&&_frToms.has(r.mid))||_frFriends.has(r.hash))));
+      const _frFriendNames=new Set((Array.isArray(S.friends)?S.friends:[]).map(function(f){return f&&f.name?String(f.name).toLowerCase().trim():'';}).filter(Boolean));
+      const _cleanedFreq=S.friendRequests.filter(r=>!(r&&((r.mid&&_frToms.has(r.mid))||_frFriends.has(r.hash)||(r.name&&_frFriendNames.has(String(r.name).toLowerCase().trim())))));
       if(_cleanedFreq.length!==S.friendRequests.length){S.friendRequests=_cleanedFreq;try{save();}catch(_){}}
     }
     const _freq=Array.isArray(S.friendRequests)?S.friendRequests:[];
@@ -59310,7 +60293,15 @@ messages:()=>{
       if(!_friends.length){
         body.appendChild(txt('div','No friends yet. Tap + Add to find people by username.',{style:{fontSize:'11px',color:'var(--muted)',fontStyle:'italic',marginBottom:'10px'}}));
       } else {
-        _friends.slice().forEach(fr=>{
+        const _seenFr=new Set();
+        _friends.slice().filter(function(fr){
+          if(!fr)return false;
+          const _hk=fr.hash?('h:'+fr.hash):'';
+          const _nk=fr.name?('n:'+String(fr.name).toLowerCase().trim()):'';
+          if((_hk&&_seenFr.has(_hk))||(_nk&&_seenFr.has(_nk)))return false;/* same person (by hash OR name) already rendered */
+          if(_hk)_seenFr.add(_hk);if(_nk)_seenFr.add(_nk);
+          return true;
+        }).forEach(fr=>{
           const row=el('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'var(--border)',borderRadius:'var(--radius)',background:'var(--card)',marginBottom:'8px'}});
           try{if(typeof _avatarEl==='function')row.appendChild(_avatarEl(fr.name||'?',32));}catch(_){}
           const fi=el('div',{style:{flex:'1',minWidth:'0'}});
@@ -61040,6 +62031,16 @@ messages:()=>{
             repNameBtn.style.color='var(--danger)';
             repNameBtn.onclick=()=>_openUsernameReportModal(m.displayName||'',m.userId||'');
             actionRow.appendChild(repNameBtn);
+            /* Moderator (non-admin) quick action — Warn / Ban on the PUBLIC
+               display name only. No PII panel (that stays admin-only in the
+               About modal); a verified mod just gets the two enforcement
+               actions via the mod-gated RPCs. */
+            if(window._isModCached===true&&window._isAdminCached!==true){
+              const modBtn=txt('button','Moderate',{className:'msg-action-btn'});
+              modBtn.style.color='var(--danger)';modBtn.style.fontWeight='800';
+              modBtn.onclick=()=>{ if(typeof _khModerateUser==='function')_khModerateUser(m.displayName||''); };
+              actionRow.appendChild(modBtn);
+            }
           }
 
           /* About button — admin only.
