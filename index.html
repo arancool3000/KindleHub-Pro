@@ -2720,7 +2720,6 @@ function _startMessageNotifier(){
       }catch(e){}
     }
   }
-  seedSeen();
   /* Round-robin cursor so each tick checks only ONE group, not all of
      them. Fetching + AES-decrypting up to 50 messages for every joined
      group on a single 45s tick was a CPU/GC spike that, on a Kindle with
@@ -2729,7 +2728,7 @@ function _startMessageNotifier(){
      realtime socket already covering the busy room, the slight latency on
      quiet rooms is invisible. */
   let _notifyIdx=0;
-  _msgNotifyTimer=setInterval(async()=>{
+  async function _notifyTick(){
     /* Skip while tab hidden — no point firing toasts no-one will see. */
     if(document.hidden)return;
     /* Skip while user IS on the messages tab (their existing chat
@@ -2828,7 +2827,14 @@ function _startMessageNotifier(){
         if(msgs.length)localStorage.setItem(lastSeenKey(g.code),msgs[msgs.length-1].id||'');
       }catch(e){}
     }
-  },(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);
+  }
+  _msgNotifyTimer=setInterval(_notifyTick,(typeof _khSimpleMode==='function'&&_khSimpleMode())?90000:45000);
+  /* Immediate first sweep so new-message notifications appear right after
+     load / turn-on — not only after the first 45-90s poll tick (the reported
+     "notifications show up 3 minutes later" complaint). seedSeen only seeds
+     groups with NO marker, so existing groups notify vs their persisted
+     last-seen; brand-new groups are seeded first to avoid a history blast. */
+  seedSeen().then(function(){try{_notifyTick();}catch(_e){}});
 }
 
 /* Heartbeat — every 45 s we check whether the local state has changed
@@ -65513,7 +65519,7 @@ window._showWelcome=function(){
     setTimeout(()=>{try{_startPresence();}catch(e){}},3000);
     /* Background message notifier — polls each joined group every 45s and
        shows push-notification toasts when new messages arrive. */
-    setTimeout(()=>{try{_startMessageNotifier();}catch(e){}},3000);
+    setTimeout(()=>{try{_startMessageNotifier();}catch(e){}},800);
     /* KindleHub Mail unread dot — one ~60-byte probe at boot and then every
        5 minutes. Deliberately sparse to protect the backend quota. */
     setTimeout(()=>{try{_mailUnreadProbe();}catch(e){}},4000);
