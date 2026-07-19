@@ -1242,8 +1242,15 @@ body.launcher-ui .view{padding-bottom:80px;}
       if(!raw)return;
       var Sp=JSON.parse(raw);
       if(!Sp||typeof Sp!=='object')return;
-      hints={t:Sp.theme,u:Sp.uiMode,sm:Sp.simpleMode,lm:Sp.liteMode};
+      hints={t:Sp.theme,u:Sp.uiMode,sm:Sp.simpleMode,lm:Sp.liteMode,nh:Sp.navHidden,no:Sp.navOrder};
+      /* PERF: stash this one-off full parse so the theme + nav preload scripts
+         below can reuse it instead of each re-parsing the same kindlehub_v5 blob
+         (this used to be 3 full JSON.parse passes of the state before first paint). */
+      window.__khBootFallbackS=Sp;
     }
+    /* PERF: expose the resolved hints so scripts 3 & 4 never touch localStorage/
+       JSON.parse again — same fields, same fallback safety net. */
+    window.__khBootHints=hints;
     var body=document.body,html=document.documentElement;
     if(hints.u==='simple')body.classList.add('simple-ui');
     else if(hints.u==='launcher')body.classList.add('launcher-ui');
@@ -1395,18 +1402,23 @@ body.launcher-ui .view{padding-bottom:80px;}
   <script>
   (function(){
     try{
-      var raw=localStorage.getItem('kindlehub_v5');
-      if(!raw)return;
-      var S=JSON.parse(raw);
+      /* PERF: reuse what the kh_boot preloader already parsed instead of a
+         second full JSON.parse of the same kindlehub_v5 blob. */
+      var S=window.__khBootHints||window.__khBootFallbackS;
+      if(!S){
+        var raw=localStorage.getItem('kindlehub_v5');
+        if(!raw)return;
+        S=JSON.parse(raw);
+      }
       if(!S||typeof S!=='object')return;
       var themeBtn=document.getElementById('themeBtn');
       if(themeBtn){
-        var t=S.theme||'light';
+        var t=S.theme||S.t||'light';
         themeBtn.textContent=t==='dark'?'Dark':(t==='sepia'?'Sepia':'Light');
       }
       var uiBtn=document.getElementById('uiModeBtn');
       if(uiBtn){
-        var m=S.uiMode||'classic';
+        var m=S.uiMode||S.u||'classic';
         uiBtn.textContent=(m==='simple'?'Retro':(m==='launcher'?'Launcher':'Classic'));
       }
     }catch(e){}
@@ -1485,9 +1497,14 @@ body.launcher-ui .view{padding-bottom:80px;}
   <script>
   (function(){
     try{
-      var raw=localStorage.getItem('kindlehub_v5');
-      if(!raw)return;
-      var S=JSON.parse(raw);
+      /* PERF: reuse the hints already parsed above — this was a THIRD full
+         JSON.parse of kindlehub_v5 on every single boot. */
+      var S=window.__khBootHints||window.__khBootFallbackS;
+      if(!S){
+        var raw=localStorage.getItem('kindlehub_v5');
+        if(!raw)return;
+        S=JSON.parse(raw);
+      }
       if(!S||typeof S!=='object')return;
       var navEl=document.getElementById('mainNav');
       if(!navEl)return;
@@ -1495,7 +1512,8 @@ body.launcher-ui .view{padding-bottom:80px;}
             and ensure default-hidden tabs (those with style=display:none
             in the markup) become visible if the user explicitly chose
             to show them. */
-      var hidden=(S.navHidden&&typeof S.navHidden==='object')?S.navHidden:{};
+      var navHidden=S.navHidden||S.nh;
+      var hidden=(navHidden&&typeof navHidden==='object')?navHidden:{};
       var tabs=navEl.querySelectorAll('.tab');
       for(var i=0;i<tabs.length;i++){
         var t=tabs[i];
@@ -1511,7 +1529,8 @@ body.launcher-ui .view{padding-bottom:80px;}
             front and Settings to the very end — same invariants
             applyNavOrder() enforces at runtime, kept here so the
             preloader's first paint matches the steady state. */
-      var order=Array.isArray(S.navOrder)?S.navOrder:null;
+      var navOrder=S.navOrder||S.no;
+      var order=Array.isArray(navOrder)?navOrder:null;
       if(order&&order.length){
         var byView={};
         for(var j=0;j<tabs.length;j++){
@@ -1761,7 +1780,7 @@ let S=(()=>{try{
    theme / uiMode / lite-mode WITHOUT parsing the whole state blob (saves one
    full JSON.parse before first paint on a loaded account). Written here once at
    boot and again from save()/saveNow() whenever state is persisted. */
-function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode}));}catch(_){}
+function _writeBootHints(){try{localStorage.setItem('kh_boot',JSON.stringify({t:S.theme,u:S.uiMode,sm:!!S.simpleMode,lm:S.liteMode,nh:S.navHidden,no:S.navOrder}));}catch(_){}
   /* Tiny, UNCOMPRESSED session mirror. The big kindlehub_v5 blob is gzip-packed,
      and on a cold Kindle boot the inflate can fail under memory pressure — which
      dropped the user to defaultState() (logged OUT) even though their data was
@@ -30707,6 +30726,8 @@ function _khiOptsFromPicker(){
     st.textContent='@supports (content-visibility:auto){'
       +'.simple-app-grid .simple-app{content-visibility:auto;contain-intrinsic-size:auto 84px;}'
       +'.dash-grid .dash-tile{content-visibility:auto;contain-intrinsic-size:auto 78px;}'
+      +'#notesList .note-item{content-visibility:auto;contain-intrinsic-size:auto 48px;}'
+      +'.rss-article{content-visibility:auto;contain-intrinsic-size:auto 96px;}'
       +'}';
     (document.head||document.documentElement).appendChild(st);
   }catch(_){}
@@ -56957,6 +56978,16 @@ function repaint(){
   ctx.restore();
   updateSlideList();
 }
+/* PERF: repaint() also rebuilds the ENTIRE slide-thumbnail strip
+   (updateSlideList — one new <canvas> + full redraw per slide). Typing in a
+   text field or dragging a colour/opacity control fires oninput on every
+   keystroke/tick, so calling repaint() directly there rebuilt the whole strip
+   per character — the worst input-lag / e-ink-flash source in the app. This
+   debounced wrapper is used at those continuous-input sites ONLY; onclick-
+   triggered repaint() calls (add shape, select, swatch tap) stay instant.
+   pushHist()/saveDecks() still fire per keystroke, so undo + autosave are
+   unchanged — only the expensive redraw is batched. */
+const _slideRepaintDebounced=(typeof khDebounce==='function')?khDebounce(repaint,200):repaint;
 
 /* ══════════════════════════════════════════════
    BUILD UI
@@ -58153,7 +58184,7 @@ function buildEditor(){
     textOverlay.style.fontStyle=elem.italic?'italic':'normal';
     textOverlay.style.textAlign=elem.align||'left';
     textOverlay.value=elem.text||'';
-    textOverlay.oninput=()=>{pushHist();elem.text=textOverlay.value;repaint();};
+    textOverlay.oninput=()=>{pushHist();elem.text=textOverlay.value;_slideRepaintDebounced();};
     setTimeout(()=>{
       textOverlay.focus();textOverlay.select();
       /* Older WebKit (Kindle) sometimes drops the focusin event when
@@ -58387,7 +58418,7 @@ function renderProps(){
   }
   function colorInp(val,onChange){
     const i=el('input',{type:'color',value:val||'#000000',style:{width:'100%',height:'26px',padding:'0',border:'var(--thin)',borderRadius:'5px',cursor:'pointer'}});
-    i.oninput=()=>{pushHist();onChange(i.value);saveDecks();repaint();};
+    i.oninput=()=>{pushHist();onChange(i.value);saveDecks();_slideRepaintDebounced();};
     return i;
   }
   function checkboxRow(label,checked,onChange){
@@ -58432,7 +58463,7 @@ function renderProps(){
 
   if(slide&&slide.bgType==='gradient'){
     const gradInp=el('input',{placeholder:'angle,#color1,#color2',value:slide.bgGrad||'135,#0f172a,#1e3a5f',style:{fontSize:'10px',width:'100%',marginBottom:'4px',padding:'3px 5px'}});
-    gradInp.oninput=()=>{slide.bgGrad=gradInp.value;saveDecks();repaint();};
+    gradInp.oninput=()=>{slide.bgGrad=gradInp.value;saveDecks();_slideRepaintDebounced();};
     propsPanel.appendChild(gradInp);
     propsPanel.appendChild(txt('div','Format: angle,#start,#end',{style:{fontSize:'9px',color:'var(--muted)'}}));
     const presets=[['135,#0f172a,#1e3a5f','Night'],['135,#7f1d1d,#1f0a12','Rose'],['180,#14231a,#0d2a0d','Forest'],['90,#0c4a6e,#0ea5e9','Ocean'],['135,#581c87,#312e81','Purple'],['45,#1c1917,#292524','Stone']];
@@ -58464,7 +58495,7 @@ function renderProps(){
       const oRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'3px'}});
       oRow.appendChild(txt('span','Opacity',{style:{fontSize:'10px',color:'var(--muted)'}}));
       const opInp=el('input',{type:'range',min:0,max:1,step:0.05,value:slide.bgImgOpacity||1,style:{flex:'1',marginLeft:'6px'}});
-      opInp.oninput=()=>{slide.bgImgOpacity=parseFloat(opInp.value);saveDecks();repaint();};
+      opInp.oninput=()=>{slide.bgImgOpacity=parseFloat(opInp.value);saveDecks();_slideRepaintDebounced();};
       oRow.appendChild(opInp);propsPanel.appendChild(oRow);
     }
   }
@@ -58529,7 +58560,7 @@ function renderProps(){
   const opRow=el('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'3px',gap:'4px'}});
   opRow.appendChild(txt('span','Opacity',{style:{fontSize:'10px',color:'var(--muted)',flexShrink:'0'}}));
   const opSlider=el('input',{type:'range',min:0,max:1,step:0.05,value:elem.opacity!=null?elem.opacity:1,style:{flex:'1'}});
-  opSlider.oninput=()=>{elem.opacity=parseFloat(opSlider.value);saveDecks();repaint();};
+  opSlider.oninput=()=>{elem.opacity=parseFloat(opSlider.value);saveDecks();_slideRepaintDebounced();};
   opRow.appendChild(opSlider);propsPanel.appendChild(opRow);
   checkboxRow('Shadow',elem.shadow,v2=>elem.shadow=v2);
 
@@ -58538,7 +58569,7 @@ function renderProps(){
     sec('TEXT');
     const textTa=el('textarea',{rows:3,style:{fontSize:'11px',lineHeight:'1.5',resize:'vertical',width:'100%',marginBottom:'3px'}});
     textTa.value=elem.text||'';
-    textTa.oninput=()=>{pushHist();elem.text=textTa.value;saveDecks();repaint();};
+    textTa.oninput=()=>{pushHist();elem.text=textTa.value;saveDecks();_slideRepaintDebounced();};
     propsPanel.appendChild(textTa);
 
     const fsInp=el('select',{style:{fontSize:'11px',width:'100%',marginBottom:'3px',padding:'2px 4px',border:'var(--thin)',borderRadius:'5px',background:'var(--card)',color:'var(--fg)'}});
@@ -58574,7 +58605,7 @@ function renderProps(){
     if(elem.textBg){
       propsPanel.appendChild(txt('span','BG Color',{style:{fontSize:'10px',color:'var(--muted)'}}));
       const tbgI=el('input',{type:'color',value:'#000000',style:{width:'100%',height:'24px',padding:'0',border:'var(--thin)',borderRadius:'4px',cursor:'pointer',marginBottom:'3px'}});
-      tbgI.oninput=()=>{pushHist();elem.textBgColor=tbgI.value;saveDecks();repaint();};
+      tbgI.oninput=()=>{pushHist();elem.textBgColor=tbgI.value;saveDecks();_slideRepaintDebounced();};
       propsPanel.appendChild(tbgI);
     }
 
