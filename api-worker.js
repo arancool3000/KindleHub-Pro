@@ -1112,8 +1112,14 @@ async function handleGeminiProxy(request, env, DB){
     await DB.prepare('INSERT INTO kh_shared_api_usage(date,count) VALUES(?,1) ON CONFLICT(date) DO UPDATE SET count=count+1').bind(today).run();
     const r = await DB.prepare('SELECT count FROM kh_shared_api_usage WHERE date=?').bind(today).first();
     newCount = (r&&r.count)||0; capActive=true;
-  }catch(_){ /* counter unavailable — serve without the cap */ }
-  if(capActive && newCount>cap){
+  }catch(_){ capActive=false; }
+  /* Fail CLOSED: if the usage counter is unavailable we cannot enforce the daily
+     cap, so refuse rather than serve UNMETERED shared-key calls (a cost/abuse
+     guard — users with their own key are unaffected). Was: served without a cap. */
+  if(!capActive){
+    return json({error:'Shared AI is briefly unavailable — try again shortly, or add your own Gemini key.',code:'CAP_UNAVAIL'},503,env);
+  }
+  if(newCount>cap){
     return json({error:'Shared key tapped out today ('+newCount+'/'+cap+'). Resets midnight UTC, or add your own Gemini key.',code:'CAP_REACHED',count:newCount,cap:cap},429,env);
   }
   const up = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':streamGenerateContent?alt=sse&key='+KEY,{
@@ -1630,7 +1636,7 @@ export default {
        this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */
     if(url.pathname==='/functions/v1/kh-gemini-proxy'){
       try{ return await handleGeminiProxy(request, env, DB); }
-      catch(e){ return json({error:String((e&&e.message)||e).slice(0,160)},500,env); }
+      catch(e){ try{console.error('proxy',(e&&e.message)||e);}catch(_){} return json({error:'AI proxy error'},500,env); }
     }
 
     const m = url.pathname.match(/^\/rest\/v1\/(rpc\/)?([A-Za-z0-9_]+)\/?$/);
@@ -1654,7 +1660,10 @@ export default {
         default:       return err('method not allowed',405,env);
       }
     }catch(e){
-      return err(String((e&&e.message)||e).slice(0,200), 500, env);
+      /* Don't leak backend/D1 exception text to clients — keep diagnostics
+         server-side (wrangler tail) and return a generic error. */
+      try{console.error('worker',(e&&e.message)||e);}catch(_){}
+      return err('Internal error', 500, env);
     }
   },
 };
