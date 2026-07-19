@@ -844,8 +844,27 @@ async function handlePost(table, url, request, env, DB){
        burn D1 storage + request capacity. Per-field caps for the hot columns; a
        generous global cap for anything else. group_code is also format-restricted
        so junk can't spawn garbage rooms/partitions. */
-    var _FMAX={text:4000,display_name:60,user_id:100,group_code:24,device_hint:200,location_hint:120,reactions:2000,subject:200,body:8000,from_user:60,to_user:60,from_id:100,to_id:100,name:80,reason:400,ua_hint:200,city:80,country:8,day:12,message:2000,stack:4000,url:400,comments:20000,targets:2000,author:60,html:600000};
-    for(var _fk in raw){ if(typeof raw[_fk]==='string'){ var _fm=_FMAX[_fk]||6000; if(raw[_fk].length>_fm)raw[_fk]=raw[_fk].slice(0,_fm); } }
+    /* CRITICAL: several columns hold ENCRYPTED ciphertext — kh_users.state,
+       kh_messages.text (also carries encrypted image/sticker/app-share media),
+       kh_mail.subject/body. Truncating ciphertext makes it PERMANENTLY
+       undecryptable (silent data loss), so we REJECT an oversized value with 413
+       rather than slicing it. Caps are generous — a legit encrypted blob always
+       passes; only genuinely abusive payloads trip it. (An earlier build sliced
+       these at 4–6 KB, which corrupted large states and any media message — this
+       replaces that.) */
+    var _FMAX={
+      state:16000000,            /* encrypted account blob — multi-MB */
+      text:200000,               /* chat message incl. encrypted media */
+      subject:8000, body:600000, /* encrypted mail (subject expands past plaintext) */
+      html:600000, comments:60000, reactions:8000, targets:8000,
+      message:8000, stack:8000, url:2000,
+      display_name:4000,         /* Slither packs a presence beacon in here */
+      user_id:200, group_code:24, device_hint:200, location_hint:200,
+      from_user:200, to_user:200, from_id:200, to_id:200,
+      name:200, reason:4000, ua_hint:400, city:120, country:16, day:16,
+      author:200, email:320, hash:200, secret:200, owner_secret:200
+    };
+    for(var _fk in raw){ if(typeof raw[_fk]==='string' && raw[_fk].length > (_FMAX[_fk]||16000)){ return err('Field "'+_fk+'" exceeds the maximum size',413,env); } }
     if(typeof raw.group_code==='string')raw.group_code=raw.group_code.replace(/[^A-Za-z0-9_-]/g,'').slice(0,24);
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
