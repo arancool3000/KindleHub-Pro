@@ -5086,6 +5086,7 @@ function launchKindleDesktop(){
     var ot=(vv&&typeof vv.offsetTop==='number'&&vv.offsetTop>0)?Math.round(vv.offsetTop):0;
     kd.style.top=ot+'px';
   }
+  var _kdRelayT=null;
   function _kdVpHandler(){
     if(!document.getElementById('kd-root')){
       try{window.removeEventListener('resize',_kdVpHandler);}catch(_e){}
@@ -5094,10 +5095,15 @@ function launchKindleDesktop(){
       return;
     }
     _kdFitVp();
-    /* If the visible height change altered how many icon rows fit, re-lay the
-       grid so the bottom row is never clipped (buildPages is hoisted; these
-       events only fire after the launcher is fully built). */
-    try{ if(_kdLastPer && iconsPerPage()!==_kdLastPer) buildPages(); }catch(_e5){}
+    /* Never rebuild the grid mid-drag — buildPages() tears down + recreates every
+       cell, orphaning the in-progress icon drag (same reason the swipe handlers
+       bail on _kdDragging). And DEBOUNCE the row-count relayout: a Kindle chrome
+       slide / pinch-scroll fires a burst of viewport events, and if clientHeight
+       animates across a row boundary iconsPerPage() would flip-flop and rebuild
+       repeatedly (an e-ink flash storm). One rebuild after the burst settles. */
+    if(window._kdDragging)return;
+    if(_kdRelayT)clearTimeout(_kdRelayT);
+    _kdRelayT=setTimeout(function(){_kdRelayT=null;try{if(document.getElementById('kd-root')&&!window._kdDragging&&_kdLastPer&&iconsPerPage()!==_kdLastPer)buildPages();}catch(_){}},170);
   }
   _kdFitVp();
   window.addEventListener('resize',_kdVpHandler);
@@ -6079,7 +6085,7 @@ function launchKindleDesktop(){
   /* First buildPages may have run before layout (clientHeight 0 → estimate);
      re-check on the next frame with the REAL measured height and re-lay if the
      row count differs. */
-  (function(){var raf=window.requestAnimationFrame||function(fn){return setTimeout(fn,16);};raf(function(){try{if(document.getElementById('kd-root')&&iconsPerPage()!==_kdLastPer)buildPages();}catch(_){}});})();
+  (function(){function _fix(){try{if(document.getElementById('kd-root')&&!window._kdDragging&&_kdLastPer&&iconsPerPage()!==_kdLastPer)buildPages();}catch(_){}}var raf=window.requestAnimationFrame||function(fn){return setTimeout(fn,16);};raf(_fix);setTimeout(_fix,140);setTimeout(_fix,450);})();/* kd is appended to the DOM AFTER this line, so re-check once layout is real; each _fix rebuilds only if the row count actually changed (idempotent, no thrash) */
   /* Let the App Store (a normal view, outside this closure) rebuild the home
      grid when an app is installed/removed so both stay in lock-step. Nulled on
      KindleOS exit so a stale closure can't fire. */
