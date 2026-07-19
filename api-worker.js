@@ -60,12 +60,19 @@
      needed. The key never reaches the client.
    • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
    • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
-   • MOD_HASHES   — (optional) comma-separated SHA-256 hashes of moderator codes.
-     A moderator code unlocks ONLY the kh_mod_stats RPC (aggregate community
-     COUNTS — never rows, user data, mail or message bodies) and nothing else.
-     Grant a moderator: pick a random code, put SHA-256(code) here, give them the
-     code (they paste it into Settings → Account → Moderator tools). REVOKE
-     instantly by removing the hash — no code deploy. Admins are always mods.
+   • MOD_HASHES   — (optional, LEGACY manual path) comma-separated SHA-256 hashes
+     of moderator codes, set by hand as a Worker env var. SUPERSEDED by the
+     turnkey IN-APP grant system below (no env var, no redeploy, nothing to
+     copy/paste server-side): the admin panel's "Moderators" card generates a
+     one-time invite code, the trusted person enters it in Settings → Account →
+     Moderator tools (creating a pending request), and the admin Accepts /
+     Declines it right there — see the kh_mod_grants table and the kh_mod_create
+     / kh_mod_claim / kh_mod_list / kh_mod_approve / kh_mod_decline / kh_mod_revoke
+     RPCs below. MOD_HASHES still works for anyone already using it (purely
+     additive, checked first). Either way, a mod token unlocks kh_mod_stats
+     (aggregate community COUNTS only) plus kh_ban_username / kh_unban_username /
+     kh_warn_username — EXCEPT a non-admin mod can NEVER ban or warn an admin
+     account (server-enforced, see isProtectedAdminName). Admins are always mods.
    • KH_PEPPER   — (optional, RECOMMENDED) envelope-at-rest secret. When set, the
      Worker wraps the sensitive ciphertext columns (kh_users.state, kh_mail
      subject/body, kh_messages.text) with AES-GCM keyed by this value BEFORE
@@ -167,17 +174,50 @@ async function sha256hex(s){
 }
 async function isAdmin(token){ return ADMIN_HASHES.indexOf(await sha256hex(token||'')) >= 0; }
 /* Limited MODERATOR role. A mod token unlocks ONLY the kh_mod_stats RPC
-   (aggregate counts — never rows, user data, mail or message bodies) and
-   nothing else; every privileged path still checks isAdmin. Mod hashes live in
-   the Worker env `MOD_HASHES` (comma-separated SHA-256 of each mod's code), so
-   the admin can grant OR instantly revoke a moderator by editing one env var —
-   no code deploy. Admins are implicitly mods. */
-async function isMod(token, env){
+   (aggregate counts — never rows, user data, mail or message bodies) plus
+   kh_ban_username / kh_unban_username / kh_warn_username — never anything else;
+   every privileged path still checks isAdmin first. A token can become a valid
+   mod in TWO ways (checked in this order, first match wins):
+   1. LEGACY: the Worker env `MOD_HASHES` (comma-separated SHA-256 of each mod's
+      code) — a manual, redeploy-to-revoke path kept for anyone already using it.
+   2. TURNKEY (new): a row in kh_mod_grants with status='active'. The admin
+      generates a one-time invite code in the app (kh_mod_create), the trusted
+      person enters it (kh_mod_claim flips it to 'requested'), and the admin
+      Accepts it (kh_mod_approve flips it to 'active') — all from the UI, no env
+      var, no redeploy. kh_mod_revoke flips it to 'revoked' and the SAME code
+      stops passing this check immediately.
+   DB is optional so old callers that don't pass one just skip step 2 (env-only
+   behaviour, unchanged); a missing/broken kh_mod_grants table fails CLOSED
+   (returns false from the try/catch) rather than throwing. Admins are always
+   implicitly mods (checked first, so an admin's own token never depends on
+   either mod path). */
+async function isMod(token, env, DB){
   if(await isAdmin(token)) return true;
-  const raw = (env && env.MOD_HASHES) || '';
-  if(!raw) return false;
   const h = await sha256hex(token||'');
-  return raw.split(',').map(s=>s.trim()).filter(Boolean).indexOf(h) >= 0;
+  const raw = (env && env.MOD_HASHES) || '';
+  if(raw && raw.split(',').map(s=>s.trim()).filter(Boolean).indexOf(h) >= 0) return true;
+  if(DB){
+    try{
+      const row = await DB.prepare("SELECT id FROM kh_mod_grants WHERE code_hash=? AND status='active'").bind(h).first();
+      if(row) return true;
+    }catch(_){ /* table missing / DB error → fail closed, never throw */ }
+  }
+  return false;
+}
+/* PROTECT THE ADMIN: a granted moderator's code must NEVER be able to ban or
+   warn an actual admin account (defence against a mod "turning evil"). Names
+   are compared lowercase/trimmed. The set is env `ADMIN_USERNAMES` (comma-sep,
+   same var the auto-moderator already uses to skip admins) PLUS the two
+   hardcoded aliases that are already one admin account (see
+   _khCanonicalUsername in index.html: 'aran' <-> 'arancool3000'). Admins
+   themselves bypass this check entirely (they may moderate anyone, including
+   another admin) — only checked for a NON-admin caller. */
+function isProtectedAdminName(name, env){
+  const n = String(name||'').trim().toLowerCase();
+  if(!n) return false;
+  if(n==='arancool3000' || n==='aran') return true;
+  const admins = String((env&&env.ADMIN_USERNAMES)||'').toLowerCase().split(',').map(function(s){return s.trim();}).filter(Boolean);
+  return admins.indexOf(n) >= 0;
 }
 
 const QUOTE = id => '"'+String(id).replace(/"/g,'')+'"';
@@ -394,7 +434,7 @@ async function handleRpc(fn, body, DB, env, request){
        rows — no usernames, emails, message/mail bodies or state blobs — so a
        moderator can see how the community is doing without any access to user or
        cloud data. Gated by isMod (admins included). */
-    if(!await isMod(body.p_token, env)) return err('unauthorized',403,env);
+    if(!await isMod(body.p_token, env, DB)) return err('unauthorized',403,env);
     const one = async (sql, binds) => { try{ const r = await DB.prepare(sql).bind(...(binds||[])).first(); return (r && typeof r.c==='number') ? r.c : 0; }catch(_){ return 0; } };
     const today = nowIso().slice(0,10);
     const d7 = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
@@ -430,12 +470,17 @@ async function handleRpc(fn, body, DB, env, request){
     return json((res.meta&&res.meta.changes)||0, 200, env);
   }
   if(fn==='kh_ban_username'){
-    if(!await isMod(body.p_token, env)) return err('not authorized',403,env);
-    await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(String(body.p_name||'').trim().toLowerCase(),'admin',nowIso()).run();
+    if(!await isMod(body.p_token, env, DB)) return err('not authorized',403,env);
+    const _tgt = String(body.p_name||'').trim().toLowerCase();
+    /* PROTECT THE ADMIN: a non-admin mod (their code turned evil, or just a
+       mistake) can never ban an actual admin account. Admins themselves are
+       exempt from this check (they may ban anyone, incl. another admin). */
+    if(_tgt && !(await isAdmin(body.p_token)) && isProtectedAdminName(_tgt, env)) return err('cannot moderate an admin',403,env);
+    await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(_tgt,'admin',nowIso()).run();
     return json(null,204,env);
   }
   if(fn==='kh_unban_username'){
-    if(!await isMod(body.p_token, env)) return err('not authorized',403,env);
+    if(!await isMod(body.p_token, env, DB)) return err('not authorized',403,env);
     await DB.prepare('DELETE FROM kh_banned_usernames WHERE name=?').bind(String(body.p_name||'').trim().toLowerCase()).run();
     return json(null,204,env);
   }
@@ -445,14 +490,81 @@ async function handleRpc(fn, body, DB, env, request){
        warn tag + a single-username target, so a mod can only ever warn one named
        user and can NEVER post a broadcast/general announcement (that stays
        admin-only via kh_post_announcement). Text mirrors the client _WARN_TAG. */
-    if(!await isMod(body.p_token, env)) return err('unauthorized',403,env);
+    if(!await isMod(body.p_token, env, DB)) return err('unauthorized',403,env);
     const target = String(body.p_name||'').trim().toLowerCase();
     if(!target) return err('missing username',400,env);
+    /* PROTECT THE ADMIN — same rule as kh_ban_username above. */
+    if(!(await isAdmin(body.p_token)) && isProtectedAdminName(target, env)) return err('cannot moderate an admin',403,env);
     const reason = (String(body.p_reason||'').trim().slice(0,600)) || 'Please follow the community rules.';
     const wtext = '[[KH_WARN]]WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
     const wres = await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext.slice(0,1000), JSON.stringify([target]), nowIso()).run();
     const wid = wres.meta && wres.meta.last_row_id;
     return json(wid||0, 200, env);
+  }
+  /* ── Turnkey in-app moderator GRANT lifecycle ─────────────────────────────
+     Six RPCs implementing "generate a one-time invite code -> the trusted
+     person enters it -> a pending request appears for the admin to Accept or
+     Decline -> the admin can later Revoke". See the isMod() doc comment above
+     for how an 'active' row feeds back into every mod-gated RPC. */
+  if(fn==='kh_mod_create'){
+    /* ADMIN only. The client generates a random plaintext code itself and sends
+       ONLY its SHA-256 — the plaintext never touches the server, exactly like a
+       password hash. Starts 'pending' (nobody has entered it yet). */
+    if(!await isAdmin(body.p_token)) return err('unauthorized',403,env);
+    const hash = String(body.p_code_hash||'');
+    if(!/^[0-9a-f]{64}$/.test(hash)) return err('invalid code hash',400,env);
+    try{
+      const res = await DB.prepare('INSERT INTO kh_mod_grants(code_hash,status,created_at) VALUES(?,?,?)').bind(hash,'pending',nowIso()).run();
+      return json({id:(res.meta&&res.meta.last_row_id)||0}, 200, env);
+    }catch(e){ return err('could not create invite code — try again',400,env); }
+  }
+  if(fn==='kh_mod_claim'){
+    /* PUBLIC — no auth (anyone with the code can claim it; that's the point).
+       Enforces ONE-TIME use with a single WHERE clause: only a row still
+       'pending' matches, so a code that's already been requested, made active,
+       or revoked simply won't match and this becomes a no-op ({ok:false}). No
+       race window beyond SQLite's own single-writer semantics. */
+    const hash = String(body.p_code_hash||'');
+    if(!hash) return err('missing code',400,env);
+    const name = String(body.p_name||'').trim().slice(0,60) || 'Anonymous';
+    const uid = String(body.p_uid||'').trim().slice(0,32);
+    const res = await DB.prepare("UPDATE kh_mod_grants SET status='requested', requester_name=?, requester_uid=?, claimed_at=? WHERE code_hash=? AND status='pending'").bind(name, uid, nowIso(), hash).run();
+    const changed = !!(res && res.meta && res.meta.changes);
+    return json({ok:changed}, 200, env);
+  }
+  if(fn==='kh_mod_list'){
+    /* ADMIN only. Never returns code_hash — the admin reviews WHO is asking,
+       not the secret itself (matches the "never serve owner_secret"-style rule
+       used elsewhere in this file). */
+    if(!await isAdmin(body.p_token)) return err('unauthorized',403,env);
+    const res = await DB.prepare("SELECT id,status,requester_name,requester_uid,created_at,claimed_at FROM kh_mod_grants WHERE status IN ('pending','requested','active') ORDER BY id DESC").all();
+    return json((res && res.results) || [], 200, env);
+  }
+  if(fn==='kh_mod_approve'){
+    /* ADMIN only. Only flips a row that is still 'requested' — approving an
+       already-active/revoked/unknown id is a no-op (404), not an error state a
+       double-click could corrupt. */
+    if(!await isAdmin(body.p_token)) return err('unauthorized',403,env);
+    const res = await DB.prepare("UPDATE kh_mod_grants SET status='active', approved_at=? WHERE id=? AND status='requested'").bind(nowIso(), body.p_id).run();
+    if(!res || !res.meta || !res.meta.changes) return err('not found or not pending review',404,env);
+    return json({ok:true}, 200, env);
+  }
+  if(fn==='kh_mod_decline'){
+    /* ADMIN only. Removes the request outright (nothing worth keeping — the
+       person can be re-invited with a fresh code any time). */
+    if(!await isAdmin(body.p_token)) return err('unauthorized',403,env);
+    const res = await DB.prepare("DELETE FROM kh_mod_grants WHERE id=? AND status='requested'").bind(body.p_id).run();
+    if(!res || !res.meta || !res.meta.changes) return err('not found or not pending review',404,env);
+    return json({ok:true}, 200, env);
+  }
+  if(fn==='kh_mod_revoke'){
+    /* ADMIN only. Sets 'revoked' (keeps the row for an audit trail) rather than
+       deleting — after this the SAME code immediately stops passing isMod().
+       Not restricted to status='active' so an admin can also cancel a stray
+       pending/requested code before it's ever used. */
+    if(!await isAdmin(body.p_token)) return err('unauthorized',403,env);
+    const res = await DB.prepare("UPDATE kh_mod_grants SET status='revoked' WHERE id=?").bind(body.p_id).run();
+    return json({ok:!!(res && res.meta && res.meta.changes)}, 200, env);
   }
   if(fn==='kh_increment_shared_api'){
     const d = String(body.p_date||nowIso().slice(0,10));
@@ -856,6 +968,12 @@ const SCHEMA_DDL = [
   "CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC)",
   "CREATE TABLE IF NOT EXISTS kh_shared_api_usage (date TEXT PRIMARY KEY, count INTEGER DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS kh_banned_usernames (name TEXT PRIMARY KEY, reason TEXT DEFAULT '', created_at TEXT)",
+  /* Turnkey in-app moderator invite/grant system — see isMod() and the
+     kh_mod_create/claim/list/approve/decline/revoke RPCs. code_hash is the
+     SHA-256 of a one-time plaintext invite code (plaintext never stored).
+     status: pending -> requested -> active -> revoked. */
+  "CREATE TABLE IF NOT EXISTS kh_mod_grants (id INTEGER PRIMARY KEY AUTOINCREMENT, code_hash TEXT UNIQUE, status TEXT DEFAULT 'pending', requester_name TEXT, requester_uid TEXT, created_at TEXT, claimed_at TEXT, approved_at TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_mod_grants_status ON kh_mod_grants(status)",
   "CREATE TABLE IF NOT EXISTS kh_visits (device_id TEXT NOT NULL, day TEXT NOT NULL, last_seen TEXT, ua_hint TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '', PRIMARY KEY (device_id, day))",
   "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS kh_daily (date TEXT PRIMARY KEY, n INTEGER DEFAULT 0, w INTEGER DEFAULT 0)",
