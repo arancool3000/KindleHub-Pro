@@ -568,6 +568,19 @@ async function handleRpc(fn, body, DB, env, request){
   }
   if(fn==='kh_increment_shared_api'){
     const d = String(body.p_date||nowIso().slice(0,10));
+    /* SECURITY: this is a public, unauthenticated RPC, so an attacker could loop
+       it to inflate the shared-AI usage counter and deny AI service to everyone.
+       Cap per-IP daily increments (a legit heavy user makes at most a few dozen
+       shared calls/day); past the cap just RETURN the current count WITHOUT
+       incrementing, so one source can't burn the shared allowance. rlHit fails
+       open if the Cache API is unavailable, so legit traffic is never blocked. */
+    try{
+      var _sip=(request&&request.headers&&request.headers.get('cf-connecting-ip'))||'0';
+      if(await rlHit(_sip, (parseInt((env&&env.SHARED_INCR_CAP)||'',10)||80), 86400, 'sai')){
+        const rc = await DB.prepare('SELECT count FROM kh_shared_api_usage WHERE date=?').bind(d).first();
+        return json((rc&&rc.count)||0, 200, env);
+      }
+    }catch(_e){}
     await DB.prepare('INSERT INTO kh_shared_api_usage(date,count) VALUES(?,1) ON CONFLICT(date) DO UPDATE SET count=count+1').bind(d).run();
     const r = await DB.prepare('SELECT count FROM kh_shared_api_usage WHERE date=?').bind(d).first();
     return json((r&&r.count)||0, 200, env);
@@ -1156,16 +1169,23 @@ async function runAutoModeration(DB, env){
       const name = ((text.match(/Username:\s*"([^"]+)"/)||[])[1]||'').trim();
       if(!name){ await markFeedback(DB, row.id, 'open', 'no username parsed'); continue; }
       if(admins.indexOf(name.toLowerCase())>=0){ await markFeedback(DB, row.id, 'open', 'subject is an admin — skipped'); continue; }
-      /* reuse the client-recorded verdict if present, else ask Gemini */
-      let verdict = (text.match(/AI:\s*(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || '';
-      if(!verdict){ const out = await geminiOnce(env, modPrompt(text, name)); verdict = (String(out).match(/(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || ''; }
+      /* SECURITY: NEVER trust a client-embedded "AI: BAN" verdict — anyone can
+         submit a report whose text contains that string and would otherwise get
+         a named user auto-banned. Always re-derive the verdict SERVER-SIDE from
+         Gemini, with any embedded "AI: <verdict>" line STRIPPED first so it can't
+         bias the model. If Gemini is unavailable, leave it for a human — never
+         auto-action on a report we couldn't independently judge. */
+      const cleanText = text.replace(/AI:\s*(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/ig, '');
+      const out = await geminiOnce(env, modPrompt(cleanText, name));
+      let verdict = (String(out).match(/(?:BAN|WARN|ESCALATE|IGNORE|NEEDINFO)\b[^\n]*/i)||[])[0] || '';
+      if(!verdict){ await markFeedback(DB, row.id, 'open', 'no server AI verdict — needs human review'); continue; }
       const action = ((verdict.match(/(BAN|WARN|ESCALATE|IGNORE|NEEDINFO)/i)||[])[1]||'ESCALATE').toUpperCase();
       const reason = ((verdict.split('—')[1] || verdict.replace(/^[^-]*-/,'') || 'community guidelines').trim()).slice(0,160);
       if(action==='BAN'){
         await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(name.toLowerCase(), 'auto-mod: '+reason, nowIso()).run();
         await markFeedback(DB, row.id, 'done', 'auto-banned: '+reason);
       } else if(action==='WARN'){
-        const wtext = '⚠ WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
+        const wtext = '[[KH_WARN]]WARNING from the moderators\n\n'+reason+'\n\nThis is a warning, not a ban — repeated issues may lead to a ban.';
         await DB.prepare('INSERT INTO kh_announcements(text,active,targets,created_at) VALUES(?,1,?,?)').bind(wtext, JSON.stringify([name]), nowIso()).run();
         await markFeedback(DB, row.id, 'done', 'auto-warned: '+reason);
       } else if(action==='IGNORE'){
@@ -1272,7 +1292,16 @@ async function getConfig(DB, key){ try{ const r=await DB.prepare("SELECT v FROM 
 async function setConfig(DB, key, val){ try{ await DB.prepare("INSERT INTO kh_config(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(key,String(val==null?'':val)).run(); }catch(_){} }
 async function maintKey(env, DB){ if(env&&env.MAINT_KEY) return env.MAINT_KEY; const v=await getConfig(DB,'maint_key'); return v?await unwrapCell(v, env):''; }
 async function maintEnabled(env, DB){ if(env&&env.MAINT_ON&&String(env.MAINT_ON)!=='0'&&String(env.MAINT_ON).toLowerCase()!=='false') return true; return (await getConfig(DB,'maint_on'))==='1'; }
-async function maintStageOnly(env, DB){ if(env&&String(env.MAINT_STAGE_ONLY)==='1') return true; return (await getConfig(DB,'maint_stage_only'))==='1'; }
+async function maintStageOnly(env, DB){
+  /* SAFE DEFAULT = STAGE ONLY. Auto-publishing AI-generated JavaScript to every
+     client is high-risk (the Silk safety filter blocks syntax, not exfiltration/
+     network/DOM abuse comprehensively), so staging (needs_review) is the default
+     and auto-publish must be an EXPLICIT opt-out: env MAINT_STAGE_ONLY=0 or the
+     in-app auto-publish toggle set to off. Unset = staged. */
+  if(env&&String(env.MAINT_STAGE_ONLY)==='1') return true;
+  if(env&&String(env.MAINT_STAGE_ONLY)==='0') return false;
+  return (await getConfig(DB,'maint_stage_only'))!=='0';
+}
 async function runAutoMaintenance(DB, env){
   const KEY=await maintKey(env, DB); if(!KEY) return {ran:false,reason:'no maintenance key'};
   const mDetect=(env&&env.MAINT_DETECT_MODEL)||'gemini-3.1-flash-lite';
