@@ -3371,6 +3371,62 @@ const LOCATION_CITIES=[
   {n:'Honolulu',lat:21.31,lon:-157.86,tz:'Pacific/Honolulu'},
   {n:'Reykjavik',lat:64.13,lon:-21.9,tz:'Atlantic/Reykjavik'},
   {n:'Anchorage',lat:61.22,lon:-149.9,tz:'America/Anchorage'},
+  /* Greece & the Greek islands */
+  {n:'Thessaloniki',lat:40.64,lon:22.94,tz:'Europe/Athens'},
+  {n:'Patras',lat:38.25,lon:21.73,tz:'Europe/Athens'},
+  {n:'Heraklion (Crete)',lat:35.34,lon:25.13,tz:'Europe/Athens'},
+  {n:'Chania (Crete)',lat:35.51,lon:24.02,tz:'Europe/Athens'},
+  {n:'Rhodes',lat:36.43,lon:28.22,tz:'Europe/Athens'},
+  {n:'Corfu',lat:39.62,lon:19.92,tz:'Europe/Athens'},
+  {n:'Santorini',lat:36.39,lon:25.46,tz:'Europe/Athens'},
+  {n:'Mykonos',lat:37.45,lon:25.33,tz:'Europe/Athens'},
+  {n:'Kos',lat:36.89,lon:27.29,tz:'Europe/Athens'},
+  {n:'Zakynthos',lat:37.79,lon:20.90,tz:'Europe/Athens'},
+  {n:'Naxos',lat:37.10,lon:25.38,tz:'Europe/Athens'},
+  {n:'Paros',lat:37.08,lon:25.15,tz:'Europe/Athens'},
+  {n:'Ioannina',lat:39.67,lon:20.85,tz:'Europe/Athens'},
+  /* More of the Mediterranean & Europe */
+  {n:'Nicosia',lat:35.17,lon:33.36,tz:'Asia/Nicosia'},
+  {n:'Valletta',lat:35.90,lon:14.51,tz:'Europe/Malta'},
+  {n:'Palermo',lat:38.12,lon:13.36,tz:'Europe/Rome'},
+  {n:'Naples',lat:40.85,lon:14.27,tz:'Europe/Rome'},
+  {n:'Venice',lat:45.44,lon:12.32,tz:'Europe/Rome'},
+  {n:'Milan',lat:45.46,lon:9.19,tz:'Europe/Rome'},
+  {n:'Barcelona',lat:41.39,lon:2.17,tz:'Europe/Madrid'},
+  {n:'Valencia',lat:39.47,lon:-0.38,tz:'Europe/Madrid'},
+  {n:'Seville',lat:37.39,lon:-5.99,tz:'Europe/Madrid'},
+  {n:'Porto',lat:41.15,lon:-8.61,tz:'Europe/Lisbon'},
+  {n:'Marseille',lat:43.30,lon:5.37,tz:'Europe/Paris'},
+  {n:'Nice',lat:43.70,lon:7.27,tz:'Europe/Paris'},
+  {n:'Munich',lat:48.14,lon:11.58,tz:'Europe/Berlin'},
+  {n:'Frankfurt',lat:50.11,lon:8.68,tz:'Europe/Berlin'},
+  {n:'Hamburg',lat:53.55,lon:9.99,tz:'Europe/Berlin'},
+  {n:'Geneva',lat:46.20,lon:6.14,tz:'Europe/Zurich'},
+  {n:'Kyiv',lat:50.45,lon:30.52,tz:'Europe/Kyiv'},
+  /* Middle East & Asia */
+  {n:'Tel Aviv',lat:32.09,lon:34.78,tz:'Asia/Jerusalem'},
+  {n:'Jerusalem',lat:31.78,lon:35.22,tz:'Asia/Jerusalem'},
+  {n:'Doha',lat:25.29,lon:51.53,tz:'Asia/Qatar'},
+  {n:'Abu Dhabi',lat:24.45,lon:54.38,tz:'Asia/Dubai'},
+  {n:'Tehran',lat:35.69,lon:51.39,tz:'Asia/Tehran'},
+  {n:'Bali (Denpasar)',lat:-8.65,lon:115.22,tz:'Asia/Makassar'},
+  {n:'Phuket',lat:7.88,lon:98.39,tz:'Asia/Bangkok'},
+  {n:'Kyoto',lat:35.01,lon:135.77,tz:'Asia/Tokyo'},
+  {n:'Osaka',lat:34.69,lon:135.50,tz:'Asia/Tokyo'},
+  /* Americas */
+  {n:'Montreal',lat:45.50,lon:-73.57,tz:'America/Toronto'},
+  {n:'Atlanta',lat:33.75,lon:-84.39,tz:'America/New_York'},
+  {n:'Philadelphia',lat:39.95,lon:-75.17,tz:'America/New_York'},
+  {n:'Austin',lat:30.27,lon:-97.74,tz:'America/Chicago'},
+  {n:'San Diego',lat:32.72,lon:-117.16,tz:'America/Los_Angeles'},
+  {n:'Phoenix',lat:33.45,lon:-112.07,tz:'America/Phoenix'},
+  {n:'Lima',lat:-12.05,lon:-77.04,tz:'America/Lima'},
+  {n:'Bogota',lat:4.71,lon:-74.07,tz:'America/Bogota'},
+  {n:'Santiago',lat:-33.45,lon:-70.67,tz:'America/Santiago'},
+  /* Africa */
+  {n:'Marrakech',lat:31.63,lon:-7.99,tz:'Africa/Casablanca'},
+  {n:'Accra',lat:5.60,lon:-0.19,tz:'Africa/Accra'},
+  {n:'Addis Ababa',lat:9.03,lon:38.74,tz:'Africa/Addis_Ababa'},
 ];
 /* Helper: apply a saved city to S and all live views */
 function applyHomeCity(city){
@@ -11082,7 +11138,9 @@ async function _getGeo(){
   let cached=null;
   try{cached=JSON.parse(localStorage.getItem('kh_geo')||'null');}catch(e){}
   const week=7*24*60*60*1000;
-  if(cached&&cached.ts&&(Date.now()-cached.ts)<week)return cached;
+  /* Re-fetch if the cache is stale OR predates lat/lon being stored, so the
+     "Use my location" feature can self-heal an older cache that lacked coords. */
+  if(cached&&cached.ts&&(Date.now()-cached.ts)<week&&typeof cached.lat==='number')return cached;
   try{
     const r=await fetch('https://ipapi.co/json/');
     if(!r.ok)return cached||null;
@@ -11090,11 +11148,26 @@ async function _getGeo(){
     const geo={
       country:(d.country_code||'').slice(0,4),
       city:(d.city||'').slice(0,80),
+      lat:(typeof d.latitude==='number'?d.latitude:null),
+      lon:(typeof d.longitude==='number'?d.longitude:null),
+      tz:(d.timezone||'').slice(0,64),
       ts:Date.now(),
     };
     try{localStorage.setItem('kh_geo',JSON.stringify(geo));}catch(e){}
     return geo;
   }catch(e){return cached||null;}
+}
+
+/* Resolve the device's approximate location from its IP (city-level).
+   Returns {lat,lon,city,tz} or null. Reuses the _getGeo cache/endpoint. */
+async function _ipLocate(){
+  try{
+    const g=await _getGeo();
+    if(g&&typeof g.lat==='number'&&typeof g.lon==='number'){
+      return {lat:g.lat,lon:g.lon,city:g.city||'My location',tz:g.tz||''};
+    }
+  }catch(e){}
+  return null;
 }
 
 async function _logVisit(){
@@ -41754,6 +41827,21 @@ settings:()=>{
   citySearchInp.oninput=khDebounce(()=>filterCities(citySearchInp.value),180);
   c1.appendChild(citySearchInp);
 
+  /* One-tap IP geolocation — fills lat/lon from the device's IP (city-level),
+     so anyone can use their exact detected spot without hunting for a nearby
+     listed city ("only major cities are shown"). */
+  const _ipLocBtn=txt('button','Use my location',{className:'btn',style:{marginBottom:'6px',fontSize:'12px',width:'100%'}});
+  _ipLocBtn.onclick=async()=>{
+    const _o=_ipLocBtn.textContent;_ipLocBtn.disabled=true;_ipLocBtn.textContent='Locating…';
+    const loc=await _ipLocate();
+    _ipLocBtn.disabled=false;_ipLocBtn.textContent=_o;
+    if(!loc){if(typeof toast==='function')toast('Could not detect your location — pick a city or enter coordinates.');return;}
+    applyHomeCity({n:loc.city||'My location',lat:loc.lat,lon:loc.lon,tz:loc.tz||''});
+    try{_latInp.value=loc.lat;_lonInp.value=loc.lon;_cNameInp.value=loc.city||'My location';locSel.value='__custom__';_customPanel2.style.display='flex';}catch(e){}
+    if(typeof toast==='function')toast('Location set to '+(loc.city||'your area')+' ('+loc.lat.toFixed(2)+', '+loc.lon.toFixed(2)+')');
+  };
+  c1.appendChild(_ipLocBtn);
+
   const locSel=el('select',{style:{marginBottom:'6px',fontSize:'12px'}});
   const _customOpt=document.createElement('option');_customOpt.value='__custom__';_customOpt.textContent='Custom coordinates...';
   LOCATION_CITIES.forEach(c=>{
@@ -45858,6 +45946,8 @@ starmap:()=>{
   /* Build option list: dedupe by name, sort alphabetically, current city pre-selected. */
   const seenCities={};
   (CITIES||[]).forEach(c=>{const k=c.n||c.name;if(k&&!seenCities[k])seenCities[k]=c;});
+  /* IP-geolocation option pinned to the top of the list. */
+  const _smIpOpt=el('option',{value:'__ip__'});_smIpOpt.textContent='Use my location';citySel.appendChild(_smIpOpt);
   Object.keys(seenCities).sort().forEach(name=>{
     const c=seenCities[name];
     const opt=el('option',{value:name});
@@ -45867,9 +45957,25 @@ starmap:()=>{
     if(name===smCity)opt.selected=true;
     citySel.appendChild(opt);
   });
-  citySel.onchange=()=>{
+  citySel.onchange=async()=>{
     const opt=citySel.options[citySel.selectedIndex];
     if(!opt)return;
+    if(opt.value==='__ip__'){
+      const loc=await _ipLocate();
+      if(!loc){if(typeof toast==='function')toast('Could not detect your location.');
+        for(let i=0;i<citySel.options.length;i++){if(citySel.options[i].value===smCity){citySel.selectedIndex=i;break;}}
+        return;
+      }
+      smCity=loc.city||'My location';smLat=loc.lat;smLon=loc.lon;
+      S.smCity=smCity;S.smLat=smLat;S.smLon=smLon;S.smTz=loc.tz||'';save(2000);
+      let ex=null;for(let i=0;i<citySel.options.length;i++){if(citySel.options[i].value===smCity){ex=citySel.options[i];break;}}
+      if(!ex){ex=el('option',{value:smCity});ex.textContent=smCity;citySel.appendChild(ex);}
+      ex.dataset.lat=String(smLat);ex.dataset.lon=String(smLon);ex.selected=true;
+      try{const _lbl=v.querySelector('.sm-city-label');if(_lbl)_lbl.textContent=_smCityEsc(smCity);}catch(e){}
+      draw();
+      if(typeof toast==='function')toast('Location set to '+smCity);
+      return;
+    }
     smCity=opt.value;
     smLat=parseFloat(opt.dataset.lat);
     smLon=parseFloat(opt.dataset.lon);
@@ -46466,8 +46572,8 @@ starmap:()=>{
     function add(o){const k=(o.name||'').toLowerCase();if(!k||seen[k])return;seen[k]=1;idx.push(o);}
     [].concat(STARS_BRIGHT,STARS_DEEP).forEach(s=>add({name:s[3],type:'Star',kind:'Star',ra:s[0],dec:s[1],mag:s[2],con:s[4]}));
     DSO.forEach(d=>add({name:d[3],type:'DSO',kind:'Deep-sky object',ra:d[0],dec:d[1],dsoType:d[2],mag:d[4]}));
-    SATS.forEach(sat=>add({name:sat.n,type:'Satellite',kind:'Satellite',sat:sat,cat:sat.k||''}));
-    try{planetPos(jdNow()).forEach(pl=>add({name:pl.name,type:'Planet',kind:'Planet',ra:pl.ra,dec:pl.dec}));}catch(_){}
+    SATS.forEach(sat=>add({name:sat.n,type:'Satellite',kind:'Satellite',sat:sat,cat:sat.k||'',mag:_satMag(sat)}));
+    try{planetPos(jdNow()).forEach(pl=>add({name:pl.name,type:'Planet',kind:'Planet',ra:pl.ra,dec:pl.dec,mag:pl.mag}));}catch(_){}
     return idx;
   }
   /* Compute an object's CURRENT alt/az. Satellites use the SGP4-ish
@@ -46489,7 +46595,7 @@ starmap:()=>{
   }
   function _smGoTo(o){
     const aa=_smAltAz(o);
-    const s={name:o.name,type:o.type,kind:o.kind,con:o.con,mag:o.mag,dsoType:o.dsoType,cat:o.cat};
+    const s={name:o.name,type:o.type,kind:o.kind,con:o.con,mag:o.mag,dsoType:o.dsoType,cat:o.cat,ra:o.ra,dec:o.dec,sat:o.sat};
     if(aa){s.aa={az:aa.az,alt:aa.alt};if(aa.rng)s.rng=aa.rng;}
     /* Make sure the layer that draws this object is switched on. */
     if(o.type==='Satellite'&&tSat.dataset.on!=='1')tSat.click();
@@ -46907,12 +47013,14 @@ starmap:()=>{
       const dec=i*Math.sin(eLon*D2R);
       return{ra,dec};
     }
+    /* mag = representative average apparent magnitude (planets vary with
+       phase/distance; shown as an approximate "how bright" in the info card). */
     return[
-      {name:'Mercury',col:'#bbb',...pl(252.25,149474.07,0.206,7)},
-      {name:'Venus',col:'#ffd',...pl(181.98,58519.21,0.007,3.4)},
-      {name:'Mars',col:'#f84',...pl(355.43,19141.70,0.093,1.85)},
-      {name:'Jupiter',col:'#e8c',...pl(34.35,3036.30,0.049,1.3)},
-      {name:'Saturn',col:'#db8',...pl(50.08,1223.51,0.056,2.49)},
+      {name:'Mercury',col:'#bbb',mag:0.0,...pl(252.25,149474.07,0.206,7)},
+      {name:'Venus',col:'#ffd',mag:-4.0,...pl(181.98,58519.21,0.007,3.4)},
+      {name:'Mars',col:'#f84',mag:0.7,...pl(355.43,19141.70,0.093,1.85)},
+      {name:'Jupiter',col:'#e8c',mag:-2.2,...pl(34.35,3036.30,0.049,1.3)},
+      {name:'Saturn',col:'#db8',mag:0.5,...pl(50.08,1223.51,0.056,2.49)},
     ];
   }
 
@@ -47345,6 +47453,9 @@ starmap:()=>{
       drawSatellites(jd,lstH,C);
     }
 
+    // Dotted trajectory of the tapped object (its path across the sky)
+    drawTrajectory(jd,lstH,C);
+
     ctx.restore();
 
     // Horizon circle — shows approximate horizon line at altitude 0
@@ -47447,6 +47558,16 @@ starmap:()=>{
     {n:'Inmarsat-5 F4',i:3.1,O:0.0,e:0.0001,w:0.0,M:200.0,nd:1.0027,ep:2460400.5,col:'#cef',k:'Comms'},
   ];
 
+  /* Representative PEAK visual magnitude (how bright a satellite can get —
+     it varies hugely with sun angle and range). Famous craft get a named
+     value; the rest fall back to a value for their orbit class. */
+  function _satMag(sat){
+    const byName={'ISS':-3,'Tiangong (CSS)':-2,'Hubble (HST)':2,'Starlink Train':3.5,'JWST (L2)':16};
+    if(byName[sat.n]!==undefined)return byName[sat.n];
+    const byClass={Station:-2,Telescope:6,EO:4.5,Weather:5.5,GNSS:11,Comms:6};
+    const m=byClass[sat.k];
+    return m===undefined?6:m;
+  }
   function satPosition(sat,jd){
     const mu=398600.4418; // km^3/s^2
     const Re=6378.137;
@@ -47526,6 +47647,51 @@ starmap:()=>{
       ctx.restore();
     });
   }
+  /* Dotted trajectory of the currently-selected object across the sky.
+     Fixed objects (star/planet/DSO) trace their diurnal arc as the local
+     sidereal time advances ±4h; satellites trace their next ~20-minute
+     pass (satPosition re-run over time). Drawn as small dots so it reads
+     as a dotted line on EVERY engine (no reliance on ctx.setLineDash,
+     which old Silk may ignore). Points below the horizon / off-screen /
+     behind the camera are skipped. A ring marks the object's "now"
+     position. Gated on _selectedObjName so deselecting clears it. */
+  function drawTrajectory(jd,lstH,C){
+    const o=_lastShownObj;
+    if(!o||!_selectedObjName)return;
+    const light=tLight.dataset.on==='1';
+    const pts=[];
+    let nowPt=null;
+    if(o.type==='Satellite'&&o.sat){
+      for(let dt=0;dt<=20;dt+=0.4){
+        const pos=satPosition(o.sat,jd+dt/1440);
+        if(!pos){pts.push(null);continue;}
+        const p=project(pos.az,pos.alt);
+        pts.push(p&&p.vis?p:null);
+        if(dt===0&&p&&p.vis)nowPt=p;
+      }
+    } else if(typeof o.ra==='number'&&typeof o.dec==='number'){
+      for(let h=-4;h<=4;h+=0.2){
+        const aa=raDecToAltAz(o.ra,o.dec,smLat,lstH+h);
+        if(aa.alt<-1){pts.push(null);continue;}
+        const p=project(aa.az,aa.alt);
+        pts.push(p&&p.vis?p:null);
+      }
+      const aaNow=raDecToAltAz(o.ra,o.dec,smLat,lstH);
+      if(aaNow.alt>=-1){const pn=project(aaNow.az,aaNow.alt);if(pn&&pn.vis)nowPt=pn;}
+    } else return;
+    ctx.save();
+    const dotCol=light?'rgba(30,90,200,0.85)':'rgba(120,205,255,0.9)';
+    ctx.fillStyle=dotCol;
+    for(let i=0;i<pts.length;i++){
+      const p=pts[i];if(!p)continue;
+      ctx.beginPath();ctx.arc(p.x,p.y,1.4,0,Math.PI*2);ctx.fill();
+    }
+    if(nowPt){
+      ctx.strokeStyle=dotCol;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.arc(nowPt.x,nowPt.y,7,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.restore();
+  }
   function hitTest(cx,cy){
     const jd=jdNow(),lstH=lst(jd,smLon);
     let best=null,bd=22;
@@ -47535,7 +47701,7 @@ starmap:()=>{
       const p=project(aa.az,aa.alt);
       if(!p||!p.vis)return;
       const d=Math.hypot(p.x-cx,p.y-cy);
-      if(d<bd){bd=d;best={name:s[3],con:s[4],mag:s[2],type:'Star',kind:'Star',aa};}
+      if(d<bd){bd=d;best={name:s[3],con:s[4],mag:s[2],type:'Star',kind:'Star',aa,ra:s[0],dec:s[1]};}
     });
     if(tPlan.dataset.on==='1'){
       planetPos(jdNow()).forEach(pl=>{
@@ -47544,7 +47710,7 @@ starmap:()=>{
         const p=project(aa.az,aa.alt);
         if(!p||!p.vis)return;
         const d=Math.hypot(p.x-cx,p.y-cy);
-        if(d<30&&d<bd){bd=d;best={name:pl.name,con:'',mag:0,type:'Planet',kind:'Planet',aa};}
+        if(d<30&&d<bd){bd=d;best={name:pl.name,con:'',mag:pl.mag,type:'Planet',kind:'Planet',aa,ra:pl.ra,dec:pl.dec};}
       });
     }
     if(tSat.dataset.on==='1'){
@@ -47554,7 +47720,7 @@ starmap:()=>{
         const p=project(pos.az,pos.alt);
         if(!p||!p.vis)return;
         const d=Math.hypot(p.x-cx,p.y-cy);
-        if(d<20&&d<bd){bd=d;best={name:sat.n,con:'',mag:-1,type:'Satellite',kind:'Satellite',cat:sat.k||'',aa:pos,rng:pos.rng};}
+        if(d<20&&d<bd){bd=d;best={name:sat.n,con:'',mag:_satMag(sat),type:'Satellite',kind:'Satellite',cat:sat.k||'',aa:pos,rng:pos.rng,sat:sat};}
       });
     }
     if(tDSO.dataset.on==='1'){
@@ -47564,7 +47730,7 @@ starmap:()=>{
         const p=project(aa.az,aa.alt);
         if(!p||!p.vis)return;
         const d=Math.hypot(p.x-cx,p.y-cy);
-        if(d<22&&d<bd){bd=d;best={name:dso[3],type:'DSO',kind:'Deep-sky object',dsoType:dso[2],mag:dso[4],aa};}
+        if(d<22&&d<bd){bd=d;best={name:dso[3],type:'DSO',kind:'Deep-sky object',dsoType:dso[2],mag:dso[4],aa,ra:dso[0],dec:dso[1]};}
       });
     }
     return best;
@@ -47712,9 +47878,11 @@ starmap:()=>{
     }
     if(s.type==='Planet'){
       stat('Body','Solar System planet');
+      if(s.mag!==undefined)stat('Brightness','mag '+s.mag.toFixed(1)+' (avg)');
       if(s.aa)stat('Trend',Math.sin(s.aa.az*D2R)>0?'rising':'setting');
     }
     if(s.type==='Satellite'){
+      if(s.mag!==undefined)stat('Brightness','mag '+s.mag.toFixed(1)+' (peak)');
       if(s.rng)stat('Range',s.rng.toLocaleString()+' km');
       if(s.cat)stat('Class',s.cat);
       stat('Source','TLE-derived (approx.)');
