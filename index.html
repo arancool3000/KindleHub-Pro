@@ -9927,6 +9927,11 @@ const _ADMIN_HASHES=[
 async function _checkAdmin(){
   if(typeof window._isAdminCached==='boolean')return window._isAdminCached;
   let result=false;
+  /* Rotated admin credential: if you set a random ADMIN_SECRET on the Worker and
+     saved it here (Settings -> Account -> Admin), send THAT as the admin token —
+     once ADMIN_SECRET is set the public username no longer works server-side. */
+  try{var _as=localStorage.getItem('kh_admin_secret')||'';if(_as){window._adminToken=_as;result=true;}}catch(_e){}
+  if(result){window._isAdminCached=true;try{if(typeof _khRefreshTierUI==='function')_khRefreshTierUI();}catch(_){}return true;}
   try{
     /* SECURITY: match ONLY the authenticated login identity (S.email), NOT the
        user-settable display name S.user — otherwise anyone who set their name to
@@ -11204,6 +11209,26 @@ function _khBuildModGrantsCard(){
   c.appendChild(codeOut);
   const listOut=el('div',{style:{fontSize:'12px',lineHeight:'1.6',marginTop:'12px'}});
   c.appendChild(listOut);
+  /* Admin credential rotation: if you set a random ADMIN_SECRET on the api-worker
+     (env var), paste the SAME value here so the app sends it as your admin token
+     instead of your PUBLIC username — which then stops granting admin server-side.
+     Closes the "anyone who knows the admin username is admin" hole. */
+  c.appendChild(el('hr',{style:{border:'none',borderTop:'var(--thin)',margin:'12px 0 8px'}}));
+  c.appendChild(txt('div','ADMIN SECRET (rotation)',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
+  c.appendChild(txt('div','Optional but recommended. Set a random ADMIN_SECRET on your api-worker, then paste the same value here — your username will no longer work as an admin token.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'6px'}}));
+  var _secIn=el('input',{type:'password',placeholder:'paste your ADMIN_SECRET'});_secIn.style.width='100%';_secIn.style.marginBottom='6px';
+  try{var _cur=localStorage.getItem('kh_admin_secret');if(_cur)_secIn.value=_cur;}catch(_e){}
+  c.appendChild(_secIn);
+  var _secSave=txt('button','Save admin secret',{className:'btn small'});
+  _secSave.onclick=function(){
+    var v=String(_secIn.value||'').trim();
+    try{ if(v)localStorage.setItem('kh_admin_secret',v); else localStorage.removeItem('kh_admin_secret'); }catch(_e2){}
+    if(v)window._adminToken=v;
+    window._isAdminCached=undefined;
+    try{if(typeof _checkAdmin==='function')_checkAdmin();}catch(_e3){}
+    if(typeof toast==='function')toast(v?'Admin secret saved — the app now authenticates with it.':'Admin secret cleared.');
+  };
+  c.appendChild(_secSave);
   async function refreshList(){
     listOut.textContent='Loading…';
     const rows=await _khRpcCall('kh_mod_list',{p_token:window._adminToken||''});
