@@ -7809,8 +7809,12 @@ async function khiCall(prompt, opts){
     try{
       /* Pass opts.model through so a caller (e.g. the App Store reviewer) can
          pin the shared proxy to a specific approved model; undefined = the
-         normal auto-switch chain, so every other shared caller is unaffected. */
-      const r=await callSharedGeminiStream([{role:'user',text:prompt}],t=>{_last=t;},{model:opts.model});
+         normal auto-switch chain, so every other shared caller is unaffected.
+         opts.preferModel is milder: it tries that model FIRST but still falls
+         through the rest of the shared chain if it's busy (used by AI
+         moderation, which wants gemini-3.1-flash-lite specifically but
+         shouldn't dead-end if that one model is rate-limited). */
+      const r=await callSharedGeminiStream([{role:'user',text:prompt}],t=>{_last=t;},{model:opts.model,preferModel:opts.preferModel});
       const out=String(r||_last||'').trim();
       return out||null;
     }catch(e){console.warn('KHI shared error',e);toast('KHI: shared key error');return null;}
@@ -9046,6 +9050,25 @@ function _tokenProfane(norm){
   }
   return false;
 }
+/* ── "67" meme filter ──────────────────────────────────────────────────
+   Admin request: black out the disruptive standalone "67" meme, but keep
+   legit uses of the number ("v67", "1967", "$67", "67%", "67kg", "route 67",
+   "67 pages", scores, addresses). A LONE "67" is one NOT glued to a letter,
+   digit, currency symbol ($ £ € ¥ #) on the left, or a letter, digit, % or °
+   on the right — so it's a bare token, never part of "1967"/"$67"/"67%"/"v67".
+   _LONE67_RE captures the leading delimiter (Silk has NO lookbehind) and uses
+   a negative LOOKAHEAD (allowed on Silk) for the trailing side. We only redact
+   when the WHOLE message is nothing but lone "67"s + separators (_khIs67Meme),
+   so "67"/"67 67 67"/"67!!!" go but "route 67"/"67 pages" (other real words
+   remain) stay. DISPLAY-only, reversible — same philosophy as the profanity
+   passes. Use _LONE67_RE ONLY with String.replace (stateless), never .test. */
+var _LONE67_RE=/(^|[^A-Za-z0-9$£€¥#])67(?![A-Za-z0-9%°])/g;
+function _khIs67Meme(s){
+  if(typeof s!=='string'||s.indexOf('67')<0)return false;
+  var stripped=s.replace(_LONE67_RE,function(m,lead){return lead;});
+  /* at least one lone 67 was removed AND nothing else alphanumeric remains */
+  return stripped!==s&&!/[A-Za-z0-9]/.test(stripped);
+}
 var _censorMemo=new Map();/* pure fn of its input (static word lists) — cache so chat/leaderboard re-renders don't re-run two regex passes on the same names every 15s */
 function _censorText(s){
   if(typeof s!=='string'||!s)return s;
@@ -9058,6 +9081,10 @@ function _censorText(s){
     if(_tokenProfane(_normLeet(tok)))return '█'.repeat(Math.max(3,tok.replace(/[^A-Za-z0-9]/g,'').length));
     return tok;
   });
+  /* Pass 3: the standalone "67" meme — redact every lone "67" ONLY when the
+     whole message is just lone "67"s + separators (see _khIs67Meme), so legit
+     sentences that merely contain a "67" are never touched. */
+  if(_khIs67Meme(out))out=out.replace(_LONE67_RE,function(m,lead){return lead+'██';});
   if(_censorMemo.size>=800)_censorMemo.clear();/* bound the cache */
   _censorMemo.set(s,out);
   return out;
@@ -10938,10 +10965,25 @@ async function _khModStats(tok){
   if(!tok) return {ok:false,status:401};
   try{
     const r=await fetch(_sbBase()+'/rest/v1/rpc/kh_mod_stats',{method:'POST',headers:Object.assign(_sbHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify({p_token:tok})});
-    if(!r.ok) return {ok:false,status:r.status};
+    if(!r.ok){ if(window._isAdminCached!==true)window._isModCached=false; return {ok:false,status:r.status}; }
+    try{window._isModCached=true;}catch(_){}
     return {ok:true,data:await r.json()};
   }catch(e){ return {ok:false,error:String(e&&e.message||e)}; }
 }
+function _khModToken(){ return (window._adminToken||'') || _modCode() || ''; }
+window._khModToken=_khModToken;
+/* Resolve whether THIS device holds a valid moderator credential (admin implies
+   mod). Verifies the stored code against the server's kh_mod_stats gate and
+   caches window._isModCached, so the client can surface the mod Warn/Ban actions
+   without re-hitting the server on every render. */
+async function _checkMod(){
+  if(window._isAdminCached===true){window._isModCached=true;return true;}
+  const code=_modCode();
+  if(!code){window._isModCached=false;return false;}
+  try{ const r=await _khModStats(code); window._isModCached=!!(r&&r.ok); }catch(_){ }
+  return window._isModCached===true;
+}
+window._checkMod=_checkMod;
 function _khBuildModCard(){
   const c=el('div',{style:{background:'var(--card)',border:'var(--border)',borderRadius:'10px',padding:'14px',marginTop:'12px',boxShadow:'var(--shadow)'}});
   c.appendChild(txt('div','MODERATOR TOOLS',{style:{fontSize:'9px',fontWeight:'800',letterSpacing:'.5px',color:'var(--muted)',marginBottom:'6px'}}));
@@ -10977,8 +11019,9 @@ function _khBuildModCard(){
 async function _khBanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
-  if(!window._adminToken){toast('Admin only — open the admin panel first.',4000);return false;}
-  const res=await _adminRpc('kh_ban_username',{p_name:String(name).slice(0,80),p_token:window._adminToken||''});
+  const _tok=_khModToken();
+  if(!_tok){toast('Moderators only — enter your moderator code in Settings → Account first.',4500);return false;}
+  const res=await _adminRpc('kh_ban_username',{p_name:String(name).slice(0,80),p_token:_tok});
   if(res.ok){
     if(_khBannedCache&&_khBannedCache.indexOf(String(name).toLowerCase())<0)_khBannedCache.push(String(name).toLowerCase());
     return true;
@@ -10991,8 +11034,9 @@ async function _khBanUsername(name){
 async function _khUnbanUsername(name){
   if(!name)return false;
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
-  if(!window._adminToken){toast('Admin only.',3000);return false;}
-  const res=await _adminRpc('kh_unban_username',{p_name:String(name).slice(0,80),p_token:window._adminToken||''});
+  const _tok=_khModToken();
+  if(!_tok){toast('Moderators only.',3000);return false;}
+  const res=await _adminRpc('kh_unban_username',{p_name:String(name).slice(0,80),p_token:_tok});
   if(res.ok&&_khBannedCache){const i=_khBannedCache.indexOf(String(name).toLowerCase());if(i>=0)_khBannedCache.splice(i,1);}
   return res.ok;
 }
@@ -11008,12 +11052,22 @@ async function _khWarnUsername(name){
   name=String(name||'').trim();
   if(!name){toast('No username to warn');return false;}
   if(typeof _checkAdmin==='function'){try{await _checkAdmin();}catch(_){}}
-  if(!window._adminToken){toast('Admin only — open the admin panel first.',4000);return false;}
+  const _tok=_khModToken();
+  if(!_tok){toast('Moderators only — enter your moderator code in Settings → Account first.',4500);return false;}
   const reason=await kindlePrompt('Warn “'+name+'” — what is this warning for? They’ll receive it as a private notice.','Please keep it respectful and follow the community rules.');
   if(reason==null)return false;/* admin cancelled */
   const msg=String(reason||'').trim()||'Please follow the community rules.';
   const text=_WARN_TAG+'WARNING from the moderators\n\n'+msg+'\n\nThis is a warning, not a ban — but repeated issues may lead to your account being banned.';
-  const ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken||'',p_targets:[name]});
+  let ok;
+  if(window._adminToken){
+    /* Admin: unchanged path — targeted announcement (works on Supabase + D1). */
+    ok=await _announceRpc('kh_post_announcement',{p_text:text.slice(0,1000),p_token:window._adminToken,p_targets:[name]});
+  }else{
+    /* Moderator (no admin token): locked-down warn RPC, mod-gated on D1. */
+    const _r=await _adminRpc('kh_warn_username',{p_name:name.slice(0,80),p_reason:msg.slice(0,600),p_token:_tok});
+    ok=_r.ok;
+    if(!ok)toast('Warn failed: '+String(_r.body||('HTTP '+_r.status)).slice(0,120),5000);
+  }
   if(ok)toast('Warning sent privately to “'+name+'”.',3500);
   /* _announceRpc surfaces its own error toast on failure. */
   return !!ok;
@@ -11032,6 +11086,31 @@ async function _khWarnUsernameSilent(name,reason){
   return !!ok;
 }
 window._khWarnUsernameSilent=_khWarnUsernameSilent;
+/* Minimal moderator action sheet — Warn / Ban on a PUBLIC display name only,
+   with NO user-data panel (unlike the admin-only _openUserAboutModal). Shown to
+   a verified moderator from the chat message action row. Reuses the now
+   mod-capable _khWarnUsername / _khBanUsername (both accept a mod token). */
+function _khModerateUser(name){
+  name=String(name||'').trim();
+  if(!name){toast('No username to moderate');return;}
+  const host=(typeof _overlayHost==='function'?_overlayHost():document.body);
+  const ov=el('div',{style:{position:'fixed',top:'0',right:'0',bottom:'0',left:'0',background:'rgba(0,0,0,.6)',zIndex:'9999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}});
+  const box=el('div',{style:{background:'var(--card)',borderRadius:'var(--radius)',padding:'18px',maxWidth:'360px',width:'100%',boxShadow:'var(--shadow-md)'}});
+  box.appendChild(txt('h3','Moderate · '+name.slice(0,40),{style:{fontSize:'15px',marginBottom:'4px'}}));
+  box.appendChild(txt('div','Moderator actions on this username. Warnings and bans are logged for the admin.',{style:{fontSize:'11px',color:'var(--muted)',lineHeight:'1.5',marginBottom:'12px'}}));
+  const bar=el('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}});
+  const closeBtn=txt('button','Close',{className:'btn small primary'});
+  closeBtn.onclick=()=>ov.remove();
+  const warnBtn=txt('button','! Warn',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+  warnBtn.onclick=async()=>{ warnBtn.disabled=true; const ok=await _khWarnUsername(name); warnBtn.disabled=false; if(ok)ov.remove(); };
+  const banBtn=txt('button','Ban username',{className:'btn small',style:{background:'var(--danger)',color:'#fff',borderColor:'var(--danger)'}});
+  banBtn.onclick=async()=>{ if(!await kindleConfirm('Ban "'+name+'"? They can no longer sign in or post, and the name shows as [removed] in chat.'))return; banBtn.disabled=true;banBtn.textContent='Banning…'; const ok=await _khBanUsername(name); if(ok){toast('Banned "'+name+'".',3000);ov.remove();} else {banBtn.disabled=false;banBtn.textContent='Ban username';} };
+  bar.append(closeBtn,warnBtn,banBtn);
+  box.appendChild(bar);
+  ov.appendChild(box);ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  host.appendChild(ov);
+}
+window._khModerateUser=_khModerateUser;
 /* AI moderation triage: judge a user-vs-user report and return a one-line verdict
    "AI: <BAN|WARN|ESCALATE|IGNORE|NEEDINFO> — <reason>" that gets recorded INTO the
    report. Works for ANY reporter (it's just an AI call, no privilege needed) —
@@ -11057,6 +11136,92 @@ async function _khAITriageReport(name,reason,note,autoFlagged){
   }catch(_){return '';}
 }
 window._khAITriageReport=_khAITriageReport;
+/* ── Severity-aware AI moderation verdict (admin "AI decide" feature) ──────
+   Distinct from _khAITriageReport above (a lightweight one-line classification
+   recorded into the report body at SUBMIT time, using whichever AI the
+   REPORTER happens to have enabled). This is the admin-initiated, on-demand
+   decision: it ALWAYS uses the shared/system key pinned to gemini-3.1-flash-lite
+   (falling back through the rest of SHARED_KEY_FALLBACK_CHAIN if that model is
+   busy), independent of the admin's own personal AI provider/key settings, and
+   returns STRICT structured JSON so the client enforces the severity rubric
+   itself instead of trusting free text. */
+function _khModVerdictPrompt(name,contextText){
+  return 'You are the SEVERITY-AWARE content-moderation assistant for KindleHub, a friendly Kindle e-reader app whose users include minors. '
+    +'Read the report below and decide the PROPORTIONATE action. Reply with STRICT JSON ONLY — no prose, no markdown fences — in EXACTLY this shape:\n'
+    +'{"action":"BAN","severity":"high","reason":"one short sentence"}\n'
+    +'action is one of "BAN", "WARN", "IGNORE". severity is one of "low", "medium", "high".\n\n'
+    +'RUBRIC — most reports should end in WARN, not BAN:\n'
+    +'- BAN (severity "high") ONLY for genuinely severe, unambiguous cases: explicit threats of violence against a person; doxxing (sharing someone\'s real address, phone number, full legal name or other private identifying info without consent); sexual content involving minors; severe targeted harassment (sustained, extreme abuse aimed at one person); credible encouragement of self-harm or suicide.\n'
+    +'- WARN (severity "low" or "medium") for everything milder: profanity, insults, a single slur, mild sexual content, spam, one-off rudeness, ordinary harassment or rule-breaking that is not in the BAN list above.\n'
+    +'- IGNORE (severity "low") when the report is trivial, unclear, describes no real violation, or looks like a false or retaliatory report.\n'
+    +'If you are not fully confident, choose the MILDER action — WARN over BAN, IGNORE over WARN. A false ban is far worse than a missed one.\n\n'
+    +'REPORTED USERNAME: "'+String(name||'').slice(0,80)+'"\n'
+    +'FULL REPORT:\n'+String(contextText||'').slice(0,1200)+'\n\n'
+    +'Reply with the JSON object only, nothing else.';
+}
+/* Parse the strict-JSON verdict (text fallback for a stray non-JSON reply is
+   deliberately NOT attempted — an unparseable reply must fall through to
+   "leave for a human", never be guessed at). Re-enforces "never ban below
+   high severity" HERE too (never trust the prompt alone): a BAN verdict at
+   anything but "high" severity is downgraded to WARN before it ever reaches
+   the caller. Returns null if unparseable. */
+function _khParseModVerdict(out){
+  try{
+    var s=String(out||'');
+    var m=s.match(/\{[\s\S]*\}/);
+    if(!m)return null;
+    var o=null;try{o=JSON.parse(m[0]);}catch(_e){return null;}
+    if(!o||!o.action)return null;
+    var action=String(o.action).toUpperCase();
+    if(action!=='BAN'&&action!=='WARN'&&action!=='IGNORE')return null;
+    var severity=String(o.severity||'medium').toLowerCase();
+    if(severity!=='low'&&severity!=='medium'&&severity!=='high')severity='medium';
+    var reason=String(o.reason||'No reason given.').trim().slice(0,200);
+    if(action==='BAN'&&severity!=='high'){action='WARN';reason='(AI asked for BAN but severity was only '+severity+', downgraded to WARN) '+reason;}
+    return {action:action,severity:severity,reason:reason};
+  }catch(_){return null;}
+}
+/* Ask the AI to decide. NEVER throws. Returns either a decision
+   {action:'BAN'|'WARN'|'IGNORE',severity,reason} or, if the AI is
+   unavailable/unclear, {action:'HUMAN',reason} — the caller must leave the
+   report untouched in that case (no silent auto-resolve on a failed call). */
+async function _khAIModerateReport(name,contextText){
+  try{
+    if(typeof khiCall!=='function')return {action:'HUMAN',reason:'AI moderation isn\'t available in this build.'};
+    if(navigator.onLine===false)return {action:'HUMAN',reason:'Offline — left for a human review.'};
+    var prompt=_khModVerdictPrompt(name,contextText);
+    var out=null;
+    try{out=await khiCall(prompt,{provider:'shared',preferModel:'gemini-3.1-flash-lite',temperature:0,maxTokens:220});}catch(_e){out=null;}
+    if(!out)return {action:'HUMAN',reason:'The AI moderator is unavailable right now — left for a human review.'};
+    var v=_khParseModVerdict(out);
+    if(!v)return {action:'HUMAN',reason:'The AI\'s reply was unclear — left for a human review.'};
+    return v;
+  }catch(_){return {action:'HUMAN',reason:'AI moderation failed — left for a human review.'};}
+}
+/* Apply a decision from _khAIModerateReport. Reuses the EXACT same admin-
+   token-gated delivery paths as the manual Warn/Ban buttons (_khBanUsername /
+   _khWarnUsernameSilent), so behaviour — announcement text, the ban list,
+   "already warned" tracking — is identical whether a human or the AI decided.
+   A moderator (has a mod code, no admin token) can trigger "AI decide" and
+   see the verdict, but these underlying calls still refuse without a real
+   admin token — exactly like the manual buttons — so a mod can never
+   actually apply a ban/warn through this path. Returns {ok,label}. */
+async function _khApplyModVerdict(name,verdict){
+  if(!verdict||verdict.action==='HUMAN')return {ok:false,label:'"'+name+'": '+((verdict&&verdict.reason)||'left for a human review.')};
+  if(verdict.action==='BAN'){
+    var bok=await _khBanUsername(name);
+    return bok?{ok:true,label:'AI banned "'+name+'" ('+verdict.severity+' severity) — '+verdict.reason}:{ok:false,label:'AI recommended a BAN for "'+name+'" but the ban call failed (admin token missing?).'};
+  }
+  if(verdict.action==='WARN'){
+    var wok=await _khWarnUsernameSilent(name,verdict.reason);
+    return wok?{ok:true,label:'AI warned "'+name+'" — '+verdict.reason}:{ok:false,label:'AI recommended a WARN for "'+name+'" but the warn call failed (admin token missing?).'};
+  }
+  return {ok:true,label:'AI found no violation for "'+name+'" — '+verdict.reason};
+}
+window._khModVerdictPrompt=_khModVerdictPrompt;
+window._khParseModVerdict=_khParseModVerdict;
+window._khAIModerateReport=_khAIModerateReport;
+window._khApplyModVerdict=_khApplyModVerdict;
 
 function _composeAnnouncement(card){
   card.innerHTML='';
@@ -30148,8 +30313,12 @@ async function callSharedGeminiStream(messages, onChunk, opts){
   const _autoSwitchShared=S.autoSwitchShared!==false;
   /* The user's picked public model (S.sharedModel, from the model picker) is
      tried FIRST; the rest of the fallback chain follows so auto-switch can
-     still rescue an overloaded pick. */
-  const _pref=(S.sharedModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(S.sharedModel)>=0)?S.sharedModel:null;
+     still rescue an overloaded pick. A caller-supplied opts.preferModel (e.g.
+     AI moderation, which always wants gemini-3.1-flash-lite specifically)
+     outranks S.sharedModel — it's what THIS call needs, not the user's own
+     chat-model preference — but it's still just an ordering preference: the
+     rest of the chain follows if it's busy. */
+  const _pref=(opts&&opts.preferModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(opts.preferModel)>=0)?opts.preferModel:((S.sharedModel&&SHARED_KEY_FALLBACK_CHAIN.indexOf(S.sharedModel)>=0)?S.sharedModel:null);
   let _chain;
   if(_autoSwitchShared){_chain=SHARED_KEY_FALLBACK_CHAIN.slice();if(_pref)_chain=[_pref].concat(_chain.filter(function(m){return m!==_pref;}));}
   else{_chain=[_pref||SHARED_KEY_FALLBACK_CHAIN[0]];}
@@ -44852,6 +45021,11 @@ feedback:()=>{
   const refreshBtn=txt('button','Refresh',{className:'btn small',style:{marginBottom:'10px'}});
   refreshBtn.onclick=()=>{if(navigator.onLine===false)return toast('Requires internet.');loadData();};
   boardSection.appendChild(refreshBtn);
+  /* Host for the admin-only "AI auto-triage all open reports" bulk button —
+     rebuilt on every renderItems() so the count/visibility always match the
+     current tab + report list. */
+  const _bulkHost=el('div',{style:{marginBottom:'10px'}});
+  boardSection.appendChild(_bulkHost);
   boardSection.appendChild(listEl);
 
   let items=[];
@@ -44928,6 +45102,30 @@ feedback:()=>{
       return false;
     }
   }
+  /* Full AI-moderation pipeline for ONE report row: ask the shared-key AI
+     (gemini-3.1-flash-lite, severity-aware — see _khAIModerateReport) to
+     decide, apply the verdict via the exact same admin-gated Warn/Ban
+     delivery the manual buttons use, then resolve the report's status.
+     Shared by the per-report "AI decide" buttons and the bulk "AI
+     auto-triage" action below. Returns {bucket,label} — bucket is
+     'banned'|'warned'|'ignored'|'left' (for the bulk-run tally), label is a
+     short outcome string for a toast. Never throws, never silently no-ops:
+     an unavailable/unclear AI always resolves to bucket 'left' with the
+     report untouched. */
+  async function _khAIDecideAndResolve(item,name){
+    name=String(name||'').trim();
+    if(!name)return {bucket:'left',label:'No username could be parsed from this report — left for you to review.'};
+    const verdict=await _khAIModerateReport(name,item.text||'');
+    if(!verdict||verdict.action==='HUMAN'){
+      return {bucket:'left',label:'"'+name+'": '+(verdict&&verdict.reason?verdict.reason:'left for a human review.')};
+    }
+    const res=await _khApplyModVerdict(name,verdict);
+    if(!res.ok)return {bucket:'left',label:res.label};
+    if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,verdict.action==='IGNORE'?'ignored':'done');}catch(_){}}
+    if(verdict.action==='BAN'||verdict.action==='WARN'){try{await _khSweepReportsFor(name,item.id);}catch(_2){}}/* action one report -> resolve every other report about the same user */
+    try{if(verdict.action==='WARN'&&typeof _khRefreshModerationCard==='function')_khRefreshModerationCard();}catch(_){}
+    return {bucket:(verdict.action==='BAN'?'banned':(verdict.action==='WARN'?'warned':'ignored')),label:res.label};
+  }
   /* Admin: DELETE a report/suggestion from the cloud outright (not just mark it
      done). _sbHeaders already sends the X-KH-Admin token, and the worker now lets
      an admin delete ANY kh_feedback row — so it's gone in one round-trip and can't
@@ -44939,6 +45137,40 @@ feedback:()=>{
       const ix=items.findIndex(function(x){return x.id===id;});if(ix>=0)items.splice(ix,1);
       return true;
     }catch(e){toast('Delete failed: '+String((e&&e.message)||e).slice(0,120),6000);return false;}
+  }
+  /* Extract the TARGET username a report is about. [USERNAME] ban-requests carry
+     it as  Username: "X" ; message [REPORT] rows carry it as  By: X (uid=...) .
+     Returns a lowercased/trimmed name, or '' for a non-report row (so ordinary
+     bug reports are never matched). */
+  function _khReportTarget(text){
+    text=String(text||'');
+    if(!/\[REPORT\]|\[USERNAME\]/.test(text))return '';
+    var m=/Username:\s*"([^"]*)"/.exec(text);
+    if(m&&m[1]&&m[1].trim())return m[1].trim().toLowerCase();
+    m=/By:\s*([^()]+?)\s*\(uid=/.exec(text);
+    if(m&&m[1]&&m[1].trim())return m[1].trim().toLowerCase();
+    return '';
+  }
+  /* After a Warn/Ban of username X, make every OTHER pending report about X
+     vanish: mark it resolved (done) then delete it from the cloud via the SAME
+     path the admin Delete button uses (_deleteItem -> _sbDelete, admin token
+     already sent). keepId = the report just actioned, left as-is so it stays as
+     the record of the action. De-duped (ids collected before deleting, since
+     _deleteItem splices `items`) and gated on the report markers + an exact
+     lowercased name match so unrelated reports are never removed. */
+  async function _khSweepReportsFor(name,keepId){
+    var target=String(name||'').trim().toLowerCase();
+    if(!target)return;
+    var victims=[];
+    (items||[]).forEach(function(it){
+      if(!it||!it.id||it.id===keepId)return;
+      if(_khReportTarget(it.text)===target)victims.push(it.id);
+    });
+    for(var i=0;i<victims.length;i++){
+      var vid=victims[i];
+      if(_schemaHasStatus!==false){try{await _setItemStatus(vid,'done');}catch(_e){}}
+      try{await _deleteItem(vid);}catch(_e2){}
+    }
   }
   /* Open to all users: add a comment to a feedback item's thread. */
   async function _addComment(id,text){
@@ -44968,6 +45200,39 @@ feedback:()=>{
       if(sa!==sb)return sa-sb;
       return (b.votes||0)-(a.votes||0);
     });
+    /* Bulk AI triage — admin-only, Bug Reports tab only (both [USERNAME]
+       ban-requests and [REPORT] message reports live there), shown only when
+       there's at least one OPEN report to act on. Rebuilt every render so the
+       count stays accurate as reports resolve. */
+    _bulkHost.innerHTML='';
+    if(window._isAdminCached===true&&activeType==='bug'){
+      const openReports=filtered.filter(function(i){return (i.status||'open')==='open'&&/\[REPORT\]/.test(i.text||'');});
+      if(openReports.length){
+        const bulkBtn=txt('button','AI auto-triage all open reports ('+openReports.length+')',{className:'btn small',style:{borderColor:'var(--danger)',color:'var(--danger)'}});
+        bulkBtn.onclick=async()=>{
+          if(!await kindleConfirm('Let the AI (shared key, gemini-3.1-flash-lite) decide WARN, BAN or IGNORE for all '+openReports.length+' open report(s)? It only bans really severe cases (threats of violence, doxxing, sexual content involving minors, severe targeted harassment, credible self-harm encouragement) — everything milder is warned, and anything unclear is left open for you.'))return;
+          bulkBtn.disabled=true;
+          let banned=0,warned=0,ignored=0,left=0;const _seenTargets={};
+          for(let i=0;i<openReports.length;i++){
+            const it=openReports[i];
+            const mU=/Username:\s*"([^"]*)"/.exec(it.text||'');
+            const mR=/By:\s*([^()]+?)\s*\(uid=/.exec(it.text||'');
+            const nm=mU?mU[1]:(mR?mR[1].trim():'');
+            var _tk=String(nm||'').toLowerCase().trim();if(_tk&&_seenTargets[_tk])continue;if(_tk)_seenTargets[_tk]=1;/* a prior ban/warn already swept this user's other reports */
+            bulkBtn.textContent='Triaging '+(i+1)+'/'+openReports.length+'…';
+            const outcome=await _khAIDecideAndResolve(it,nm);
+            if(outcome.bucket==='banned')banned++;
+            else if(outcome.bucket==='warned')warned++;
+            else if(outcome.bucket==='ignored')ignored++;
+            else left++;
+            await new Promise(function(r){setTimeout(r,700);});/* small gap between shared-key calls */
+          }
+          toast('AI triage done — banned '+banned+', warned '+warned+', ignored '+ignored+', left '+left+' for you to review.',6000);
+          renderItems();
+        };
+        _bulkHost.appendChild(bulkBtn);
+      }
+    }
     if(!filtered.length){listEl.appendChild(txt('div','No '+activeType+'s yet — be the first!',{style:{fontSize:'12px',color:'var(--muted)',fontStyle:'italic',padding:'12px 0'}}));return;}
     /* Reset the page size when the tab (suggestions / bugs / errors) changes,
        then show 10 at a time so a big backlog can't overwhelm the Kindle. */
@@ -45034,6 +45299,7 @@ feedback:()=>{
             const ok=await _khWarnUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
+              await _khSweepReportsFor(_banName,item.id);
               toast('Warned “'+_banDisp+'” and marked the report done.',3000);
               renderItems();
             } else { warnBtn.disabled=false; }
@@ -45047,11 +45313,20 @@ feedback:()=>{
             const ok=await _khBanUsername(_banName);
             if(ok){
               if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}}
+              await _khSweepReportsFor(_banName,item.id);
               toast('Username "'+_banDisp+'" banned.',3500);
               renderItems();
             } else { banBtn.disabled=false;banBtn.textContent='Approve & ban "'+_banDisp.slice(0,24)+'"'; }
           };
           actRow.appendChild(banBtn);
+          const aiBtn=txt('button','AI decide',{className:'btn small'});
+          aiBtn.onclick=async()=>{
+            aiBtn.disabled=true;aiBtn.textContent='Asking AI…';
+            const outcome=await _khAIDecideAndResolve(item,_banName);
+            toast(outcome.label.slice(0,220),4500);
+            renderItems();
+          };
+          actRow.appendChild(aiBtn);
         }
       }
       /* Message-content reports ([REPORT] …) name the offender as
@@ -45066,7 +45341,7 @@ feedback:()=>{
           rWarn.onclick=async()=>{
             rWarn.disabled=true;
             const ok=await _khWarnUsername(_rName);
-            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} await _khSweepReportsFor(_rName,item.id); toast('Warned “'+_rDisp+'” and marked the report done.',3000); renderItems(); }
             else { rWarn.disabled=false; }
           };
           if(window._khWarnedSet&&window._khWarnedSet.has(String(_rName).toLowerCase()))actRow.appendChild(txt('span','! already warned',{style:{fontSize:'10px',fontWeight:'800',color:'var(--danger)',alignSelf:'center',marginRight:'2px'}}));
@@ -45076,10 +45351,18 @@ feedback:()=>{
             if(!await kindleConfirm('Ban "'+_rDisp+'"? They can no longer sign in or post, and the name shows as [removed] in chat. This resolves the report.'))return;
             rBan.disabled=true;rBan.textContent='Banning…';
             const ok=await _khBanUsername(_rName);
-            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} toast('Banned "'+_rDisp+'".',3500); renderItems(); }
+            if(ok){ if(_schemaHasStatus!==false){try{await _setItemStatus(item.id,'done');}catch(_){}} await _khSweepReportsFor(_rName,item.id); toast('Banned "'+_rDisp+'".',3500); renderItems(); }
             else { rBan.disabled=false;rBan.textContent='Ban "'+_rDisp.slice(0,18)+'"'; }
           };
           actRow.appendChild(rBan);
+          const rAi=txt('button','AI decide',{className:'btn small'});
+          rAi.onclick=async()=>{
+            rAi.disabled=true;rAi.textContent='Asking AI…';
+            const outcome=await _khAIDecideAndResolve(item,_rName);
+            toast(outcome.label.slice(0,220),4500);
+            renderItems();
+          };
+          actRow.appendChild(rAi);
         }
       }
       /* Admin status controls — gated on _schemaHasStatus so the admin
@@ -51625,6 +51908,24 @@ sports:()=>{
   function _pick(arr,ha){for(let i=0;i<(arr||[]).length;i++){if(arr[i]&&arr[i].homeAway===ha)return arr[i];}return null;}
   function _teamName(c){return (c&&c.team&&(c.team.displayName||c.team.shortDisplayName||c.team.name||c.team.abbreviation))||'—';}
   function _abbr(c){return (c&&c.team&&(c.team.abbreviation||c.team.shortDisplayName))||'';}
+  /* ESPN puts penalty-shootout + two-leg aggregate on the competitor as
+     shootoutScore / aggregateScore, SEPARATE from the 90/120-min `score`.
+     Never fold them into the goal tally: keep `score` as the main line and
+     annotate, so a 1-1 (4-2 pens) knockout reads correctly. */
+  function _shoot(c){var s=c&&c.shootoutScore;return (s==null||s==='')?null:s;}
+  function _agg(c){var s=c&&c.aggregateScore;return (s==null||s==='')?null:s;}
+  function _penSummary(away,home){
+    var sa=_shoot(away),sh=_shoot(home);if(sa==null&&sh==null)return '';
+    var a=(sa==null?'0':String(sa)),h=(sh==null?'0':String(sh));
+    var win=(away&&away.winner)?away:((home&&home.winner)?home:null);
+    var wsc=a,lsc=h;if(win===home){wsc=h;lsc=a;}
+    var wn=win?(_abbr(win)||_teamName(win)):'';
+    return (wn?wn+' ':'')+'won on penalties '+wsc+'-'+lsc;
+  }
+  function _aggNote(away,home){
+    var aa=_agg(away),ah=_agg(home);if(aa==null&&ah==null)return '';
+    return 'Aggregate '+(aa==null?'0':String(aa))+'-'+(ah==null?'0':String(ah));
+  }
   /* Date bar */
   const dateBar=el('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}});
   const prevBtn=txt('button','‹ Prev',{className:'btn small'});
@@ -51678,6 +51979,9 @@ sports:()=>{
           rr.appendChild(txt('span',(t.score!=null?String(t.score):''),{style:{fontWeight:t.winner?'800':'500',fontVariantNumeric:'tabular-nums'}}));
           row.appendChild(rr);
         });
+        var _pn=_penSummary(away,home),_ag=_aggNote(away,home);
+        if(_pn)row.appendChild(txt('div',_pn,{style:{fontSize:'11px',color:'var(--muted)',fontWeight:'700',marginTop:'2px'}}));
+        if(_ag)row.appendChild(txt('div',_ag,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'1px'}}));
         const foot=el('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'4px'}});
         if(st)foot.appendChild(txt('span',st,{style:{fontSize:'11px',color:'var(--muted)'}}));
         foot.appendChild(txt('span','Details ›',{style:{fontSize:'11px',color:'var(--accent)',fontWeight:'700'}}));
@@ -51819,6 +52123,9 @@ sports:()=>{
         rr.appendChild(txt('span',(t.score!=null?String(t.score):'-'),{style:{fontWeight:'900',fontVariantNumeric:'tabular-nums'}}));
         sc.appendChild(rr);
       });
+      var _pn=_penSummary(away,home),_ag=_aggNote(away,home);
+      if(_pn)sc.appendChild(txt('div',_pn,{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px',fontWeight:'800'}}));
+      if(_ag)sc.appendChild(txt('div',_ag,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px',fontWeight:'700'}}));
       if(stTxt)sc.appendChild(txt('div',stTxt,{style:{fontSize:'12px',color:'var(--muted)',marginTop:'4px',fontWeight:'700'}}));
       if(venue)sc.appendChild(txt('div',venue,{style:{fontSize:'11px',color:'var(--muted)',marginTop:'2px'}}));
       detail.appendChild(sc);
@@ -59447,7 +59754,7 @@ messages:()=>{
   /* Resolve admin status early so the About button on chat messages shows
      up the first time the user opens chat (previously you had to visit
      Feedback first to populate window._isAdminCached). */
-  (async function(){try{await _checkAdmin();}catch(_){}})();
+  (async function(){try{await _checkAdmin();}catch(_){} try{if(typeof _checkMod==='function'){var _wasMod=window._isModCached;await _checkMod();if(window._isModCached===true&&_wasMod!==true&&typeof render==='function')render();}}catch(_){}})();
 
   /* ── State ── */
   let _screen='list'; // list | create | join | chat
@@ -61440,6 +61747,16 @@ messages:()=>{
             repNameBtn.style.color='var(--danger)';
             repNameBtn.onclick=()=>_openUsernameReportModal(m.displayName||'',m.userId||'');
             actionRow.appendChild(repNameBtn);
+            /* Moderator (non-admin) quick action — Warn / Ban on the PUBLIC
+               display name only. No PII panel (that stays admin-only in the
+               About modal); a verified mod just gets the two enforcement
+               actions via the mod-gated RPCs. */
+            if(window._isModCached===true&&window._isAdminCached!==true){
+              const modBtn=txt('button','Moderate',{className:'msg-action-btn'});
+              modBtn.style.color='var(--danger)';modBtn.style.fontWeight='800';
+              modBtn.onclick=()=>{ if(typeof _khModerateUser==='function')_khModerateUser(m.displayName||''); };
+              actionRow.appendChild(modBtn);
+            }
           }
 
           /* About button — admin only.
