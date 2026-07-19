@@ -298,6 +298,35 @@ async function unwrapRows(table, rows, env){
   for(const r of rows){ for(const c of cols){ if(typeof r[c]==='string') r[c] = await unwrapCell(r[c], env); } }
   return rows;
 }
+/* Reassemble a chunked kh_users.state (marker 'KHCH1:<n>:<hash>') from
+   kh_state_parts back into the original (possibly KHW1-wrapped) string, in
+   place. MUST run before unwrapRows on EVERY response path (GET body + the
+   POST/PATCH representation) so the client never sees the raw marker — the
+   representation must match a GET. On a missing/incomplete part set the marker
+   is left as-is: the client treats it as an undecryptable pull and keeps its
+   local copy (never destructive). */
+async function reassembleStates(DB, table, rows){
+  if(table!=='kh_users' || !rows || !rows.length) return rows;
+  for(const r of rows){
+    if(typeof r.state==='string' && r.state.slice(0,6)===CHUNK_PREFIX){
+      try{
+        const m=r.state.slice(6), ci=m.indexOf(':');
+        const n=parseInt(ci>=0?m.slice(0,ci):m,10)||0;
+        const ph=ci>=0?m.slice(ci+1):'';
+        if(n>0&&ph){
+          const pr=await DB.prepare('SELECT idx,part FROM kh_state_parts WHERE hash=? ORDER BY idx').bind(ph).all();
+          const parts=(pr&&pr.results)||[];
+          const byIdx={};
+          for(const p of parts)byIdx[p.idx]=p.part;
+          let s='';let okAll=true;
+          for(let i2=0;i2<n;i2++){ if(typeof byIdx[i2]!=='string'){okAll=false;break;} s+=byIdx[i2]; }
+          if(okAll)r.state=s;
+        }
+      }catch(_){}
+    }
+  }
+  return rows;
+}
 
 /* ── type marshaling ─────────────────────────────────────────────────────── */
 function rowOut(table, row){
@@ -776,32 +805,9 @@ async function handleGet(table, url, request, env, DB, headOnly){
       .filter(r=>!(typeof r.text==='string' && (/\[USERNAME\]/.test(r.text) || /\[REPORT\]/.test(r.text))))
       .map(r=>{ const o=Object.assign({},r); delete o.comments; return o; });
   }
-  /* Reassemble a chunked state (marker 'KHCH1:<n>:<hash>') from kh_state_parts
-     BEFORE the envelope unwrap — the concatenation restores the original
-     (possibly KHW1:-wrapped) string. Redacted rows lost .state above, so no
-     part data can leak to a non-owner. On a missing/incomplete part set the
-     marker is left as-is (the client treats it as an undecryptable pull and
-     keeps its local copy — never destructive). */
-  if(table==='kh_users'){
-    for(const r of rows){
-      if(typeof r.state==='string' && r.state.slice(0,6)===CHUNK_PREFIX){
-        try{
-          const m=r.state.slice(6), ci=m.indexOf(':');
-          const n=parseInt(ci>=0?m.slice(0,ci):m,10)||0;
-          const ph=ci>=0?m.slice(ci+1):'';
-          if(n>0&&ph){
-            const pr=await DB.prepare('SELECT idx,part FROM kh_state_parts WHERE hash=? ORDER BY idx').bind(ph).all();
-            const parts=(pr&&pr.results)||[];
-            const byIdx={};
-            for(const p of parts)byIdx[p.idx]=p.part;
-            let s='';let okAll=true;
-            for(let i2=0;i2<n;i2++){ if(typeof byIdx[i2]!=='string'){okAll=false;break;} s+=byIdx[i2]; }
-            if(okAll)r.state=s;
-          }
-        }catch(_){}
-      }
-    }
-  }
+  /* Reassemble chunked state (from kh_state_parts) BEFORE the envelope unwrap.
+     Redacted rows lost .state above, so no part data can leak to a non-owner. */
+  await reassembleStates(DB, table, rows);
   /* envelope: unwrap sensitive columns for owner/admin reads (redacted rows
      already had the column deleted above, so this is a no-op for them). */
   await unwrapRows(table, rows, env);
@@ -960,7 +966,8 @@ async function handlePost(table, url, request, env, DB){
     }
   }
   if(minimal) return new Response(null,{status:201,headers:cors(env)});
-  await unwrapRows(table, out, env); // representation must match a GET (plaintext)
+  await reassembleStates(DB, table, out); // representation must match a GET (reassembled + plaintext)
+  await unwrapRows(table, out, env);
   return json(out, 201, env);
 }
 
@@ -1024,7 +1031,8 @@ async function handlePatch(table, url, request, env, DB){
   const r2 = whereSql(table, q.filters);
   const res = await DB.prepare('SELECT * FROM '+QUOTE(table)+r2.sql).bind(...r2.binds).all();
   const outRows = (res.results||[]).map(x=>rowOut(table,x));
-  await unwrapRows(table, outRows, env); // representation must match a GET (plaintext)
+  await reassembleStates(DB, table, outRows); // representation must match a GET (reassembled + plaintext)
+  await unwrapRows(table, outRows, env);
   return json(outRows, 200, env);
 }
 
