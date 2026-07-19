@@ -172,7 +172,21 @@ async function sha256hex(s){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s||''));
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-async function isAdmin(token){ return ADMIN_HASHES.indexOf(await sha256hex(token||'')) >= 0; }
+/* SECURITY: the hardcoded ADMIN_HASHES is SHA-256 of the admin's login username,
+   which is PUBLIC — so anyone sending that username as X-KH-Admin would pass. Set
+   a random ADMIN_SECRET on the Worker to ROTATE off the username: once it's set,
+   ONLY that secret grants admin and the username hash stops working. Unset = the
+   legacy username hash (backward-compatible, nothing breaks until you rotate). */
+let _ADMIN_SECRET_HASH=null,_ADMIN_SECRET_SEEN;
+async function _syncAdminSecret(env){
+  const s=(env&&env.ADMIN_SECRET)||'';
+  if(s!==_ADMIN_SECRET_SEEN){ _ADMIN_SECRET_SEEN=s; _ADMIN_SECRET_HASH = s ? await sha256hex(s) : null; }
+}
+async function isAdmin(token){
+  const h = await sha256hex(token||'');
+  if(_ADMIN_SECRET_HASH) return h===_ADMIN_SECRET_HASH;
+  return ADMIN_HASHES.indexOf(h) >= 0;
+}
 /* Limited MODERATOR role. A mod token unlocks ONLY the kh_mod_stats RPC
    (aggregate counts — never rows, user data, mail or message bodies) plus
    kh_ban_username / kh_unban_username / kh_warn_username — never anything else;
@@ -1510,6 +1524,7 @@ export default {
     const DB = env && env.DB;
     if(!DB) return err('DB binding missing — see setup step 3', 500, env);
     await ensureSchema(DB);
+    await _syncAdminSecret(env);/* pick up ADMIN_SECRET rotation before any isAdmin() */
     const url = new URL(request.url);
     if(url.pathname==='/' || url.pathname==='') return json({ok:true,service:'kindlehub-api'},200,env);
 
