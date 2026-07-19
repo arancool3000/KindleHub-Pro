@@ -5094,6 +5094,10 @@ function launchKindleDesktop(){
       return;
     }
     _kdFitVp();
+    /* If the visible height change altered how many icon rows fit, re-lay the
+       grid so the bottom row is never clipped (buildPages is hoisted; these
+       events only fire after the launcher is fully built). */
+    try{ if(_kdLastPer && iconsPerPage()!==_kdLastPer) buildPages(); }catch(_e5){}
   }
   _kdFitVp();
   window.addEventListener('resize',_kdVpHandler);
@@ -5628,8 +5632,27 @@ function launchKindleDesktop(){
   kdPagesTrack.style.cssText='display:flex;width:100%;height:100%;will-change:transform;transition:transform 0.32s cubic-bezier(0.4,0,0.2,1);';
   kdPagesOuter.appendChild(kdPagesTrack);
   let _curPage=osState.widgetsFirst?0:1;/* land on widgets (0) or apps (1) per user setting */
-  /* 16 apps per page (4×4 in a 5-row grid). */
-  function iconsPerPage(){return 16;}
+  let _kdLastPer=0;/* icons-per-page used by the last buildPages — a viewport change that alters it triggers a rebuild */
+  /* Icons per page is COMPUTED from the real visible height of the pages area —
+     never a fixed count. The old fixed 16/page was the "bottom row cut off" bug:
+     on a short visible viewport (Kindle browser chrome + status bar + dock) the
+     4th row physically could not fit, and no amount of padding could save it —
+     the grid container just clipped whatever overflowed. Now rows = how many
+     ~100px cells genuinely fit above the page dots, so the last row fits BY
+     CONSTRUCTION on every screen. Falls back to a conservative estimate before
+     first layout (corrected by the post-layout rebuild + resize handler). */
+  function iconsPerPage(){
+    var h=0;
+    try{h=kdPagesOuter.clientHeight||0;}catch(_){}
+    if(!h){
+      var vv=window.visualViewport;
+      var vh=(vv&&vv.height)?Math.min(vv.height,window.innerHeight||vv.height):(window.innerHeight||600);
+      h=vh-210;/* estimate: status bar + clock strip + dock */
+    }
+    var rows=Math.floor((h-32)/100);/* 32px reserve for the page dots; ~100px per icon+label row */
+    if(rows<1)rows=1; if(rows>5)rows=5;/* min 1: forcing 2 rows into a tiny space re-clips the bottom row */
+    return 4*rows;
+  }
   function numIconPages(){return Math.max(1,Math.ceil(gridItems().length/iconsPerPage()));}
   function numPages(){return 1+numIconPages();}
 
@@ -5937,6 +5960,7 @@ function launchKindleDesktop(){
     const apps=gridItems();const iconPages=numIconPages();
     _curPage=Math.min(prev,numPages()-1);
     const PER=iconsPerPage();
+    _kdLastPer=PER;
     const cols=4,rows=5;
     /* Rows are NATURAL height (min-content) packed at the TOP, not
        repeat(5,1fr): forcing 5 equal rows into height:100% squished each row
@@ -5945,7 +5969,11 @@ function launchKindleDesktop(){
        the dock begins) — that was the "row above the dock has no labels" bug.
        min-content rows are exactly icon+label tall and can't compress, and the
        big bottom padding keeps the last row clear of the dock. */
-    const gridStyle='min-width:100%;height:100%;display:grid;grid-template-columns:repeat('+cols+',1fr);grid-auto-rows:min-content;align-content:start;row-gap:2px;padding:6px 6px 64px;box-sizing:border-box;';
+    /* Bottom padding = just the page-dots reserve. iconsPerPage() already sizes
+       the row count to the real visible height, so the last row fits without a
+       giant padding hack (the old 64px pad ate a row's worth of space AND still
+       couldn't save a fixed 16-icon page on a short screen). */
+    const gridStyle='min-width:100%;height:100%;display:grid;grid-template-columns:repeat('+cols+',1fr);grid-auto-rows:min-content;align-content:start;row-gap:2px;padding:6px 6px 26px;box-sizing:border-box;';
     /* Build empty shells synchronously (cheap) and only populate icons for
        pages near the viewport. Pages further away get their icons lazily on
        the next frame, so first paint is fast even with many custom apps. */
@@ -6048,6 +6076,10 @@ function launchKindleDesktop(){
   },{passive:true});
 
   buildPages();
+  /* First buildPages may have run before layout (clientHeight 0 → estimate);
+     re-check on the next frame with the REAL measured height and re-lay if the
+     row count differs. */
+  (function(){var raf=window.requestAnimationFrame||function(fn){return setTimeout(fn,16);};raf(function(){try{if(document.getElementById('kd-root')&&iconsPerPage()!==_kdLastPer)buildPages();}catch(_){}});})();
   /* Let the App Store (a normal view, outside this closure) rebuild the home
      grid when an app is installed/removed so both stay in lock-step. Nulled on
      KindleOS exit so a stale closure can't fire. */
@@ -9308,7 +9340,7 @@ async function _msgDecrypt(groupCode,cipher){
        C0/C1 controls except \n \t. Also normalize Unicode to NFC so
        any combining sequences collapse to their precomposed form. */
     return _sanitizeMsgText(out);
-  }catch(e){return '[unable to decrypt — wrong group code?]';}
+  }catch(e){return '[message damaged — can\'t be shown. It was likely sent during a brief server glitch; new messages are fine.]';}
 }
 
 /* Shared sanitizer used by both the send path (so corrupt characters
@@ -43456,7 +43488,11 @@ settings:()=>{
         }catch(e){
           const raw=String(e&&e.message||e);
           /* Pattern-match a few common the backend errors to friendly text */
-          if(/check.*constraint|kh_users_state_len|violates check/i.test(raw)){
+          if(/ROW_TOO_LARGE|too large for storage|HTTP 413/i.test(raw)){
+            pushErr='Your account is very large. The latest api-worker stores big accounts in pieces automatically — REDEPLOY api-worker.js and sync again.';
+          } else if(/Internal error|HTTP 500/i.test(raw)){
+            pushErr='The cloud rejected the upload (server error). If your account is very large, redeploy the latest api-worker.js — it adds large-account support — then try again.';
+          } else if(/check.*constraint|kh_users_state_len|violates check/i.test(raw)){
             pushErr='Your library is larger than the cloud row limit. Run the latest schema SQL (raises the kh_users state cap to 16 MB) and try again.';
           } else if(/permission denied|RLS/i.test(raw)){
             pushErr='Cloud refused the upload (permissions / RLS). Re-run the latest schema SQL.';

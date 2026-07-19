@@ -252,6 +252,17 @@ function nowIso(){ return new Date().toISOString(); }
    this adds no client change and no account-lockout risk. */
 const WRAP_COLS = { kh_users:['state'], kh_mail:['subject','body'], kh_messages:['text'] };
 const WRAP_PREFIX = 'KHW1:';
+/* ── large-state chunking ────────────────────────────────────────────────────
+   D1 hard-caps any single stored value at ~2 MB (SQLITE_MAX_LENGTH), but the
+   client lets a heavy account grow its encrypted state far past that (creator
+   tier caps at 12 MB) — so a big account's sync push would throw and 500. Fix:
+   the Worker transparently SPLITS an oversized kh_users.state across rows of a
+   hidden kh_state_parts table (never exposed over REST). The kh_users row keeps
+   a small marker 'KHCH1:<n>:<hash>'; reads reassemble before the envelope
+   unwrap. The client is completely unaware — no client change. Chunks are cut
+   AFTER wrapCell so each stored piece is just an opaque base64 fragment. */
+const CHUNK_PREFIX = 'KHCH1:';
+const CHUNK_LIMIT = 1800000;   // stay safely under D1's ~2MB per-value ceiling
 let _wrapKeyP = null, _wrapKeyFor = null;
 function wrapKey(env){
   const p = (env && env.KH_PEPPER) || '';
@@ -264,6 +275,8 @@ function wrapKey(env){
 function _b64enc(bytes){ let s=''; for(let i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
 function _b64dec(str){ const bin=atob(str), out=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i); return out; }
 async function wrapCell(v, env){
+  /* Never wrap a chunk marker — the read path must be able to detect it. */
+  if(typeof v==='string' && v.slice(0,6)===CHUNK_PREFIX) return v;
   if(!(env && env.KH_PEPPER) || typeof v!=='string' || v==='' || v.slice(0,5)===WRAP_PREFIX) return v;
   const key = await wrapKey(env);
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -763,6 +776,32 @@ async function handleGet(table, url, request, env, DB, headOnly){
       .filter(r=>!(typeof r.text==='string' && (/\[USERNAME\]/.test(r.text) || /\[REPORT\]/.test(r.text))))
       .map(r=>{ const o=Object.assign({},r); delete o.comments; return o; });
   }
+  /* Reassemble a chunked state (marker 'KHCH1:<n>:<hash>') from kh_state_parts
+     BEFORE the envelope unwrap — the concatenation restores the original
+     (possibly KHW1:-wrapped) string. Redacted rows lost .state above, so no
+     part data can leak to a non-owner. On a missing/incomplete part set the
+     marker is left as-is (the client treats it as an undecryptable pull and
+     keeps its local copy — never destructive). */
+  if(table==='kh_users'){
+    for(const r of rows){
+      if(typeof r.state==='string' && r.state.slice(0,6)===CHUNK_PREFIX){
+        try{
+          const m=r.state.slice(6), ci=m.indexOf(':');
+          const n=parseInt(ci>=0?m.slice(0,ci):m,10)||0;
+          const ph=ci>=0?m.slice(ci+1):'';
+          if(n>0&&ph){
+            const pr=await DB.prepare('SELECT idx,part FROM kh_state_parts WHERE hash=? ORDER BY idx').bind(ph).all();
+            const parts=(pr&&pr.results)||[];
+            const byIdx={};
+            for(const p of parts)byIdx[p.idx]=p.part;
+            let s='';let okAll=true;
+            for(let i2=0;i2<n;i2++){ if(typeof byIdx[i2]!=='string'){okAll=false;break;} s+=byIdx[i2]; }
+            if(okAll)r.state=s;
+          }
+        }catch(_){}
+      }
+    }
+  }
   /* envelope: unwrap sensitive columns for owner/admin reads (redacted rows
      already had the column deleted above, so this is a no-op for them). */
   await unwrapRows(table, rows, env);
@@ -866,6 +905,26 @@ async function handlePost(table, url, request, env, DB){
     };
     for(var _fk in raw){ if(typeof raw[_fk]==='string' && raw[_fk].length > (_FMAX[_fk]||16000)){ return err('Field "'+_fk+'" exceeds the maximum size',413,env); } }
     if(typeof raw.group_code==='string')raw.group_code=raw.group_code.replace(/[^A-Za-z0-9_-]/g,'').slice(0,24);
+    /* Large-account state → chunk across kh_state_parts (see CHUNK_PREFIX note).
+       Wrap FIRST (idempotent; the vals-loop wrapCell then passes both the KHW1:
+       pieces and the KHCH1: marker straight through), then split the WRAPPED
+       string. Parts are written BEFORE the main row so a concurrent reader never
+       sees a marker whose parts aren't there yet. */
+    let _stateParts=null, _stateHash='';
+    if(table==='kh_users' && typeof raw.state==='string' && raw.state){
+      const _sv = await wrapCell(raw.state, env);
+      _stateHash = String(raw.hash||'');
+      if(_sv.length>CHUNK_LIMIT && _stateHash){
+        _stateParts=[];
+        for(let _off=0;_off<_sv.length;_off+=CHUNK_LIMIT)_stateParts.push(_sv.slice(_off,_off+CHUNK_LIMIT));
+        raw.state = CHUNK_PREFIX+_stateParts.length+':'+_stateHash;
+        for(let _pi=0;_pi<_stateParts.length;_pi++){
+          await DB.prepare('INSERT INTO kh_state_parts(hash,idx,part) VALUES(?,?,?) ON CONFLICT(hash,idx) DO UPDATE SET part=excluded.part').bind(_stateHash,_pi,_stateParts[_pi]).run();
+        }
+      } else {
+        raw.state = _sv;
+      }
+    }
     const keys = Object.keys(raw).filter(k=>cols.indexOf(k)>=0);
     /* default-fill timestamp columns the client omitted */
     for(const tc of TS_COLS){ if(cols.indexOf(tc)>=0 && keys.indexOf(tc)<0){ raw[tc]=nowIso(); keys.push(tc); } }
@@ -884,6 +943,14 @@ async function handlePost(table, url, request, env, DB){
       sql += ' ON CONFLICT('+conflict.map(QUOTE).join(',')+') DO UPDATE SET '+(upd.length?upd.map(k=>QUOTE(k)+'=excluded.'+QUOTE(k)).join(','):QUOTE(conflict[0])+'='+QUOTE(conflict[0]));
     }
     const res = await DB.prepare(sql).bind(...vals).run();
+    /* Chunked-state housekeeping: drop leftover parts past the new count, or ALL
+       parts once the account shrinks back under one row (best-effort). */
+    if(table==='kh_users' && _stateHash){
+      try{
+        if(_stateParts) await DB.prepare('DELETE FROM kh_state_parts WHERE hash=? AND idx>=?').bind(_stateHash,_stateParts.length).run();
+        else await DB.prepare('DELETE FROM kh_state_parts WHERE hash=?').bind(_stateHash).run();
+      }catch(_){}
+    }
     await applyCaps(DB, table, raw);
     if(!minimal){
       /* representation: re-read by PK (or by rowid for autoincrement ids) */
@@ -1025,6 +1092,7 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_presence (user_id TEXT PRIMARY KEY, display_name TEXT DEFAULT '', last_seen TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC)",
   "CREATE TABLE IF NOT EXISTS kh_shared_api_usage (date TEXT PRIMARY KEY, count INTEGER DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS kh_state_parts (hash TEXT NOT NULL, idx INTEGER NOT NULL, part TEXT, PRIMARY KEY(hash,idx))",
   "CREATE TABLE IF NOT EXISTS kh_banned_usernames (name TEXT PRIMARY KEY, reason TEXT DEFAULT '', created_at TEXT)",
   /* Turnkey in-app moderator invite/grant system — see isMod() and the
      kh_mod_create/claim/list/approve/decline/revoke RPCs. code_hash is the
@@ -1665,8 +1733,15 @@ export default {
       }
     }catch(e){
       /* Don't leak backend/D1 exception text to clients — keep diagnostics
-         server-side (wrangler tail) and return a generic error. */
-      try{console.error('worker',(e&&e.message)||e);}catch(_){}
+         server-side (wrangler tail) and return a generic error. A few SAFE
+         classifications are surfaced so the client can react sensibly (the
+         all-generic version hid a real D1 size failure as 'Internal error'). */
+      const _em=String((e&&e.message)||e);
+      try{console.error('worker',_em);}catch(_){}
+      if(/too\s*big|TOOBIG|too\s*large|string or blob/i.test(_em))
+        return json({message:'Value too large for storage',code:'ROW_TOO_LARGE'},413,env);
+      if(/UNIQUE|constraint/i.test(_em))
+        return json({message:'Conflicts with an existing record',code:'CONSTRAINT'},409,env);
       return err('Internal error', 500, env);
     }
   },
