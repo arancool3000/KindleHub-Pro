@@ -109,7 +109,7 @@ const COLUMNS = {
   kh_errors:['id','text','kind','date'],
   kh_scores:['id','game','score','display_name','user_id','date'],
   kh_announcements:['id','text','active','targets','created_at','comments'],
-  kh_presence:['user_id','display_name','last_seen'],
+  kh_presence:['user_id','display_name','last_seen','avatar'],
   kh_shared_api_usage:['date','count'],
   kh_banned_usernames:['name','reason','created_at'],
   kh_visits:['device_id','day','last_seen','ua_hint','country','city'],
@@ -907,7 +907,7 @@ async function handlePost(table, url, request, env, DB){
       user_id:200, group_code:24, device_hint:200, location_hint:200,
       from_user:200, to_user:200, from_id:200, to_id:200,
       name:200, reason:4000, ua_hint:400, city:120, country:16, day:16,
-      author:200, email:320, hash:200, secret:200, owner_secret:200
+      author:200, email:320, hash:200, secret:200, owner_secret:200, avatar:400
     };
     for(var _fk in raw){ if(typeof raw[_fk]==='string' && raw[_fk].length > (_FMAX[_fk]||16000)){ return err('Field "'+_fk+'" exceeds the maximum size',413,env); } }
     if(typeof raw.group_code==='string')raw.group_code=raw.group_code.replace(/[^A-Za-z0-9_-]/g,'').slice(0,24);
@@ -1097,7 +1097,7 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_scores (id TEXT PRIMARY KEY, game TEXT NOT NULL, score INTEGER NOT NULL, display_name TEXT DEFAULT '', user_id TEXT DEFAULT '', date TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_scores_game_score ON kh_scores(game, score DESC)",
   "CREATE TABLE IF NOT EXISTS kh_announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, active INTEGER DEFAULT 1, targets TEXT DEFAULT '[]', created_at TEXT, comments TEXT DEFAULT '[]')",
-  "CREATE TABLE IF NOT EXISTS kh_presence (user_id TEXT PRIMARY KEY, display_name TEXT DEFAULT '', last_seen TEXT)",
+  "CREATE TABLE IF NOT EXISTS kh_presence (user_id TEXT PRIMARY KEY, display_name TEXT DEFAULT '', last_seen TEXT, avatar TEXT DEFAULT '')",
   "CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC)",
   "CREATE TABLE IF NOT EXISTS kh_shared_api_usage (date TEXT PRIMARY KEY, count INTEGER DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS kh_state_parts (hash TEXT NOT NULL, idx INTEGER NOT NULL, part TEXT, PRIMARY KEY(hash,idx))",
@@ -1140,6 +1140,7 @@ async function ensureSchema(DB){
   try{ await DB.prepare("ALTER TABLE kh_announcements ADD COLUMN comments TEXT DEFAULT '[]'").run(); }catch(_){}
   /* Store-app owner_secret for DBs created before authors could delete their apps. */
   try{ await DB.prepare("ALTER TABLE kh_store_apps ADD COLUMN owner_secret TEXT").run(); }catch(_){}
+  try{ await DB.prepare("ALTER TABLE kh_presence ADD COLUMN avatar TEXT DEFAULT ''").run(); }catch(_){}
   _schemaReady=true;
 }
 
