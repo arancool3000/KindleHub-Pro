@@ -852,7 +852,7 @@ async function handlePost(table, url, request, env, DB){
   /* rate limits (ported from the BEFORE INSERT triggers) — skipped for admin
      bulk writes so the migration isn't throttled. */
   if(!adminReq) for(const row of rows){
-    if(table==='kh_messages'){ /* PER-IP-per-room (was per-room across ALL users, which blocked everyone in a busy room even at 1 msg/min collectively). Now one sender is capped at 30/min but a room full of people is never throttled. The global RL_BURST per-IP guard still stops floods. */ const _mip=(request&&request.headers&&request.headers.get('cf-connecting-ip'))||'0'; if(!await checkRate(DB,'msg:'+(row.group_code||'')+':'+_mip,30,60)) return err('You are sending messages too quickly — wait a few seconds and try again.',429,env); }
+    if(table==='kh_messages'){ /* PER-SENDER-per-room. Keyed on user_id when present (Kindle Silk shares Amazon proxy IPs, so per-IP made ALL Kindles behind one proxy share a single 30/min room budget); IP is the fallback for anonymous senders. One sender is capped at 30/min but a busy room is never throttled; the global RL_BURST per-IP guard still stops floods (a spammer rotating user_ids is bounded by it). */ const _mip=(request&&request.headers&&request.headers.get('cf-connecting-ip'))||'0'; const _sender=String(row.user_id||'').slice(0,40)||_mip; if(!await checkRate(DB,'msg:'+(row.group_code||'')+':'+_sender,30,60)) return err('You are sending messages too quickly — wait a few seconds and try again.',429,env); }
     if(table==='kh_feedback'){ if(!await checkRate(DB,'fb:'+(row.type||''),10,60)) return err('Rate limit exceeded — max 10 feedback submissions per minute',429,env); }
     if(table==='kh_store_apps'){
       /* Shared App Store publish: cap size (protect D1 + the free-tier budget)
@@ -1759,12 +1759,18 @@ export default {
     /* Per-IP rate limit — one abuser can't burn the shared daily budget for
        everyone. Tunable via env RL_BURST (per 10s) / RL_DAY (per day); admin
        bypasses (checked only when a limit is hit, so no hashing on every req).
-       RL_DAY default 4000: a real heavy user does ~2–3k req/day, while the old
-       20000 default let FIVE IPs (or one stuck retry-loop client) burn the
-       whole 100k daily budget and trip read-only for everyone. */
+       ⚠ AN IP IS NOT A USER: Kindle Silk routes through Amazon's SHARED cloud
+       proxy, so a whole region's Kindles can share ONE egress IP. The old
+       free-tier defaults (60/10s, 4000/day — set during the 100k/day crisis)
+       made that shared IP exhaust its budget as the user base grew → every
+       Kindle behind it got instant 429s and the app looked 100% OFFLINE on
+       Kindle while laptops (own IPs) worked. On the PAID plan the real bill
+       protection is the global daily (1M) + monthly (9.5M) guards, so per-IP
+       only needs to stop floods: burst 240/10s, daily 150k (≈15% of the global
+       guardrail — a runaway single IP still can't take the site down). */
     const _ip=request.headers.get('cf-connecting-ip')||'0';
-    const _overBurst=await rlHit(_ip, (parseInt((env&&env.RL_BURST)||'',10)||60), 10, 'b');
-    const _overDay  =await rlHit(_ip, (parseInt((env&&env.RL_DAY)||'',10)||4000), 86400, 'd');
+    const _overBurst=await rlHit(_ip, (parseInt((env&&env.RL_BURST)||'',10)||240), 10, 'b');
+    const _overDay  =await rlHit(_ip, (parseInt((env&&env.RL_DAY)||'',10)||150000), 86400, 'd');
     if(_overBurst || _overDay){
       const adminOk=await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk) return json({error:'rate-limit',code:'CF_IP',message:'Too many requests from your connection — please slow down for a moment.'},429,env);
