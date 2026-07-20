@@ -1236,7 +1236,7 @@ async function handleGeminiProxy(request, env, DB){
    accumulated delta to kh_daily in batches (~1 write per 40 requests, or every
    20s), reading back the global total. Writes are estimated at 2 row-writes per
    mutating request (the insert/update + an amortised cap-trim/GC delete). */
-let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+let _budget = { date:'', estN:0, pendN:0, estW:0, pendW:0, lastFlush:0, month:'', monthN:0, monthW:0 };
 /* Latest share of the daily free-tier budget used (0..1), stamped onto every
    response as X-KH-Load so clients can self-throttle their background polling
    before anyone hits the hard cap (closed-loop capacity control). */
@@ -1254,10 +1254,21 @@ let _loadFrac = 0;
    free these MUST stay well under the shared 100k/day or the account 1027s). */
 const REQ_HARD_CAP   = 1000000;   // paid: runaway/bill guardrail, not a survival cliff (was 60000 on free)
 const WRITE_HARD_CAP = 1000000;   // paid D1 write allowance is large; this is a runaway backstop
+/* MONTHLY hard ceiling — the real "I can never pass the limit" guarantee. Workers
+   Paid INCLUDES 10,000,000 requests/month; past that it's usage-based ($0.30/M).
+   9.5M keeps a comfortable margin under the include so the bill stays $0 even if a
+   flush lands late. D1 paid includes 50M row-writes/month; 45M leaves margin. Both
+   env-tunable (MONTHLY_REQ_CAP / MONTHLY_WRITE_CAP) — RAISE them (e.g. toward/past
+   10M) to deliberately allow paid overage as the user base grows. Past the ceiling
+   the site goes READ-ONLY (503) for non-admins and resumes at the 1st of next month. */
+const MONTHLY_REQ_CAP   = 9500000;
+const MONTHLY_WRITE_CAP = 45000000;
 async function dailyUsed(DB, isWrite){
   const today = nowIso().slice(0,10);
+  const month = today.slice(0,7);   // 'YYYY-MM'
   const now = Date.now();
-  if(_budget.date!==today) _budget = { date:today, estN:0, pendN:0, estW:0, pendW:0, lastFlush:0 };
+  if(_budget.date!==today){ _budget.date=today; _budget.estN=0; _budget.pendN=0; _budget.estW=0; _budget.pendW=0; _budget.lastFlush=0; }
+  if(_budget.month!==month){ _budget.month=month; _budget.monthN=0; _budget.monthW=0; }
   _budget.estN++; _budget.pendN++;
   if(isWrite){ _budget.estW += 2; _budget.pendW += 2; }
   const due = _budget.pendN>=40 || _budget.pendW>=40 || (now-_budget.lastFlush)>20000;
@@ -1267,9 +1278,14 @@ async function dailyUsed(DB, isWrite){
       await DB.prepare('INSERT INTO kh_daily(date,n,w) VALUES(?,?,?) ON CONFLICT(date) DO UPDATE SET n=n+?, w=w+?').bind(today,an,aw,an,aw).run();
       const r = await DB.prepare('SELECT n,w FROM kh_daily WHERE date=?').bind(today).first();
       if(r){ if(typeof r.n==='number') _budget.estN=r.n; if(typeof r.w==='number') _budget.estW=r.w; }
+      /* Monthly rollup — sum every day this month (<=31 rows). Cached here so it
+         costs ~1 read per 40 requests, not one per request. This is what makes the
+         monthly ceiling a hard guarantee rather than a per-day approximation. */
+      const m = await DB.prepare("SELECT COALESCE(SUM(n),0) sn, COALESCE(SUM(w),0) sw FROM kh_daily WHERE date LIKE ?").bind(month+'-%').first();
+      if(m){ if(typeof m.sn==='number') _budget.monthN=m.sn; if(typeof m.sw==='number') _budget.monthW=m.sw; }
     }catch(_){ /* counter unavailable — fall back to the local per-isolate estimate */ }
   }
-  return { n:_budget.estN, w:_budget.estW };
+  return { n:_budget.estN, w:_budget.estW, monthN:_budget.monthN + _budget.pendN, monthW:_budget.monthW + _budget.pendW };
 }
 
 /* ── Autonomous AI moderator (lets KindleHub police itself for weeks) ─────────
@@ -1720,17 +1736,28 @@ export default {
        change (lower these if the state/email Workers grow). */
     const _reqCap = parseInt((env&&env.REQ_HARD_CAP)||'',10)||REQ_HARD_CAP;
     const _wrtCap = parseInt((env&&env.WRITE_HARD_CAP)||'',10)||WRITE_HARD_CAP;
-    /* Publish the higher of the request/write utilisation so clients back off. */
-    _loadFrac = Math.max(_usage.n/_reqCap, _usage.w/_wrtCap);
-    /* Over a daily free-tier ceiling → just error the cloud request (503),
-       non-admin only (admin token bypasses; resets 00:00 UTC). No read-only
-       degrade band — a request past the limit simply fails. */
-    if(_usage.n>_reqCap || (_usage.w>_wrtCap && _isWrite)){
+    const _monReqCap = parseInt((env&&env.MONTHLY_REQ_CAP)||'',10)||MONTHLY_REQ_CAP;
+    const _monWrtCap = parseInt((env&&env.MONTHLY_WRITE_CAP)||'',10)||MONTHLY_WRITE_CAP;
+    /* Publish the highest utilisation (daily OR monthly, request OR write) so
+       clients throttle as EITHER budget fills. */
+    _loadFrac = Math.max(_usage.n/_reqCap, _usage.w/_wrtCap, _usage.monthN/_monReqCap, _usage.monthW/_monWrtCap);
+    /* Past a daily OR monthly ceiling → 503 for non-admins (admin token bypasses).
+       The MONTHLY cap is the hard "can never exceed the paid include" guarantee
+       (resets on the 1st); the daily cap is the runaway backstop (resets 00:00 UTC).
+       A request past either simply fails — the site degrades to read-only, never a
+       surprise bill. */
+    const _overReq = _usage.n>_reqCap || _usage.monthN>_monReqCap;
+    const _overWrt = (_usage.w>_wrtCap || _usage.monthW>_monWrtCap) && _isWrite;
+    if(_overReq || _overWrt){
       const adminOk = await isAdmin(request.headers.get('x-kh-admin')||'');
       if(!adminOk){
+        if(_usage.monthN>_monReqCap)
+          return json({error:'monthly-limit',code:'CF_MONTH',message:'KindleHub reached its monthly request budget (overage guard). Service resumes on the 1st of next month; an admin can raise MONTHLY_REQ_CAP to allow more.'},503,env);
         if(_usage.n>_reqCap)
-          return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily free-tier request limit. Service resumes automatically at midnight UTC.'},503,env);
-        return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub reached its daily free-tier write limit. Service resumes automatically at midnight UTC.'},503,env);
+          return json({error:'daily-limit',code:'CF_DAILY',message:'KindleHub reached its daily request limit. Service resumes automatically at midnight UTC.'},503,env);
+        if(_usage.monthW>_monWrtCap)
+          return json({error:'monthly-write-limit',code:'CF_WRITE',message:'KindleHub reached its monthly write budget — the site is read-only until the 1st of next month.'},503,env);
+        return json({error:'write-limit',code:'CF_WRITE',message:'KindleHub reached its daily write limit. Service resumes automatically at midnight UTC.'},503,env);
       }
     }
 
