@@ -1226,6 +1226,48 @@ async function handleGeminiProxy(request, env, DB){
   return new Response(up.body, {status:up.status, headers:Object.assign({}, cors(env), {'Content-Type':'text/event-stream','x-kh-count':String(newCount),'x-kh-cap':String(cap)})});
 }
 
+/* ── FREE built-in AI via Cloudflare Workers AI ──────────────────────────────
+   "KindleHub AI (free)" in the model pickers routes here. Needs an [ai] binding
+   named AI on the Worker (wrangler: `[ai]\nbinding = "AI"`). Runs open Llama/Qwen
+   models on Cloudflare's own GPUs — no user API key, no Gemini key, and a very
+   generous free daily allowance. Non-streaming (returns the whole answer) to keep
+   the client simple. Shares a per-day counter (wai:<date>) so it can't be abused. */
+const WORKERS_AI_MODELS = new Set([
+  '@cf/meta/llama-3.1-8b-instruct',
+  '@cf/meta/llama-3.2-3b-instruct',
+  '@cf/meta/llama-3.2-1b-instruct',
+  '@cf/meta/llama-3-8b-instruct',
+  '@cf/mistral/mistral-7b-instruct-v0.1',
+  '@cf/qwen/qwen1.5-14b-chat-awq'
+]);
+async function handleWorkersAI(request, env, DB){
+  if(request.method!=='POST') return err('method not allowed',405,env);
+  if(!env || !env.AI) return json({error:'Free AI is not enabled on this Worker yet (add an [ai] binding named AI, then redeploy).',code:'AI_UNSET'},503,env);
+  let body; try{ body = await request.json(); }catch(_){ return json({error:'Bad JSON'},400,env); }
+  let model = (body && body.model) || '@cf/meta/llama-3.1-8b-instruct';
+  if(!WORKERS_AI_MODELS.has(model)) model = '@cf/meta/llama-3.1-8b-instruct';
+  const messages = (body && Array.isArray(body.messages) && body.messages.length)
+    ? body.messages.slice(0,40).map(function(m){ return {role:(m&&m.role)||'user', content:String((m&&m.content)||'').slice(0,8000)}; })
+    : [{role:'user', content:String((body&&body.prompt)||'').slice(0,8000)}];
+  /* Shared free-AI daily cap (separate key from the Gemini proxy). Best-effort. */
+  const cap = parseInt((env && env.WAI_DAILY_CAP)||'',10) || 20000;
+  const dkey = 'wai:'+nowIso().slice(0,10);
+  try{
+    await DB.prepare('INSERT INTO kh_shared_api_usage(date,count) VALUES(?,1) ON CONFLICT(date) DO UPDATE SET count=count+1').bind(dkey).run();
+    const r = await DB.prepare('SELECT count FROM kh_shared_api_usage WHERE date=?').bind(dkey).first();
+    if(r && (r.count||0) > cap) return json({error:'Free AI has hit today\'s shared limit. Resets midnight UTC, or add your own key.',code:'CAP_REACHED'},429,env);
+  }catch(_){/* counter unavailable — still serve (Workers AI has its own account cap) */}
+  try{
+    const maxTok = Math.min(2048, parseInt((body&&body.max_tokens),10)||1024);
+    const out = await env.AI.run(model, {messages:messages, max_tokens:maxTok});
+    let text = '';
+    if(out){ if(typeof out==='string') text=out; else if(out.response!=null) text=out.response; else if(out.result&&out.result.response!=null) text=out.result.response; }
+    return json({response:String(text||''), model:model}, 200, env);
+  }catch(e){
+    return json({error:'Free AI is busy — try again in a moment.',code:'AI_ERR'}, 502, env);
+  }
+}
+
 /* ── Cloudflare free-tier budget guard ───────────────────────────────────────
    The free plan caps Workers at 100,000 requests/day and D1 at 100,000 ROW
    WRITES/day (both reset 00:00 UTC; D1 also: 5M reads/day, 5GB storage). To make
@@ -1766,6 +1808,11 @@ export default {
     if(url.pathname==='/functions/v1/kh-gemini-proxy'){
       try{ return await handleGeminiProxy(request, env, DB); }
       catch(e){ try{console.error('proxy',(e&&e.message)||e);}catch(_){} return json({error:'AI proxy error'},500,env); }
+    }
+    /* Free built-in AI via Cloudflare Workers AI (the "KindleHub AI (free)" option). */
+    if(url.pathname==='/functions/v1/kh-workers-ai'){
+      try{ return await handleWorkersAI(request, env, DB); }
+      catch(e){ try{console.error('wai',(e&&e.message)||e);}catch(_){} return json({error:'Free AI error',code:'AI_ERR'},500,env); }
     }
 
     const m = url.pathname.match(/^\/rest\/v1\/(rpc\/)?([A-Za-z0-9_]+)\/?$/);
