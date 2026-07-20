@@ -852,7 +852,7 @@ async function handlePost(table, url, request, env, DB){
   /* rate limits (ported from the BEFORE INSERT triggers) — skipped for admin
      bulk writes so the migration isn't throttled. */
   if(!adminReq) for(const row of rows){
-    if(table==='kh_messages'){ if(!await checkRate(DB,'msg:'+(row.group_code||''),30,60)) return err('Rate limit exceeded — max 30 messages per group per minute',429,env); }
+    if(table==='kh_messages'){ /* PER-IP-per-room (was per-room across ALL users, which blocked everyone in a busy room even at 1 msg/min collectively). Now one sender is capped at 30/min but a room full of people is never throttled. The global RL_BURST per-IP guard still stops floods. */ const _mip=(request&&request.headers&&request.headers.get('cf-connecting-ip'))||'0'; if(!await checkRate(DB,'msg:'+(row.group_code||'')+':'+_mip,30,60)) return err('You are sending messages too quickly — wait a few seconds and try again.',429,env); }
     if(table==='kh_feedback'){ if(!await checkRate(DB,'fb:'+(row.type||''),10,60)) return err('Rate limit exceeded — max 10 feedback submissions per minute',429,env); }
     if(table==='kh_store_apps'){
       /* Shared App Store publish: cap size (protect D1 + the free-tier budget)
