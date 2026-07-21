@@ -1,0 +1,124 @@
+# KindleHub Pro — serve the MINIFIED build at the root.
+#
+# The site auto-deploys from GitHub, which publishes the repo as-is. index.html
+# is the readable SOURCE (what gets edited); index.min.html is the deploy build
+# (~33% smaller = parses much faster on Kindle). This rewrite (200 = same URL,
+# different file — not a redirect) makes the root URL serve the small build.
+# Honoured by Cloudflare Pages and Netlify; harmlessly ignored elsewhere.
+/   /index.min.html   200
+# Canonicalise: send www → apex so origin/cache/cookie policy never drifts
+# (security review, Low). 301 permanent; :splat preserves the path.
+https://www.kindlehub.pro/*  https://kindlehub.pro/:splat  301!
+
+
+# Deep links: every page/game slug serves the app; the in-app router opens
+# the matching view or game (see _khApplyDeepLink in index.html).
+/akinator   /index.min.html   200
+/anagrams   /index.min.html   200
+/animals   /index.min.html   200
+/appstore   /index.min.html   200
+/arena   /index.min.html   200
+/battleship   /index.min.html   200
+/blackjack   /index.min.html   200
+/blockblast   /index.min.html   200
+/breathe   /index.min.html   200
+/browser   /index.min.html   200
+/budget   /index.min.html   200
+/calc   /index.min.html   200
+/calendar   /index.min.html   200
+/candycrush   /index.min.html   200
+/chat   /index.min.html   200
+/checkers   /index.min.html   200
+/chess   /index.min.html   200
+/chords   /index.min.html   200
+/cipher   /index.min.html   200
+/connect4   /index.min.html   200
+/connections   /index.min.html   200
+/cookbook   /index.min.html   200
+/countdown   /index.min.html   200
+/crazy8   /index.min.html   200
+/crossyroad   /index.min.html   200
+/decide   /index.min.html   200
+/dictionary   /index.min.html   200
+/digquest   /index.min.html   200
+/discover   /index.min.html   200
+/dotsboxes   /index.min.html   200
+/draw   /index.min.html   200
+/eightball   /index.min.html   200
+/farm   /index.min.html   200
+/feedback   /index.min.html   200
+/files   /index.min.html   200
+/flipbook   /index.min.html   200
+/formulas   /index.min.html   200
+/g2048   /index.min.html   200
+/games   /index.min.html   200
+/geometrydash   /index.min.html   200
+/hangman   /index.min.html   200
+/hanoi   /index.min.html   200
+/histday   /index.min.html   200
+/home   /index.min.html   200
+/imagesearch   /index.min.html   200
+/kanban   /index.min.html   200
+/lifeweeks   /index.min.html   200
+/lightsout   /index.min.html   200
+/mail   /index.min.html   200
+/maps   /index.min.html   200
+/mastermind   /index.min.html   200
+/maze   /index.min.html   200
+/mdjournal   /index.min.html   200
+/memory   /index.min.html   200
+/messages   /index.min.html   200
+/minesweeper   /index.min.html   200
+/moon   /index.min.html   200
+/nonogram   /index.min.html   200
+/notes   /index.min.html   200
+/pacman   /index.min.html   200
+/passgen   /index.min.html   200
+/periodic   /index.min.html   200
+/platformer   /index.min.html   200
+/qrgen   /index.min.html   200
+/reading   /index.min.html   200
+/rss   /index.min.html   200
+/science   /index.min.html   200
+/screenshot   /index.min.html   200
+/set   /index.min.html   200
+/settings   /index.min.html   200
+/sheets   /index.min.html   200
+/sleeplog   /index.min.html   200
+/slides   /index.min.html   200
+/slither   /index.min.html   200
+/snake   /index.min.html   200
+/snakesladders   /index.min.html   200
+/solitaire   /index.min.html   200
+/spaceinv   /index.min.html   200
+/spellingbee   /index.min.html   200
+/sports   /index.min.html   200
+/starmap   /index.min.html   200
+/stash   /index.min.html   200
+/stocks   /index.min.html   200
+/strands   /index.min.html   200
+/sudoku   /index.min.html   200
+/tetris   /index.min.html   200
+/tipcalc   /index.min.html   200
+/tools   /index.min.html   200
+/topics   /index.min.html   200
+/towerdef   /index.min.html   200
+/translate   /index.min.html   200
+/trivia   /index.min.html   200
+/ttt   /index.min.html   200
+/unitconv   /index.min.html   200
+/uno   /index.min.html   200
+/verses   /index.min.html   200
+/watchq   /index.min.html   200
+/weather   /index.min.html   200
+/wikipedia   /index.min.html   200
+/wordle   /index.min.html   200
+/wordsearch   /index.min.html   200
+/yahtzee   /index.min.html   200
+/contacts   /index.min.html   200
+/comics   /index.min.html   200
+/reddit   /index.min.html   200
+/bluesky   /index.min.html   200
+/foodlog   /index.min.html   200
+/nerdle   /index.min.html   200
+/picpuzzle   /index.min.html   200

@@ -115,19 +115,24 @@ const COLUMNS = {
   kh_visits:['device_id','day','last_seen','ua_hint','country','city'],
   kh_rate:['bucket','win_start','n'],
   kh_store_apps:['id','name','html','cat','author','model','created_at','downloads','owner_secret'],
+  /* Anonymous research beacon: one row per device per day. NO username/user id —
+     age is a coarse bracket index, views a small {view:count} JSON. Feeds the
+     admin-only "Research" panel (what to invest in / what to make paid). */
+  kh_research:['id','day','age','tier','views','ai_n','msg_n','game_n','created_at'],
 };
 const PK = {
   kh_users:['hash'], kh_groups:['code'], kh_messages:['id'], kh_mail:['id'],
   kh_feedback:['id'], kh_errors:['id'], kh_scores:['id'], kh_announcements:['id'],
   kh_presence:['user_id'], kh_shared_api_usage:['date'], kh_banned_usernames:['name'],
   kh_visits:['device_id','day'], kh_rate:['bucket'], kh_store_apps:['id'],
+  kh_research:['id'],
 };
 const JSON_COLS = { kh_messages:['reactions'], kh_announcements:['targets','comments'], kh_feedback:['comments'] };
 const BOOL_COLS = { kh_messages:['edited','important','pinned'], kh_announcements:['active'] };
-const INT_COLS  = new Set(['score','votes','count','n','downloads']);
+const INT_COLS  = new Set(['score','votes','count','n','downloads','age','ai_n','msg_n','game_n']);
 const TS_COLS   = new Set(['updated_at','ts','created_at','date','last_seen']);
 /* RLS equivalents: which tables accept a direct (anon) INSERT / open UPDATE. */
-const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits','kh_store_apps']);
+const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits','kh_store_apps','kh_research']);
 /* Open (anon) UPDATE. kh_groups was REMOVED: the client never PATCHes a group
    (it only INSERTs on create), and an open update let anyone enumerate room
    codes then rename / re-own every room. */
@@ -138,14 +143,14 @@ const SECRET_DELETE = new Set(['kh_messages','kh_mail','kh_store_apps']); // own
    kh_rate stores one bucket per room ('msg:'+group_code); an open read would
    leak every active room's code (= its chat decryption key), so it's gated too.
    The client never reads these tables via REST. */
-const ADMIN_READ = new Set(['kh_visits','kh_errors','kh_rate']);
+const ADMIN_READ = new Set(['kh_visits','kh_errors','kh_rate','kh_research']);
 /* Tables a NON-admin may legitimately UPSERT (on_conflict). Any other table's
    conflict target is stripped for non-admins so a colliding INSERT errors
    instead of silently UPDATING an existing row — otherwise on_conflict is an
    unauthenticated UPDATE primitive that bypasses owner_secret / the kh_groups
    update lockdown. kh_groups/kh_messages upserts happen only in admin migration
    (X-KH-Admin). Verified: the client only upserts these three. */
-const UPSERT_OK = new Set(['kh_users','kh_presence','kh_visits']);
+const UPSERT_OK = new Set(['kh_users','kh_presence','kh_visits','kh_research']);
 /* Replicates the client's _mailNorm(email) → mail username, used to verify a
    mail reader owns the mailbox it queries. Keep in sync with index.html. */
 function mailNorm(u){ return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40); }
@@ -452,6 +457,14 @@ async function applyCaps(DB, table, row){
       await DB.prepare("DELETE FROM kh_feedback WHERE status IN ('done','ignored') AND COALESCE(status_at, date) < ?").bind(cut).run();
     } else if(table==='kh_errors'){
       if(Math.random()<0.05) await DB.prepare('DELETE FROM kh_errors WHERE id NOT IN (SELECT id FROM kh_errors ORDER BY date DESC LIMIT 600)').run();
+    } else if(table==='kh_research'){
+      /* Research rows age out at 90 days (long enough for trend charts, bounded
+         storage) + a hard row cap so a beacon flood can't grow D1 unbounded. */
+      if(Math.random()<0.05){
+        const cut=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+        await DB.prepare('DELETE FROM kh_research WHERE day < ?').bind(cut).run();
+        await DB.prepare('DELETE FROM kh_research WHERE id NOT IN (SELECT id FROM kh_research ORDER BY day DESC LIMIT 40000)').run();
+      }
     } else if(table==='kh_presence'){
       if(Math.random()<0.05){ const cut=new Date(Date.now()-3*86400000).toISOString(); await DB.prepare('DELETE FROM kh_presence WHERE last_seen < ?').bind(cut).run(); }
     }
@@ -1129,6 +1142,11 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_mod_grants (id INTEGER PRIMARY KEY AUTOINCREMENT, code_hash TEXT UNIQUE, status TEXT DEFAULT 'pending', requester_name TEXT, requester_uid TEXT, created_at TEXT, claimed_at TEXT, approved_at TEXT)",
   "CREATE INDEX IF NOT EXISTS kh_mod_grants_status ON kh_mod_grants(status)",
   "CREATE TABLE IF NOT EXISTS kh_visits (device_id TEXT NOT NULL, day TEXT NOT NULL, last_seen TEXT, ua_hint TEXT DEFAULT '', country TEXT DEFAULT '', city TEXT DEFAULT '', PRIMARY KEY (device_id, day))",
+  /* Anonymous research beacon (admin Research panel): one row per device-day.
+     age = KH_AGE_RANGES bracket index (-1 unknown), tier = g/p/u/c, views = a
+     small {view:count} JSON of that day's page opens. No usernames anywhere. */
+  "CREATE TABLE IF NOT EXISTS kh_research (id TEXT PRIMARY KEY, day TEXT NOT NULL, age INTEGER DEFAULT -1, tier TEXT DEFAULT 'g', views TEXT DEFAULT '{}', ai_n INTEGER DEFAULT 0, msg_n INTEGER DEFAULT 0, game_n INTEGER DEFAULT 0, created_at TEXT)",
+  "CREATE INDEX IF NOT EXISTS kh_research_day ON kh_research(day)",
   "CREATE TABLE IF NOT EXISTS kh_rate (bucket TEXT PRIMARY KEY, win_start TEXT, n INTEGER DEFAULT 0)",
   "CREATE TABLE IF NOT EXISTS kh_daily (date TEXT PRIMARY KEY, n INTEGER DEFAULT 0, w INTEGER DEFAULT 0)",
   /* Shared App Store: apps published by any user, downloadable by everyone. */

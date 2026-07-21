@@ -187,3 +187,19 @@ CREATE TABLE IF NOT EXISTS kh_maint (
   updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS kh_maint_status ON kh_maint(status, updated_at);
+
+-- Anonymous research beacon (admin "Research" panel in Feedback). One row per
+-- device per day; NO usernames — age is a coarse bracket index into the app's
+-- KH_AGE_RANGES, views a small {view:count} JSON of that day's page opens.
+CREATE TABLE IF NOT EXISTS kh_research (
+  id         TEXT PRIMARY KEY,        -- '<day>_<device8>'
+  day        TEXT NOT NULL,
+  age        INTEGER DEFAULT -1,      -- KH_AGE_RANGES bracket index, -1 unknown
+  tier       TEXT DEFAULT 'g',        -- g guest / p free / u ultra / c creator
+  views      TEXT DEFAULT '{}',
+  ai_n       INTEGER DEFAULT 0,
+  msg_n      INTEGER DEFAULT 0,
+  game_n     INTEGER DEFAULT 0,
+  created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS kh_research_day ON kh_research(day);
