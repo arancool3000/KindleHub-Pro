@@ -963,6 +963,44 @@ async function handlePost(table, url, request, env, DB){
       if(_wc && _wc.indexOf(k)>=0) v = await wrapCell(v, env);
       vals.push(v);
     }
+    /* ── READ-BEFORE-WRITE (D1 bills writes ~1000x reads) ──────────────────
+       For the high-frequency beacon tables, read the existing row first and
+       SKIP the write entirely when nothing meaningful changed:
+       - kh_presence: heartbeats re-write identical rows every ~40-70s per
+         client; if the stored row matches and last_seen is still fresh
+         (<35s old), the write buys nothing — the online window is 60-150s.
+       - kh_visits / kh_research: daily per-device rows; a re-post with the
+         same counters/fields (multi-tab, reload) is a pure duplicate.
+       Timestamp columns are excluded from the equality check (they always
+       differ); presence freshness handles the one case where the ts itself
+       is the payload. Any error falls through to the normal write. */
+    const _SKIP_FRESH = {kh_presence:35, kh_visits:-1, kh_research:-1};/* secs; -1 = ignore ts entirely */
+    if(conflict && conflict.length && _SKIP_FRESH.hasOwnProperty(table)){
+      try{
+        const _pk=conflict;
+        const _ex=await DB.prepare('SELECT * FROM '+QUOTE(table)+' WHERE '+_pk.map(c=>QUOTE(c)+'=?').join(' AND ')).bind(..._pk.map(c=>valIn(table,c,raw[c]))).first();
+        if(_ex){
+          let _same=true;
+          for(const k of keys){
+            if(_pk.indexOf(k)>=0)continue;
+            if(TS_COLS.has(k)){
+              const _tol=_SKIP_FRESH[table];
+              if(_tol>0){
+                const _age=Date.now()-Date.parse(_ex[k]||0);
+                if(!(_age>=0 && _age<_tol*1000)){_same=false;break;}
+              }
+              continue;/* tol<0 → timestamps don't count as change */
+            }
+            const _a=raw[k],_b=_ex[k];
+            if(String(_a==null?'':_a)!==String(_b==null?'':_b)){_same=false;break;}
+          }
+          if(_same){
+            await applyCaps(DB, table, raw);/* caps still run (they're read-guarded) */
+            return json(null, 204, env, {'X-KH-Deduped':'1'});
+          }
+        }
+      }catch(_sk){/* never block a legit write on the optimisation */}
+    }
     const colSql = keys.map(QUOTE).join(',');
     const ph = keys.map(()=>'?').join(',');
     let sql = 'INSERT INTO '+QUOTE(table)+'('+colSql+') VALUES('+ph+')';
@@ -1163,8 +1201,19 @@ const SCHEMA_DDL = [
   "CREATE TABLE IF NOT EXISTS kh_config (k TEXT PRIMARY KEY, v TEXT)",
 ];
 let _schemaReady = false;
+/* Bump whenever SCHEMA_DDL / the ALTER list changes — a stale stored version
+   makes the next isolate run the full DDL once and re-stamp. */
+const SCHEMA_V = 'v2026-07-21a';
 async function ensureSchema(DB){
   if(_schemaReady) return;
+  /* D1 pricing: rows READ are ~1000x cheaper than rows WRITTEN. Every new
+     isolate used to run the whole DDL + ALTER batch (~20 write-class ops even
+     when everything already exists). Now: ONE cheap read of a version stamp —
+     if it matches, the schema is known-current and we skip all DDL. */
+  try{
+    const vr = await DB.prepare("SELECT v FROM kh_config WHERE k='schema_v'").first();
+    if(vr && vr.v===SCHEMA_V){ _schemaReady=true; return; }
+  }catch(_){ /* kh_config missing → genuinely first boot on this DB; run DDL */ }
   let ok=false;
   try{ await DB.batch(SCHEMA_DDL.map(s=>DB.prepare(s))); ok=true; }
   catch(_){ /* some D1 versions reject DDL inside batch() — fall back to sequential */
@@ -1179,6 +1228,8 @@ async function ensureSchema(DB){
   /* Store-app owner_secret for DBs created before authors could delete their apps. */
   try{ await DB.prepare("ALTER TABLE kh_store_apps ADD COLUMN owner_secret TEXT").run(); }catch(_){}
   try{ await DB.prepare("ALTER TABLE kh_presence ADD COLUMN avatar TEXT DEFAULT ''").run(); }catch(_){}
+  /* Stamp the version so every future isolate start is one read, zero writes. */
+  try{ await DB.prepare("INSERT INTO kh_config(k,v) VALUES('schema_v',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(SCHEMA_V).run(); }catch(_){}
   _schemaReady=true;
 }
 
