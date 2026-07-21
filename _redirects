@@ -1,0 +1,8 @@
+# KindleHub Pro — serve the MINIFIED build at the root.
+#
+# The site auto-deploys from GitHub, which publishes the repo as-is. index.html
+# is the readable SOURCE (what gets edited); index.min.html is the deploy build
+# (~33% smaller = parses much faster on Kindle). This rewrite (200 = same URL,
+# different file — not a redirect) makes the root URL serve the small build.
+# Honoured by Cloudflare Pages and Netlify; harmlessly ignored elsewhere.
+/   /index.min.html   200

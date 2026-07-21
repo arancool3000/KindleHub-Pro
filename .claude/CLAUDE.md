@@ -288,11 +288,14 @@ network calls, minimal repaints (e-ink flashes on every DOM write), no reliance 
   triggers/columns/policies after each schema change.
 
 ## Deploy / "how do I get the changes"
-1. Merge the open PR for branch `claude/keen-tesla-n73rpc` into `main` (GitHub → Merge).
-2. Download **`index.min.html`** from `main`, rename it to `index.html`, and upload to the host. (It's the
-   minified deploy build — ~22% smaller than the source, so it parses/loads faster on the Kindle. The
-   readable source you edit is still `index.html`.)
-3. Site is behind **Cloudflare** — if changes don't show, **Purge Everything** (cache).
+**AUTO-DEPLOY: the site is linked to this GitHub repo — merging to `main` deploys it. There is NO
+manual download/rename/upload step any more; do not tell the user to do one.** A `_redirects` file
+(Cloudflare Pages/Netlify rewrite) serves **`index.min.html`** at the root URL so visitors get the
+small build even though the repo's `index.html` is the readable source. Still REGENERATE
+`index.min.html` (`cd tools && node minify.mjs`) and commit BOTH files before merging — the min
+build is what actually ships. If a change doesn't show after a merge: Cloudflare cache → **Purge
+Everything** (and remember the api-worker/email-worker are deployed separately — a Worker change
+always needs its own redeploy).
 4. For real internet email: deploy `email-worker.js` (full setup guide in its header), paste its URL into
    Admin → Local Insights → Mail gateway (`localStorage['kh_mail_gateway']`).
    - **email-worker.js now stores mail on Cloudflare D1** (full migration): its backend base is
