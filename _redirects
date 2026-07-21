@@ -6,6 +6,10 @@
 # different file — not a redirect) makes the root URL serve the small build.
 # Honoured by Cloudflare Pages and Netlify; harmlessly ignored elsewhere.
 /   /index.min.html   200
+# Canonicalise: send www → apex so origin/cache/cookie policy never drifts
+# (security review, Low). 301 permanent; :splat preserves the path.
+https://www.kindlehub.pro/*  https://kindlehub.pro/:splat  301!
+
 
 # Deep links: every page/game slug serves the app; the in-app router opens
 # the matching view or game (see _khApplyDeepLink in index.html).
