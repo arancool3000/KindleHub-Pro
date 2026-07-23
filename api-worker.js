@@ -3,16 +3,16 @@
    ─────────────────────────────────────────────────────────────────────────
 
    WHY THIS EXISTS
-   Supabase's free plan meters EGRESS (downloads) at 5 GB/mo. This Worker + a
-   D1 (SQLite) database replace the Supabase REST layer the app uses for chat,
+   Metered EGRESS (downloads) is the main backend cost. This Worker + a
+   D1 (SQLite) database provide the REST layer the app uses for chat,
    mail, scores, announcements, presence, feedback, errors, bans and visits.
    Cloudflare charges $0 egress, so the quota problem goes away permanently.
    (Per-user state blobs already live on R2 via state-worker.js.)
 
    It speaks the SAME PostgREST-subset the client already sends, so the app
-   only has to point its REST base URL here — no query rewrites. The RLS
-   policies, RPCs and storage-cap triggers from schema.sql are reimplemented
-   here in code.
+   only has to point its REST base URL here — no query rewrites. The
+   access-control policies, RPCs and storage-cap triggers of the legacy backend
+   are reimplemented here in code.
 
    ── ONE-TIME SETUP (all free, no card) ──────────────────────────────────────
    ★ You do NOT need to run schema-d1.sql by hand. On its first request this
@@ -51,13 +51,13 @@
 
    FINALLY (either path): copy the Worker URL (https://kindlehub-api.YOURNAME.
    workers.dev) into KindleHub → Admin → Local Insights → "API gateway (Cloudflare
-   D1)". Leave BLANK to keep using Supabase exactly as before.
+   D1)".
 
    ENV VARS (Worker → Settings → Variables and Secrets)
    • GEMINI_KEY  — (optional) a Google AI Studio key. Set this and the Worker also
-     hosts the shared-key AI proxy at /functions/v1/kh-gemini-proxy (ported off the
-     Supabase Edge Function), so the WHOLE backend is Cloudflare — no Edge Function
-     needed. The key never reaches the client.
+     hosts the shared-key AI proxy at /functions/v1/kh-gemini-proxy (the legacy
+     Edge Function ported here), so the WHOLE backend is Cloudflare — no separate
+     Edge Function needed. The key never reaches the client.
    • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
    • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
    • MOD_HASHES   — (optional, LEGACY manual path) comma-separated SHA-256 hashes
@@ -86,7 +86,7 @@
      already-wrapped row (all state/mail/chat) permanently unreadable. Use a long
      random value (e.g. `openssl rand -hex 32`) and store it somewhere safe.
 
-   SECURITY (mirrors the Supabase RLS model it replaces)
+   SECURITY (access-control model)
    • Reads + most inserts are open — same as the public anon key + permissive
      RLS. The data that matters is end-to-end encrypted on the device first.
    • Admin-only writes (announcements, bans) require the admin token, checked
@@ -427,7 +427,7 @@ function whereSql(table, filters){
   return { sql: parts.length?(' WHERE '+parts.join(' AND ')):'', binds };
 }
 
-/* ── storage-cap triggers (ported from schema.sql) ───────────────────────── */
+/* ── storage-cap triggers (ported from the legacy schema) ─────────────────── */
 /* Per-group message ceiling: the single Global Chat room keeps the latest 50,
    every other room keeps 30 (mirrors KH_MSG_GLOBAL_CAP / KH_MSG_CAP_MAX in
    index.html). Keep these in sync if the client caps change. */
@@ -902,8 +902,8 @@ async function handlePost(table, url, request, env, DB){
       if(raw.score!=null){ let sc=Math.floor(Number(raw.score)); if(!isFinite(sc)||sc<0)sc=0; if(sc>999999999)sc=999999999; raw.score=sc; }
       if(typeof raw.display_name==='string') raw.display_name=raw.display_name.slice(0,40);
     }
-    /* SECURITY: the D1 self-created schema didn't reproduce most of Supabase's
-       per-field size limits, and these tables (messages/feedback/errors/presence/
+    /* SECURITY: the D1 self-created schema didn't reproduce most of the legacy
+       backend's per-field size limits, and these tables (messages/feedback/errors/presence/
        mail) allow anonymous insertion — so cap the length of EVERY string field
        before it reaches the DB, blocking oversized/malformed records that would
        burn D1 storage + request capacity. Per-field caps for the hot columns; a
@@ -1233,7 +1233,7 @@ async function ensureSchema(DB){
   _schemaReady=true;
 }
 
-/* ── Shared-key Gemini proxy (ported from the Supabase Edge Function) ─────────
+/* ── Shared-key Gemini proxy (ported from the legacy Edge Function) ───────────
    Same contract the client already speaks: POST {model, payload}. Holds the key
    in env.GEMINI_KEY, enforces a first-come/first-served daily cap via the same
    kh_shared_api_usage counter, and streams Gemini's SSE back. Env vars on the
@@ -1541,7 +1541,7 @@ function maintUnsafe(code, kind){
   if(kind==='css'){ if(/@import\b|expression\s*\(|javascript:/i.test(c)) return 'unsafe CSS'; return ''; }
   const P=[[/[)\]\w$]\?\?=/,'??='],[/[)\]\w$]\?\?(?!=)/,'??'],[/[)\]\w$]\?\.\s*[A-Za-z_$([]/,'?.'],[/(?:^|[^A-Za-z0-9_$])catch\s*\{/,'parameterless catch'],[/[)\]\w$]\s*\|\|=/,'||='],[/[)\]\w$]\s*&&=/,'&&='],[/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators'],[/\(\?<[=!]/,'regex lookbehind'],[/\(\?<[A-Za-z_]/,'regex named group'],[/\\[pP]\{/,'regex \\p{}'],[/[^A-Za-z0-9_$.]\d[\d_]*n(?![A-Za-z0-9_$])/,'BigInt']];
   for(const p of P){ if(p[0].test(c)) return 'Kindle-incompatible: '+p[1]; }
-  if(/_ADMIN_HASHES|ADMIN_HASHES|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|SUPABASE_ANON_KEY|service_role|document\.cookie|\bkh_users\b/.test(c)) return 'touches auth/crypto internals';
+  if(/_ADMIN_HASHES|ADMIN_HASHES|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|service_role|document\.cookie|\bkh_users\b/.test(c)) return 'touches auth/crypto internals';
   try{ new Function(c); }catch(e){ return 'syntax error: '+((e&&e.message)||e); }
   return '';
 }
@@ -1878,7 +1878,7 @@ export default {
       }
     }
 
-    /* Shared-key AI proxy — ports the kh-gemini-proxy Supabase Edge Function onto
+    /* Shared-key AI proxy — ports the kh-gemini-proxy Edge Function onto
        this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */
     if(url.pathname==='/functions/v1/kh-gemini-proxy'){
       try{ return await handleGeminiProxy(request, env, DB); }

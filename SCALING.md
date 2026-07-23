@@ -54,10 +54,10 @@ count against the 100k. Do **not** cache kh_users / kh_mail / kh_messages
 ## Deploy gates (do these when shipping)
 
 1. **Migrate users to D1 first.** The app now routes ALL auth to the D1 Worker
-   (`KH_DEFAULT_API_GATEWAY`), Supabase is severed. If any of the ~172 accounts
-   still live only in Supabase, run the admin **migration** (Admin → Local
-   Insights) and confirm the copy BEFORE this build goes live, or those users
-   can't log in.
+   (`KH_DEFAULT_API_GATEWAY`), the legacy backend is severed. If any of the ~172
+   accounts still live only on the legacy backend, run the admin **migration**
+   (Admin → Local Insights) and confirm the copy BEFORE this build goes live, or
+   those users can't log in.
 2. **Set `KH_PEPPER`** in the Worker (Variables & Secrets) to a long random value
    and keep it permanently — enables envelope-at-rest.
 3. Redeploy `api-worker.js`, upload `index.min.html`, Cloudflare **Purge

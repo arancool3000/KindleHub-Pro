@@ -75,7 +75,7 @@ the AI can't be used to escalate:
 - **Escalation deny-list** (`_khPatchDenyRE`): both the boot applier and the
   "Apply patch" button refuse any patch whose code references admin/auth/
   credential/backend/encryption internals (`_isAdminCached`, `_adminToken`,
-  `ADMIN_HASHES`, `authToken`, `kh_offline_cred`, `kh_users`, `SUPABASE_*`,
+  `ADMIN_HASHES`, `authToken`, `kh_offline_cred`, `kh_users`,
   `service_role`, `_sbBase`/`_sbFetch`, `_encryptState`/`_msgEncrypt`, …). The
   generator prompt is told the same. A blocked patch is disabled + recorded.
   This also neutralises any *already-stored* malicious patch on next boot.
@@ -96,10 +96,10 @@ guards above do.
 
 ## localStorage contents  — mostly by design
 
-- The **Supabase anon key** is *designed* to be public (it only works together
-  with Row-Level-Security / the D1 worker's per-request auth). No `service_role`
-  key is ever shipped to the client — verified: `service_role` appears only in
-  SQL comments, never in client code.
+- No privileged/service key is ever shipped to the client — the D1 worker
+  enforces per-request auth, and the only cross-user power comes from the admin
+  token (SHA-256 in `ADMIN_HASHES`). Verified: `service_role` appears only in SQL
+  comments, never in client code.
 - The user's **auth token** (`SHA-256(username+password)`) is the AES key for
   their own encrypted state and lives only in their own browser's localStorage
   (origin-scoped). It is never sent in plaintext and never stored server-side in
@@ -111,45 +111,39 @@ guards above do.
   device access or XSS). Cross-device sync IS encrypted in transit and at rest
   in the cloud.
 
-## Backend / Supabase exposure  — CRITICAL, being closed
+## Legacy backend exposure  — CLOSED
 
-**The real hole.** The legacy Supabase project shipped fully-open RLS
-(`kh_users_read`/`update` = `using (true)`). Because `kh_users.hash` =
-SHA-256(username+password) is BOTH the login secret AND the AES key for that
-user's `state`, anyone holding the (public) anon key could `SELECT` every
-account's hash+state (full data compromise + impersonation) and `UPDATE` any
-row (takeover, or inject a boot-time `localFix`). Cloudflare D1 was never
-affected — it enforces per-request auth server-side.
+**The real hole (now closed).** The legacy hosted-Postgres backend shipped
+fully-open row-level security (`kh_users_read`/`update` = `using (true)`).
+Because `kh_users.hash` = SHA-256(username+password) is BOTH the login secret
+AND the AES key for that user's `state`, anyone holding the (public) anon key
+could `SELECT` every account's hash+state (full data compromise + impersonation)
+and `UPDATE` any row (takeover, or inject a boot-time `localFix`). Cloudflare D1
+was never affected — it enforces per-request auth server-side, and the legacy
+backend has since been locked down and decommissioned.
 
 What changed in the client (this repo):
 
-- **Hardcoded Supabase URL + anon key blanked** (`SUPABASE_URL=''`,
-  `SUPABASE_ANON_KEY=''`) — the shipped bundle no longer carries usable Supabase
-  creds. (They were already public in git history, so this is hygiene; the DB
-  fix is server-side, below.)
-- **`_sbBase()` never falls back to Supabase** — live REST/RPC/shared-AI traffic
-  goes only to the D1 gateway, or nowhere. The deprecated `kh_api_gateway='off'`
-  escape hatch (which used to force Supabase) now routes to D1.
-- **Realtime WS** paths require a real `supabase.co` URL, so a blank default
-  never attempts a Supabase socket.
-- The one-time **migration** tool still works if the admin pastes a Supabase
-  URL+key at runtime (`kh_sb_url_override`), but nothing sensitive ships.
+- **Hardcoded legacy-backend URL + anon key blanked** — the shipped bundle no
+  longer carries usable legacy-backend creds. (They were already public in git
+  history, so this is hygiene; the DB fix was server-side.)
+- **`_sbBase()` never falls back to the legacy backend** — live REST/RPC/shared-AI
+  traffic goes only to the D1 gateway, or nowhere. The deprecated
+  `kh_api_gateway='off'` escape hatch (which used to force the legacy backend) now
+  routes to D1.
+- **Realtime WS** paths required a real hosted-backend URL, so a blank default
+  never attempts a legacy socket.
+- The one-time **migration** tool still works if the admin pastes a legacy
+  backend URL+key at runtime (`kh_sb_url_override`), but nothing sensitive ships.
 
-What YOU must still do on the server (the client change alone does not un-leak
+Residual server-side note (the client change alone did not un-leak
 already-scraped data):
 
-1. **Run `supabase-lockdown.sql` now** (Supabase → SQL Editor). It revokes all
-   anon/authenticated access to every `kh_*` table and adds deny policies;
-   `service_role` still works for a final migration. Live traffic is on D1 so
-   this breaks nothing.
-2. **`schema.sql` was hardened** so re-running it can't reopen the hole —
-   `kh_users` read/update are now self-only (`hash = kh_request_secret()`).
-3. **Finish migrating** (via the service key, which bypasses RLS) and then
-   **delete the Supabase project**.
-4. **⚠ Rotate credentials.** The `hash` is the SAME auth secret on D1, so any
-   hash scraped while Supabase was open also unlocks that account on D1. Have
-   users **change their password** (regenerates the hash + re-keys state). Check
-   Supabase logs for large historical `kh_users` reads to gauge real exposure.
+- **⚠ Rotate credentials.** The `hash` is the SAME auth secret on D1, so any
+  hash scraped during the legacy backend's open window also unlocks that account
+  on D1. Have users **change their password** (regenerates the hash + re-keys
+  state). The legacy project has been locked down and decommissioned; its access
+  logs were the way to gauge real historical exposure of large `kh_users` reads.
 
 ## Stored XSS on render  — already defended
 
@@ -241,7 +235,8 @@ announcements/RSS render via `textContent`/escaped.
 
 1. **`hash = SHA-256(username+password)` is used as BOTH the account key AND the
    AES key, with no salt and no slow KDF.** A database dump (or the historical
-   open-Supabase window) decrypts every account, and weak passwords crack fast.
+   open window on the legacy backend) decrypts every account, and weak passwords
+   crack fast.
    *Plan:* add a per-user random `salt`; store the lookup/auth value as
    `verifier = PBKDF2(password, salt, ≥200k)` (server can't decrypt) and derive
    the state key separately as `PBKDF2/HKDF(password, salt, …, "state")` (never
@@ -250,7 +245,7 @@ announcements/RSS render via `textContent`/escaped.
    *Mitigated (defense-in-depth):* enabling `KH_PEPPER` (above) envelope-wraps
    `state` at rest, so a stolen DB no longer decrypts even though `hash` sits
    beside it — but the salted-KDF migration is still the durable fix for weak
-   passwords and for the historical open-Supabase window.
+   passwords and for the historical open window on the legacy backend.
 2. **Mail/DM keys are derived from usernames/codes, not random per-conversation
    keys.** The read-ACL above stops the live exploit, but the durable fix is a
    per-account keypair + random per-conversation keys wrapped to the recipient.

@@ -18,14 +18,10 @@
       Cloudflare dashboard → Workers & Pages → Create Worker → paste this file.
       Settings → Variables → add:
         RESEND_API_KEY        from step 2b
-        BACKEND — choose ONE:
-          • API_GATEWAY  (recommended) your Cloudflare D1 api-worker URL, so mail
-                         lives in the SAME database as the rest of KindleHub ($0
-                         egress). e.g. https://kindlehub-api.YOURNAME.workers.dev
-          • SUPABASE_URL + SUPABASE_SERVICE_KEY  (legacy) only if still on Supabase;
-                         service_role key from Supabase → Settings → API.
+        API_GATEWAY           your Cloudflare D1 api-worker URL, so mail lives in
+                              the SAME database as the rest of KindleHub ($0
+                              egress). e.g. https://kindlehub-api.YOURNAME.workers.dev
       (Optional) DAILY_SEND_CAP  default "80" — global outbound/day safety cap.
-      If API_GATEWAY is set it wins; otherwise it falls back to SUPABASE_URL.
 
    4. CONNECT THE APP:
       Workers → your worker → copy its URL (https://….workers.dev), then on
@@ -63,15 +59,13 @@ const json = (obj, status = 200, extra = {}) =>
                'Access-Control-Allow-Methods': 'POST,OPTIONS', ...extra },
   });
 
-/* Backend base URL: prefer the Cloudflare D1 gateway (API_GATEWAY) so mail lives
-   in the SAME database as the rest of KindleHub ($0 egress); fall back to
-   SUPABASE_URL only if D1 isn't configured. The D1 Worker speaks the same
-   PostgREST subset, so the paths below are identical and it ignores the
-   apikey/auth headers (open insert/select). */
-const _base = env => String(env.API_GATEWAY || env.SUPABASE_URL || '').replace(/\/+$/, '');
+/* Backend base URL: the Cloudflare D1 gateway (API_GATEWAY), so mail lives in the
+   SAME database as the rest of KindleHub ($0 egress). The D1 Worker speaks a
+   PostgREST subset, so the paths below map straight onto it (it ignores the
+   apikey/auth headers — open insert/select). */
+const _base = env => String(env.API_GATEWAY || '').replace(/\/+$/, '');
 function _bhdr(env, extra) {
   const h = { 'Content-Type': 'application/json', ...(extra || {}) };
-  if (env.SUPABASE_SERVICE_KEY) { h.apikey = env.SUPABASE_SERVICE_KEY; h.Authorization = 'Bearer ' + env.SUPABASE_SERVICE_KEY; }
   return h;
 }
 async function sb(env, path, init = {}) {

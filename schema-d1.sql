@@ -1,6 +1,6 @@
 -- ── KindleHub D1 (SQLite) schema — Cloudflare Workers backend ───────────────
--- The zero-egress replacement for the Supabase REST backend. Pairs with
--- api-worker.js (which holds the RLS/RPC/trigger logic that lived in Postgres).
+-- The zero-egress D1 REST backend. Pairs with
+-- api-worker.js (which holds the access-control/RPC/trigger logic that lived in Postgres).
 --
 -- You normally DON'T need to run this by hand: api-worker.js auto-creates every
 -- table on its first request (ensureSchema). Just deploy the Worker + bind a D1
@@ -11,7 +11,7 @@
 --   or "Studio"/Explore-Data editor (its Run only executes the statement at the
 --   cursor → you get just one table). Use wrangler --file, or the Worker auto-create.
 --
--- Type mapping vs the Postgres schema.sql:
+-- Type mapping vs the legacy Postgres schema:
 --   timestamptz -> TEXT (ISO-8601 strings)   bigserial -> INTEGER PRIMARY KEY AUTOINCREMENT
 --   jsonb       -> TEXT (JSON strings)        boolean   -> INTEGER (0/1)
 -- The Worker marshals JSON/boolean columns back to real JSON/booleans on read,
