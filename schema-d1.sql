@@ -228,3 +228,13 @@ CREATE TABLE IF NOT EXISTS kh_config (
   k TEXT PRIMARY KEY,
   v TEXT
 );
+
+-- Password-reset codes (email-based account recovery). One row per pending reset,
+-- keyed by the username hash `u`. The 6-digit code is NEVER stored — only its
+-- salted hash (code_hash = SHA-256(u + ':' + code)) — with a 10-min `expires`, a
+-- 5-attempt cap (`attempts`) and single-use. `created` (ms) drives the per-`u`
+-- request pacing. Written/read ONLY by the mail gateway (email-worker.js) using
+-- the reset service secret; the browser client never touches it. Expired rows are
+-- swept server-side (api-worker applyCaps + the scheduled cron). See the kh_reset
+-- access gate in api-worker.js. Column defs kept byte-identical with SCHEMA_DDL.
+CREATE TABLE IF NOT EXISTS kh_reset (u TEXT PRIMARY KEY, code_hash TEXT, expires INTEGER, attempts INTEGER DEFAULT 0, created INTEGER);

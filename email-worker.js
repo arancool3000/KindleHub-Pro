@@ -107,6 +107,61 @@ async function userOwns(env, secret, username) {
 const newId = () => 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const newSecret = () => [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
 
+/* ── password-reset helpers ───────────────────────────────────────────────── */
+async function sha256hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s || '')));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/* Length-safe, non-early-exit compare (both operands are fixed-length 64-hex
+   SHA-256 strings, so the length branch leaks nothing). */
+function timingSafeEqual(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+const RESET_TTL_MS = 10 * 60 * 1000;   // reset code lifetime (10 minutes)
+
+/* kh_reset lives in the SAME D1 backend as mail, but — unlike kh_mail — it is NOT
+   public. The api-worker gates ALL kh_reset access behind a dedicated reset
+   service secret (a 6-digit code stored as SHA-256(u+':'+code) would be brute-
+   forceable if code_hash were world-readable, and an open write would let anyone
+   set a code they know). Set the SAME value in env.RESET_SECRET on BOTH this
+   Worker and the api-worker. Sent as X-KH-Reset-Secret; NEVER exposed to the
+   browser (these endpoints only relay ok/error to the client). */
+function _rhdr(env, extra) {
+  return { 'Content-Type': 'application/json',
+           'X-KH-Reset-Secret': String(env.RESET_SECRET || ''), ...(extra || {}) };
+}
+async function resetRowGet(env, u) {
+  try {
+    const r = await fetch(_base(env) + '/rest/v1/kh_reset?u=eq.' + encodeURIComponent(u) + '&limit=1',
+      { headers: _rhdr(env) });
+    if (!r.ok) return null;
+    const rows = (await r.json()) || [];
+    return rows[0] || null;
+  } catch { return null; }
+}
+/* Upsert (INSERT … ON CONFLICT(u) DO UPDATE) — used both to issue a fresh code
+   and to persist an incremented attempts count. Returns true on success. */
+async function resetRowUpsert(env, row) {
+  try {
+    const r = await fetch(_base(env) + '/rest/v1/kh_reset?on_conflict=u', {
+      method: 'POST',
+      headers: _rhdr(env, { Prefer: 'return=minimal' }),
+      body: JSON.stringify(row),
+    });
+    return r.ok || r.status === 201 || r.status === 204;
+  } catch { return false; }
+}
+async function resetRowDelete(env, u) {
+  try {
+    await fetch(_base(env) + '/rest/v1/kh_reset?u=eq.' + encodeURIComponent(u),
+      { method: 'DELETE', headers: _rhdr(env) });
+  } catch { /* best-effort single-use consumption / cleanup */ }
+}
+
 /* ── minimal MIME text extraction ─────────────────────────────────────── */
 function decodeQP(s) {
   return s.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, (_, h) => {
@@ -171,12 +226,109 @@ function decodeSubject(s) {
 /* ── per-IP rate limit (Cache API — no KV needed) ─────────────────────── */
 async function rateLimited(req, limit, windowSec) {
   const ip = req.headers.get('cf-connecting-ip') || 'unknown';
-  const key = 'https://rl.kindlehub.internal/' + encodeURIComponent(ip) + '/' + Math.floor(Date.now() / (windowSec * 1000));
+  return rateLimitedKey(ip, limit, windowSec);
+}
+/* Same rolling-window counter keyed by an arbitrary string (a username hash,
+   'GLOBAL-DAY', …). Behaviour is identical to the IP variant. */
+async function rateLimitedKey(keyPart, limit, windowSec) {
+  const key = 'https://rl.kindlehub.internal/' + encodeURIComponent(keyPart) + '/' + Math.floor(Date.now() / (windowSec * 1000));
   const cache = caches.default;
   const hit = await cache.match(key);
   const n = hit ? parseInt(await hit.text(), 10) + 1 : 1;
   await cache.put(key, new Response(String(n), { headers: { 'Cache-Control': 'max-age=' + windowSec } }));
   return n > limit;
+}
+
+/* ── PASSWORD RESET: request a code ─────────────────────────────────────────
+   POST /reset/request  { u:<username_hash>, to:<recovery_email> }
+   → { ok:true }                              (code generated + emailed)
+   → { ok:false, error:<msg> }                (validation / rate-limit / send fail)
+   The 6-digit code is emailed to `to`; only its hash (SHA-256(u+':'+code)) is
+   stored in kh_reset, with a 10-min expiry. Per-`u` pacing: at most 1/60s (from
+   the stored row's `created`) and 5/hour (a rolling per-`u` cache counter, since
+   a single row can't hold an hourly count). Counts against DAILY_SEND_CAP like
+   every other outbound mail. We never reveal whether the account/email exists. */
+async function resetRequest(req, env) {
+  let b; try { b = await req.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
+  const u = String(b.u || '').trim().toLowerCase();
+  const to = String(b.to || '').trim().slice(0, 160);
+  if (!/^[0-9a-f]{16,128}$/.test(u)) return json({ ok: false, error: 'invalid request' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) return json({ ok: false, error: 'invalid email address' }, 400);
+
+  const now = Date.now();
+  /* 1 request / 60s per u — enforced from the existing row's `created`. */
+  const existing = await resetRowGet(env, u);
+  if (existing && Number(existing.created) && (now - Number(existing.created)) < 60000)
+    return json({ ok: false, error: 'Please wait a minute before requesting another code.' }, 200);
+  /* 5 / hour per u (rolling window). */
+  if (await rateLimitedKey('reset-hr/' + u, 5, 3600))
+    return json({ ok: false, error: 'Too many reset requests — please try again later.' }, 200);
+
+  /* Count against the shared daily outbound cap BEFORE issuing (so a capped day
+     doesn't leave an unsent code lying around). Same GLOBAL-DAY key as /send. */
+  const cap = parseInt(env.DAILY_SEND_CAP || '80', 10);
+  if (await rateLimited({ headers: { get: () => 'GLOBAL-DAY' } }, cap, 86400))
+    return json({ ok: false, error: 'Daily email limit reached — try again tomorrow.' }, 200);
+
+  /* random, zero-padded 6-digit code; store ONLY its salted hash */
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0');
+  const code_hash = await sha256hex(u + ':' + code);
+  const stored = await resetRowUpsert(env, { u, code_hash, expires: now + RESET_TTL_MS, attempts: 0, created: now });
+  if (!stored) return json({ ok: false, error: 'Could not start a reset right now — please try again.' }, 502);
+
+  const from = env.RESET_FROM || 'KindleHub <noreply@kindlehub.pro>';
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from,
+      to: [to],
+      subject: 'Your KindleHub reset code',
+      text: 'Your KindleHub password-reset code is ' + code + '. It expires in 10 minutes. '
+          + "If you didn't request this, ignore this email.",
+    }),
+  });
+  if (!r.ok) {
+    /* Roll back the stored code so a transient send failure doesn't lock the user
+       out of retrying for 60s. */
+    await resetRowDelete(env, u);
+    return json({ ok: false, error: 'Could not send the reset email — please try again.' }, 502);
+  }
+  return json({ ok: true });
+}
+
+/* ── PASSWORD RESET: verify a code ──────────────────────────────────────────
+   POST /reset/verify  { u:<username_hash>, code:"123456" }
+   → { ok:true }                         (correct → row deleted, single-use)
+   → { ok:false, error:<msg> }           (expired / too many attempts / incorrect)
+   No token is returned — the client then proceeds to its existing recovery-code +
+   new-password step. Comparison is done here against the stored hash. */
+async function resetVerify(req, env) {
+  let b; try { b = await req.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
+  const u = String(b.u || '').trim().toLowerCase();
+  const code = String(b.code || '').trim();
+  if (!/^[0-9a-f]{16,128}$/.test(u)) return json({ ok: false, error: 'invalid request' }, 400);
+
+  const row = await resetRowGet(env, u);
+  const now = Date.now();
+  if (!row || !Number(row.expires) || Number(row.expires) < now)
+    return json({ ok: false, error: 'That code has expired — request a new one.' }, 200);
+  if (Number(row.attempts || 0) >= 5) {
+    await resetRowDelete(env, u);
+    return json({ ok: false, error: 'Too many attempts — request a new code.' }, 200);
+  }
+  const got = await sha256hex(u + ':' + code);
+  if (!timingSafeEqual(String(row.code_hash || ''), got)) {
+    /* persist the incremented attempt count (re-upsert the row) */
+    await resetRowUpsert(env, {
+      u, code_hash: String(row.code_hash || ''), expires: Number(row.expires),
+      attempts: Number(row.attempts || 0) + 1, created: Number(row.created) || now,
+    });
+    return json({ ok: false, error: 'Incorrect code.' }, 200);
+  }
+  /* correct → consume it (single-use) */
+  await resetRowDelete(env, u);
+  return json({ ok: true });
 }
 
 export default {
@@ -210,8 +362,11 @@ export default {
 
   /* ── OUTBOUND: the app POSTs {to, from_user, subject, body} to /send ── */
   async fetch(req, env) {
-    if (req.method === 'OPTIONS') return json({ ok: true });
+    if (req.method === 'OPTIONS') return json({ ok: true });   // CORS preflight for every path
     const url = new URL(req.url);
+    /* Email-based password-reset flow (see resetRequest / resetVerify above). */
+    if (req.method === 'POST' && url.pathname === '/reset/request') return resetRequest(req, env);
+    if (req.method === 'POST' && url.pathname === '/reset/verify')  return resetVerify(req, env);
     if (req.method !== 'POST' || url.pathname !== '/send')
       return json({ error: 'POST /send only' }, 404);
 
