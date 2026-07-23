@@ -3,11 +3,11 @@
    ─────────────────────────────────────────────────────────────────────────
 
    WHY THIS EXISTS
-   Supabase's free plan caps EGRESS (data downloaded) at 5 GB/month. KindleHub's
-   single biggest egress source is every device downloading its encrypted state
-   blob on sync. Cloudflare R2 has ZERO egress fees, so moving the state blob here
-   removes that cost entirely — permanently, at any scale. Chat / mail / scores
-   stay on Supabase (they're small and capped).
+   Metered EGRESS (data downloaded) is the main backend cost. KindleHub's single
+   biggest egress source is every device downloading its encrypted state blob on
+   sync. Cloudflare R2 has ZERO egress fees, so moving the state blob here removes
+   that cost entirely — permanently, at any scale. Chat / mail / scores stay on the
+   D1 backend (they're small and capped).
 
    COST: free. R2 free tier = 10 GB storage, 1,000,000 writes/mo, 10,000,000
    reads/mo, and $0 egress forever. For dozens–hundreds of users that's miles
@@ -27,13 +27,12 @@
        object key IS the user's secret password-hash, so "*" leaks nothing.)
    5. Copy the Worker URL, e.g.  https://kindlehub-state.YOURNAME.workers.dev
    6. In KindleHub: Admin → Local Insights → "State gateway (Cloudflare R2)" →
-      paste the URL → Save. Sync immediately moves to R2. Leave it BLANK to keep
-      using Supabase exactly as before (the app falls back automatically).
+      paste the URL → Save. Sync immediately moves to R2.
 
-   SECURITY MODEL (identical to the Supabase one it replaces)
+   SECURITY MODEL
    • Objects are keyed by the user's auth hash = SHA-256(username + password) —
      a 64-hex secret only the account owner can produce. That hash gates access,
-     same as the Supabase row key.
+     same as the legacy row key.
    • The blob is AES-GCM encrypted on the device BEFORE it ever leaves, so this
      Worker only ever stores/serves opaque ciphertext. It cannot read user data.
 
@@ -44,7 +43,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const MAX_STATE = 16 * 1000 * 1000; // 16 MB ceiling, matches the Supabase CHECK
+const MAX_STATE = 16 * 1000 * 1000; // 16 MB ceiling, matches the legacy DB CHECK
 
 function cors(env) {
   return {

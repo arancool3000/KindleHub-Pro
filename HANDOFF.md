@@ -16,7 +16,7 @@ Stars brightness/trajectory/IP-location; stocks fetch; friends dedupe; **KindleO
 
 ## 🔧 Config the user must do (dashboard-side, NOT code)
 1. Set a random `ADMIN_SECRET` on the api-worker (env) + redeploy, then paste it in Settings → Account → Moderators. Then the public username stops granting admin.
-2. Delete the legacy **Supabase** project (Supabase dashboard). Code prefers D1 already.
+2. Delete the **legacy backend** project (its dashboard) if it still exists. Code uses D1 already.
 3. AUTO_MOD / MAINT need nothing — safe in code now.
 
 ## ⏳ TODO — feature backlog (not started; start here)

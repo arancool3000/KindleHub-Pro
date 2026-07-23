@@ -1,6 +1,6 @@
 -- ── KindleHub D1 (SQLite) schema — Cloudflare Workers backend ───────────────
--- The zero-egress replacement for the Supabase REST backend. Pairs with
--- api-worker.js (which holds the RLS/RPC/trigger logic that lived in Postgres).
+-- The zero-egress D1 REST backend. Pairs with
+-- api-worker.js (which holds the access-control/RPC/trigger logic that lived in Postgres).
 --
 -- You normally DON'T need to run this by hand: api-worker.js auto-creates every
 -- table on its first request (ensureSchema). Just deploy the Worker + bind a D1
@@ -11,7 +11,7 @@
 --   or "Studio"/Explore-Data editor (its Run only executes the statement at the
 --   cursor → you get just one table). Use wrangler --file, or the Worker auto-create.
 --
--- Type mapping vs the Postgres schema.sql:
+-- Type mapping vs the legacy Postgres schema:
 --   timestamptz -> TEXT (ISO-8601 strings)   bigserial -> INTEGER PRIMARY KEY AUTOINCREMENT
 --   jsonb       -> TEXT (JSON strings)        boolean   -> INTEGER (0/1)
 -- The Worker marshals JSON/boolean columns back to real JSON/booleans on read,
@@ -98,12 +98,14 @@ CREATE TABLE IF NOT EXISTS kh_announcements (
   text       TEXT NOT NULL,
   active     INTEGER DEFAULT 1,
   targets    TEXT DEFAULT '[]',
+  comments   TEXT DEFAULT '[]',   -- public per-announcement comment thread (JSON)
   created_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS kh_presence (
   user_id      TEXT PRIMARY KEY,
   display_name TEXT DEFAULT '',
+  avatar       TEXT DEFAULT '',
   last_seen    TEXT
 );
 CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC);
@@ -203,3 +205,36 @@ CREATE TABLE IF NOT EXISTS kh_research (
   created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS kh_research_day ON kh_research(day);
+
+-- ── Infrastructure tables (the Worker self-creates these; documented here to
+--    keep schema-d1.sql in sync with api-worker.js SCHEMA_DDL) ──────────────
+-- kh_state_parts: transparent chunking of oversized user-state blobs (a single
+--   D1 row is capped ~2 MB, so a large state is split into ordered parts).
+CREATE TABLE IF NOT EXISTS kh_state_parts (
+  hash TEXT NOT NULL,
+  idx  INTEGER NOT NULL,
+  part TEXT,
+  PRIMARY KEY(hash, idx)
+);
+-- kh_daily: free-tier budget counter — one row per UTC day (n = requests,
+--   w = row-writes) so the Worker can throttle before hitting the daily caps.
+CREATE TABLE IF NOT EXISTS kh_daily (
+  date TEXT PRIMARY KEY,
+  n    INTEGER DEFAULT 0,
+  w    INTEGER DEFAULT 0
+);
+-- kh_config: small key/value store for Worker-side config flags.
+CREATE TABLE IF NOT EXISTS kh_config (
+  k TEXT PRIMARY KEY,
+  v TEXT
+);
+
+-- Password-reset codes (email-based account recovery). One row per pending reset,
+-- keyed by the username hash `u`. The 6-digit code is NEVER stored — only its
+-- salted hash (code_hash = SHA-256(u + ':' + code)) — with a 10-min `expires`, a
+-- 5-attempt cap (`attempts`) and single-use. `created` (ms) drives the per-`u`
+-- request pacing. Written/read ONLY by the mail gateway (email-worker.js) using
+-- the reset service secret; the browser client never touches it. Expired rows are
+-- swept server-side (api-worker applyCaps + the scheduled cron). See the kh_reset
+-- access gate in api-worker.js. Column defs kept byte-identical with SCHEMA_DDL.
+CREATE TABLE IF NOT EXISTS kh_reset (u TEXT PRIMARY KEY, code_hash TEXT, expires INTEGER, attempts INTEGER DEFAULT 0, created INTEGER);

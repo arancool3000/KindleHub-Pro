@@ -3,16 +3,16 @@
    ─────────────────────────────────────────────────────────────────────────
 
    WHY THIS EXISTS
-   Supabase's free plan meters EGRESS (downloads) at 5 GB/mo. This Worker + a
-   D1 (SQLite) database replace the Supabase REST layer the app uses for chat,
+   Metered EGRESS (downloads) is the main backend cost. This Worker + a
+   D1 (SQLite) database provide the REST layer the app uses for chat,
    mail, scores, announcements, presence, feedback, errors, bans and visits.
    Cloudflare charges $0 egress, so the quota problem goes away permanently.
    (Per-user state blobs already live on R2 via state-worker.js.)
 
    It speaks the SAME PostgREST-subset the client already sends, so the app
-   only has to point its REST base URL here — no query rewrites. The RLS
-   policies, RPCs and storage-cap triggers from schema.sql are reimplemented
-   here in code.
+   only has to point its REST base URL here — no query rewrites. The
+   access-control policies, RPCs and storage-cap triggers of the legacy backend
+   are reimplemented here in code.
 
    ── ONE-TIME SETUP (all free, no card) ──────────────────────────────────────
    ★ You do NOT need to run schema-d1.sql by hand. On its first request this
@@ -51,13 +51,13 @@
 
    FINALLY (either path): copy the Worker URL (https://kindlehub-api.YOURNAME.
    workers.dev) into KindleHub → Admin → Local Insights → "API gateway (Cloudflare
-   D1)". Leave BLANK to keep using Supabase exactly as before.
+   D1)".
 
    ENV VARS (Worker → Settings → Variables and Secrets)
    • GEMINI_KEY  — (optional) a Google AI Studio key. Set this and the Worker also
-     hosts the shared-key AI proxy at /functions/v1/kh-gemini-proxy (ported off the
-     Supabase Edge Function), so the WHOLE backend is Cloudflare — no Edge Function
-     needed. The key never reaches the client.
+     hosts the shared-key AI proxy at /functions/v1/kh-gemini-proxy (the legacy
+     Edge Function ported here), so the WHOLE backend is Cloudflare — no separate
+     Edge Function needed. The key never reaches the client.
    • DAILY_CAP   — (optional) shared-proxy daily request cap (default 3580).
    • ALLOW_ORIGIN— (optional) CORS origin allow-list (default '*').
    • MOD_HASHES   — (optional, LEGACY manual path) comma-separated SHA-256 hashes
@@ -86,7 +86,7 @@
      already-wrapped row (all state/mail/chat) permanently unreadable. Use a long
      random value (e.g. `openssl rand -hex 32`) and store it somewhere safe.
 
-   SECURITY (mirrors the Supabase RLS model it replaces)
+   SECURITY (access-control model)
    • Reads + most inserts are open — same as the public anon key + permissive
      RLS. The data that matters is end-to-end encrypted on the device first.
    • Admin-only writes (announcements, bans) require the admin token, checked
@@ -119,20 +119,28 @@ const COLUMNS = {
      age is a coarse bracket index, views a small {view:count} JSON. Feeds the
      admin-only "Research" panel (what to invest in / what to make paid). */
   kh_research:['id','day','age','tier','views','ai_n','msg_n','game_n','created_at'],
+  /* Password-reset codes (email-based recovery). Keyed by username hash `u`.
+     code_hash = SHA-256(u+':'+code) — the plaintext code is NEVER stored. Access
+     is server-only (mail gateway), gated by the kh_reset access gate in fetch(). */
+  kh_reset:['u','code_hash','expires','attempts','created'],
 };
 const PK = {
   kh_users:['hash'], kh_groups:['code'], kh_messages:['id'], kh_mail:['id'],
   kh_feedback:['id'], kh_errors:['id'], kh_scores:['id'], kh_announcements:['id'],
   kh_presence:['user_id'], kh_shared_api_usage:['date'], kh_banned_usernames:['name'],
   kh_visits:['device_id','day'], kh_rate:['bucket'], kh_store_apps:['id'],
-  kh_research:['id'],
+  kh_research:['id'], kh_reset:['u'],
 };
 const JSON_COLS = { kh_messages:['reactions'], kh_announcements:['targets','comments'], kh_feedback:['comments'] };
 const BOOL_COLS = { kh_messages:['edited','important','pinned'], kh_announcements:['active'] };
-const INT_COLS  = new Set(['score','votes','count','n','downloads','age','ai_n','msg_n','game_n']);
+const INT_COLS  = new Set(['score','votes','count','n','downloads','age','ai_n','msg_n','game_n','expires','attempts','created']);
 const TS_COLS   = new Set(['updated_at','ts','created_at','date','last_seen']);
 /* RLS equivalents: which tables accept a direct (anon) INSERT / open UPDATE. */
-const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits','kh_store_apps','kh_research']);
+/* kh_reset is listed insertable/upsertable so an ALREADY-AUTHORISED request (one
+   that passed the kh_reset access gate in fetch() — reset service secret or admin)
+   flows through the normal insert/upsert path. The gate — NOT this list — is the
+   real access control; kh_reset is unreachable here without it. */
+const INSERT_OK = new Set(['kh_users','kh_groups','kh_messages','kh_mail','kh_feedback','kh_errors','kh_scores','kh_presence','kh_visits','kh_store_apps','kh_research','kh_reset']);
 /* Open (anon) UPDATE. kh_groups was REMOVED: the client never PATCHes a group
    (it only INSERTs on create), and an open update let anyone enumerate room
    codes then rename / re-own every room. */
@@ -150,7 +158,7 @@ const ADMIN_READ = new Set(['kh_visits','kh_errors','kh_rate','kh_research']);
    unauthenticated UPDATE primitive that bypasses owner_secret / the kh_groups
    update lockdown. kh_groups/kh_messages upserts happen only in admin migration
    (X-KH-Admin). Verified: the client only upserts these three. */
-const UPSERT_OK = new Set(['kh_users','kh_presence','kh_visits','kh_research']);
+const UPSERT_OK = new Set(['kh_users','kh_presence','kh_visits','kh_research','kh_reset']);
 /* Replicates the client's _mailNorm(email) → mail username, used to verify a
    mail reader owns the mailbox it queries. Keep in sync with index.html. */
 function mailNorm(u){ return String(u||'').trim().toLowerCase().replace(/@.*$/,'').slice(0,40); }
@@ -427,7 +435,7 @@ function whereSql(table, filters){
   return { sql: parts.length?(' WHERE '+parts.join(' AND ')):'', binds };
 }
 
-/* ── storage-cap triggers (ported from schema.sql) ───────────────────────── */
+/* ── storage-cap triggers (ported from the legacy schema) ─────────────────── */
 /* Per-group message ceiling: the single Global Chat room keeps the latest 50,
    every other room keeps 30 (mirrors KH_MSG_GLOBAL_CAP / KH_MSG_CAP_MAX in
    index.html). Keep these in sync if the client caps change. */
@@ -467,6 +475,11 @@ async function applyCaps(DB, table, row){
       }
     } else if(table==='kh_presence'){
       if(Math.random()<0.05){ const cut=new Date(Date.now()-3*86400000).toISOString(); await DB.prepare('DELETE FROM kh_presence WHERE last_seen < ?').bind(cut).run(); }
+    } else if(table==='kh_reset'){
+      /* Sweep expired reset codes so stale/abandoned rows don't accumulate. Runs
+         on every reset upsert; a bounded DELETE that removes ~0 rows after codes
+         are consumed/expired, so its write cost is negligible. */
+      await DB.prepare('DELETE FROM kh_reset WHERE expires IS NOT NULL AND expires < ?').bind(Date.now()).run();
     }
   }catch(_){/* caps are best-effort */}
 }
@@ -902,8 +915,8 @@ async function handlePost(table, url, request, env, DB){
       if(raw.score!=null){ let sc=Math.floor(Number(raw.score)); if(!isFinite(sc)||sc<0)sc=0; if(sc>999999999)sc=999999999; raw.score=sc; }
       if(typeof raw.display_name==='string') raw.display_name=raw.display_name.slice(0,40);
     }
-    /* SECURITY: the D1 self-created schema didn't reproduce most of Supabase's
-       per-field size limits, and these tables (messages/feedback/errors/presence/
+    /* SECURITY: the D1 self-created schema didn't reproduce most of the legacy
+       backend's per-field size limits, and these tables (messages/feedback/errors/presence/
        mail) allow anonymous insertion — so cap the length of EVERY string field
        before it reaches the DB, blocking oversized/malformed records that would
        burn D1 storage + request capacity. Per-field caps for the hot columns; a
@@ -1114,9 +1127,15 @@ async function handleDelete(table, url, request, env, DB){
   const secretGated = SECRET_DELETE.has(table);
   const adminReq = await isAdmin(request.headers.get('x-kh-admin')||'');
   const adminOk = adminReq && ADMIN_DELETE_OK.has(table);
+  /* kh_reset delete (single-use consumption of a reset code) is already authorised
+     by the fetch() kh_reset access gate above (reset service secret or admin), so
+     it's allowed to reach here; a filter is still required below so a bug can't
+     wipe the table. */
+  const resetTbl = table==='kh_reset';
   /* Allowed if: owner-secret gated (chat/mail/store), the open kh_feedback prune
-     path, OR an authenticated admin deleting from a moderation/store table. */
-  if(!secretGated && table!=='kh_feedback' && !adminOk) return err('delete not allowed on '+table, 403, env);
+     path, an authenticated admin deleting from a moderation/store table, OR the
+     gate-authorised kh_reset path. */
+  if(!secretGated && table!=='kh_feedback' && !adminOk && !resetTbl) return err('delete not allowed on '+table, 403, env);
   const q = parseQuery(table, url.searchParams);
   let { sql:where, binds } = whereSql(table, q.filters);
   if(adminOk){
@@ -1138,6 +1157,10 @@ async function handleDelete(table, url, request, env, DB){
     const cut = new Date(Date.now()-7*86400000).toISOString();
     where += (where?' AND ':' WHERE ')+"status IN ('done','ignored') AND COALESCE(status_at, date) < ?";
     binds = binds.concat([cut]);
+  } else if(resetTbl){
+    /* Access was authorised by the fetch() kh_reset gate; require a filter (the
+       mail gateway always deletes by u=eq) so a bug can't wipe the whole table. */
+    if(!where) return err('a filter is required to delete from kh_reset', 400, env);
   }
   /* SAFETY: an admin "clear all" (no filter) is intentional for kh_errors; for
      other admin tables require a filter so a bug can't wipe a whole table. */
@@ -1199,11 +1222,19 @@ const SCHEMA_DDL = [
      can configure auto-maintenance from the app UI instead of Worker env vars.
      The maintenance key is stored envelope-wrapped when KH_PEPPER is set. */
   "CREATE TABLE IF NOT EXISTS kh_config (k TEXT PRIMARY KEY, v TEXT)",
+  /* Password-reset codes: one row per pending reset, keyed by username hash `u`.
+     The 6-digit code is stored ONLY as SHA-256(u+':'+code) (code_hash) — never
+     plaintext — with a 10-min `expires`, a 5-attempt cap (`attempts`) and single-
+     use; `created` (ms) drives per-`u` request pacing. Written/read ONLY by the
+     mail gateway via the reset service secret (see the kh_reset access gate in
+     fetch()); the browser client never touches it. Column defs kept byte-identical
+     with schema-d1.sql. */
+  "CREATE TABLE IF NOT EXISTS kh_reset (u TEXT PRIMARY KEY, code_hash TEXT, expires INTEGER, attempts INTEGER DEFAULT 0, created INTEGER)",
 ];
 let _schemaReady = false;
 /* Bump whenever SCHEMA_DDL / the ALTER list changes — a stale stored version
    makes the next isolate run the full DDL once and re-stamp. */
-const SCHEMA_V = 'v2026-07-21a';
+const SCHEMA_V = 'v2026-07-23a';
 async function ensureSchema(DB){
   if(_schemaReady) return;
   /* D1 pricing: rows READ are ~1000x cheaper than rows WRITTEN. Every new
@@ -1233,7 +1264,7 @@ async function ensureSchema(DB){
   _schemaReady=true;
 }
 
-/* ── Shared-key Gemini proxy (ported from the Supabase Edge Function) ─────────
+/* ── Shared-key Gemini proxy (ported from the legacy Edge Function) ───────────
    Same contract the client already speaks: POST {model, payload}. Holds the key
    in env.GEMINI_KEY, enforces a first-come/first-served daily cap via the same
    kh_shared_api_usage counter, and streams Gemini's SSE back. Env vars on the
@@ -1541,7 +1572,7 @@ function maintUnsafe(code, kind){
   if(kind==='css'){ if(/@import\b|expression\s*\(|javascript:/i.test(c)) return 'unsafe CSS'; return ''; }
   const P=[[/[)\]\w$]\?\?=/,'??='],[/[)\]\w$]\?\?(?!=)/,'??'],[/[)\]\w$]\?\.\s*[A-Za-z_$([]/,'?.'],[/(?:^|[^A-Za-z0-9_$])catch\s*\{/,'parameterless catch'],[/[)\]\w$]\s*\|\|=/,'||='],[/[)\]\w$]\s*&&=/,'&&='],[/[^A-Za-z_$.]\d[\d]*_[\d_]*\b/,'numeric separators'],[/\(\?<[=!]/,'regex lookbehind'],[/\(\?<[A-Za-z_]/,'regex named group'],[/\\[pP]\{/,'regex \\p{}'],[/[^A-Za-z0-9_$.]\d[\d_]*n(?![A-Za-z0-9_$])/,'BigInt']];
   for(const p of P){ if(p[0].test(c)) return 'Kindle-incompatible: '+p[1]; }
-  if(/_ADMIN_HASHES|ADMIN_HASHES|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|SUPABASE_ANON_KEY|service_role|document\.cookie|\bkh_users\b/.test(c)) return 'touches auth/crypto internals';
+  if(/_ADMIN_HASHES|ADMIN_HASHES|_adminToken|X-KH-Admin|x-kh-admin|\bauthToken\b|authRegister|authLogin|_offlineCred|kh_offline_cred|_encryptState|_decryptState|_msgEncrypt|_msgDecrypt|service_role|document\.cookie|\bkh_users\b/.test(c)) return 'touches auth/crypto internals';
   try{ new Function(c); }catch(e){ return 'syntax error: '+((e&&e.message)||e); }
   return '';
 }
@@ -1758,6 +1789,10 @@ export default {
         const cut = new Date(Date.now()-7*86400000).toISOString();
         await DB.prepare("DELETE FROM kh_feedback WHERE status IN ('done','ignored') AND COALESCE(status_at, date) < ?").bind(cut).run();
       }catch(_){}
+      /* Sweep expired password-reset codes so stale rows never pile up (the mail
+         gateway also deletes them on use, but abandoned/never-verified codes only
+         get cleaned here + in applyCaps). */
+      try{ await DB.prepare('DELETE FROM kh_reset WHERE expires IS NOT NULL AND expires < ?').bind(Date.now()).run(); }catch(_){}
       /* AI moderation (opt-in via AUTO_MOD + GEMINI_KEY). */
       const on = env && env.AUTO_MOD && String(env.AUTO_MOD)!=='0' && String(env.AUTO_MOD).toLowerCase()!=='false';
       if(on && env.GEMINI_KEY) await runAutoModeration(DB, env);
@@ -1878,7 +1913,7 @@ export default {
       }
     }
 
-    /* Shared-key AI proxy — ports the kh-gemini-proxy Supabase Edge Function onto
+    /* Shared-key AI proxy — ports the kh-gemini-proxy Edge Function onto
        this Worker so the whole backend is Cloudflare. Holds GEMINI_KEY in env. */
     if(url.pathname==='/functions/v1/kh-gemini-proxy'){
       try{ return await handleGeminiProxy(request, env, DB); }
@@ -1902,6 +1937,27 @@ export default {
         return await handleRpc(name, body, DB, env, request);
       }
       if(!COLUMNS[name]) return err('unknown table: '+name, 404, env);
+      /* ── kh_reset access gate (password-reset codes — server-only) ──────────
+         kh_reset is written/read ONLY by the mail gateway (email-worker.js); the
+         browser client never touches it. It CANNOT be public like kh_mail: the
+         code is 6 digits stored as SHA-256(u+':'+code), so an OPEN READ of
+         code_hash would let anyone who knows `u` brute-force the code offline
+         (~1e6 hashes), and an OPEN WRITE would let an attacker upsert a code_hash
+         they control — either is a full reset bypass. So ALL methods (GET/HEAD/
+         POST/PATCH/DELETE) require the dedicated reset service secret
+         (X-KH-Reset-Secret === env.RESET_SECRET) OR an admin token. This single
+         gate is the authoritative access control; the INSERT_OK/UPSERT_OK entries
+         + the handleDelete branch only let an already-authorised request through.
+         LEAST-PRIVILEGE: a leaked RESET_SECRET can only manipulate reset codes —
+         it can't ban users, read mail, post announcements or touch any other
+         table (that needs the separate admin token). RESET_SECRET unset → admin-
+         only, so the flow is simply inert until the operator configures it. */
+      if(name==='kh_reset'){
+        const _rsec=(env&&env.RESET_SECRET)||'';
+        const _rhdr=request.headers.get('x-kh-reset-secret')||'';
+        const _resetOk=(!!_rsec && !!_rhdr && _rhdr===_rsec) || await isAdmin(request.headers.get('x-kh-admin')||'');
+        if(!_resetOk) return err('reset codes are not publicly accessible', 403, env);
+      }
       switch(request.method){
         case 'GET':    return await handleGet(name, url, request, env, DB, false);
         case 'HEAD':   return await handleGet(name, url, request, env, DB, true);
