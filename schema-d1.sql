@@ -98,12 +98,14 @@ CREATE TABLE IF NOT EXISTS kh_announcements (
   text       TEXT NOT NULL,
   active     INTEGER DEFAULT 1,
   targets    TEXT DEFAULT '[]',
+  comments   TEXT DEFAULT '[]',   -- public per-announcement comment thread (JSON)
   created_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS kh_presence (
   user_id      TEXT PRIMARY KEY,
   display_name TEXT DEFAULT '',
+  avatar       TEXT DEFAULT '',
   last_seen    TEXT
 );
 CREATE INDEX IF NOT EXISTS kh_presence_last_seen ON kh_presence(last_seen DESC);
@@ -203,3 +205,26 @@ CREATE TABLE IF NOT EXISTS kh_research (
   created_at TEXT
 );
 CREATE INDEX IF NOT EXISTS kh_research_day ON kh_research(day);
+
+-- ── Infrastructure tables (the Worker self-creates these; documented here to
+--    keep schema-d1.sql in sync with api-worker.js SCHEMA_DDL) ──────────────
+-- kh_state_parts: transparent chunking of oversized user-state blobs (a single
+--   D1 row is capped ~2 MB, so a large state is split into ordered parts).
+CREATE TABLE IF NOT EXISTS kh_state_parts (
+  hash TEXT NOT NULL,
+  idx  INTEGER NOT NULL,
+  part TEXT,
+  PRIMARY KEY(hash, idx)
+);
+-- kh_daily: free-tier budget counter — one row per UTC day (n = requests,
+--   w = row-writes) so the Worker can throttle before hitting the daily caps.
+CREATE TABLE IF NOT EXISTS kh_daily (
+  date TEXT PRIMARY KEY,
+  n    INTEGER DEFAULT 0,
+  w    INTEGER DEFAULT 0
+);
+-- kh_config: small key/value store for Worker-side config flags.
+CREATE TABLE IF NOT EXISTS kh_config (
+  k TEXT PRIMARY KEY,
+  v TEXT
+);
