@@ -561,11 +561,27 @@ async function handleRpc(fn, body, DB, env, request){
   if(fn==='kh_ban_username'){
     if(!await isMod(body.p_token, env, DB)) return err('not authorized',403,env);
     const _tgt = String(body.p_name||'').trim().toLowerCase();
+    const _banAdmin = await isAdmin(body.p_token);
     /* PROTECT THE ADMIN: a non-admin mod (their code turned evil, or just a
        mistake) can never ban an actual admin account. Admins themselves are
        exempt from this check (they may ban anyone, incl. another admin). */
-    if(_tgt && !(await isAdmin(body.p_token)) && isProtectedAdminName(_tgt, env)) return err('cannot moderate an admin',403,env);
-    await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(_tgt,'admin',nowIso()).run();
+    if(_tgt && !_banAdmin && isProtectedAdminName(_tgt, env)) return err('cannot moderate an admin',403,env);
+    if(!_banAdmin){
+      /* MODERATOR (non-admin) can NOT ban directly — so a mod can never
+         "suddenly ban everyone". The request is QUEUED as a [USERNAME] report,
+         which the AI auto-moderation cron (or a human admin) reviews and
+         actions. Reuses the exact format runAutoModeration already reads. */
+      const _reason = String(body.p_reason||'').trim().slice(0,300) || 'no reason given';
+      const _rid = 'modban_' + nowIso().replace(/[^0-9]/g,'') + '_' + Math.floor(Math.random()*1e6);
+      /* Same [USERNAME] report shape the client files (Username: "<name>" line),
+         so BOTH the auto-moderation cron and the admin feedback panel parse the
+         target and can action it. The cron ALWAYS re-derives the verdict from
+         Gemini server-side, so a mod can never smuggle in an auto-ban. */
+      const _rtext = '[REPORT] [USERNAME] moderator ban request — '+_reason+'\nUsername: "'+_tgt+'"\nReporter: moderator';
+      try{ await DB.prepare('INSERT INTO kh_feedback(id,type,text,votes,status,author,date) VALUES(?,?,?,0,?,?,?)').bind(_rid,'report',_rtext,'open','moderator',nowIso()).run(); }catch(_e){}
+      return json({queued:true},200,env);
+    }
+    await DB.prepare('INSERT INTO kh_banned_usernames(name,reason,created_at) VALUES(?,?,?) ON CONFLICT(name) DO NOTHING').bind(_tgt,String(body.p_reason||'admin').slice(0,300),nowIso()).run();
     return json(null,204,env);
   }
   if(fn==='kh_unban_username'){
