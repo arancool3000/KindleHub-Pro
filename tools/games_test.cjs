@@ -7,7 +7,7 @@ const path = require('path');
 const GAMES = ['hangman','memory','ttt','connect4','wordle','minesweeper','sudoku',
   'snake','slither','g2048','tetris','spaceinv','solitaire','towerdef','chess','checkers',
   'battleship','lightsout','snakesladders','wordsearch','candycrush','mastermind',
-  'dotsboxes','blockblast','digquest','hanoi','blackjack','crazy8','geometrydash','platformer','maze','yahtzee','connections','spellingbee','strands','crossyroad','anagrams','nonogram','eightball','trivia','farm','set','arena','pacman','akinator','nerdle','picpuzzle','reversi','sokoban','simon','perfectcircle'];
+  'dotsboxes','blockblast','digquest','hanoi','blackjack','crazy8','geometrydash','platformer','maze','yahtzee','connections','spellingbee','strands','crossyroad','anagrams','nonogram','eightball','trivia','farm','set','arena','pacman','akinator','nerdle','picpuzzle','reversi','sokoban','simon','perfectcircle','roller'];
 
 const FILE = 'file://' + path.resolve(__dirname, '..', 'index.html');
 
